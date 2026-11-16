@@ -9,15 +9,15 @@
 
 
 #pragma once
-#include <glad/glad.h>
+#include <cstdint>
 #include <unordered_map>
 #include <string>
 
 struct TextureStore {
-    std::unordered_map<std::string, GLuint> map;
+    std::unordered_map<std::string, std::uint32_t> map;
 
-    GLuint get(const std::string& name);
-    GLuint getPath(const std::string& path, bool reload = false);
+    std::uint32_t get(const std::string& name);
+    std::uint32_t getPath(const std::string& path, bool reload = false);
 };
 
 extern TextureStore gTextures;

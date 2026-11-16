@@ -16,6 +16,7 @@
 #endif
 #include "network/server-gamemode.h"
 #include "network/server-gamemode.h"
+#include "network/packet-route.h"
 #include "network/community-server-config.h"
 #include "network/multiplayer-context.h"
 #include "network/coordinator-client.h"
@@ -2418,6 +2419,10 @@ ServerPacketProcessResult processServerPacket(
                header->version, PROTOCOL_VERSION, header->type);
         return result;
     }
+
+    MimitaNet::PacketRoute::record(
+        MimitaNet::PacketRoute::Direction::Server, header->type, "dll",
+        __FILE__);
 
     if (!isKnownPacketType(header->type))
     {

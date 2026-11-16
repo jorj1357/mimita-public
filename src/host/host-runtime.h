@@ -91,6 +91,23 @@ public:
     bool serverSimulateWorld(ServerFrameV1* frame);
     bool serverPublish(ServerFrameV1* frame);
     bool serverGamemode(ServerFrameV1* frame);
+    bool serverPolicyAvailable() const;
+    bool serverPolicyStartup(const ServerStartupV1* startup,
+                             ServerStartupResultV1* result);
+    bool serverPolicyWorldLoad(const ServerWorldLoadV1* load,
+                               ServerWorldLoadResultV1* result);
+    bool serverPolicyConfigure(const ServerConfigureV1* configure,
+                               ServerConfigureResultV1* result);
+    void* serverPolicyCreatePlayer();
+    void serverPolicyDestroyPlayer(void* player);
+    bool serverPolicyMakeUdpConnectionId(std::uint32_t addressNetwork,
+                                         std::uint16_t portNetwork,
+                                         ServerConnectionIdV1* out);
+    bool serverPolicyPollReload(void* npcSystem, std::uint32_t tick);
+    bool serverPolicyAuthIdentity(ServerAuthIdentityV1* out);
+    bool serverPolicyProjectilePerf(ServerProjectilePerfV1* out);
+    bool serverPolicyClearRuntimeObjects(const char* reason);
+    bool serverPolicyCoordinatorIceDone(const char* roomCode);
 
     // Drive one whole-game fixed tick and render call through the barrier.
     // Safe-point ownership remains with the caller: this does not advance the
@@ -137,6 +154,9 @@ public:
     std::uint64_t activeGeneration() const { return loader_.activeGeneration(); }
     const GameServerV1* activeServerApi() const {
         return loader_.activeGenerationInfo().serverApi;
+    }
+    const GameServerPolicyV1* activeServerPolicy() const {
+        return loader_.activeGenerationInfo().serverPolicy;
     }
 
     // Registered by the active client/server session owner. Cleared on session

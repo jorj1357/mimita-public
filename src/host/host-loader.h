@@ -33,6 +33,7 @@ struct LoadedGeneration {
     HMODULE module = nullptr;
     const GameModuleV1* api = nullptr;
     const GameServerV1* serverApi = nullptr;
+    const GameServerPolicyV1* serverPolicy = nullptr;
     std::uint64_t generation = 0;
     std::string codeHash;
     std::wstring path;
@@ -43,6 +44,7 @@ struct LoadedGeneration {
         module = nullptr;
         api = nullptr;
         serverApi = nullptr;
+        serverPolicy = nullptr;
         generation = 0;
         codeHash.clear();
         path.clear();
@@ -113,9 +115,31 @@ public:
             serverApi = nullptr;
         }
 
+        const auto resolveServerPolicy = reinterpret_cast<GetGameServerPolicyFn>(
+            ::GetProcAddress(module, kGetGameServerPolicySymbol));
+        const GameServerPolicyV1* serverPolicy =
+            resolveServerPolicy
+                ? resolveServerPolicy(kGameServerPolicyAbiVersion)
+                : nullptr;
+        if (serverPolicy &&
+            (serverPolicy->abiVersion != kGameServerPolicyAbiVersion ||
+             serverPolicy->structSize != sizeof(GameServerPolicyV1) ||
+             !serverPolicy->startup || !serverPolicy->world_load ||
+             !serverPolicy->configure ||              !serverPolicy->create_player ||
+             !serverPolicy->destroy_player ||
+             !serverPolicy->make_udp_connection_id ||
+             !serverPolicy->poll_reload ||
+             !serverPolicy->auth_identity ||
+             !serverPolicy->projectile_perf ||
+             !serverPolicy->clear_runtime_objects ||
+             !serverPolicy->coordinator_ice_done)) {
+            serverPolicy = nullptr;
+        }
+
         out->module = module;
         out->api = api;
         out->serverApi = serverApi;
+        out->serverPolicy = serverPolicy;
         out->generation = api->generation;
         std::size_t hashLength = 0;
         while (hashLength < kCodeHashHexLength && api->codeHash[hashLength] != '\0') {

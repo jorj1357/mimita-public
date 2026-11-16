@@ -19,8 +19,13 @@
 #include <functional>
 #include <optional>
 
-// OpenGL
+// OpenGL types belong to the resident device for the hot game DLL.
+#ifndef MIMITA_GAME_DLL
 #include <glad/glad.h>
+#endif
+#ifndef GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_NONE
+#endif
 #include <GLFW/glfw3.h>
 
 // GLM

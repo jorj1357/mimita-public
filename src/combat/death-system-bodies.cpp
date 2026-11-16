@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-#include <glad/glad.h>
 #include "config.h"
 #include "debug/debug-log.h"
 #include "camera.h"

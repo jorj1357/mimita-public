@@ -1,4 +1,5 @@
 #include "avatar.h"
+#include <cstdint>
 #include "game/resident-state-module.h"
 #include "avatar-autosave.h"
 
@@ -1428,7 +1429,7 @@ void AvatarSystem::pollHotReload() {
 // ── Apply single texture (replaces OutfitAtlas) ─────────────────────
 bool AvatarSystem::applySingleTexture(Player& player, const std::string& texturePath, bool reloadTexture)
 {
-    GLuint texture = gTextures.getPath(texturePath, reloadTexture);
+    std::uint32_t texture = gTextures.getPath(texturePath, reloadTexture);
     if (!texture) return false;
 
     for (size_t partIndex = 0; partIndex < player.physicalBody.partMeshes.size(); ++partIndex) {

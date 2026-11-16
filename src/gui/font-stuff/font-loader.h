@@ -8,18 +8,18 @@ these variables and functions exist somewhere else
  */
 
 #pragma once
+#include <cstdint>
 
 #include "font-glyph.h"
-#include <glad/glad.h>
 
 extern Glyph gGlyphs[256];
 
-extern GLuint gFontTex;
-extern GLuint gFontPages[8];
+extern std::uint32_t gFontTex;
+extern std::uint32_t gFontPages[8];
 extern int gFontPageCount;
 
-extern GLuint guiVAO;
-extern GLuint guiVBO;
+extern std::uint32_t guiVAO;
+extern std::uint32_t guiVBO;
 
 extern int atlasWidth;
 extern int atlasHeight;

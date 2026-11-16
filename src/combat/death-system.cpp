@@ -11,7 +11,6 @@
 #include <cmath>
 #include <nlohmann/json.hpp>
 
-#include <glad/glad.h>
 #include "config.h"
 #include "debug/debug-log.h"
 #include "perf/perf-spike.h"

@@ -972,3 +972,29 @@ gate.
   hot-client gate PASS (`path=dll`, `Connected`, 1,831+ frames).
 - Remaining strict-zero work is the 570 game sources and 198 cold refs,
   starting with the server policy split.
+
+## map-geometry folded into game DLL
+
+- Removed `map-geometry` from `config/modules/modules.json`.
+- `src/map/map-geometry-module.cpp` is now a game-owned source.
+- `devscripts/game_build_worker.py` now renames each folded module export:
+  `GetMimitaMapEditorModuleAPI`, `GetMimitaMapGeometryModuleAPI`, and provides
+  the generated `module-identity.h`.
+- Game-side module host initializes both local modules and dispatches map
+  geometry signature/node/object-plan events locally.
+- Game generation 248 built and published with 629 sources; map-geometry and
+  map-editor are no longer separate module DLLs.
+- Runtime verification of the new generation was limited by the strict gate
+  and the long-running old EXE; compile/link and activation events remain the
+  evidence for this fold.
+
+## Strict cutover handoff
+
+- Added `docs/handoffs/hot-reload-cutover-execution-plan.md`.
+- It defines the separate `GetMimitaGameServerPolicyV1` export, server pass 1/
+  pass 2, remaining module fold order, event-only validation, and the final
+  strict-zero flip.
+- `world-rendering` was briefly folded, then restored to the catalog because the
+  build was blocked by an unrelated stale packet registry ledger and the fold
+  was not runtime-verified. Rebuild after codegen restored generation 253.
+- Current strict status remains red: 570 game-in-EXE, 0 test, 198 cold refs.

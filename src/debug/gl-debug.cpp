@@ -2,9 +2,15 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
+
+#include "render/render-command.h"
 
 namespace {
+constexpr std::uint32_t kInvalidEnum = 0x0500u;
+constexpr std::uint32_t kInvalidValue = 0x0501u;
+constexpr std::uint32_t kInvalidOperation = 0x0502u;
+constexpr std::uint32_t kOutOfMemory = 0x0505u;
+constexpr std::uint32_t kInvalidFramebufferOperation = 0x0506u;
 
 bool traceVerbose()
 {
@@ -14,56 +20,55 @@ bool traceVerbose()
     return enabled != 0;
 }
 
-const char* errorName(GLenum err)
+const char* errorName(std::uint32_t err)
 {
     switch (err)
     {
-        case GL_INVALID_ENUM: return "GL_INVALID_ENUM";
-        case GL_INVALID_VALUE: return "GL_INVALID_VALUE";
-        case GL_INVALID_OPERATION: return "GL_INVALID_OPERATION";
-        case GL_OUT_OF_MEMORY: return "GL_OUT_OF_MEMORY";
-        case GL_INVALID_FRAMEBUFFER_OPERATION: return "GL_INVALID_FRAMEBUFFER_OPERATION";
+        case kInvalidEnum: return "GL_INVALID_ENUM";
+        case kInvalidValue: return "GL_INVALID_VALUE";
+        case kInvalidOperation: return "GL_INVALID_OPERATION";
+        case kOutOfMemory: return "GL_OUT_OF_MEMORY";
+        case kInvalidFramebufferOperation: return "GL_INVALID_FRAMEBUFFER_OPERATION";
         default: return "UNKNOWN";
     }
 }
-
 } // namespace
 
 namespace GLDebug {
 
 void clearErrors(const char* stage)
 {
-    GLenum err = glGetError();
+    std::uint32_t err = mimita::game::render::getError();
     bool hadError = false;
-    while (err != GL_NO_ERROR)
+    while (err != 0u)
     {
         hadError = true;
         printf("[GL TRACE] cleared stale error before %s err=0x%X (%s)\n",
                stage ? stage : "unknown", err, errorName(err));
-        err = glGetError();
+        err = mimita::game::render::getError();
     }
-
     if (traceVerbose() && !hadError)
         printf("[GL TRACE] clear before %s err=0x0\n", stage ? stage : "unknown");
 }
 
 bool logErrors(const char* label, const char* file, int line)
 {
-    GLenum err = glGetError();
-    if (err == GL_NO_ERROR)
+    std::uint32_t err = mimita::game::render::getError();
+    if (err == 0u)
     {
         if (traceVerbose())
-            printf("[GL TRACE] after %s err=0x0 (%s:%d)\n", label ? label : "unknown", file ? file : "?", line);
+            printf("[GL TRACE] after %s err=0x0 (%s:%d)\n",
+                   label ? label : "unknown", file ? file : "?", line);
         return false;
     }
-
     bool hadError = false;
-    while (err != GL_NO_ERROR)
+    while (err != 0u)
     {
         hadError = true;
         printf("[GL TRACE] after %s err=0x%X (%s) at %s:%d\n",
-               label ? label : "unknown", err, errorName(err), file ? file : "?", line);
-        err = glGetError();
+               label ? label : "unknown", err, errorName(err),
+               file ? file : "?", line);
+        err = mimita::game::render::getError();
     }
     return hadError;
 }
@@ -71,32 +76,7 @@ bool logErrors(const char* label, const char* file, int line)
 void traceBefore(const char* label, const char* file, int line)
 {
     if (traceVerbose())
-        printf("[GL TRACE] before %s (%s:%d)\n", label ? label : "unknown", file ? file : "?", line);
+        printf("[GL TRACE] before %s (%s:%d)\n",
+               label ? label : "unknown", file ? file : "?", line);
 }
-
-bool extensionSupported(const char* extensionName)
-{
-    if (!extensionName || !extensionName[0])
-        return false;
-
-#ifdef GLAD_GL_EXT_texture_filter_anisotropic
-    if (std::strcmp(extensionName, "GL_EXT_texture_filter_anisotropic") == 0)
-        return GLAD_GL_EXT_texture_filter_anisotropic != 0;
-#endif
-
-    GLint count = 0;
-    glGetIntegerv(GL_NUM_EXTENSIONS, &count);
-    if (logErrors("glGetIntegerv(GL_NUM_EXTENSIONS)", __FILE__, __LINE__))
-        return false;
-
-    for (GLint i = 0; i < count; ++i)
-    {
-        const char* ext = reinterpret_cast<const char*>(glGetStringi(GL_EXTENSIONS, (GLuint)i));
-        if (ext && std::strcmp(ext, extensionName) == 0)
-            return true;
-    }
-    logErrors("glGetStringi(GL_EXTENSIONS)", __FILE__, __LINE__);
-    return false;
-}
-
 } // namespace GLDebug

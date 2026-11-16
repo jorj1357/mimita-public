@@ -217,18 +217,23 @@ activation.
 
 ### Packet ledger meaning
 
-`config/hot-reload/packet-ledger.json` records two different things:
+`config/hot-reload/packet-ledger.json` is generated from actual code:
 
-- `server=dll|resident` is the server packet-path classification.
-- `client=dll|resident` is the **DLL-side client dispatch override** count. It
-  does not mean the normal client packet handlers are resident.
+- `src/network/packets.h` supplies packet IDs.
+- `src/network/multiplayer-tick.cpp` supplies client inbound branches.
+- `src/network/server-packets.cpp` supplies server inbound branches.
+- Other active sources are scanned for inbound/outbound packet references.
+- `build/source-manifest.json` supplies the source owner.
 
-The normal client packet handlers are already game-owned and compiled into
-`game.dll` through `src/network/multiplayer-tick.cpp` and
-`src/network/multiplayer-packets.cpp`. They execute from the DLL only when the
-full client owns its frame. A low client `dll` count in the ledger means only
-that few packets have a separate `server-command-dispatch` style override; it is
-not a client-handler migration task.
+The ledger records the source file, line, owner, and inbound handler for each
+direction. A direction with no discovered reference is `unknown`; it is never
+silently defaulted to `resident`. `client_inbound` and `server_inbound` show
+which rows are actual dispatch handlers rather than outbound/reference-only
+uses.
+
+The old hand-maintained `config/hot-reload/packet-schema.json` defaults and
+overrides are deprecated. `devscripts/packet_registry_codegen.py` no longer uses
+them to decide a path.
 
 ## Server split
 
@@ -268,6 +273,9 @@ Hot reload replaces code, not the world.
 - A candidate declares the old and new schema, stages a copy, migrates,
   validates, and commits atomically.
 - A failed migration leaves the old generation and old state active.
+- `state.migration-selftest` exercises the migration API and rejection path in
+  the live process. It is not a substitute for a real generation-to-generation
+  domain migration proof.
 
 ## Input
 
@@ -387,6 +395,7 @@ These paths are architectural roles, not current status.
 | Path | Role | Written by | Hand-edit? |
 |---|---|---|---|
 | `build/source-manifest.json` | Source ownership and revision | `devscripts/source_manifest.py` | No |
+| `build/link-inputs-<mode>.json` | Actual object/source list passed to the EXE linker | `build.py` | No |
 | `build/hot-reload/status.json` | Build/run/coverage/gap summary | `devscripts/hot_reload_status.py` | No |
 | `build/hot-reload/audit.json` | Static unload-safety findings | `devscripts/audit_triage.py` | No |
 | `config/hot-reload/packet-ledger.json` | Packet client/server hot coverage | `devscripts/packet_registry_codegen.py` | No |

@@ -25,17 +25,19 @@ void Camera::updateMouse(double xpos, double ypos) {
             std::chrono::steady_clock::now().time_since_epoch()).count());
     if (firstMouse) { lastX = xpos; lastY = ypos; firstMouse = false; }
 
+    // Mouse-down is positive dy. Camera pitch is positive upward, so a
+    // downward mouse movement must subtract pitch. This keeps the direct
+    // camera path and the normalized InputRouter path on the same convention.
     float xoff = float(xpos - lastX);
-    float yoff = float(lastY - ypos);
+    float yoff = float(ypos - lastY);
     lastX = xpos;
     lastY = ypos;
 
     xoff *= 0.15f;
     yoff *= 0.15f;
 
-    // This makes me look left or right dec192025 ?
     yaw -= xoff;
-    pitch += yoff;
+    pitch -= yoff;
 
     // The regular mouse camera keeps its established pitch clamp. Head-world
     // mode needs an unbounded pitch wish so quaternion head aiming can pass

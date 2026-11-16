@@ -12,6 +12,7 @@
 #include "game/socket-bridge-module.h"
 #include "game/resident-state-module.h"
 #include "network/packets.h"
+#include "network/packet-route.h"
 #include "duel/duel-queue.h"
 #include "network/community-match-client.h"
 #include "gamemode/gamemode.h"
@@ -1342,6 +1343,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             header->magic != PROTOCOL_MAGIC ||
             header->version != PROTOCOL_VERSION)
             return;
+
+        MimitaNet::PacketRoute::record(
+            MimitaNet::PacketRoute::Direction::Client, header->type, "dll",
+            __FILE__);
 
         // Any validated packet from the server resets the real-time heartbeat
         // so connection timeouts are measured with monotonic wall-clock time,

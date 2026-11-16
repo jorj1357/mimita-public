@@ -516,8 +516,18 @@ def build(args: argparse.Namespace) -> int:
         if stop_event.is_set():
             return ("skipped", item, 0.0, "")
         source_path = str(item["path"]).replace("\\", "/")
-        extra_flags = ([f"-I{identity_dir}"]
-                       if source_path.endswith("map-editor-module.cpp") else [])
+        folded_module_symbols = {
+            "src/mapeditor/map-editor-module.cpp":
+                "GetMimitaMapEditorModuleAPI",
+            "src/map/map-geometry-module.cpp":
+                "GetMimitaMapGeometryModuleAPI",
+        }
+        extra_flags = []
+        if source_path in folded_module_symbols:
+            extra_flags.extend([
+                f"-I{identity_dir}",
+                f"-DGetMimitaModuleAPI={folded_module_symbols[source_path]}",
+            ])
         command = [
             *ccache_prefix,
             cxx,

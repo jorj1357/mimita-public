@@ -3,7 +3,6 @@
 #include <cmath>
 #include <vector>
 
-#include <glad/glad.h>
 #include <glm/glm.hpp>
 
 #include "camera.h"

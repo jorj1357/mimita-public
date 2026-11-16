@@ -24,9 +24,9 @@ extern TextureStore gTextures;
 // Lazily resolves the default texture. Hoisted out of appendPrimitive so the
 // main thread can warm it before any background parse thread runs (GL calls and
 // the throttled log must never happen off the main thread).
-GLuint getGLBDefaultTexture()
+std::uint32_t getGLBDefaultTexture()
 {
-    static GLuint defaultTexture = 0;
+    static std::uint32_t defaultTexture = 0;
     if (!defaultTexture)
         defaultTexture = gTextures.get("default");
     return defaultTexture;
@@ -38,7 +38,7 @@ void appendPrimitive(
     int primitiveIndex,
     const tinygltf::Primitive& primitive,
     const glm::mat4& transform,
-    const std::vector<GLuint>& materialTextures,
+    const std::vector<std::uint32_t>& materialTextures,
     Mesh& mesh
 ) {
     if (shouldLogPrimitiveDetails(meshIndex, primitiveIndex))

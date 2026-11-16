@@ -93,7 +93,12 @@ def main(argv: list[str] | None = None) -> int:
     packet_counts = packet_ledger.get("counts", {})
     client_total = int(packet_counts.get("total", 0) or 0)
     client_dll_overrides = int(packet_counts.get("client_dll", 0) or 0)
+    client_resident = int(packet_counts.get("client_resident", 0) or 0)
+    client_unknown = int(packet_counts.get("client_unknown", 0) or 0)
     server_hot = int(packet_counts.get("server_dll", 0) or 0)
+    server_resident = int(packet_counts.get("server_resident", 0) or 0)
+    server_unknown = int(packet_counts.get("server_unknown", 0) or 0)
+    packet_tombstones = int(packet_counts.get("tombstones", 0) or 0)
     server_total = client_total
     manifest_by_path = {
         str(row.get("path", "")).replace("\\", "/"): row
@@ -153,8 +158,12 @@ def main(argv: list[str] | None = None) -> int:
     gates = {
         "client_handlers_game_owned": client_handlers_game_owned,
         "client_hot_frame_runtime_proven": hot_frame_runtime_proven,
-        "client_packets_complete": False,
-        "server_packets_complete": server_total > 0 and server_hot == server_total,
+        "client_packets_complete": (
+            client_total > 0 and client_resident == 0 and
+            client_unknown == packet_tombstones),
+        "server_packets_complete": (
+            server_total > 0 and server_resident == 0 and
+            server_unknown == packet_tombstones),
         "state_domains_generated": state_domains > 0,
         "state_domains_wired": state_domains_wired,
         "server_fallback_removed": server_fallback_removed,
@@ -191,10 +200,14 @@ def main(argv: list[str] | None = None) -> int:
         "coverage": {
             "client_dll_dispatch_overrides": client_dll_overrides,
             "client_packets_total": client_total,
+            "client_packets_resident": client_resident,
+            "client_packets_unknown": client_unknown,
+            "client_packet_tombstones": packet_tombstones,
             "client_handlers_game_owned": client_handlers_game_owned,
             "client_hot_frame_default": hot_frame_default,
             "client_hot_frame_runtime_proven": hot_frame_runtime_proven,
-            "client_packets_hot": False,
+            "client_packets_hot": (
+                client_resident == 0 and client_unknown == packet_tombstones),
             "server_packets_hot": server_hot,
             "server_packets_total": server_total,
             "server_pump_resident": server_pump_resident,

@@ -74,7 +74,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <glad/glad.h>
 #include <shellapi.h>
 #include <windows.h>
 #include "render/render-command.h"

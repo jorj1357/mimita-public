@@ -5332,21 +5332,20 @@ allowed only after measured build/activation or isolation evidence justifies it.
 The authoritative live-development contract is
 `docs/specs/hotreload/hotreload.md` §11.
 
-## Packet registry codegen (2026-11-14)
+## Packet registry codegen (2026-11-16)
 
-- `config/hot-reload/packet-schema.json` is the reviewed classification input.
 - `devscripts/packet_registry_codegen.py` parses every `PACKET_*` in
-  `src/network/packets.h` and generates
-  `src/host/generated/packet-registry-v1.h` plus
-  `config/hot-reload/packet-ledger.json`.
-- The generated table records the server and client path (`dll` or `resident`)
-  for every packet id. `src/network/server.cpp` now derives migrated-type
-  classification from it instead of a hand-maintained switch.
-- The desired state is server `dll` and client `dll` for every packet. The
-  generated ledger records the current path and is the coverage gate.
-- Adding or moving a packet is a schema edit plus
+  `src/network/packets.h` and scans the actual inbound dispatch branches in
+  `src/network/multiplayer-tick.cpp` and `src/network/server-packets.cpp`.
+- It also scans active sources for packet references and combines them with
+  `build/source-manifest.json` ownership. Unknown names remain `unknown`; the
+  generator never invents a `resident` default.
+- It generates `src/host/generated/packet-registry-v1.h` plus
+  `config/hot-reload/packet-ledger.json`, including source file, line, owner,
+  handler expression, and inbound/outbound classification.
+- `config/hot-reload/packet-schema.json` is deprecated and ignored by the
+  generator. Add or move packet handling in code, then run
   `python devscripts/packet_registry_codegen.py`; `--check` is the drift gate.
-  The dev-loop runs both codegens before every build.
 
 ## Single authority and packet split (2026-11-14, normative)
 

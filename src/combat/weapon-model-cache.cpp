@@ -18,7 +18,6 @@
 #include <thread>
 #include <vector>
 
-#include <glad/glad.h>
 #include <glm/glm.hpp>
 
 #include "map/map-loader-mesh.h"

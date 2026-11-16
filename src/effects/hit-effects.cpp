@@ -8,7 +8,6 @@
 
 
 #include <glm/glm.hpp>
-#include <glad/glad.h>
 
 
 #include "combat/shot-profiler.h"

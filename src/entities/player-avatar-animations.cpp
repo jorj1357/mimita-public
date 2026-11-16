@@ -373,7 +373,11 @@ AvatarAnimationRegistry::Entry& AvatarAnimationRegistry::load(const std::string&
         // Exclusive authored-pose policy opt-in (see docs/specs/animations/animations.md).
         if (animRoot.contains("poseComposition") && animRoot["poseComposition"].is_string())
             next.set.authoredOnly = animRoot["poseComposition"].get<std::string>() == "authored_only";
-        next.set.npcTickLocked = animRoot.value("npcTickLocked", false);
+        // NPC authored clips advance one authored tick per fixed simulation
+        // tick by default. The old opt-in default made every avatar without an
+        // explicit JSON flag look slow/procedural even when its authored clips
+        // were loaded. Individual avatars may still opt out explicitly.
+        next.set.npcTickLocked = animRoot.value("npcTickLocked", true);
         next.set.valid = !next.set.clips.empty();
         valid = next.set.valid;
         if (!valid)

@@ -61,7 +61,6 @@ WATCH_FILES = (
     "config/build/source-owners.json",
     "config/modules/modules.json",
     "config/hot-reload/state-schema.json",
-    "config/hot-reload/packet-schema.json",
     "src/network/packets.h",
 )
 WATCH_SUFFIXES = (".cpp", ".h", ".hpp", ".hh", ".hxx", ".inl", ".ipp", ".json", ".rc")

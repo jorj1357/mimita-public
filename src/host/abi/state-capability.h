@@ -54,12 +54,15 @@ enum class StateObjectId : std::uint32_t {
     ReplayWeaponModels = 22,
     ReplaySaveWorker = 23,
     ServerGamemode = 24,
+    MigrationProbe = 25,
 };
 
 // Called by the host when a resident record must grow. The game owns the
 // layout, so it constructs the new block, moves the known fields from the old
 // block, and destroys the old object. The host frees the old raw memory.
-using StateMigrateFn = void (*)(void* oldBlock, std::uint32_t oldSize,
+// Returns true when the new block is valid and may be committed. A false
+// result leaves the old block and old generation state active.
+using StateMigrateFn = bool (*)(void* oldBlock, std::uint32_t oldSize,
                                 void* newBlock, std::uint32_t newSize);
 
 struct StateCapabilityV1 {

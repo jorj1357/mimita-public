@@ -5,7 +5,6 @@
 #ifndef GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_NONE
 #endif
-#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <cstdint>
 #include "video/video-mode.h"

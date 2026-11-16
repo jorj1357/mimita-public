@@ -1,4 +1,5 @@
 #include "gui/ui-system.h"
+#include <cstdint>
 #include "game/gl-resource-bridge-module.h"
 #include "gui/ui-system-internal.h"
 
@@ -8,7 +9,6 @@
 #include <string>
 #include <unordered_map>
 
-#include <glad/glad.h>
 #include "gui/gui-media.h"
 #include "gui/gui-coord.h"
 #include "world/texture-store.h"
@@ -194,15 +194,15 @@ void ensureProgram()
                            sizeof(UIVertex), offsetof(UIVertex, textureMode));
 }
 
-void drawTriVerts(const float* verts, int vertCount, glm::vec4 color, GLenum mode)
+void drawTriVerts(const float* verts, int vertCount, glm::vec4 color, r::Primitive mode)
 {
-    if (!verts || vertCount <= 0 || mode != GL_TRIANGLES)
+    if (!verts || vertCount <= 0 || mode != r::Primitive::Triangles)
         return;
     for (int i = 0; i < vertCount; ++i)
         gBatchVertices.push_back({{verts[i * 4], verts[i * 4 + 1]}, {verts[i * 4 + 2], verts[i * 4 + 3]}, color, 0.0f});
 }
 
-void drawTexturedQuad(const float* verts, int vertCount, GLuint tex, glm::vec4 color)
+void drawTexturedQuad(const float* verts, int vertCount, std::uint32_t tex, glm::vec4 color)
 {
     ensureProgram();
     if (!gProgram || !gVao || !gVbo || !verts || !tex || vertCount <= 0)
@@ -282,7 +282,7 @@ void uiDrawRect(UIRect r, glm::vec4 color, const char* debugName)
         r.x, r.y, 0, 0, r.x + r.w, r.y, 0, 0, r.x + r.w, r.y + r.h, 0, 0,
         r.x, r.y, 0, 0, r.x + r.w, r.y + r.h, 0, 0, r.x, r.y + r.h, 0, 0
     };
-    drawTriVerts(verts, 6, color, GL_TRIANGLES);
+    drawTriVerts(verts, 6, color, r::Primitive::Triangles);
 }
 
 void uiDrawTriangle(float cx, float cy, float size, bool pointDown, glm::vec4 color, const char* debugName)
@@ -296,7 +296,7 @@ void uiDrawTriangle(float cx, float cy, float size, bool pointDown, glm::vec4 co
         cx - hs, baseY, 0, 0,
         cx + hs, baseY, 0, 0
     };
-    drawTriVerts(verts, 3, color, GL_TRIANGLES);
+    drawTriVerts(verts, 3, color, r::Primitive::Triangles);
 }
 
 void uiDrawRectOutline(UIRect r, glm::vec4 color, const char* debugName)
@@ -358,7 +358,7 @@ void uiDrawText(const char* text, float x, float y, float scale, glm::vec4 color
             float u1 = (float)(g.x + g.w) / (float)atlasWidth;
             float v1 = (float)(g.y + g.h) / (float)atlasHeight;
 
-            GLuint pageTex = 0;
+            std::uint32_t pageTex = 0;
             if (g.page >= 0 && g.page < 8)
                 pageTex = gFontPages[g.page];
             if (!pageTex)
@@ -412,7 +412,7 @@ void uiDrawImage(const char* path, UIRect r, glm::vec4 color)
 {
     if (!path || r.w <= 0.0f || r.h <= 0.0f)
         return;
-    GLuint texture = gTextures.getPath(path);
+    std::uint32_t texture = gTextures.getPath(path);
     if (!texture)
         return;
     float verts[] = {
@@ -427,7 +427,7 @@ void uiDrawImageFit(const char* path, UIRect r, bool checkerboard, glm::vec4 col
 {
     if (!path || r.w <= 0.0f || r.h <= 0.0f)
         return;
-    GLuint texture = gTextures.getPath(path);
+    std::uint32_t texture = gTextures.getPath(path);
     if (!texture) {
         // Missing texture placeholder
         uiDrawRect(r, {0.15f, 0.05f, 0.05f, 1.0f}, "missing-tex-bg");
@@ -469,7 +469,7 @@ void uiDrawImageFit(const char* path, UIRect r, bool checkerboard, glm::vec4 col
                     cx, cy, 0,0, cx+cw, cy, 0,0, cx+cw, cy+ch, 0,0,
                     cx, cy, 0,0, cx+cw, cy+ch, 0,0, cx, cy+ch, 0,0
                 };
-                drawTriVerts(verts, 6, c, GL_TRIANGLES);
+                drawTriVerts(verts, 6, c, r::Primitive::Triangles);
             }
         }
     }
@@ -500,7 +500,7 @@ void uiDrawMedia(const char* path, UIRect r, glm::vec4 color)
     if (ext == ".gif") {
         const GifCache* gif = loadGif(path);
         if (!gif || gif->frames.empty()) return;
-        GLuint tex = gif->frames[gif->currentFrame];
+        std::uint32_t tex = gif->frames[gif->currentFrame];
         if (!tex) return;
         float verts[] = {
             r.x, r.y, 0, 0, r.x + r.w, r.y, 1, 0, r.x + r.w, r.y + r.h, 1, 1,
@@ -520,7 +520,7 @@ void uiUpdateMedia(float dt)
 void uiDrawImageRotated(const char* path, float cx, float cy, float halfSize, float angleDeg, glm::vec4 color)
 {
     if (!path || halfSize <= 0.0f) return;
-    GLuint texture = gTextures.getPath(path);
+    std::uint32_t texture = gTextures.getPath(path);
     if (!texture) return;
 
     float rad = angleDeg * 3.14159265f / 180.0f;

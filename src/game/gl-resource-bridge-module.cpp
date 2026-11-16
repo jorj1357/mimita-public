@@ -40,6 +40,17 @@ std::uint32_t genRenderbuffer() { return GL_CAP(gen_renderbuffer); }
 void deleteRenderbuffer(std::uint32_t id) { if (gGl && gGl->delete_renderbuffer) gGl->delete_renderbuffer(gHostData, id); }
 std::uint32_t genQuery() { return GL_CAP(gen_query); }
 void deleteQuery(std::uint32_t id) { if (gGl && gGl->delete_query) gGl->delete_query(gHostData, id); }
+void queryCounterTimestamp(std::uint32_t query) {
+    if (gGl && gGl->query_counter_timestamp) gGl->query_counter_timestamp(gHostData, query);
+}
+std::uint32_t queryResultAvailable(std::uint32_t query) {
+    return gGl && gGl->query_result_available
+        ? gGl->query_result_available(gHostData, query) : 0;
+}
+std::uint64_t queryResultU64(std::uint32_t query) {
+    return gGl && gGl->query_result_u64
+        ? gGl->query_result_u64(gHostData, query) : 0;
+}
 void deleteShader(std::uint32_t id) { if (gGl && gGl->delete_shader) gGl->delete_shader(gHostData, id); }
 void deleteProgram(std::uint32_t id) { if (gGl && gGl->delete_program) gGl->delete_program(gHostData, id); }
 void generateMipmap(std::uint32_t target) { if (gGl && gGl->generate_mipmap) gGl->generate_mipmap(gHostData, target); }

@@ -1,4 +1,5 @@
 #include "map_common.h"
+#include <cstdint>
 #include "map_loader.h"
 #include "map-loader-mesh.h"
 #include "map-loader-gltf-accessors.h"
@@ -12,7 +13,7 @@ extern void appendPrimitive(
     int primitiveIndex,
     const tinygltf::Primitive& primitive,
     const glm::mat4& transform,
-    const std::vector<GLuint>& materialTextures,
+    const std::vector<std::uint32_t>& materialTextures,
     Mesh& mesh
 );
 
@@ -22,7 +23,7 @@ void appendGLBMeshPrimitive(
     int primitiveIndex,
     const tinygltf::Primitive& primitive,
     const glm::mat4& transform,
-    const std::vector<GLuint>& materialTextures,
+    const std::vector<std::uint32_t>& materialTextures,
     Mesh& mesh
 ) {
     appendPrimitive(model, meshIndex, primitiveIndex, primitive, transform, materialTextures, mesh);

@@ -4,11 +4,11 @@
 // Supports PNG, JPG, GIF. MP4 stub for future use.
 
 #pragma once
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <chrono>
 #include <filesystem>
-#include <glad/glad.h>
 
 // Cached animated GIF
 struct GifCache {
@@ -17,13 +17,13 @@ struct GifCache {
     int frameCount = 0;
     int currentFrame = 0;
     float timer = 0.0f;
-    std::vector<GLuint> frames;   // one GL texture per frame
+    std::vector<std::uint32_t> frames;   // one GL texture per frame
     std::vector<int> delays;      // frame delay in ms
     std::filesystem::file_time_type fileWriteTime;
 };
 
 // Load a static image (PNG/JPG). Returns OpenGL texture ID, sets outW/outH.
-GLuint loadMediaTexture(const char* path, int* outW = nullptr, int* outH = nullptr);
+std::uint32_t loadMediaTexture(const char* path, int* outW = nullptr, int* outH = nullptr);
 
 // Load an animated GIF (cached). Returns pointer to GifCache or nullptr.
 const GifCache* loadGif(const char* path);

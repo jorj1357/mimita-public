@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include <glad/glad.h>
 
 #include "world/texture-store.h"
 #include "utils/path_utils.h"

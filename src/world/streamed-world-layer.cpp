@@ -15,7 +15,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "camera.h"
@@ -119,7 +118,7 @@ std::string aliasedMaterial(const std::string& material)
     return material;
 }
 
-GLuint resolveMaterial(const std::string& material)
+std::uint32_t resolveMaterial(const std::string& material)
 {
     if (material.empty()) return gTextures.get("default");
     std::string resolved = aliasedMaterial(material);
@@ -811,9 +810,9 @@ void StreamedWorldLayer::setInstancing(bool enabled)
         __FILE__, __LINE__, __func__);
 }
 
-GLuint StreamedWorldLayer::makeChunkVao(GLuint vbo, GLuint /*instanceVbo*/)
+std::uint32_t StreamedWorldLayer::makeChunkVao(std::uint32_t vbo, std::uint32_t /*instanceVbo*/)
 {
-    GLuint vao = 0;
+    std::uint32_t vao = 0;
     vao = mimita::game::genVertexArray();
     r::bindVertexArray(vao);
     r::bindBuffer(r::BufferTarget::Array, vbo);

@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -11,7 +12,6 @@
 #include <deque>
 #include <mutex>
 #include <glm/glm.hpp>
-#include <glad/glad.h>
 #include <nlohmann/json.hpp>
 #include "avatar-autosave.h"
 #include "entities/avatar-rig.h"
@@ -171,7 +171,7 @@ struct AvatarInstance {
     std::string name;
     AvatarDefinition definition;
     std::string basePath;
-    GLuint atlasTexture = 0;
+    std::uint32_t atlasTexture = 0;
     int atlasGeneration = -1;
     std::vector<unsigned char> preparedAtlasPixels;
     ~AvatarInstance();
@@ -249,7 +249,7 @@ public:
     const AvatarAutosave& autosave() const { return mAutosave; }
 
     // ── UV atlas texture access (for glbuvinfo etc.) ─────────
-    GLuint uvAtlasTexture() const { return mUvAtlasTexture; }
+    std::uint32_t uvAtlasTexture() const { return mUvAtlasTexture; }
     int atlasWidth() const { return mAtlasWidth; }
     int atlasHeight() const { return mAtlasHeight; }
 
@@ -293,7 +293,7 @@ private:
     std::string mBasePath;
     AvatarDefinition mAvatar;
     bool mHasAvatar = false;
-    GLuint mAtlasTexture = 0;
+    std::uint32_t mAtlasTexture = 0;
 
     // Per-avatar instance cache: name -> loaded definition + atlas texture
     std::unordered_map<std::string, std::unique_ptr<AvatarInstance>> mCache;
@@ -328,7 +328,7 @@ private:
     bool mEditorChangeCaptured = false;
 
     // ── UV atlas runtime state ──────────────────────────────
-    GLuint mUvAtlasTexture = 0;
+    std::uint32_t mUvAtlasTexture = 0;
     std::filesystem::file_time_type mAtlasLastWriteTime;
     int mAtlasWidth = 0;
     int mAtlasHeight = 0;

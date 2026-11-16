@@ -6,5 +6,5 @@ make this bigger and more awseome
 */
 
 #pragma once
-#include <glad/glad.h>
-GLuint loadTexture(const char* path);
+#include <cstdint>
+std::uint32_t loadTexture(const char* path);

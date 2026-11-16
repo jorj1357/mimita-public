@@ -1,4 +1,5 @@
 // C:\important\go away v5\s\mimita-v5\src\map\texture_manager.cpp
+#include <cstdint>
 
 #include "texture_manager.h"
 #include "texture.h"
@@ -36,7 +37,7 @@ void TextureManager::init() {
     for (auto& p : paths) {
         printf("TextureManager::for auto paths start \n");
 
-        GLuint tex = loadTexture(p.c_str());
+        std::uint32_t tex = loadTexture(p.c_str());
         if (tex == 0) std::cerr << "Failed texture: " << p << "\n";
         ids.push_back(tex);
                 printf("TextureManager::for auto paths loop it finisehd  \n");
@@ -50,7 +51,7 @@ void TextureManager::init() {
 }
 
 
-GLuint TextureManager::get(size_t i) {
+std::uint32_t TextureManager::get(size_t i) {
     printf("TextureManager: texturemanager:get attempting \n");
 
     if (i >= ids.size()) i = 0;

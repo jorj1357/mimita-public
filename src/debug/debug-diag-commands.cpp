@@ -37,7 +37,7 @@ struct GlErrorEntry {
     std::string file;
     int line = 0;
     std::string op;
-    GLenum error = 0;
+    std::uint32_t error = 0;
     int frame = 0;
 };
 extern GlErrorEntry gGlErrors[256];
@@ -48,15 +48,15 @@ extern bool gRenderTraceEnabled;
 
 namespace {
 
-const char* glErrorName(GLenum err)
+const char* openopenglErrorName(std::uint32_t err)
 {
     switch (err) {
-        case GL_INVALID_ENUM: return "GL_INVALID_ENUM";
-        case GL_INVALID_VALUE: return "GL_INVALID_VALUE";
-        case GL_INVALID_OPERATION: return "GL_INVALID_OPERATION";
-        case GL_INVALID_FRAMEBUFFER_OPERATION: return "GL_INVALID_FRAMEBUFFER_OPERATION";
-        case GL_OUT_OF_MEMORY: return "GL_OUT_OF_MEMORY";
-        case GL_NO_ERROR: return "GL_NO_ERROR";
+        case 0x0500u: return "0x0500u";
+        case 0x0501u: return "0x0501u";
+        case 0x0502u: return "0x0502u";
+        case 0x0506u: return "0x0506u";
+        case 0x0505u: return "0x0505u";
+        case 0u: return "0u";
         default: return "UNKNOWN";
     }
 }
@@ -212,7 +212,7 @@ static void cmdGlErrors(const std::vector<std::string>&)
         char buf[512];
         snprintf(buf, sizeof(buf), "  [%d] %s:%d  op=%s  error=%s(0x%x)",
                  e.frame, e.file.c_str(), e.line, e.op.c_str(),
-                 glErrorName(e.error), e.error);
+                 openopenglErrorName(e.error), e.error);
         Terminal::instance().addLog(buf);
     }
 }

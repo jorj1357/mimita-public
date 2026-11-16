@@ -6,7 +6,6 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
-#include <glad/glad.h>
 #include <limits>
 
 struct Vertex {
@@ -60,7 +59,7 @@ struct Mesh {
     struct Batch {
         int materialIndex = -1;
         std::string materialName = "default";
-        GLuint texture = 0;
+        std::uint32_t texture = 0;
         size_t first = 0;
         size_t count = 0;
         bool doubleSided = false;   // GLTF material doubleSided flag
@@ -70,7 +69,7 @@ struct Mesh {
     };
 
     std::vector<Batch> batches;
-    std::vector<GLuint> ownedTextures;
+    std::vector<std::uint32_t> ownedTextures;
 };
 
 // do NOT define struct chunk here

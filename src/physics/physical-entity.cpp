@@ -26,7 +26,6 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
-#include <glad/glad.h>
 
 #include "physics/config.h"
 #include "physics/movement/actor-triangle-solver.h"

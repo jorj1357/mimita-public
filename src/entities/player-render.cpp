@@ -1,4 +1,5 @@
 #include "player.h"
+#include <cstdint>
 
 #include <algorithm>
 #include <cmath>
@@ -24,9 +25,9 @@
 namespace r = mimita::game::render;
 
 namespace {
-GLuint bindAvatarTexture(const Player& player, const Mesh::Batch& batch,
+std::uint32_t bindAvatarTexture(const Player& player, const Mesh::Batch& batch,
                          const std::string& username, const char* part) {
-    GLuint texture = batch.texture ? batch.texture : 0;
+    std::uint32_t texture = batch.texture ? batch.texture : 0;
     bool fallback = false;
     if (!texture && player.avatarInstance &&
         player.avatarInstance->atlasTexture) {

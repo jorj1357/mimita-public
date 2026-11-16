@@ -110,15 +110,33 @@ def module_source_paths(root: Path, catalog: dict, *, watch_excluded: bool = Fal
     return paths | private_headers
 
 
-def exe_source_relpaths(root: Path, catalog: dict | None = None) -> list[str]:
-    """Every src/**/*.cpp compiled into the EXE.
+COLD_EXE_OWNERS = {"resident", "bootstrap", "launcher", "tool"}
 
-    Module sources are excluded. Sources listed in a module's
-    ``shared_with_host`` migration list stay in the EXE until their host bridge
-    replaces them; the audit reports those as pending extractions.
+
+def exe_source_relpaths(root: Path, catalog: dict | None = None) -> list[str]:
+    """Every source compiled into the stable EXE.
+
+    If the generated source manifest exists, ownership is authoritative: only
+    resident/bootstrap/launcher/tool sources are EXE inputs. Game, module, test,
+    and vendor sources belong to their own targets. If the manifest is absent
+    (bootstrap setup), retain the legacy module-only exclusion.
     """
     root = Path(root).resolve()
     catalog = catalog if catalog is not None else read_catalog(root)
+    manifest_path = root / "build" / "source-manifest.json"
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            result = []
+            for row in manifest.get("sources", []):
+                relative = str(row.get("path", "")).replace("\\", "/")
+                if not relative.startswith("src/") or not relative.endswith(".cpp"):
+                    continue
+                if row.get("owner") in COLD_EXE_OWNERS:
+                    result.append(relative)
+            return sorted(set(result))
+        except (OSError, json.JSONDecodeError):
+            pass
     module_owned, _ = module_source_owners(root, catalog)
     shared = shared_with_host(root, catalog)
     result: list[str] = []

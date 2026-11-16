@@ -8,7 +8,6 @@
 #include <cstdio>
 #include <string>
 
-#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "gui/gui-coord.h"
 #include "gui/font-stuff/font-loader.h"

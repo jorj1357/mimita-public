@@ -8,7 +8,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
 

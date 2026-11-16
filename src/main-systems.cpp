@@ -1,4 +1,5 @@
 // 08 16 2026, 01 35
+#include <cstdint>
 /* purpose
 * Initializes MiMITA runtime subsystems, command registration, and default binds.
 * Connects engine-owned services to the shared gameplay and UI orchestration loop.
@@ -184,6 +185,100 @@ bool postAgentMousePosition(double x, double y)
 }
 
 }  // namespace
+
+struct MigrationProbeV1 {
+    std::uint32_t structSize = sizeof(MigrationProbeV1);
+    std::uint32_t value = 0;
+};
+
+struct MigrationProbeV2 {
+    std::uint32_t structSize = sizeof(MigrationProbeV2);
+    std::uint32_t value = 0;
+    std::uint32_t added = 0;
+};
+
+struct MigrationProbeV3 {
+    std::uint32_t structSize = sizeof(MigrationProbeV3);
+    std::uint32_t value = 0;
+    std::uint32_t added = 0;
+    std::uint32_t extra = 0;
+};
+
+bool migrateProbeV1ToV2(void* oldBlock, std::uint32_t oldSize,
+                        void* newBlock, std::uint32_t newSize) {
+    if (!oldBlock || !newBlock ||
+        oldSize < sizeof(MigrationProbeV1) ||
+        newSize < sizeof(MigrationProbeV2)) return false;
+    auto* oldValue = static_cast<MigrationProbeV1*>(oldBlock);
+    auto* newValue = static_cast<MigrationProbeV2*>(newBlock);
+    newValue->value = oldValue->value;
+    newValue->added = 7;
+    return true;
+}
+
+bool rejectProbeV2ToV3(void*, std::uint32_t, void*, std::uint32_t) {
+    return false;
+}
+
+void* migrateProbeObject(void* oldBlock, std::uint32_t oldSize,
+                         void* newBlock, std::uint32_t newSize,
+                         mimita::host::StateMigrateFn migrate, bool& created) {
+    created = false;
+#ifdef MIMITA_GAME_DLL
+    return mimita::game::ensureResidentObjectMigrating(
+        mimita::host::StateObjectId::MigrationProbe, newSize,
+        alignof(std::uint64_t), migrate, &created);
+#else
+    std::int32_t first = 0;
+    void* result = mimita::host::HostRuntime::instance().ensureStateObjectMigrating(
+        static_cast<std::uint32_t>(mimita::host::StateObjectId::MigrationProbe),
+        static_cast<std::uint32_t>(newSize),
+        static_cast<std::uint32_t>(alignof(std::uint64_t)), migrate, &first);
+    created = first != 0;
+    (void)oldBlock; (void)oldSize;
+    return result;
+#endif
+}
+
+void runStateMigrationSelfTest() {
+    static bool alreadyRan = false;
+    if (alreadyRan) {
+        Terminal::instance().addLog("[STATE] migration selftest already ran");
+        return;
+    }
+    alreadyRan = true;
+    bool created = false;
+    auto* v1 = static_cast<MigrationProbeV1*>(
+        migrateProbeObject(nullptr, 0, nullptr, sizeof(MigrationProbeV1),
+                           migrateProbeV1ToV2, created));
+    if (!v1) {
+        Terminal::instance().addLog("[STATE] migration selftest failed: v1 create");
+        return;
+    }
+    v1->value = 42;
+    auto* v2 = static_cast<MigrationProbeV2*>(
+        migrateProbeObject(v1, sizeof(MigrationProbeV1), nullptr,
+                           sizeof(MigrationProbeV2), migrateProbeV1ToV2, created));
+    const bool migrated = v2 && v2->value == 42 && v2->added == 7;
+    auto* rejected = static_cast<MigrationProbeV3*>(
+        migrateProbeObject(v2, sizeof(MigrationProbeV2), nullptr,
+                           sizeof(MigrationProbeV3), rejectProbeV2ToV3, created));
+    const bool preserved = v2 && v2->value == 42 && v2->added == 7;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "state.migration.selftest", "state",
+        migrated && preserved ? "state migration success/rollback selftest passed"
+                              : "state migration selftest failed",
+        0,
+        nlohmann::json{{"migrated", migrated},
+                       {"rejected", rejected == nullptr},
+                       {"old_state_preserved", preserved},
+                       {"new_field", v2 ? v2->added : 0}},
+        __FILE__, __LINE__, __FUNCTION__);
+    Terminal::instance().addLog(
+        migrated && preserved ? "[STATE] migration selftest PASS"
+                              : "[STATE] migration selftest FAIL");
+}
 
 void registerAgentCommands()
 {
@@ -687,6 +782,12 @@ void registerAgentCommands()
             }
         }, "2026-11-15", CommandCategory::Debug
     });
+    Terminal::instance().registerCommand({
+        "state.migration-selftest", "Verify resident state migration and rejection semantics.",
+        "state.migration-selftest",
+        [](const std::vector<std::string>&) { runStateMigrationSelfTest(); },
+        "2026-11-16", CommandCategory::Debug
+    });
 }
 
 } // namespace
@@ -751,7 +852,6 @@ void registerAgentCommands()
 #include "notifications/notification-commands.h"
 #include <windows.h>
 #include <GLFW/glfw3.h>
-#include <glad/glad.h>
 
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
@@ -891,7 +991,7 @@ void gameInitSubsystems(Engine& engine)
     r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
     r::enable(r::Capability::DepthTest);
 
-    printf("[MAIN] after glEnable and glBlendFunc()\n");
+    printf("[MAIN] after blend/depth setup\n");
 
     World& world = requireResident<World>(mimita::host::StateObjectId::World);
     printf("[MAIN] world object made; world JSON loads when PLAY is pressed so the menu appears first\n");

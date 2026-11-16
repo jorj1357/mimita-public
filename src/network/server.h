@@ -1684,7 +1684,7 @@ struct ListenServerState
     // ── Real NPC simulation (reuses the client NpcSystem) ─────────
     std::unique_ptr<NpcSystem> npcSystem;
     std::unique_ptr<World> npcWorld;
-    std::unique_ptr<Player> mirrorPlayer;
+    void* mirrorPlayer = nullptr;
     std::unordered_set<uint32_t> npcIdsAlive;
 
     // ── ICE server support ─────────────────────────────────────────────

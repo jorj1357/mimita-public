@@ -21,3 +21,13 @@ frequent for NPC avatars.
 - Log `npc.anim.bind`/`npc.anim.playback`.
 - Scale playback speed by actor movement speed.
 - Trace `effect.freeze`/`effect.down_dash` through the shared effect owner.
+
+
+## 2026-11-16 update
+
+`npcTickLocked` now defaults to true when an avatar animation set loads. Previously
+the flag defaulted false, so avatars without an explicit JSON flag played
+authored clips through the speed-scaled path instead of one authored tick per
+fixed simulation tick. NPC avatar application also uses the resident renderer
+instead of the DLL-local GLFW context check. Live visual acceptance is still
+required.

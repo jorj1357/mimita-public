@@ -5,7 +5,6 @@
 #include <cstdint>
 
 #define GLFW_INCLUDE_NONE
-#include <glad/glad.h>
 
 // Central self-diagnostic system.
 // Owns all engine introspection commands.
@@ -13,7 +12,7 @@ void registerDiagnosticCommands();
 
 // Global structured log ring buffer
 void diagLog(const char* category, const char* format, ...);
-void diagLogGL(const char* file, int line, const char* op, GLenum error);
+void diagLogGL(const char* file, int line, const char* op, std::uint32_t error);
 
 // GL error checking helper — wraps glGetError after operations
 void diagCheckGL(const char* file, int line, const char* op);

@@ -120,6 +120,14 @@ _LAST_CURRENT_PROGRESS = 0.0
 # OBJ_DIR and PCH_OUTPUT are set per build mode after MODE is resolved below.
 
 EXE_NAME = os.environ.get("MIMITA_EXE_NAME", "mimita.exe")
+# Explicit, audited migration lane. The strict cold-core gate remains the final
+# authority; this only allows a development EXE to publish while the cutover is
+# still in progress. It must never be enabled by default. Enable it with
+# MIMITA_CUTOVER_MIGRATION=1 or build/hot-reload/migration-lane.enable.
+MIGRATION_LANE = (
+    os.environ.get("MIMITA_CUTOVER_MIGRATION") == "1" or
+    os.path.isfile(os.path.join(ROOT, "build", "hot-reload",
+                                "migration-lane.enable")))
 # Machine-wide policy serializes EXE builds. Each active build uses all
 # logical processors unless the operator pins a lower job count for a
 # memory-constrained machine.
@@ -734,6 +742,19 @@ write_progress("pch", pch_s=round(PHASE_TIMINGS["pch_s"], 3))
 glad_path = os.path.join(ROOT, "src", "glad.c")
 
 object_files = []
+link_source_entries = []
+LINK_INPUTS = os.path.join(BUILD_DIR, "link-inputs-%s.json" % MODE)
+
+def record_link_source(source, obj, kind):
+    try:
+        source_rel = os.path.relpath(source, ROOT).replace("\\", "/")
+    except ValueError:
+        source_rel = str(source).replace("\\", "/")
+    link_source_entries.append({
+        "source": source_rel,
+        "object": os.path.relpath(obj, ROOT).replace("\\", "/"),
+        "kind": kind,
+    })
 
 compiled_count = 0
 skipped_count = 0
@@ -836,6 +857,7 @@ with ThreadPoolExecutor(max_workers=BUILD_JOBS) as executor:
 
         obj = obj_path(src)
         object_files.append(obj)
+        record_link_source(src, obj, "cpp")
 
         futures.append(
             executor.submit(compile_cpp_file, src)
@@ -874,7 +896,9 @@ recast_cpp_files = find_recast_cpp_files()
 with ThreadPoolExecutor(max_workers=BUILD_JOBS) as executor:
     futures = []
     for src in recast_cpp_files:
-        object_files.append(recast_obj_path(src))
+        obj = recast_obj_path(src)
+        object_files.append(obj)
+        record_link_source(src, obj, "recast")
         futures.append(executor.submit(compile_recast_file, src))
 
     for future in as_completed(futures):
@@ -897,6 +921,7 @@ with ThreadPoolExecutor(max_workers=BUILD_JOBS) as executor:
 
 glad_obj = os.path.join(OBJ_DIR, "glad.o")
 object_files.append(glad_obj)
+record_link_source(glad_path, glad_obj, "c")
 
 if source_changed(glad_path):
 
@@ -1001,7 +1026,9 @@ def compile_juice_file(src_name):
     return ("compiled", src_name)
 
 for src_name in juice_sources:
-    object_files.append(os.path.join(OBJ_DIR, "juice_" + src_name.replace(".c", ".o")))
+    juice_obj = os.path.join(OBJ_DIR, "juice_" + src_name.replace(".c", ".o"))
+    object_files.append(juice_obj)
+    record_link_source(os.path.join(juice_src_dir, src_name), juice_obj, "vendored-c")
 
 with ThreadPoolExecutor(max_workers=BUILD_JOBS) as juice_executor:
 
@@ -1080,6 +1107,7 @@ if os.path.isfile(RC_FILE):
             sys.exit(1)
         res_compiled = True
     object_files.append(RES_OBJ)
+    record_link_source(RC_FILE, RES_OBJ, "resource")
 
 # ============================================================
 # DETERMINE IF LINK NEEDED
@@ -1138,6 +1166,18 @@ os.makedirs(link_out_dir, exist_ok=True)
 link_candidate = os.path.join(
     link_out_dir, "mimita-candidate-%d.exe" % os.getpid())
 link_args = object_files + LIB_FLAGS + LINK_LIBS + LINK_FLAGS + ["-o", link_candidate]
+link_input_payload = {
+    "schema_version": 1,
+    "status": "pending",
+    "mode": MODE,
+    "exe": os.path.relpath(exe_path, ROOT).replace("\\", "/"),
+    "revision": os.environ.get("MIMITA_SOURCE_REVISION", ""),
+    "source_generation": os.environ.get("MIMITA_SOURCE_GENERATION", ""),
+    "migration_lane": MIGRATION_LANE,
+    "written_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "entries": link_source_entries,
+}
+write_json_atomic(LINK_INPUTS, link_input_payload)
 with open(link_response, "w", encoding="utf-8", newline="\n") as response:
     for argument in link_args:
         response.write('"' + argument.replace('"', '\\"') + '"\n')
@@ -1193,9 +1233,19 @@ if not os.path.isfile(link_candidate) or os.path.getsize(link_candidate) == 0:
                    link_reason=link_reason)
     sys.exit(1)
 
-cold_gate = subprocess.run(
-    [sys.executable, os.path.join(ROOT, "devscripts", "build_target_gate.py")],
-    cwd=ROOT)
+cold_gate_command = [
+    sys.executable, os.path.join(ROOT, "devscripts", "build_target_gate.py"),
+    "--link-inputs", os.path.relpath(LINK_INPUTS, ROOT),
+]
+if MIGRATION_LANE:
+    # Audited exception: publish a development EXE while the cutover is in
+    # progress. The gate still writes the exact counts, and the final flip
+    # removes this lane and requires strict zero.
+    cold_gate_command.append("--report-only")
+    cold_gate_command.append("--require-cold-zero")
+    print("[COLD CORE] MIGRATION LANE active; publishing with reported "
+          "game/cold counts", file=sys.stderr, flush=True)
+cold_gate = subprocess.run(cold_gate_command, cwd=ROOT)
 if cold_gate.returncode != 0:
     print("[COLD CORE] strict gate failed; refusing to publish EXE",
           file=sys.stderr, flush=True)
@@ -1208,6 +1258,19 @@ if cold_gate.returncode != 0:
     })
     write_progress("failed", phase_name="cold_core_gate", result="failed")
     sys.exit(1)
+
+if MIGRATION_LANE:
+    write_json_atomic(os.path.join(ROOT, "build", "hot-reload",
+                                   "migration-lane.json"), {
+        "schema_version": 1,
+        "enabled": True,
+        "mode": MODE,
+        "exe": os.path.relpath(link_candidate, ROOT).replace("\\", "/"),
+        "link_inputs": os.path.relpath(LINK_INPUTS, ROOT).replace("\\", "/"),
+        "revision": os.environ.get("MIMITA_SOURCE_REVISION", ""),
+        "written_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "warning": "development migration EXE; strict cold gate is not satisfied",
+    })
 
 try:
     os.replace(link_candidate, exe_path)
@@ -1235,6 +1298,10 @@ write_json_atomic(LINK_STATE, {
     "exe": file_signature(exe_path),
     "sha256": sha256_file(exe_path),
 })
+link_input_payload["status"] = "linked"
+link_input_payload["written_utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+link_input_payload["exe_sha256"] = sha256_file(exe_path)
+write_json_atomic(LINK_INPUTS, link_input_payload)
 try:
     os.remove(LINK_PENDING)
 except OSError:

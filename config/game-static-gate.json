@@ -34,10 +34,6 @@
       "reason": "validation-only probe generation; reverted before cutover"
     },
     {
-      "path": "src/render/render-command-legacy.cpp",
-      "reason": "EXE-only legacy implementation inside #ifndef MIMITA_GAME_DLL; the DLL uses CAP_RENDER"
-    },
-    {
       "path": "src/game/game-cli.cpp",
       "reason": "hidden replay-export FBO self-test intentionally creates its own GLFW context; it is not the live game window path"
     },

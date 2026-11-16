@@ -1,4 +1,5 @@
 // C:\important\quiet\n\mimita-priv-v7\src\world\texture-store.cpp
+#include <cstdint>
 /**
  * purpose
  * the file that actaullt does stuff with the pngs folder with textures
@@ -22,7 +23,7 @@
 // And make sure this exists in ONE cpp: feb 9 2026 
 TextureStore gTextures;
 
-GLuint TextureStore::get(const std::string& name) {
+std::uint32_t TextureStore::get(const std::string& name) {
     std::string key = name.empty() ? "default" : name;
     if (key.rfind("assets/textures/", 0) == 0)
         key = key.substr(16);
@@ -44,13 +45,13 @@ GLuint TextureStore::get(const std::string& name) {
                        "[TEXTURE] Missing texture name=%s; fallback checkerboard in use\n",
                        key.c_str());
     }
-    GLuint tex = loadTexture(path.c_str()); // your loader
+    std::uint32_t tex = loadTexture(path.c_str()); // your loader
     map[key] = tex;
     Debug::logOnce(Debug::Category::Render, key.c_str(), "[TEXTURE] Registered texture name=%s tex=%u\n", key.c_str(), tex);
     return tex;
 }
 
-GLuint TextureStore::getPath(const std::string& path, bool reload)
+std::uint32_t TextureStore::getPath(const std::string& path, bool reload)
 {
     std::string normalized = path;
     std::replace(normalized.begin(), normalized.end(), '\\', '/');
@@ -60,7 +61,7 @@ GLuint TextureStore::getPath(const std::string& path, bool reload)
         return it->second;
     if (it != map.end() && reload && it->second)
         mimita::game::deleteTexture(it->second);
-    GLuint texture = loadTexture(normalized.c_str());
+    std::uint32_t texture = loadTexture(normalized.c_str());
     map[key] = texture;
     return texture;
 }

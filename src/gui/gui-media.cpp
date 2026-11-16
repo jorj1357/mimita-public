@@ -1,4 +1,5 @@
 // C:\important\mimita-priv-v8\src\gui\gui-media.cpp
+#include <cstdint>
 // 2026-06-13
 // Purpose: Unified media rendering for GUI (PNG, JPG, GIF, future MP4)
 // Each file should expose one main concept — this file exposes GUIMedia.
@@ -36,8 +37,8 @@ static bool fileChanged(const std::string& path, std::filesystem::file_time_type
     return false;
 }
 
-static GLuint uploadFrame(const unsigned char* data, int w, int h) {
-    GLuint tex = mimita::game::genTexture();
+static std::uint32_t uploadFrame(const unsigned char* data, int w, int h) {
+    std::uint32_t tex = mimita::game::genTexture();
     namespace r = mimita::game::render;
     r::bindTexture(r::TextureTarget::Texture2D, tex);
     r::texParameteri(r::TextureTarget::Texture2D,
@@ -54,7 +55,7 @@ static GLuint uploadFrame(const unsigned char* data, int w, int h) {
     return tex;
 }
 
-GLuint loadMediaTexture(const char* path, int* outW, int* outH) {
+std::uint32_t loadMediaTexture(const char* path, int* outW, int* outH) {
     if (!path || !path[0]) return 0;
     if (outW) *outW = 0;
     if (outH) *outH = 0;
@@ -67,7 +68,7 @@ GLuint loadMediaTexture(const char* path, int* outW, int* outH) {
     }
     if (outW) *outW = w;
     if (outH) *outH = h;
-    GLuint tex = uploadFrame(data, w, h);
+    std::uint32_t tex = uploadFrame(data, w, h);
     stbi_image_free(data);
     return tex;
 }
@@ -83,7 +84,7 @@ const GifCache* loadGif(const char* path) {
         auto wt = std::filesystem::last_write_time(path, ec);
         if (!ec && wt != it->second.fileWriteTime) {
             // File changed — release old textures and reload
-            for (GLuint t : it->second.frames) {
+            for (std::uint32_t t : it->second.frames) {
                 if (t) mimita::game::deleteTexture(t);
             }
             gGifCache.erase(it);
@@ -125,7 +126,7 @@ const GifCache* loadGif(const char* path) {
 
     int frameSize = w * h * 4;
     for (int i = 0; i < frameCount; ++i) {
-        GLuint tex = uploadFrame(frames + i * frameSize, w, h);
+        std::uint32_t tex = uploadFrame(frames + i * frameSize, w, h);
         cache.frames.push_back(tex);
         cache.delays.push_back(delays ? delays[i] : 10);
     }
@@ -156,7 +157,7 @@ void updateAllGifs(float dt) {
 
 void clearMediaCache() {
     for (auto& pair : gGifCache) {
-        for (GLuint t : pair.second.frames) {
+        for (std::uint32_t t : pair.second.frames) {
             if (t) mimita::game::deleteTexture(t);
         }
     }

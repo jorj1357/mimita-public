@@ -1,4 +1,5 @@
 // 08 16 2026, 01 35
+#include <cstdint>
 /* purpose
 * Captures rendered replay frames and advances the selected MP4 export backend.
 * Owns common completion state, live-view restoration, and user notifications.
@@ -26,7 +27,6 @@
 #include <shellapi.h>
 #endif
 
-#include <glad/glad.h>
 
 #include "replay/replay.h"
 #include "replay/replay-editor.h"
@@ -347,7 +347,7 @@ void updateReplayExport()
         // [F] Framebuffer state: log viewport and the post-FX target.
         std::int32_t viewport[4] = {};
         r::getViewport(viewport);
-        GLuint postfxFbo = PostFX::instance().fboId();
+        std::uint32_t postfxFbo = PostFX::instance().fboId();
         EXPORTLOG("[EXPORT DEBUG] FB state: postfxFbo=%u defaultFbo=0 viewport=%dx%d export=%dx%d",
                   postfxFbo, viewport[2], viewport[3], w, h);
     }

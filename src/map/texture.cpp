@@ -7,7 +7,6 @@
 // jan 25 2026 
 // dont include stb image implementation here? i dont know -jorj 
 
-#include <glad/glad.h>
 #include "game/gl-resource-bridge-module.h"
 /*
 dont use this

@@ -86,9 +86,9 @@ private:
         bool proxy = false;
         std::vector<Vertex> verts;      // local space
         std::vector<Mesh::Batch> batches;
-        GLuint vao = 0;
-        GLuint vbo = 0;
-        GLuint instanceVbo = 0;
+        std::uint32_t vao = 0;
+        std::uint32_t vbo = 0;
+        std::uint32_t instanceVbo = 0;
         std::vector<glm::mat4> instances;
         bool vboDirty = true;
     };
@@ -101,8 +101,8 @@ private:
         bool proxy = false;
         bool collisionActive = true;
         AABB bounds{};
-        GLuint vao = 0;
-        GLuint vbo = 0;
+        std::uint32_t vao = 0;
+        std::uint32_t vbo = 0;
         std::vector<Mesh::Batch> batches;
         std::vector<CollisionTriangle> collisionTriangles;
         std::vector<uint32_t> collisionSolidIds;
@@ -121,7 +121,7 @@ private:
     void uploadInstanceBuffer(Template& templateData);
     void rebuildRecordVbo(ChunkRecord& record, const Template& templateData);
     void rebuildInstances();
-    GLuint makeChunkVao(GLuint vbo, GLuint instanceVbo);
+    std::uint32_t makeChunkVao(std::uint32_t vbo, std::uint32_t instanceVbo);
     void freeChunk(const ChunkRecord& record);
 
     bool mInstancing = true;

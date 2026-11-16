@@ -85,6 +85,25 @@ namespace MimitaNet {
 
 namespace {
 
+const char* residentServerTimestamp() {
+    static thread_local char buffer[32];
+    SYSTEMTIME time{};
+    GetLocalTime(&time);
+    std::snprintf(buffer, sizeof(buffer), "[%02u:%02u:%02u.%03u]",
+                  time.wHour, time.wMinute, time.wSecond,
+                  time.wMilliseconds);
+    return buffer;
+}
+
+TransportConnectionId residentMakeUdpConnectionId(const sockaddr_in& endpoint) {
+    mimita::host::ServerConnectionIdV1 id{};
+    if (mimita::host::HostRuntime::instance().serverPolicyMakeUdpConnectionId(
+            endpoint.sin_addr.s_addr, endpoint.sin_port, &id)) {
+        return {static_cast<TransportKind>(id.kind), id.value};
+    }
+    return {TransportKind::Udp, 0};
+}
+
 void setSpawnOverrideThunk(void*, std::int32_t enabled, float x, float y,
                            float z) {
     mimita::host::HostServerWorldAdapter::instance().setSpawnOverride(
@@ -588,7 +607,8 @@ void reportServerPerf(const char* label,
                       uint32_t previousTick,
                       uint64_t elapsedMs)
 {
-    const ServerProjectilePerfStats projectile = consumeServerProjectilePerfStats();
+    mimita::host::ServerProjectilePerfV1 projectile{};
+    mimita::host::HostRuntime::instance().serverPolicyProjectilePerf(&projectile);
     const double elapsedSec = std::max(0.001, (double)elapsedMs / 1000.0);
     const double hz = (double)(tick - previousTick) / elapsedSec;
     const double avgLoopMs = perf.sampleCount > 0
@@ -715,11 +735,7 @@ bool isServerHost()
             return true;
     }
     // Listen server active in this process (hosting via the in-game menu).
-    if (hostedRoomSession().active)
-        return true;
-    if (ListenServerState* s = ::getListenServerState())
-        return s->active;
-    return false;
+    return hostedRoomSession().active;
 }
 
 int runServer(const LaunchOptions& options)
@@ -731,9 +747,6 @@ int runServer(const LaunchOptions& options)
 
     // Disable audio on dedicated server — it only wastes resources
     setServerAudioMode(true);
-    VehicleSystem::instance().setServerProcess(true);
-    VehicleSystem::instance().loadConfig("config/vehicles");
-    VehicleSystem::instance().registerFixedTick();
 
     ::StructuredLogger::instance().init();
     mimita::host::HostRuntime::instance().startFromEnvironment();
@@ -746,6 +759,15 @@ int runServer(const LaunchOptions& options)
             {{"reason", (disabled && std::strcmp(disabled, "1") == 0)
                             ? "disabled"
                             : "no-generation"}},
+            __FILE__, __LINE__, __func__);
+        return 1;
+    }
+    if (!mimita::host::HostRuntime::instance().serverPolicyAvailable()) {
+        ::StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Errors,
+            "game.server.policy-required", "server",
+            "server refused to start without the hot server policy export", 0,
+            {{"reason", "missing-server-policy"}},
             __FILE__, __LINE__, __func__);
         return 1;
     }
@@ -802,147 +824,114 @@ int runServer(const LaunchOptions& options)
         options.mapName.c_str(), ::StructuredLogger::instance().runId().c_str(),
         ::StructuredLogger::instance().eventsPath().c_str());
 
-    // Load the standard player body shape headlessly so the authoritative
-    // server can reconstruct real body-part hitboxes (players + NPCs) for hit
-    // validation. This is the single source of truth for body shape.
-    if (gServerBodyTemplate.empty())
-        loadServerBodyTemplateFromGlb(nullptr, gServerBodyTemplate);
+    mimita::host::ServerStartupV1 startupRequest{};
+    startupRequest.mapName = options.mapName.c_str();
+    startupRequest.gameMode = options.gameMode.c_str();
+    startupRequest.gamemodeId = options.gamemodeId.c_str();
+    startupRequest.serverName = options.name.c_str();
+    startupRequest.hostPlayerName = options.hostPlayerName.c_str();
+    startupRequest.password = options.password.c_str();
+    startupRequest.proceduralMode = options.proceduralMode.c_str();
+    startupRequest.proceduralSeed = options.proceduralSeed;
+    startupRequest.npcCount = options.npcCount;
+    startupRequest.npcsEnabled = options.npcsEnabled ? 1u : 0u;
+    startupRequest.weaponSetId = options.weaponSetId;
+    startupRequest.weaponSetExplicit = options.weaponSetExplicit ? 1u : 0u;
+    startupRequest.autoMapRotation = options.autoMapRotation ? 1u : 0u;
+    startupRequest.mapRotationMinutes = options.mapRotationMinutes;
+    startupRequest.discordNotification = options.discordNotification ? 1u : 0u;
+    startupRequest.passwordProtected = options.passwordProtected ? 1u : 0u;
+    startupRequest.maxPlayers = options.maxPlayers;
+    startupRequest.duel = options.duel ? 1u : 0u;
+    startupRequest.spawnOverrideEnabled = gServerOverrides.spawnOverrideEnabled ? 1u : 0u;
+    startupRequest.spawnOverride[0] = gServerOverrides.spawnOverridePosition.x;
+    startupRequest.spawnOverride[1] = gServerOverrides.spawnOverridePosition.y;
+    startupRequest.spawnOverride[2] = gServerOverrides.spawnOverridePosition.z;
 
-    WeaponData::registerBuiltinWeapons();
-    printf("%s [SERVER] registered built-in weapons\n", serverTimestamp());
-
-    // Load NPC difficulty config so server-authoritative NPC damage/fire rate
-    // honors config/npc-difficulty.json (hot-reloaded in the server loop below).
     startupStageStart = std::chrono::steady_clock::now();
     logStartupStage("configuration_load", "started",
                     "loading server mode and actor configuration");
-    NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
-    CommunityServerConfig::instance().load();
-    GamemodeRegistry::instance().loadDirectory("config/gamemodes");
-    {
-        std::vector<std::string> packDiagnostics;
-        const bool packsOk = MimitaGamemode::ModePackRegistry::instance().loadDirectory(
-            "config/mode-packs", &packDiagnostics);
-        if (!packsOk) {
-            for (const std::string& line : packDiagnostics)
-                printf("%s [MODEPACK] %s\n", serverTimestamp(), line.c_str());
-        }
-        printf("%s [MODEPACK] loaded=%zu\n", serverTimestamp(),
-               MimitaGamemode::ModePackRegistry::instance().size());
+    mimita::host::ServerStartupResultV1 startupResult{};
+    const bool startupOk =
+        mimita::host::HostRuntime::instance().serverPolicyStartup(
+            &startupRequest, &startupResult);
+    if (!startupOk || startupResult.ok == 0) {
+        logStartupStage("configuration_load", "failed",
+                        startupResult.error[0] ? startupResult.error
+                                               : "server policy startup failed");
+        ::StructuredLogger::instance().shutdown();
+        return 1;
     }
-    MatchRoleRegistry::instance().load("config/roles.json");
-    MatchRoleRegistry::instance().loadActorPresets("config/actor-presets");
-    MonsterPoolRegistry::instance().load("config/monster-pools.json");
-    BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
-    GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
+    std::string mapName = startupResult.resolvedMapName;
+    std::string mapPath = startupResult.resolvedMapPath;
+    const std::uint32_t resolvedMaxPlayers = startupResult.resolvedMaxPlayers;
+    mimita::host::setSessionMapId(mapName);
     logStartupStage("configuration_load", "complete",
         "server mode and actor configuration loaded",
         std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - startupStageStart).count(),
         nlohmann::json{{"requested_map", options.mapName},
+                       {"resolved_map", mapName},
                        {"requested_mode", options.gameMode}});
-
-    // Validate grenade launcher config at startup
-    {
-        const WeaponDefinition* glDef = WeaponRegistry::instance().get("grenade_launcher");
-        if (glDef) {
-            printf("%s [SERVER GRENADE CONFIG] projectileSpeed=%.1f projectileRadius=%.2f "
-                   "projectileLifetime=%.1f fireDelay=%.2f customParams=%zu\n",
-                   serverTimestamp(), glDef->projectileSpeed, glDef->projectileRadius,
-                   glDef->projectileLifetime, glDef->fireDelay, glDef->customParams.size());
-            auto cp = [&](const char* key, float fb) {
-                auto it = glDef->customParams.find(key);
-                return it != glDef->customParams.end() ? it->second : fb;
-            };
-            printf("%s [SERVER GRENADE PHYSICS] gravity=%.1f drag=%.2f restitution=%.2f "
-                   "friction=%.2f upBias=%.1f maxBounce=%.0f forwardSpeed=%.1f\n",
-                   serverTimestamp(), cp("gravity", 20.0f), cp("drag", 0.15f),
-                   cp("bounceRestitution", 0.35f), cp("bounceFriction", 0.5f),
-                   cp("upBias", 4.0f), cp("maxBounceCount", 10.0f),
-                   cp("forwardSpeed", 18.0f));
-        } else {
-            printf("%s [SERVER GRENADE CONFIG] grenade_launcher NOT FOUND in registry\n", serverTimestamp());
-        }
-    }
-
-    printf("%s [SERVER] ========================================\n", serverTimestamp());
-    printf("%s [SERVER] MiMITA Dedicated Server\n", serverTimestamp());
-    printf("%s [SERVER] protocol version=%u\n", serverTimestamp(), PROTOCOL_VERSION);
-    printf("%s [SERVER] tick rate=%.0f Hz\n", serverTimestamp(), SERVER_TICK_RATE);
-    printf("%s [SERVER] max players=%d\n", serverTimestamp(), MAX_PLAYERS);
-    printf("%s [SERVER] timeout=%llums\n", serverTimestamp(), (unsigned long long)CLIENT_TIMEOUT_MS);
-    printf("%s [SERVER] coordinator=%s\n", serverTimestamp(),
-           getCoordinatorUrl().c_str());
-    printf("%s [SERVER] ========================================\n", serverTimestamp());
-
-    printf("%s [SERVER START SETTINGS] map=%s npcCount=%u serverName=%s roomCode=%s\n",
-           serverTimestamp(),
-           options.mapName.c_str(), options.npcCount,
-           options.name.c_str(), "pending");
-
-    // Determine map path from options. A mode that declares its own maps list
-    // uses that map unless the operator explicitly chose a different one.
-    std::string mapName = options.mapName.empty() ? "funworld3" : options.mapName;
-    const std::string modeDefaultMap = gamemodeDefaultMap(options.gameMode);
-    if (options.mapName.empty() && !modeDefaultMap.empty())
-        mapName = modeDefaultMap;
-    std::string mapPath = "assets/maps/" + mapName + ".glb";
-    mimita::host::setSessionMapId(mapName);
-    printf("%s [SERVER MAP] mapId=%s path=%s\n", serverTimestamp(), mapName.c_str(), mapPath.c_str());
-
-    {
-        std::error_code ec;
-        bool exists = std::filesystem::exists(mapPath, ec);
-        bool isDir = std::filesystem::is_directory(mapPath, ec);
-        auto fsize = exists && !isDir ? std::filesystem::file_size(mapPath, ec) : 0;
-        printf("%s [SERVER WORLD PATH] original=%s exists=%d isFile=%d isDirectory=%d size=%lld\n",
-               serverTimestamp(), mapPath.c_str(), (int)exists, (int)(exists && !isDir), (int)isDir, (long long)fsize);
-    }
+    printf("%s [SERVER MAP] mapId=%s path=%s\n", residentServerTimestamp(),
+           mapName.c_str(), mapPath.c_str());
 
     HeadlessWorld world;
+    World npcWorld;
     startupStageStart = std::chrono::steady_clock::now();
     logStartupStage("world_load", "started", "loading map collision world", 0.0,
                     nlohmann::json{{"resolved_map_path", mapPath}});
-    const bool worldLoaded = loadHeadlessWorld(mapPath.c_str(), world);
-    logStartupStage("world_load", worldLoaded ? "complete" : "fallback",
-        worldLoaded ? "map collision world loaded" : "map load used floor fallback",
+    mimita::host::ServerWorldLoadV1 worldRequest{};
+    worldRequest.mapName = mapName.c_str();
+    worldRequest.mapPath = mapPath.c_str();
+    worldRequest.gameMode = options.gameMode.c_str();
+    worldRequest.headlessWorld = &world;
+    worldRequest.npcWorld = &npcWorld;
+    mimita::host::ServerWorldLoadResultV1 worldResult{};
+    const bool worldOk =
+        mimita::host::HostRuntime::instance().serverPolicyWorldLoad(
+            &worldRequest, &worldResult);
+    if (!worldOk || worldResult.ok == 0) {
+        logStartupStage("world_load", "failed",
+                        worldResult.error[0] ? worldResult.error
+                                             : "server policy world load failed");
+        ::StructuredLogger::instance().shutdown();
+        return 1;
+    }
+    logStartupStage("world_load", worldResult.mapLoaded ? "complete" : "fallback",
+        worldResult.mapLoaded ? "map collision world loaded"
+                              : "map load used floor fallback",
         std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - startupStageStart).count(),
         nlohmann::json{{"resolved_map_path", mapPath},
-                       {"triangle_count", world.triangles.size()},
-                       {"spawn_count", world.spawnPoints.size()}});
-    if (!worldLoaded)
-        printf("%s [SERVER WORLD] WARNING: headless GLB collision load failed; using floor fallback\n", serverTimestamp());
-    else {
-        serverCaptureAuthoredBaseWorld(world, mapName);
-        applyAuthoredMapGeometry(
-            world, mapName,
-            GamemodeRegistry::instance().get(options.gameMode)
-                .worldStreaming.enabled);
-        serverSeedAuthoredCache(world);
-    }
+                       {"triangle_count", worldResult.triangleCount},
+                       {"spawn_count", worldResult.spawnCount},
+                       {"npc_collision_triangles",
+                        worldResult.npcCollisionTriangles}});
 
-    // Real client World + NpcSystem so online NPCs run the exact local NPC AI.
-    World npcWorld;
-    // Build the shared NPC collision world before the socket accepts clients.
-    // Its first construction can take seconds on authored maps, so it must not
-    // run inside the first fixed gameplay tick when an NPC becomes active.
-    startupStageStart = std::chrono::steady_clock::now();
-    logStartupStage("npc_collision_build", "started",
-                    "building server NPC collision world");
-    buildNpcWorldCollision(npcWorld, world);
-    logStartupStage("npc_collision_build", "complete",
-        "server NPC collision world built",
-        std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - startupStageStart).count(),
-        nlohmann::json{{"triangle_count", npcWorld.collisionMesh.triangles.size()}});
+    struct PolicyPlayerGuard {
+        void* pointer = nullptr;
+        ~PolicyPlayerGuard() {
+            if (pointer) {
+                mimita::host::HostRuntime::instance()
+                    .serverPolicyDestroyPlayer(pointer);
+            }
+        }
+    } mirrorPlayerGuard{
+        mimita::host::HostRuntime::instance().serverPolicyCreatePlayer()};
+    void* mirrorPlayer = mirrorPlayerGuard.pointer;
+    if (!mirrorPlayer) {
+        logStartupStage("player_mirror", "failed",
+                        "server policy could not create the NPC mirror player");
+        ::StructuredLogger::instance().shutdown();
+        return 1;
+    }
     NpcSystem npcSystem;
-    Player mirrorPlayer;
     std::unordered_set<uint32_t> npcIdsAlive;
 
     if (!netStartup())
     {
-        printf("%s [SERVER] FATAL: WSAStartup failed\n", serverTimestamp());
+        printf("%s [SERVER] FATAL: WSAStartup failed\n", residentServerTimestamp());
         logServerExit(1, "winsock_startup_failed", "", 0);
         ::StructuredLogger::instance().shutdown();
         return 1;
@@ -951,7 +940,7 @@ int runServer(const LaunchOptions& options)
     SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock == INVALID_SOCKET)
     {
-        printf("%s [SERVER] FATAL: socket() failed error=%d\n", serverTimestamp(), WSAGetLastError());
+        printf("%s [SERVER] FATAL: socket() failed error=%d\n", residentServerTimestamp(), WSAGetLastError());
         logServerExit(1, "socket_creation_failed", "", 0);
         netShutdown();
         ::StructuredLogger::instance().shutdown();
@@ -965,7 +954,7 @@ int runServer(const LaunchOptions& options)
                    sizeof(exclusiveAddressUse)) == SOCKET_ERROR)
     {
         printf("%s [SERVER] FATAL: setsockopt SO_EXCLUSIVEADDRUSE failed error=%d\n",
-               serverTimestamp(), WSAGetLastError());
+               residentServerTimestamp(), WSAGetLastError());
         logServerExit(1, "exclusive_bind_policy_failed", "", 0);
         closesocket(sock);
         netShutdown();
@@ -980,7 +969,7 @@ int runServer(const LaunchOptions& options)
     if (!resolveServerBindAddress(options, bindAddr, requestedBind))
     {
         printf("%s [SERVER] FATAL: invalid bind address requested=%s family=AF_INET\n",
-               serverTimestamp(), requestedBind.c_str());
+               residentServerTimestamp(), requestedBind.c_str());
         logServerExit(1, "invalid_bind_address", "", 0);
         closesocket(sock);
         netShutdown();
@@ -993,10 +982,10 @@ int runServer(const LaunchOptions& options)
     if (bind(sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
     {
         int err = WSAGetLastError();
-        printf("%s [SERVER] FATAL: bind() failed error=%d\n", serverTimestamp(), err);
+        printf("%s [SERVER] FATAL: bind() failed error=%d\n", residentServerTimestamp(), err);
         if (err == WSAEADDRINUSE)
             printf("%s [SERVER] HINT: Address %s is already in use. Is another server already running?\n",
-                   serverTimestamp(), addressToString(bindAddr).c_str());
+                   residentServerTimestamp(), addressToString(bindAddr).c_str());
         logServerExit(1, "socket_bind_failed", "", 0);
         closesocket(sock);
         netShutdown();
@@ -1013,12 +1002,12 @@ int runServer(const LaunchOptions& options)
                        {"port", actualPort}});
     printf("%s [SERVER TRANSPORT READY] protocol=%u role=dedicated-udp pid=%lu exe=\"%s\" cwd=\"%s\" "
            "requested=%s actual=%s family=AF_INET reuse=1 nonblocking=%d\n",
-           serverTimestamp(), PROTOCOL_VERSION, (unsigned long)GetCurrentProcessId(),
+           residentServerTimestamp(), PROTOCOL_VERSION, (unsigned long)GetCurrentProcessId(),
            processPath().c_str(), currentDirectory().c_str(),
            requestedBind.c_str(), addressToString(actualBindAddr).c_str(),
            (int)nonBlockingOk);
-    printf("%s [SERVER] bound to %s\n", serverTimestamp(), addressToString(actualBindAddr).c_str());
-    printf("%s [SERVER] waiting for connections...\n", serverTimestamp());
+    printf("%s [SERVER] bound to %s\n", residentServerTimestamp(), addressToString(actualBindAddr).c_str());
+    printf("%s [SERVER] waiting for connections...\n", residentServerTimestamp());
 
     std::unordered_map<uint32_t, ServerPlayer> players;
     std::unordered_map<uint32_t, ServerNpc> npcs;
@@ -1099,11 +1088,7 @@ int runServer(const LaunchOptions& options)
     dedicatedIceState.serverName = options.name.empty() ? "MiMITA Server" : options.name;
     dedicatedIceState.mapName = mapName;
     dedicatedIceState.gameMode = options.gameMode;
-    const CommunityMode* selectedCommunityMode =
-        CommunityServerConfig::instance().modeById(options.gameMode);
-    dedicatedIceState.maxPlayers = selectedCommunityMode && selectedCommunityMode->maxPlayers > 0
-        ? std::min<uint32_t>(options.maxPlayers, (uint32_t)selectedCommunityMode->maxPlayers)
-        : options.maxPlayers;
+    dedicatedIceState.maxPlayers = resolvedMaxPlayers;
     dedicatedIceState.weaponSetId = options.weaponSetId;
     dedicatedIceState.autoMapRotation = options.autoMapRotation;
     dedicatedIceState.mapRotationMinutes = options.mapRotationMinutes;
@@ -1117,120 +1102,46 @@ int runServer(const LaunchOptions& options)
     dedicatedIceState.port = actualPort;
     std::vector<PendingServerTransport> pendingIceTransports;
 
-    // Duel mode: run a first-to-goal PvP match between the first two players.
-    if (options.duel)
-    {
-        const Gamemode& gm = GamemodeRegistry::instance().get(options.gamemodeId);
-        ServerGamemodeState duelRules;
-        duelRules.goalValue = gm.goalValue;
-        duelRules.countdownSeconds = gm.countdownSeconds;
-        duelRules.rematchSeconds = gm.rematchSeconds;
-        duelRules.teamAName = gm.teamNames.size() > 0 ? gm.teamNames[0] : "RED";
-        duelRules.teamBName = gm.teamNames.size() > 1 ? gm.teamNames[1] : "BLUE";
-        duelRules.spawnOffsetRadius = gm.spawnOffsetRadius;
-        duelRules.mapPool = GamemodeMapPool::instance().list();
-        duelRules.rotateMaps = true;
-        duelRules.mapId = mapName;
-        serverGamemodeStart(duelRules);
-        printf("%s [SERVER DUEL] enabled gamemode=%s goal=%d countdown=%.1fs rematch=%.1fs\n",
-               serverTimestamp(), options.gamemodeId.c_str(), gm.goalValue,
-               gm.countdownSeconds, gm.rematchSeconds);
+    startupStageStart = std::chrono::steady_clock::now();
+    logStartupStage("map_config_load", "started",
+                    "configuring map objective and mode policy");
+    mimita::host::ServerConfigureV1 configureRequest{};
+    configureRequest.mapName = mapName.c_str();
+    configureRequest.gameMode = options.gameMode.c_str();
+    configureRequest.gamemodeId = options.gamemodeId.c_str();
+    configureRequest.npcCount = options.npcCount;
+    configureRequest.npcsEnabled = options.npcsEnabled ? 1u : 0u;
+    configureRequest.weaponSetId = options.weaponSetId;
+    configureRequest.weaponSetExplicit = options.weaponSetExplicit ? 1u : 0u;
+    configureRequest.autoMapRotation = options.autoMapRotation ? 1u : 0u;
+    configureRequest.mapRotationMinutes = options.mapRotationMinutes;
+    configureRequest.duel = options.duel ? 1u : 0u;
+    configureRequest.spawnOverrideEnabled = gServerOverrides.spawnOverrideEnabled ? 1u : 0u;
+    configureRequest.spawnOverride[0] = gServerOverrides.spawnOverridePosition.x;
+    configureRequest.spawnOverride[1] = gServerOverrides.spawnOverridePosition.y;
+    configureRequest.spawnOverride[2] = gServerOverrides.spawnOverridePosition.z;
+    configureRequest.headlessWorld = &world;
+    configureRequest.npcs = &npcs;
+    configureRequest.nextEntityId = &nextEntityId;
+    mimita::host::ServerConfigureResultV1 configureResult{};
+    const bool configureOk =
+        mimita::host::HostRuntime::instance().serverPolicyConfigure(
+            &configureRequest, &configureResult);
+    if (!configureOk || configureResult.ok == 0) {
+        logStartupStage("map_config_load", "failed",
+                        configureResult.error[0] ? configureResult.error
+                                                 : "server policy configure failed");
+        ::StructuredLogger::instance().shutdown();
+        return 1;
     }
-    else
-    {
-        startupStageStart = std::chrono::steady_clock::now();
-        logStartupStage("map_config_load", "started",
-                        "loading map objective and authored configuration");
-        serverCommunityMapStart(communityMapPool(), mapName,
-                                options.autoMapRotation,
-                                options.mapRotationMinutes,
-                                options.weaponSetId);
-        logStartupStage("map_config_load", "complete",
-            "map configuration applied",
-            std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - startupStageStart).count(),
-            nlohmann::json{{"config_path", MapConfigRegistry::instance().configPath()},
-                           {"revision", MapConfigRegistry::instance().revision()},
-                           {"entity_count", MapConfigRegistry::instance().current().entities.size()},
-                           {"route_count", MapConfigRegistry::instance().current().payload.route.size()}});
-        startupStageStart = std::chrono::steady_clock::now();
-        logStartupStage("mode_activation", "started", "activating community game mode");
-        serverCommunitySetMode(options.gameMode);
-        // Auto leaves the mode's weapon_set_id in control. A concrete GUI/CLI
-        // choice overrides that default for every managed gamemode.
-        if (options.weaponSetExplicit)
-            serverCommunitySetWeaponSet(options.weaponSetId);
-        if (options.gameMode != "sandbox")
-            serverCommunityStartMatch(false);
-        logStartupStage("mode_activation", "complete", "community game mode activated",
-            std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - startupStageStart).count(),
-            nlohmann::json{{"active_mode", serverGamemodeState().communityMode},
-                           {"match_mode", serverGamemodeState().matchMode},
-                           {"match_seed", serverGamemodeState().matchSeed},
-                           {"match_start_tick", serverGamemodeState().matchStartTick}});
-    }
-
-    if (MapConfigRegistry::instance().current().arena.present)
-    {
-        std::string ballError;
-        if (ArenaBall::spawnFromMap(MapConfigRegistry::instance().current(),
-                                    &ballError) == 0 && !ballError.empty()) {
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::Physics, StructuredLevel::Errors,
-                "arena.ball.spawn-failed", mapName,
-                "map authored an arena ball but the server could not spawn it",
-                0, nlohmann::json{{"map", mapName}, {"error", ballError}},
-                __FILE__, __LINE__, __FUNCTION__);
-        }
-    }
-
-    // Startup NPCs (controlled by --npcs and --no-npcs flags)
-    {
-        // Fun Counter Strike owns its NPC population through the authored
-        // round roster. A generic startup NPC has no FCS team/role and would
-        // otherwise be simulated and replicated before the first roster is
-        // built. Keep mode-assigned roster NPCs enabled at their normal owner.
-        const bool fcsOwnsNpcRoster = options.gameMode == "funcounterstrike";
-        const uint32_t npcCount = options.npcsEnabled && !fcsOwnsNpcRoster
-            ? options.npcCount : 0;
-        if (fcsOwnsNpcRoster && options.npcsEnabled && options.npcCount > 0) {
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::Duel, StructuredLevel::Important,
-                "gamemode.npc.startup-suppressed", options.gameMode,
-                "generic startup NPCs suppressed because FCS builds an authored team roster",
-                0,
-                nlohmann::json{{"mode", options.gameMode},
-                               {"requested_startup_npcs", options.npcCount},
-                               {"spawned_startup_npcs", 0},
-                               {"reason", "mode_owned_team_roster"}},
-                __FILE__, __LINE__, __func__);
-        }
-        for (uint32_t i = 0; i < npcCount; ++i)
-        {
-            ServerNpc npc;
-            npc.entityId = nextEntityId++;
-            npc.name = "NPC " + std::to_string(i + 1);
-            if (!world.spawnPoints.empty())
-            {
-                size_t idx = i % world.spawnPoints.size();
-                npc.pos = effectiveServerSpawn(world.spawnPoints[idx].position);
-                npc.yaw = world.spawnPoints[idx].yaw;
-                printf("%s [SERVER NPC SPAWN] reason=startup entityId=%u npcIndex=%u "
-                       "spawnpoint=%zu position=(%.2f,%.2f,%.2f)\n",
-                       serverTimestamp(), npc.entityId, i, idx,
-                       npc.pos.x, npc.pos.y, npc.pos.z);
-            }
-            else
-            {
-                npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
-            }
-            npc.phase = i * 2.0f;
-            npcs[npc.entityId] = npc;
-        }
-        printf("%s [SERVER NPC STARTUP] enabled=%d requested=%u spawned=%zu\n",
-               serverTimestamp(), (int)options.npcsEnabled, npcCount, npcs.size());
-    }
+    logStartupStage("map_config_load", "complete", "map configuration applied",
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - startupStageStart).count(),
+        nlohmann::json{{"map", mapName},
+                       {"mode", options.gameMode},
+                       {"duel", options.duel},
+                       {"arena_ball_spawned", configureResult.arenaBallSpawned != 0},
+                       {"startup_npcs", configureResult.startupNpcCount}});
 
     // ── Register server with coordinator in the background ──
     std::string serverCode;
@@ -1267,7 +1178,7 @@ int runServer(const LaunchOptions& options)
             }
             if (!ok)
                 printf("%s [SERVER ICE] registration failed; local server remains available\n",
-                       serverTimestamp());
+                       residentServerTimestamp());
         });
     }
     ::StructuredLogger::instance().writeEvent(
@@ -1300,8 +1211,14 @@ int runServer(const LaunchOptions& options)
     uint64_t lastLifecycleHeartbeatMs = serverStartMs;
     const char* serverExitReason = "server_loop_completed";
 
-    PersistenceQueue::instance().beginSession(serverCode, AuthSystem::instance().user().sessionToken,
-                                              AuthSystem::instance().user().id);
+    {
+        mimita::host::ServerAuthIdentityV1 authIdentity{};
+        if (mimita::host::HostRuntime::instance().serverPolicyAuthIdentity(
+                &authIdentity)) {
+            PersistenceQueue::instance().beginSession(
+                serverCode, authIdentity.token, authIdentity.userId);
+        }
+    }
     while (true)
     {
         ModuleHost::instance().poll();
@@ -1337,7 +1254,7 @@ int runServer(const LaunchOptions& options)
                     std::chrono::steady_clock::now() - roomRegistrationStart).count(),
                 nlohmann::json{{"room_code", serverCode}, {"port", actualPort}});
             printf("%s [SERVER ICE] registered: code=%s\n",
-                   serverTimestamp(), serverCode.c_str());
+                   residentServerTimestamp(), serverCode.c_str());
             std::vector<uint32_t> startupNpcIds;
             startupNpcIds.reserve(npcs.size());
             for (const auto& entry : npcs)
@@ -1380,7 +1297,7 @@ int runServer(const LaunchOptions& options)
         // Auto-exit when --timeout is set (for CI/agent testing)
         if (options.timeoutSecs > 0 && nowMs() - serverStartMs > (uint64_t)options.timeoutSecs * 1000)
         {
-            printf("%s [SERVER] timeout=%us reached, exiting\n", serverTimestamp(), options.timeoutSecs);
+            printf("%s [SERVER] timeout=%us reached, exiting\n", residentServerTimestamp(), options.timeoutSecs);
             serverExitReason = "timeout_elapsed";
             break;
         }
@@ -1407,47 +1324,9 @@ int runServer(const LaunchOptions& options)
                 (unsigned long long)(heartbeatNowMs - serverStartMs));
         }
 
-        // Hot-reload networkingconfig.json so the hosted/dedicated server picks
-        // up server_smoothing (and the shared badconn block) live.
-        NetworkingConfig::instance().pollReload();
-
-        // Hot-reload config/npc-difficulty.json so server NPC damage/fire rate
-        // edits apply live without a server restart.
-        NpcDifficultyConfig::instance().pollReload();
-        static uint64_t dedicatedNpcDifficultyRevision = 0;
-        if (dedicatedNpcDifficultyRevision != NpcDifficultyConfig::instance().revision())
-        {
-            npcSystem.refreshDifficultyTuning();
-            dedicatedNpcDifficultyRevision = NpcDifficultyConfig::instance().revision();
-        }
-        CommunityServerConfig::instance().pollReload();
-        // Hot-reload config/mode-packs/*.json (timestamp-gated). A failed
-        // reload keeps the last valid catalog; the active match is unaffected.
-        MimitaGamemode::ModePackRegistry::instance().pollReload();
-        // The authoritative server owns respawn velocity. Reload it here so
-        // changing spawnvelocity.json affects the next life without restart.
-        SpawnVelocityConfig::instance().pollReload();
-
-        // Hot-reload the movement preset (config/movement.json + preset) so the
-        // server's movement-validation tolerances match the client's live tuning.
-        MovementJsonConfig::instance().pollReload();
-
-        // Validate and publish collision-clash settings on this fixed tick so
-        // the dedicated server cannot keep stale weapon_vs_weapon values.
-        CollisionConfig::instance().pollHotReload(tick);
-
-        // Refresh cached role movement presets whose files changed on disk.
-        RoleMovementCache::instance().pollReload();
-
-        // Hot-reload config/roles.json so role/profile references apply live.
-    if (MatchRoleRegistry::instance().pollReload())
-        ActorPresetWeapons::refresh();
-    BehaviorProfileRegistry::instance().pollReload();
-    RoleMovementCache::instance().pollReload();
-
-        // Hot-reload config/weapons.json (rate-limited to 250ms internally) so
-        // live weapon damage/falloff edits apply without a server restart.
-        WeaponData::reloadBuiltinWeaponsIfChanged();
+        // Game-owned config reload policy runs in the active generation.
+        mimita::host::HostRuntime::instance().serverPolicyPollReload(
+            &npcSystem, tick);
 
         // Measure wall-clock elapsed time
         auto currentTime = std::chrono::steady_clock::now();
@@ -1476,7 +1355,7 @@ int runServer(const LaunchOptions& options)
                     if (getsockname(sock, (sockaddr*)&localEp, &localEpLen) == 0)
                         localStr = addressToString(localEp);
                     printf("%s [NET RX ERROR] sock=%d error=%d local=%s\n",
-                           serverTimestamp(), (int)sock, wsaErr, localStr.c_str());
+                           residentServerTimestamp(), (int)sock, wsaErr, localStr.c_str());
                     ++transportStats.recvErrors;
                 }
                 else
@@ -1484,7 +1363,7 @@ int runServer(const LaunchOptions& options)
                 break;
             }
             TransportReceiveEvent event{};
-            event.connectionId = makeUdpConnectionId(from);
+            event.connectionId = residentMakeUdpConnectionId(from);
             event.remoteEndpoint = from;
             event.payload = reinterpret_cast<const uint8_t*>(buffer);
             event.payloadBytes = bytes;
@@ -1542,7 +1421,7 @@ int runServer(const LaunchOptions& options)
                 packetFrame.transportStats = &transportStats;
                 packetFrame.disagreementRetransmit = &disagreementRetransmit;
                 packetFrame.npcIdsAlive = &npcIdsAlive;
-                packetFrame.mirrorPlayer = &mirrorPlayer;
+                packetFrame.mirrorPlayer = mirrorPlayer;
                 packetFrame.nextPlayerId = &nextPlayerId;
                 packetFrame.nextEntityId = &nextEntityId;
                 packetFrame.nextProjectileId = &nextProjectileId;
@@ -1596,7 +1475,7 @@ int runServer(const LaunchOptions& options)
             serverFrame.transportStats = &transportStats;
             serverFrame.disagreementRetransmit = &disagreementRetransmit;
             serverFrame.npcIdsAlive = &npcIdsAlive;
-            serverFrame.mirrorPlayer = &mirrorPlayer;
+            serverFrame.mirrorPlayer = mirrorPlayer;
             serverFrame.nextPlayerId = &nextPlayerId;
             serverFrame.nextEntityId = &nextEntityId;
             serverFrame.nextProjectileId = &nextProjectileId;
@@ -1775,7 +1654,7 @@ int runServer(const LaunchOptions& options)
             double elapsedSec = (double)(nowMsVal - s_timingStartMs) / 1000.0;
             double actualHz = (double)(tick - s_lastTimingTick) / elapsedSec;
             printf("%s [SERVER TIMING] ticks=%u elapsed=%.1fs actualHz=%.1f players=%zu projectiles=%zu\n",
-                   serverTimestamp(), tick - s_lastTimingTick, elapsedSec, actualHz,
+                   residentServerTimestamp(), tick - s_lastTimingTick, elapsedSec, actualHz,
                    players.size(), projectiles.size());
             s_lastTimingTick = tick;
             s_timingStartMs = nowMsVal;
@@ -1787,7 +1666,7 @@ int runServer(const LaunchOptions& options)
             if (tick - s_lastHeartbeatTick >= 300)
             {
                 printf("%s [SERVER HEARTBEAT] tick=%u players=%zu — alive\n",
-                       serverTimestamp(), tick, players.size());
+                       residentServerTimestamp(), tick, players.size());
                 fflush(stdout);
                 s_lastHeartbeatTick = tick;
             }
@@ -1799,7 +1678,7 @@ int runServer(const LaunchOptions& options)
             printf("%s [SERVER STATUS] tick=%u players=%zu packetsIn=%llu packetsOut=%llu "
                    "recvAttempts=%llu recvWouldBlock=%llu recvErrors=%llu malformed=%llu "
                    "protocolMismatch=%llu unknown=%llu hello=%llu join=%llu reconnect=%llu input=%llu\n",
-                   serverTimestamp(), tick, players.size(),
+                   residentServerTimestamp(), tick, players.size(),
                    (unsigned long long)totalPacketsIn, (unsigned long long)totalPacketsOut,
                    (unsigned long long)transportStats.recvAttempts,
                    (unsigned long long)transportStats.recvWouldBlock,
@@ -1870,7 +1749,7 @@ int runServer(const LaunchOptions& options)
         const uint64_t perfNowMs = nowMs();
         if (perfNowMs - lastPerfMs >= 1000)
         {
-            reportServerPerf(serverTimestamp(), loopPerf, tick, lastPerfTick,
+            reportServerPerf(residentServerTimestamp(), loopPerf, tick, lastPerfTick,
                              perfNowMs - lastPerfMs);
             lastPerfTick = tick;
             lastPerfMs = perfNowMs;
@@ -1902,8 +1781,9 @@ int runServer(const LaunchOptions& options)
     ::StructuredLogger::instance().shutdown();
     if (!serverCode.empty())
     {
-        printf("%s [SERVER] deregistering room %s\n", serverTimestamp(), serverCode.c_str());
-        coordinatorIceDone(serverCode);
+        printf("%s [SERVER] deregistering room %s\n", residentServerTimestamp(), serverCode.c_str());
+        mimita::host::HostRuntime::instance().serverPolicyCoordinatorIceDone(
+            serverCode.c_str());
     }
     mimita::host::HostRuntime::instance().clearEntityAdapter();
     mimita::host::HostRuntime::instance().clearWorldAdapter();
@@ -1911,7 +1791,7 @@ int runServer(const LaunchOptions& options)
     mimita::host::HostServerSessionEvents::instance().clear();
     closesocket(sock);
     netShutdown();
-    printf("%s [SERVER] shutdown complete\n", serverTimestamp());
+    printf("%s [SERVER] shutdown complete\n", residentServerTimestamp());
     return 0;
 }
 
@@ -1982,53 +1862,87 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     else
         printf("[LISTEN SERVER] bound to port %u (all interfaces)\n", port);
 
-    // Determine map path from settings. A mode that declares its own maps list
-    // uses that map unless the operator explicitly chose a different one.
-    std::string mapName = settings ? settings->mapName : "funworld3";
-    if (settings) {
-        const std::string modeDefaultMap = gamemodeDefaultMap(settings->gameMode);
-        const bool explicitMap = !settings->resolvedMapPath.empty();
-        if (!explicitMap && !modeDefaultMap.empty())
-            mapName = modeDefaultMap;
+    const std::string settingsMapName =
+        settings ? settings->mapName : "funworld3";
+    const std::string settingsMapPath =
+        settings ? settings->resolvedMapPath : "";
+    const std::string settingsGameMode =
+        settings ? settings->gameMode : "sandbox";
+    const std::string settingsGamemodeId =
+        settings ? settings->gamemodeId : "duel";
+
+    mimita::host::ServerStartupV1 startupRequest{};
+    startupRequest.mapName = settingsMapName.c_str();
+    startupRequest.mapPath = settingsMapPath.c_str();
+    startupRequest.gameMode = settingsGameMode.c_str();
+    startupRequest.gamemodeId = settingsGamemodeId.c_str();
+    startupRequest.serverName = settings ? settings->serverName.c_str() : "";
+    startupRequest.hostPlayerName =
+        settings ? settings->hostPlayerName.c_str() : "";
+    startupRequest.password = settings ? settings->password.c_str() : "";
+    startupRequest.npcCount = settings ? settings->startupNpcCount : 0;
+    startupRequest.npcsEnabled =
+        settings && settings->startupNpcsEnabled ? 1u : 0u;
+    startupRequest.weaponSetId = settings ? settings->weaponSetId : 1;
+    startupRequest.weaponSetExplicit =
+        settings && settings->weaponSetExplicit ? 1u : 0u;
+    startupRequest.autoMapRotation =
+        settings && settings->autoMapRotation ? 1u : 0u;
+    startupRequest.mapRotationMinutes =
+        settings ? settings->mapRotationMinutes : 0;
+    startupRequest.discordNotification =
+        settings && settings->discordNotification ? 1u : 0u;
+    startupRequest.passwordProtected =
+        settings && settings->passwordProtected ? 1u : 0u;
+    startupRequest.maxPlayers = settings ? settings->maxPlayers : 999;
+    startupRequest.duel = settings && settings->duelMode ? 1u : 0u;
+    startupRequest.spawnOverrideEnabled =
+        gServerOverrides.spawnOverrideEnabled ? 1u : 0u;
+    startupRequest.spawnOverride[0] = gServerOverrides.spawnOverridePosition.x;
+    startupRequest.spawnOverride[1] = gServerOverrides.spawnOverridePosition.y;
+    startupRequest.spawnOverride[2] = gServerOverrides.spawnOverridePosition.z;
+    mimita::host::ServerStartupResultV1 startupResult{};
+    if (!mimita::host::HostRuntime::instance().serverPolicyStartup(
+            &startupRequest, &startupResult) ||
+        startupResult.ok == 0) {
+        printf("[LISTEN SERVER] FATAL: server policy startup failed: %s\n",
+               startupResult.error);
+        return false;
     }
-    std::string mapPath = settings ? settings->resolvedMapPath : "";
-    if (mapPath.empty())
-        mapPath = "assets/maps/" + mapName + ".glb";
+    const std::string mapName = startupResult.resolvedMapName;
+    const std::string mapPath = startupResult.resolvedMapPath;
     mimita::host::setSessionMapId(mapName);
     printf("[LISTEN SERVER MAP] mapId=%s path=%s\n", mapName.c_str(), mapPath.c_str());
-    if (!loadHeadlessWorld(mapPath.c_str(), state.world))
-        printf("[LISTEN SERVER] WARNING: headless world load failed; using floor fallback\n");
-    else {
-        serverCaptureAuthoredBaseWorld(state.world, mapName);
-        applyAuthoredMapGeometry(
-            state.world, mapName,
-            GamemodeRegistry::instance()
-                .get(settings ? settings->gameMode : std::string("sandbox"))
-                .worldStreaming.enabled);
-        serverSeedAuthoredCache(state.world);
-    }
 
-    // Load the standard player body shape headlessly for hit validation.
-    if (gServerBodyTemplate.empty())
-        loadServerBodyTemplateFromGlb(nullptr, gServerBodyTemplate);
-
-    // Real client World + NpcSystem so online NPCs run the exact local NPC AI.
     state.npcWorld = std::make_unique<World>();
-    buildNpcWorldCollision(*state.npcWorld, state.world);
     state.npcSystem = std::make_unique<NpcSystem>();
-    state.mirrorPlayer = std::make_unique<Player>();
-    state.npcIdsAlive.clear();
-
-    if (VehicleSystem::instance().isServerProcess())
-    {
-        VehicleSystem::instance().loadConfig("config/vehicles");
-        VehicleSystem::instance().registerFixedTick();
+    mimita::host::ServerWorldLoadV1 worldRequest{};
+    worldRequest.mapName = mapName.c_str();
+    worldRequest.mapPath = mapPath.c_str();
+    worldRequest.gameMode = settingsGameMode.c_str();
+    worldRequest.headlessWorld = &state.world;
+    worldRequest.npcWorld = state.npcWorld.get();
+    mimita::host::ServerWorldLoadResultV1 worldResult{};
+    if (!mimita::host::HostRuntime::instance().serverPolicyWorldLoad(
+            &worldRequest, &worldResult) ||
+        worldResult.ok == 0) {
+        printf("[LISTEN SERVER] FATAL: server policy world load failed: %s\n",
+               worldResult.error);
+        return false;
     }
+    state.mirrorPlayer =
+        mimita::host::HostRuntime::instance().serverPolicyCreatePlayer();
+    if (!state.mirrorPlayer) {
+        printf("[LISTEN SERVER] FATAL: server policy could not create player\n");
+        return false;
+    }
+    state.npcIdsAlive.clear();
 
     state.publicIp = publicIp;
     state.hostSessionId = hostSessionId;
     state.active = true;
-    clearRuntimeObjects("listen-server-start");
+    mimita::host::HostRuntime::instance().serverPolicyClearRuntimeObjects(
+        "listen-server-start");
     state.port = port;
     state.players.clear();
     state.npcs.clear();
@@ -2109,48 +2023,43 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         state.password = settings->password;
         state.hostPlayerName = settings->hostPlayerName;
     }
-    if (settings && !settings->duelMode)
-        serverCommunityMapStart(communityMapPool(), state.mapName,
-                                state.autoMapRotation,
-                                state.mapRotationMinutes,
-                                state.weaponSetId);
-    if (settings && !settings->duelMode && state.weaponSetExplicit)
-        serverCommunitySetWeaponSet(state.weaponSetId);
-    if (settings && !settings->duelMode)
-        serverCommunitySetMode(settings->gameMode);
-    if (settings && !settings->duelMode && settings->gameMode != "sandbox")
-        serverCommunityStartMatch(false);
-    if (MapConfigRegistry::instance().current().arena.present)
-        ArenaBall::spawnFromMap(MapConfigRegistry::instance().current());
-    gServerHostPlayerName = settings ? settings->hostPlayerName : "";
-
-    // Startup NPCs
-    bool npcsEnabled = !settings || settings->startupNpcsEnabled;
-    uint32_t npcCount = npcsEnabled ? (settings ? settings->startupNpcCount : 3) : 0;
-    for (uint32_t i = 0; i < npcCount; ++i)
-    {
-        ServerNpc npc;
-        npc.entityId = state.nextEntityId++;
-        npc.name = "NPC " + std::to_string(i + 1);
-        if (!state.world.spawnPoints.empty())
-        {
-            size_t idx = i % state.world.spawnPoints.size();
-            npc.pos = effectiveServerSpawn(state.world.spawnPoints[idx].position);
-            npc.yaw = state.world.spawnPoints[idx].yaw;
-            printf("[LISTEN SERVER NPC SPAWN] reason=startup entityId=%u npcIndex=%u "
-                   "spawnpoint=%zu position=(%.2f,%.2f,%.2f)\n",
-                   npc.entityId, i, idx,
-                   npc.pos.x, npc.pos.y, npc.pos.z);
-        }
-        else
-        {
-            npc.pos = {4.0f + i * 2.0f, 8.0f, 30.0f};
-        }
-        npc.phase = i * 2.0f;
-        state.npcs[npc.entityId] = npc;
+    state.mapName = mapName;
+    state.maxPlayers = startupResult.resolvedMaxPlayers;
+    mimita::host::ServerConfigureV1 configureRequest{};
+    configureRequest.mapName = mapName.c_str();
+    configureRequest.gameMode = settingsGameMode.c_str();
+    configureRequest.gamemodeId = settingsGamemodeId.c_str();
+    configureRequest.npcCount = settings ? settings->startupNpcCount : 0;
+    configureRequest.npcsEnabled =
+        (!settings || settings->startupNpcsEnabled) ? 1u : 0u;
+    configureRequest.weaponSetId = settings ? settings->weaponSetId : 1;
+    configureRequest.weaponSetExplicit =
+        settings && settings->weaponSetExplicit ? 1u : 0u;
+    configureRequest.autoMapRotation =
+        settings && settings->autoMapRotation ? 1u : 0u;
+    configureRequest.mapRotationMinutes =
+        settings ? settings->mapRotationMinutes : 0;
+    configureRequest.duel = settings && settings->duelMode ? 1u : 0u;
+    configureRequest.spawnOverrideEnabled =
+        gServerOverrides.spawnOverrideEnabled ? 1u : 0u;
+    configureRequest.spawnOverride[0] = gServerOverrides.spawnOverridePosition.x;
+    configureRequest.spawnOverride[1] = gServerOverrides.spawnOverridePosition.y;
+    configureRequest.spawnOverride[2] = gServerOverrides.spawnOverridePosition.z;
+    configureRequest.headlessWorld = &state.world;
+    configureRequest.npcs = &state.npcs;
+    configureRequest.nextEntityId = &state.nextEntityId;
+    mimita::host::ServerConfigureResultV1 configureResult{};
+    if (!mimita::host::HostRuntime::instance().serverPolicyConfigure(
+            &configureRequest, &configureResult) ||
+        configureResult.ok == 0) {
+        printf("[LISTEN SERVER] FATAL: server policy configure failed: %s\n",
+               configureResult.error);
+        return false;
     }
-    printf("[LISTEN SERVER NPC STARTUP] enabled=%d requested=%u spawned=%zu\n",
-           (int)npcsEnabled, npcCount, state.npcs.size());
+    gServerHostPlayerName = settings ? settings->hostPlayerName : "";
+    printf("[LISTEN SERVER NPC STARTUP] enabled=%d requested=%u spawned=%u\n",
+           (int)(configureRequest.npcsEnabled != 0),
+           configureRequest.npcCount, configureResult.startupNpcCount);
 
     // Register with coordinator (skip if external server process handles it, or local-only)
     if (localOnly)
@@ -2193,8 +2102,14 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     printf("[LISTEN SERVER] started port=%u code=%s\n", port, state.serverCode.c_str());
 
     // Spawn background thread for genuine 60 Hz independent server timing
-    PersistenceQueue::instance().beginSession(state.serverCode, AuthSystem::instance().user().sessionToken,
-                                              AuthSystem::instance().user().id);
+    {
+        mimita::host::ServerAuthIdentityV1 authIdentity{};
+        if (mimita::host::HostRuntime::instance().serverPolicyAuthIdentity(
+                &authIdentity)) {
+            PersistenceQueue::instance().beginSession(
+                state.serverCode, authIdentity.token, authIdentity.userId);
+        }
+    }
     state.serverRunning = true;
     state.serverThread = std::thread(listenServerThreadFunc, std::ref(state));
 
@@ -2220,7 +2135,13 @@ void stopListenServer(ListenServerState& state)
     // Runtime-only physical objects are process state, not map data. Stopping
     // the server must not leave vehicles, constraints, grenades, or corpses
     // behind for the next session.
-    clearRuntimeObjects("listen-server-stop");
+    mimita::host::HostRuntime::instance().serverPolicyClearRuntimeObjects(
+        "listen-server-stop");
+    if (state.mirrorPlayer) {
+        mimita::host::HostRuntime::instance().serverPolicyDestroyPlayer(
+            state.mirrorPlayer);
+        state.mirrorPlayer = nullptr;
+    }
 
     shutdownIceCoordinatorPoller();
 
@@ -2234,7 +2155,8 @@ void stopListenServer(ListenServerState& state)
 
     // Deregister with coordinator (skip for local-only servers)
     if (!state.serverCode.empty() && state.serverCode.find("LOCAL-") != 0)
-        coordinatorIceDone(state.serverCode);
+        mimita::host::HostRuntime::instance().serverPolicyCoordinatorIceDone(
+            state.serverCode.c_str());
 
     closesocket(state.sock);
     state.sock = INVALID_SOCKET;
@@ -2292,7 +2214,7 @@ static void simulateOneServerTick(ListenServerState& state)
                 break;
             }
             TransportReceiveEvent event{};
-            event.connectionId = makeUdpConnectionId(from);
+            event.connectionId = residentMakeUdpConnectionId(from);
             event.remoteEndpoint = from;
             event.payload = reinterpret_cast<const uint8_t*>(buffer);
             event.payloadBytes = bytes;
@@ -2351,7 +2273,7 @@ static void simulateOneServerTick(ListenServerState& state)
                 packetFrame.disagreementRetransmit =
                     &state.disagreementRetransmit;
                 packetFrame.npcIdsAlive = &state.npcIdsAlive;
-                packetFrame.mirrorPlayer = state.mirrorPlayer.get();
+                packetFrame.mirrorPlayer = state.mirrorPlayer;
                 packetFrame.nextPlayerId = &state.nextPlayerId;
                 packetFrame.nextEntityId = &state.nextEntityId;
                 packetFrame.nextProjectileId = &state.nextProjectileId;
@@ -2397,7 +2319,7 @@ static void simulateOneServerTick(ListenServerState& state)
         serverFrame.transportStats = nullptr;
         serverFrame.disagreementRetransmit = &state.disagreementRetransmit;
         serverFrame.npcIdsAlive = &state.npcIdsAlive;
-        serverFrame.mirrorPlayer = state.mirrorPlayer.get();
+        serverFrame.mirrorPlayer = state.mirrorPlayer;
         serverFrame.nextPlayerId = &state.nextPlayerId;
         serverFrame.nextEntityId = &state.nextEntityId;
         serverFrame.nextProjectileId = &state.nextProjectileId;
@@ -2549,8 +2471,12 @@ static void listenServerThreadFunc(ListenServerState& state)
 
 void tickListenServer(ListenServerState& state, float /*dt*/)
 {
-    const auto& user = AuthSystem::instance().user();
-    PersistenceQueue::instance().setHostToken(user.sessionToken, user.id);
+    mimita::host::ServerAuthIdentityV1 authIdentity{};
+    if (mimita::host::HostRuntime::instance().serverPolicyAuthIdentity(
+            &authIdentity)) {
+        PersistenceQueue::instance().setHostToken(authIdentity.token,
+                                                  authIdentity.userId);
+    }
     // No-op: the background thread handles all authoritative server ticks.
     // This function exists only as compatibility for the render-loop caller.
     if (!state.serverRunning && state.active)

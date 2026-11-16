@@ -5,12 +5,8 @@
 * device and backend state; a game generation only describes what to bind,
 * upload, draw, and which shader program it owns.
 *
-* Transitional split:
-*   - EXE build (`!MIMITA_GAME_DLL`): render-command-legacy.cpp maps the
-*     semantic enums to raw OpenGL so the resident path behaves as before.
-*   - game.dll build (`MIMITA_GAME_DLL`): a bridge forwards to CAP_RENDER. That
-*     bridge is added only after the host implements the matching capability
-*     operations; until then the DLL must not call these helpers.
+* The game DLL forwards these semantic operations to CAP_RENDER. The resident
+* host owns native GL. The old EXE-only legacy mapping has been removed.
 *
 * Shaders are hot: the game owns program handles, sources, reload policy, and
 * the uniform-location cache. The host only provides the primitive operations.

@@ -41,7 +41,7 @@ struct GlErrorEntry {
     std::string file;
     int line = 0;
     std::string op;
-    GLenum error = 0;
+    std::uint32_t error = 0;
     int frame = 0;
 };
 
@@ -66,7 +66,7 @@ void diagLog(const char* category, const char* format, ...)
     if (gLogCount < MAX_LOG) gLogCount++;
 }
 
-void diagLogGL(const char* file, int line, const char* op, GLenum error)
+void diagLogGL(const char* file, int line, const char* op, std::uint32_t error)
 {
     GlErrorEntry& e = gGlErrors[gGlErrorHead];
     e.file = file ? file : "";
@@ -81,7 +81,7 @@ void diagLogGL(const char* file, int line, const char* op, GLenum error)
 void diagCheckGL(const char* file, int line, const char* op)
 {
     const std::uint32_t err = r::getError();
-    if (err != GL_NO_ERROR)
+    if (err != 0u)
     {
         diagLogGL(file, line, op, err);
         printf("[GL ERROR] file=%s line=%d op=%s error=0x%x\n", file, line, op, err);

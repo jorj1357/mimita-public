@@ -1,4 +1,5 @@
 // C:\important\quiet\n\mimita-private-v7-a9358d95ca5050b5d062287dd41ee2e63709f9a5\src\gui\font-stuff\font-loader.cpp
+#include <cstdint>
 // mar 13 2026
 /**
  * purpose
@@ -25,7 +26,6 @@ Call them once at startup.
 #include <fstream>
 #include <string>
 #include <unordered_map>
-#include <glad/glad.h>
 #include "render/render-command.h"
 
 // do not define stb image implementation here 
@@ -36,13 +36,13 @@ Call them once at startup.
 
 Glyph gGlyphs[256];
 
-GLuint gFontTex = 0;
-GLuint gFontPages[8] = {};
+std::uint32_t gFontTex = 0;
+std::uint32_t gFontPages[8] = {};
 int gFontPageCount = 0;
 
 // font-loader.cpp (the only definition) of guivao and guivbo
-GLuint guiVAO = 0;
-GLuint guiVBO = 0;
+std::uint32_t guiVAO = 0;
+std::uint32_t guiVBO = 0;
 
 int atlasWidth = 0;
 int atlasHeight = 0;
@@ -75,7 +75,7 @@ static bool readQuotedField(const char* line, const char* key, char* out, size_t
     return true;
 }
 
-static GLuint loadFontAtlasPage(const char* path, int pageId)
+static std::uint32_t loadFontAtlasPage(const char* path, int pageId)
 {
     printf("[FONT] Loaded atlas page request id=%d path=%s\n", pageId, path);
     int channels = 0;
@@ -90,7 +90,7 @@ static GLuint loadFontAtlasPage(const char* path, int pageId)
         return 0;
     }
 
-    GLuint tex = 0;
+    std::uint32_t tex = 0;
     tex = mimita::game::genTexture();
     if (!tex)
     {

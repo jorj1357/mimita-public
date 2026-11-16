@@ -74,7 +74,6 @@ BUILD_ROOT = DEV_ROOT / "builds"
 STABLE_LAUNCH_DIR = DEV_ROOT / "current"
 STABLE_LAUNCH_EXE = STABLE_LAUNCH_DIR / "mimita.exe"
 STATE_PATH = DEV_ROOT / "state.json"
-CURRENT_RUN_PATH = DEV_ROOT / "current-run.json"
 SERVER_MARKER_PATH = DEV_ROOT / "server-owner.json"
 LOCK_PATH = DEV_ROOT / "dev-loop.lock"
 # Written when a user/dashboard explicitly stops the dev-loop daemon (key Q or
@@ -1975,7 +1974,6 @@ class DevLoop:
         self.last_status_value = status
         snapshot = self.state(status)
         write_json(STATE_PATH, snapshot)
-        write_json(CURRENT_RUN_PATH, snapshot)
         self._write_manifest()
 
     def record_control_event(self, request: dict, status: str, message: str) -> None:
@@ -4620,7 +4618,7 @@ class DevLoop:
         print(f"[DEV] launch mode={self.launch_mode_id} ({self.launch_mode.get('name', 'unnamed')})")
         print(f"[DEV] root={ROOT}")
         print(f"[DEV] control=127.0.0.1:{self.control_port}")
-        print(f"[DEV] status={CURRENT_RUN_PATH}")
+        print(f"[DEV] status={STATE_PATH}")
         print("[DEV] one build at a time; edits during a build queue another build")
 
         try:
@@ -4664,7 +4662,7 @@ class DevLoop:
 
 def read_current_run() -> dict | None:
     try:
-        value = read_json(CURRENT_RUN_PATH)
+        value = read_json(STATE_PATH)
     except (OSError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
@@ -6141,7 +6139,7 @@ def run_dashboard(args: argparse.Namespace) -> int:
                     COORDINATOR_ROOT, Path(str(metadata.get("worktree") or "")),
                     label="lane worktree", must_exist=True)
                 lane_state_path = resolve_within(
-                    COORDINATOR_ROOT, worktree / ".dev" / "current-run.json",
+                    COORDINATOR_ROOT, worktree / ".dev" / "state.json",
                     label="lane status")
                 lane_state = read_json(lane_state_path)
                 if not isinstance(lane_state, dict):
@@ -6502,7 +6500,7 @@ def run_control_client(args: argparse.Namespace) -> int:
     if action == "list-instances":
         current = read_current_run()
         if current is None:
-            print(f"[DEV CONTROL] no current run state: {CURRENT_RUN_PATH}", file=sys.stderr)
+            print(f"[DEV CONTROL] no current run state: {STATE_PATH}", file=sys.stderr)
             return 2
         instances = current.get("instances") or []
         if args.json:
@@ -6528,7 +6526,7 @@ def run_control_client(args: argparse.Namespace) -> int:
             and not args.request and not args.ensure_running):
         current = read_current_run()
         if current is None:
-            print(f"[DEV CONTROL] no current run state: {CURRENT_RUN_PATH}", file=sys.stderr)
+            print(f"[DEV CONTROL] no current run state: {STATE_PATH}", file=sys.stderr)
             return 2
         _print_read_only_status(current, args.json)
         return 0
@@ -6556,7 +6554,7 @@ def run_control_client(args: argparse.Namespace) -> int:
                   file=sys.stderr)
             return 2
     if current is None:
-        print(f"[DEV CONTROL] no current run state: {CURRENT_RUN_PATH}", file=sys.stderr)
+        print(f"[DEV CONTROL] no current run state: {STATE_PATH}", file=sys.stderr)
         return 2
 
     if action == "status" and args.ensure_running and not args.command \

@@ -50,7 +50,7 @@ LOCK_PATH = DEV_ROOT / "dev-loop.lock"
 # explicit shutdown is honored; a later explicit start clears it. See dev-loop
 # spec sections 19.4 and 22.2.
 STOP_INTENT_PATH = DEV_ROOT / "dev-loop-stop-intent"
-CURRENT_RUN_PATH = DEV_ROOT / "current-run.json"
+CURRENT_RUN_PATH = DEV_ROOT / "state.json"
 WATCH_LOCK_PATH = DEV_ROOT / "dev-loop-watch.lock"
 WATCH_STATE_PATH = DEV_ROOT / "dev-loop-watch.json"
 WATCH_LOG_PATH = DEV_ROOT / "dev-loop-watch.log"

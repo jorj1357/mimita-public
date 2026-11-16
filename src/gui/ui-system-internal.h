@@ -1,10 +1,10 @@
 #pragma once
+#include <cstdint>
 
 #ifndef GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_NONE
 #endif
 #include <GLFW/glfw3.h>
-#include <glad/glad.h>
 #include <string>
 #include <vector>
 #include "gui/ui-system.h"
@@ -18,13 +18,13 @@ struct UIVertex {
 
 namespace UISys {
 extern GLFWwindow* gWindow;
-extern GLuint gProgram;
-extern GLuint gVao;
-extern GLuint gVbo;
-extern GLint gScreenLoc;
-extern GLint gColorLoc;
-extern GLint gUseTexLoc;
-extern GLint gTexLoc;
+extern std::uint32_t gProgram;
+extern std::uint32_t gVao;
+extern std::uint32_t gVbo;
+extern std::int32_t gScreenLoc;
+extern std::int32_t gColorLoc;
+extern std::int32_t gUseTexLoc;
+extern std::int32_t gTexLoc;
 extern int gFbW;
 extern int gFbH;
 extern bool gDebug;
@@ -44,7 +44,7 @@ extern bool gCoordDebug;
 extern double gScrollYOffset;
 extern bool gDropdownModalActive;
 extern std::vector<UIVertex> gBatchVertices;
-extern GLint gImageTexLoc;
+extern std::int32_t gImageTexLoc;
 }
 
 inline bool pointIn(double mx, double my, UIRect r)

@@ -1955,7 +1955,7 @@ the change or scenario explicitly requires relaunching it.
 - detects the exit of the checkout-owned dev-loop daemon and promptly restarts
   it from the current `devscripts/dev-loop.py`;
 - detects a daemon whose recorded `daemon_script_hash` (in
-  `.dev/current-run.json`) differs from the on-disk hash and performs the
+  `.dev/state.json`) differs from the on-disk hash and performs the
   controlled replacement in `19.3`; while a live run is present it defers the
   replacement by default (`dev-loop.watcher.source-change-deferred`) so a
   healthy game pair is not replaced, unless `--force-source-change` is set;
@@ -1967,9 +1967,9 @@ the change or scenario explicitly requires relaunching it.
   it cannot keep a daemon alive.
 
 Run it detached; it adopts the last-used profile/launch-mode/visibility from
-`.dev/current-run.json` unless overridden, and supports `--once` for a single
+`.dev/state.json` unless overridden, and supports `--once` for a single
 check. The daemon now records `daemon_pid`, `daemon_script_hash`, and
-`daemon_started_utc` in its status/current-run record so a stale daemon is
+`daemon_started_utc` in its status record so a stale daemon is
 detectable (`DAEMON_SOURCE_MISMATCH`). The AI restart authority above remains the
 fallback if the watcher itself is not running.
 

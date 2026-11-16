@@ -1533,6 +1533,23 @@ void glDeleteQuery(void*, std::uint32_t id) {
     }
     GLuint value = id; glDeleteQueries(1, &value);
 }
+void glQueryCounterTimestamp(void*, std::uint32_t query) {
+    if (!HostRuntime::instance().onGlThread("glQueryCounterTimestamp")) return;
+    glQueryCounter(static_cast<GLuint>(query), GL_TIMESTAMP);
+}
+std::uint32_t glQueryResultAvailable(void*, std::uint32_t query) {
+    if (!HostRuntime::instance().onGlThread("glQueryResultAvailable")) return 0;
+    GLuint available = 0;
+    glGetQueryObjectuiv(static_cast<GLuint>(query), GL_QUERY_RESULT_AVAILABLE,
+                        &available);
+    return available ? 1u : 0u;
+}
+std::uint64_t glQueryResultU64(void*, std::uint32_t query) {
+    if (!HostRuntime::instance().onGlThread("glQueryResultU64")) return 0;
+    GLuint64 value = 0;
+    glGetQueryObjectui64v(static_cast<GLuint>(query), GL_QUERY_RESULT, &value);
+    return static_cast<std::uint64_t>(value);
+}
 void glDeleteShaderRes(void*, std::uint32_t id) {
     if (!HostRuntime::instance().onGlThread("glDeleteShader")) {
         HostRuntime::instance().deferGlDelete(7, id); return;
@@ -2032,7 +2049,10 @@ void* HostRuntime::ensureStateObjectMigrating(
         void* next = _aligned_malloc(size, alignment);
         if (!next) return nullptr;
         std::memset(next, 0, size);
-        migrate(record.storage, record.size, next, size);
+        if (!migrate(record.storage, record.size, next, size)) {
+            _aligned_free(next);
+            return nullptr;
+        }
         _aligned_free(record.storage);
         record.storage = next;
         record.size = size;
@@ -2616,6 +2636,139 @@ bool HostRuntime::serverGamemode(ServerFrameV1* frame) {
     return call.valid() && call.api->gamemode(frame) != 0;
 }
 
+namespace {
+struct ServerPolicyCall {
+    mimita::host::HostRuntime& runtime;
+    mimita::host::GenerationBarrier& barrier;
+    const mimita::host::GameServerPolicyV1* api;
+    std::unique_lock<std::mutex> lock;
+    std::uint64_t generation = 0;
+    bool entered = false;
+
+    ServerPolicyCall(mimita::host::HostRuntime& host,
+                     std::mutex& mutex,
+                     mimita::host::GenerationBarrier& generationBarrier)
+        : runtime(host), barrier(generationBarrier),
+          api(host.activeServerPolicy()), lock(mutex) {
+        if (!api) {
+            return;
+        }
+        generation = runtime.activeGeneration();
+        entered = barrier.enter(generation);
+    }
+
+    ~ServerPolicyCall() {
+        if (entered) {
+            barrier.leave();
+        }
+    }
+
+    bool valid() const { return api != nullptr && entered; }
+};
+}  // namespace
+
+bool HostRuntime::serverPolicyAvailable() const {
+    return probeEnabled_.load(std::memory_order_acquire) &&
+           loader_.activeGenerationInfo().serverPolicy != nullptr;
+}
+
+bool HostRuntime::serverPolicyStartup(const ServerStartupV1* startup,
+                                      ServerStartupResultV1* result) {
+    if (!startup || !result || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->startup(startup, result) != 0;
+}
+
+bool HostRuntime::serverPolicyWorldLoad(const ServerWorldLoadV1* load,
+                                        ServerWorldLoadResultV1* result) {
+    if (!load || !result || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->world_load(load, result) != 0;
+}
+
+bool HostRuntime::serverPolicyConfigure(const ServerConfigureV1* configure,
+                                        ServerConfigureResultV1* result) {
+    if (!configure || !result ||
+        !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->configure(configure, result) != 0;
+}
+
+void* HostRuntime::serverPolicyCreatePlayer() {
+    if (!probeEnabled_.load(std::memory_order_acquire)) {
+        return nullptr;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() ? call.api->create_player() : nullptr;
+}
+
+void HostRuntime::serverPolicyDestroyPlayer(void* player) {
+    if (!player || !probeEnabled_.load(std::memory_order_acquire)) {
+        return;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    if (call.valid()) {
+        call.api->destroy_player(player);
+    }
+}
+
+bool HostRuntime::serverPolicyMakeUdpConnectionId(
+    std::uint32_t addressNetwork, std::uint16_t portNetwork,
+    ServerConnectionIdV1* out) {
+    if (!out || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() &&
+           call.api->make_udp_connection_id(addressNetwork, portNetwork, out) != 0;
+}
+
+bool HostRuntime::serverPolicyPollReload(void* npcSystem, std::uint32_t tick) {
+    if (!probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->poll_reload(npcSystem, tick) != 0;
+}
+
+bool HostRuntime::serverPolicyAuthIdentity(ServerAuthIdentityV1* out) {
+    if (!out || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->auth_identity(out) != 0;
+}
+
+bool HostRuntime::serverPolicyProjectilePerf(ServerProjectilePerfV1* out) {
+    if (!out || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->projectile_perf(out) != 0;
+}
+
+bool HostRuntime::serverPolicyClearRuntimeObjects(const char* reason) {
+    if (!probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->clear_runtime_objects(reason) != 0;
+}
+
+bool HostRuntime::serverPolicyCoordinatorIceDone(const char* roomCode) {
+    if (!probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->coordinator_ice_done(roomCode) != 0;
+}
+
 void HostRuntime::poll() {
     if (!probeEnabled_.load(std::memory_order_acquire)) {
         return;
@@ -2857,6 +3010,8 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &glGenFramebuffer, &glDeleteFramebuffer,
             &glGenRenderbuffer, &glDeleteRenderbuffer,
             &glGenQuery, &glDeleteQuery,
+            &glQueryCounterTimestamp, &glQueryResultAvailable,
+            &glQueryResultU64,
             &glDeleteShaderRes, &glDeleteProgramRes,
             &glGenerateMipmapRes,
         };

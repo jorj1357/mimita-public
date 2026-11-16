@@ -31,7 +31,7 @@ extern void appendGLBMeshPrimitive(
     int primitiveIndex,
     const tinygltf::Primitive& primitive,
     const glm::mat4& transform,
-    const std::vector<GLuint>& materialTextures,
+    const std::vector<std::uint32_t>& materialTextures,
     Mesh& mesh
 );
 
@@ -130,7 +130,7 @@ void walkNode(
     const tinygltf::Model& model,
     int nodeIndex,
     const glm::mat4& parent,
-    const std::vector<GLuint>& materialTextures,
+    const std::vector<std::uint32_t>& materialTextures,
     Mesh& mesh,
     std::unordered_set<int>& activeNodes,
     int depth,
@@ -229,7 +229,7 @@ void walkNode(
 
 void walkGLBScene(
     const tinygltf::Model& model,
-    const std::vector<GLuint>& materialTextures,
+    const std::vector<std::uint32_t>& materialTextures,
     Mesh& mesh,
     int sceneIndex,
     Mesh* skyMesh)
@@ -253,7 +253,7 @@ void walkGLBScene(
             const tinygltf::Mesh& gltfMesh = model.meshes[meshIndex];
             for (int primIndex = 0; primIndex < (int)gltfMesh.primitives.size(); ++primIndex)
             {
-                std::vector<GLuint> dummyMaterials;
+                std::vector<std::uint32_t> dummyMaterials;
                 appendGLBMeshPrimitive(model, meshIndex, primIndex, gltfMesh.primitives[primIndex], glm::mat4(1.0f), materialTextures, mesh);
             }
         }

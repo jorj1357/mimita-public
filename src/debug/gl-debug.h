@@ -1,13 +1,12 @@
 #pragma once
 
-#include <glad/glad.h>
+#include <cstdint>
 
 namespace GLDebug {
 
 void clearErrors(const char* stage);
 bool logErrors(const char* label, const char* file, int line);
 void traceBefore(const char* label, const char* file, int line);
-bool extensionSupported(const char* extensionName);
 
 } // namespace GLDebug
 

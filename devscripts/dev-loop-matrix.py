@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEV_LOOP = ROOT / "devscripts" / "dev-loop.py"
 DEFAULT_MATRIX = ROOT / "devscripts" / "scenarios" / "matrix" / "actor-weapon-matrix.json"
-STATE_PATH = ROOT / ".dev" / "current-run.json"
+STATE_PATH = ROOT / ".dev" / "state.json"
 OWNER_PATH = ROOT / ".dev" / "server-owner.json"
 
 

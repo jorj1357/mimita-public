@@ -198,7 +198,8 @@ void applyPendingLook(Camera& camera) {
     if (gPendingLookX == 0.0f && gPendingLookY == 0.0f) return;
     const float sensitivity = CAMERA_SENS;
     camera.yaw -= gPendingLookX * sensitivity;
-    camera.pitch += gPendingLookY * sensitivity;
+    // Normalized look uses mouse-down = positive dy. Pitch is positive upward.
+    camera.pitch -= gPendingLookY * sensitivity;
     if (CamConfig::instance().data().orientationMode != "head_world") {
         camera.pitch = glm::clamp(camera.pitch, -89.9f, 89.9f);
     }

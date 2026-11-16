@@ -13,7 +13,7 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kGlResourceCapabilityVersion = 1u;
+inline constexpr std::uint32_t kGlResourceCapabilityVersion = 2u;
 
 struct GlResourceCapabilityV1 {
     std::uint32_t version;
@@ -31,6 +31,9 @@ struct GlResourceCapabilityV1 {
     void (*delete_renderbuffer)(void*, std::uint32_t);
     std::uint32_t (*gen_query)(void*);
     void (*delete_query)(void*, std::uint32_t);
+    void (*query_counter_timestamp)(void*, std::uint32_t query);
+    std::uint32_t (*query_result_available)(void*, std::uint32_t query);
+    std::uint64_t (*query_result_u64)(void*, std::uint32_t query);
     void (*delete_shader)(void*, std::uint32_t);
     void (*delete_program)(void*, std::uint32_t);
     void (*generate_mipmap)(void*, std::uint32_t target);

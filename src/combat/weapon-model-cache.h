@@ -9,6 +9,7 @@
 */
 
 #pragma once
+#include <cstdint>
 
 #include <atomic>
 #include <memory>
@@ -17,7 +18,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <glad/glad.h>
 #include <glm/glm.hpp>
 
 #include "map/map_common.h"
@@ -32,7 +32,7 @@ struct PendingWeaponModel {
     std::vector<tinygltf::Image> images;   // decoded pixels (worker)
     Mesh mesh;                             // CPU verts/batches; texture resolved on main thread
     std::vector<int> materialToImage;      // material index -> image index (worker)
-    std::vector<GLuint> uploadedTextures;  // main-thread GL textures
+    std::vector<std::uint32_t> uploadedTextures;  // main-thread GL textures
     unsigned int vao = 0;
     unsigned int vbo = 0;
     bool gpuUploaded = false;              // set on the main thread when GL ready

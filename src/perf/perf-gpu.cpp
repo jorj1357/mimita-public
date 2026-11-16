@@ -3,7 +3,7 @@
 * Implements deferred OpenGL GPU timer queries for performance diagnostics.
 * Maintains a small ring of query pairs so query results are read later.
 * Emits completed region timings through the existing performance logger.
-* DOES NOT stall the GPU with glFinish or wait for unavailable query results.
+* DOES NOT stall the GPU or wait for unavailable query results.
 * Does not change OpenGL state beyond timer-query objects.
 * Does not measure or alter gameplay, replay, physics, or frame pacing.
 */
@@ -11,10 +11,10 @@
 #include "game/gl-resource-bridge-module.h"
 
 #include <array>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
-#include <glad/glad.h>
 
 #include "debug/debug-log.h"
 
@@ -24,8 +24,8 @@ constexpr int kMaxRegions = 16;
 
 struct Region {
     const char* name = nullptr;
-    GLuint begin = 0;
-    GLuint end = 0;
+    std::uint32_t begin = 0;
+    std::uint32_t end = 0;
     bool active = false;
 };
 
@@ -103,7 +103,7 @@ void beginRegion(const char* name)
     region.name = name;
     region.active = true;
     gCurrentRegion = frame.count - 1;
-    glQueryCounter(region.begin, GL_TIMESTAMP);
+    mimita::game::queryCounterTimestamp(region.begin);
 }
 
 void endRegion()
@@ -113,7 +113,7 @@ void endRegion()
 
     Frame& frame = gFrames[gWriteFrame];
     Region& region = frame.regions[gCurrentRegion];
-    glQueryCounter(region.end, GL_TIMESTAMP);
+    mimita::game::queryCounterTimestamp(region.end);
     region.active = false;
     gCurrentRegion = -1;
 }
@@ -143,15 +143,11 @@ void flushCompleted()
     gLastCompletedFrameMs = 0.0;
     for (int i = 0; i < frame.count; ++i) {
         Region& region = frame.regions[i];
-        GLuint available = 0;
-        glGetQueryObjectuiv(region.end, GL_QUERY_RESULT_AVAILABLE, &available);
-        if (!available)
+        if (!mimita::game::queryResultAvailable(region.end))
             continue;
 
-        GLuint64 beginNs = 0;
-        GLuint64 endNs = 0;
-        glGetQueryObjectui64v(region.begin, GL_QUERY_RESULT, &beginNs);
-        glGetQueryObjectui64v(region.end, GL_QUERY_RESULT, &endNs);
+        const std::uint64_t beginNs = mimita::game::queryResultU64(region.begin);
+        const std::uint64_t endNs = mimita::game::queryResultU64(region.end);
         if (endNs >= beginNs) {
             const double elapsedMs = static_cast<double>(endNs - beginNs) / 1000000.0;
             gLastCompletedFrameMs += elapsedMs;

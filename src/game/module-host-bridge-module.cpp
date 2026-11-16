@@ -12,10 +12,14 @@
 #include "host/abi/module-capability.h"
 #include "hot-reload/module-host.h"
 #include "modules/api/map-editor-api.h"
+#include "modules/api/map-geometry-api.h"
+#include "modules/api/world-rendering-api.h"
 #include "modules/api/module-abi.h"
 
 extern "C" const mimita_module::BaseV1* MIMITA_MODULE_CALL
-GetMimitaModuleAPI(std::uint32_t abiVersion);
+GetMimitaMapEditorModuleAPI(std::uint32_t abiVersion);
+extern "C" const mimita_module::BaseV1* MIMITA_MODULE_CALL
+GetMimitaMapGeometryModuleAPI(std::uint32_t abiVersion);
 
 namespace mimita::game {
 
@@ -25,6 +29,8 @@ namespace {
 const mimita::host::ModuleCapabilityV1* gModules = nullptr;
 const mimita::host::HostServicesV1* gHostServices = nullptr;
 const mimita_module::ModuleV1* gMapEditor = nullptr;
+const mimita_module::ModuleV1* gMapGeometry = nullptr;
+const mimita_module::ModuleV1* gWorldRendering = nullptr;
 void* gHostData = nullptr;
 
 void MIMITA_MODULE_CALL moduleLog(std::uint32_t, std::uint32_t level,
@@ -73,6 +79,28 @@ bool invokeMapEditor(std::uint32_t eventType, void* payload,
     return gMapEditor->onEvent(&event) != 0;
 }
 
+bool invokeMapGeometry(std::uint32_t eventType, void* payload,
+                       std::uint32_t payloadSize) {
+    if (!gMapGeometry || !gMapGeometry->onEvent) return false;
+    mimita_module::ModuleEventV1 event{};
+    event.typeId = eventType;
+    event.structSize = sizeof(event);
+    event.payload = payload;
+    event.payloadSize = payloadSize;
+    return gMapGeometry->onEvent(&event) != 0;
+}
+
+bool invokeWorldRendering(std::uint32_t eventType, void* payload,
+                          std::uint32_t payloadSize) {
+    if (!gWorldRendering || !gWorldRendering->onEvent) return false;
+    mimita_module::ModuleEventV1 event{};
+    event.typeId = eventType;
+    event.structSize = sizeof(event);
+    event.payload = payload;
+    event.payloadSize = payloadSize;
+    return gWorldRendering->onEvent(&event) != 0;
+}
+
 bool invoke(mimita::host::ModuleOp op, const void* input, std::uint32_t inputSize,
             void* output, std::uint32_t outputSize) {
     if (!gModules || !gModules->invoke) {
@@ -90,18 +118,29 @@ void initializeHostModules(const mimita::host::HostServicesV1* services) {
     gModules = nullptr;
     gHostServices = services;
     gMapEditor = nullptr;
+    gMapGeometry = nullptr;
+    gWorldRendering = nullptr;
     gHostData = services ? services->hostUserData : nullptr;
     if (!services || !services->get_capability) {
         return;
     }
-    if (const auto* base = GetMimitaModuleAPI(mimita_module::ABI_VERSION)) {
-        const auto* module = reinterpret_cast<const mimita_module::ModuleV1*>(base);
-        if (base->structSize >= sizeof(mimita_module::ModuleV1) &&
-            base->name && std::strcmp(base->name, "map-editor") == 0 &&
-            module->initialize && module->initialize(&gModuleServices)) {
-            gMapEditor = module;
+    const auto initializeModule = [&](const mimita_module::BaseV1* base,
+                                      const char* name)
+        -> const mimita_module::ModuleV1* {
+        if (!base || base->structSize < sizeof(mimita_module::ModuleV1) ||
+            !base->name || std::strcmp(base->name, name) != 0) {
+            return nullptr;
         }
-    }
+        const auto* module =
+            reinterpret_cast<const mimita_module::ModuleV1*>(base);
+        return module->initialize && module->initialize(&gModuleServices)
+            ? module : nullptr;
+    };
+    gMapEditor = initializeModule(
+        GetMimitaMapEditorModuleAPI(mimita_module::ABI_VERSION), "map-editor");
+    gMapGeometry = initializeModule(
+        GetMimitaMapGeometryModuleAPI(mimita_module::ABI_VERSION),
+        "map-geometry");
     auto* capability = static_cast<const mimita::host::ModuleCapabilityV1*>(
         services->get_capability(
             services->hostUserData,
@@ -150,6 +189,9 @@ bool ModuleHost::moduleLoaded(const char* moduleName) const {
     if (std::strcmp(moduleName, "map-editor") == 0) {
         return mimita::game::gMapEditor != nullptr;
     }
+    if (std::strcmp(moduleName, "map-geometry") == 0) {
+        return mimita::game::gMapGeometry != nullptr;
+    }
     std::int32_t loaded = 0;
     mimita::game::invoke(mimita::host::ModuleOp::ModuleLoaded, moduleName,
                          static_cast<std::uint32_t>(std::strlen(moduleName) + 1),
@@ -183,6 +225,10 @@ std::uint32_t ModuleHost::activeGeneration(const char* moduleName) const {
         return mimita::game::gMapEditor
             ? mimita::game::gMapEditor->base.generation : 0;
     }
+    if (std::strcmp(moduleName, "map-geometry") == 0) {
+        return mimita::game::gMapGeometry
+            ? mimita::game::gMapGeometry->base.generation : 0;
+    }
     std::uint32_t generation = 0;
     mimita::game::invoke(mimita::host::ModuleOp::ActiveGeneration, moduleName,
                          static_cast<std::uint32_t>(std::strlen(moduleName) + 1),
@@ -200,6 +246,11 @@ bool ModuleHost::collisionActorPairPolicy(mimita_collision_policy::ActorPairPoli
     return mimita::game::forward(mimita::host::ModuleOp::CollisionActorPairPolicy, request, 0);
 }
 bool ModuleHost::mapGeometryNodePolicy(mimita_map_geometry::NodePolicyV1* request) {
+    if (request && mimita::game::gMapGeometry) {
+        return mimita::game::invokeMapGeometry(
+            mimita_module::EVENT_MAP_GEOMETRY_NODE_POLICY, request,
+            sizeof(*request)) && request->result != 0;
+    }
     return mimita::game::forward(mimita::host::ModuleOp::MapGeometryNodePolicy, request, 0);
 }
 bool ModuleHost::networkHitClaimPolicy(mimita_network_policy::HitClaimPolicyV1* request) {
@@ -255,6 +306,11 @@ bool ModuleHost::mapEditorResolveClick(mimita_map_editor::EditorClickV1* request
     return mimita::game::forward(mimita::host::ModuleOp::MapEditorResolveClick, request, 0);
 }
 bool ModuleHost::mapGeometryObjectPlan(mimita_map_geometry::ObjectPlanV1* request) {
+    if (request && mimita::game::gMapGeometry) {
+        return mimita::game::invokeMapGeometry(
+            mimita_module::EVENT_MAP_GEOMETRY_OBJECT_PLAN, request,
+            sizeof(*request)) && request->result != 0;
+    }
     return mimita::game::forward(mimita::host::ModuleOp::MapGeometryObjectPlan, request, 0);
 }
 bool ModuleHost::networkCombatValidationPolicy(mimita_network_policy::CombatValidationPolicyV1* request) {
@@ -318,6 +374,11 @@ bool ModuleHost::npcTargetingPolicy(mimita_npc_behavior::TargetingPolicyV1* requ
     return mimita::game::forward(mimita::host::ModuleOp::NpcTargetingPolicy, request, 0);
 }
 bool ModuleHost::worldRenderingBuildBox(mimita_world_rendering::BoxMeshV1* request) {
+    if (request && mimita::game::gWorldRendering) {
+        return mimita::game::invokeWorldRendering(
+            mimita_module::EVENT_RENDER_BUILD_BOX, request, sizeof(*request)) &&
+            request->result != 0;
+    }
     return mimita::game::forward(mimita::host::ModuleOp::WorldRenderingBuildBox, request, 0);
 }
 
@@ -521,6 +582,20 @@ bool ModuleHost::mapEditorSetSelectedPosition(const float position[3]) {
 
 bool ModuleHost::mapGeometrySignature(const char* bytes, std::uint32_t byteCount,
                                       std::uint64_t* outSignature) {
+    if (mimita::game::gMapGeometry) {
+        mimita_map_geometry::SignatureV1 payload{};
+        payload.version = mimita_map_geometry::ABI_VERSION;
+        payload.structSize = sizeof(payload);
+        payload.bytes = bytes;
+        payload.byteCount = byteCount;
+        if (!mimita::game::invokeMapGeometry(
+                mimita_module::EVENT_MAP_GEOMETRY_SIGNATURE, &payload,
+                sizeof(payload)) || payload.result == 0) {
+            return false;
+        }
+        if (outSignature) *outSignature = payload.outSignature;
+        return true;
+    }
     mimita::host::ModuleArgs args{};
     args.ptr0 = const_cast<char*>(bytes);
     args.u0 = byteCount;
@@ -550,6 +625,24 @@ bool ModuleHost::npcBehaviorHoldPursuit(std::uint32_t actorId, std::uint32_t tic
 bool ModuleHost::worldRenderingAnalyzeFaces(
     const float transform[16], const float cameraPosition[3],
     mimita_world_rendering::FaceAuditV1* outFaces, std::uint32_t faceCapacity) {
+    if (transform && cameraPosition && mimita::game::gWorldRendering) {
+        mimita_world_rendering::AnalyzeFacesV1 payload{};
+        std::memcpy(payload.transform, transform, sizeof(payload.transform));
+        std::memcpy(payload.cameraPosition, cameraPosition,
+                    sizeof(payload.cameraPosition));
+        payload.capacity = faceCapacity;
+        if (!mimita::game::invokeWorldRendering(
+                mimita_module::EVENT_RENDER_ANALYZE_FACES, &payload,
+                sizeof(payload)) || payload.result == 0) {
+            return false;
+        }
+        const std::uint32_t count =
+            faceCapacity < mimita_world_rendering::FACE_COUNT
+                ? faceCapacity : mimita_world_rendering::FACE_COUNT;
+        if (outFaces) std::memcpy(outFaces, payload.faces,
+                                  count * sizeof(payload.faces[0]));
+        return true;
+    }
     mimita::host::ModuleArgs args{};
     args.ptr0 = const_cast<float*>(transform);
     args.ptr1 = const_cast<float*>(cameraPosition);

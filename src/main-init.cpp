@@ -130,7 +130,6 @@
 #include "notifications/notifications.h"
 #include "utils/tips.h"
 #include <windows.h>
-#include <glad/glad.h>
 
 // Forward declaration from player-commands.cpp
 void requestSendChatMessage(const std::string& message);

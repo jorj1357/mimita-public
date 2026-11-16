@@ -78,6 +78,9 @@
     "src/avatar/character-registry.cpp": [
       "CharacterRegistry"
     ],
+    "src/avatar/cosmetic-system.cpp": [
+      "StructuredLogger"
+    ],
     "src/camera/camera-commands.cpp": [
       "Terminal",
       "TerminalState"
@@ -90,7 +93,6 @@
     ],
     "src/combat/death-system.cpp": [
       "DebugLog",
-      "MultiplayerContextGlobal",
       "StructuredLogger",
       "TerminalState"
     ],
@@ -117,7 +119,6 @@
     "src/combat/revolver-system.cpp": [
       "DebugLog",
       "DebugVis",
-      "MultiplayerContextGlobal",
       "Terminal"
     ],
     "src/combat/weapon-attachment.cpp": [
@@ -125,7 +126,6 @@
     ],
     "src/combat/weapon-audio.cpp": [
       "DebugLog",
-      "MultiplayerContextGlobal",
       "SizeScalingConfig"
     ],
     "src/combat/weapon-collision-config.cpp": [
@@ -146,7 +146,6 @@
     ],
     "src/combat/weapon-fire-damage.cpp": [
       "DebugLog",
-      "MultiplayerContextGlobal",
       "StructuredLogger"
     ],
     "src/combat/weapon-fire-effects.cpp": [
@@ -163,7 +162,6 @@
       "DebugLog"
     ],
     "src/combat/weapon-godball-movement.cpp": [
-      "MultiplayerContextGlobal",
       "Terminal"
     ],
     "src/combat/weapon-godball-physics.cpp": [
@@ -216,8 +214,7 @@
     ],
     "src/combat/weapon-spyknife.cpp": [
       "DebugLog",
-      "DebugVis",
-      "MultiplayerContextGlobal"
+      "DebugVis"
     ],
     "src/combat/weapon-swordsword.cpp": [
       "DebugLog"
@@ -230,7 +227,6 @@
       "AnalyticsManager",
       "DebugLog",
       "DebugVis",
-      "MultiplayerContextGlobal",
       "Terminal",
       "WeaponRegistry"
     ],
@@ -324,14 +320,16 @@
       "ActorCollisionConfig",
       "DebugVis",
       "MapConfigRegistry",
-      "MovementJsonConfig",
-      "MultiplayerContextGlobal"
+      "MovementJsonConfig"
     ],
     "src/debug/debug-visuals.cpp": [
       "DebugVis"
     ],
     "src/debug/log-manager.cpp": [
       "LogManager"
+    ],
+    "src/debug/npckillfeed-log.cpp": [
+      "DebugLog"
     ],
     "src/debug/structured-log.cpp": [
       "DebugLog",
@@ -387,7 +385,6 @@
       "Terminal"
     ],
     "src/devtools/terminal.cpp": [
-      "MultiplayerContextGlobal",
       "StructuredLogger",
       "Terminal",
       "TerminalState"
@@ -480,6 +477,7 @@
       "ModuleHost",
       "Perf",
       "StructuredLogger",
+      "Terminal",
       "TerminalState",
       "WeaponRegistry"
     ],
@@ -511,7 +509,6 @@
       "MapConfigRegistry",
       "ModuleHost",
       "MovementJsonConfig",
-      "MultiplayerContextGlobal",
       "NpcDifficultyConfig",
       "Perf",
       "SizeScalingConfig",
@@ -556,11 +553,18 @@
       "DebugLog",
       "DebugVis",
       "Perf",
+      "StructuredLogger",
       "TerminalState"
     ],
     "src/engine/engine-tick.cpp": [
       "DebugLog",
       "Perf",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/engine/whole-game-entry.cpp": [
+      "MultiplayerContextGlobal",
       "StructuredLogger",
       "Terminal",
       "TerminalState"
@@ -602,6 +606,9 @@
       "DebugLog",
       "TerminalState"
     ],
+    "src/game/audio-analysis-bridge-module.cpp": [
+      "StructuredLogger"
+    ],
     "src/game/bomb-tag-config.cpp": [
       "GuiLayoutManager"
     ],
@@ -616,12 +623,22 @@
       "GuiLayoutManager"
     ],
     "src/game/game-cli.cpp": [
-      "BehaviorProfileRegistry",
       "DebugLog",
       "GamemodeRegistry",
       "NpcDifficultyConfig",
       "StructuredLogger",
       "TerminalState"
+    ],
+    "src/game/game-globals.cpp": [
+      "MultiplayerContextGlobal"
+    ],
+    "src/game/game-input-module.cpp": [
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/game/game-module.cpp": [
+      "StructuredLogger",
+      "Terminal"
     ],
     "src/game/gamemode-manager.cpp": [
       "DebugLog",
@@ -637,11 +654,24 @@
     "src/game/host-log-bridge-module.cpp": [
       "StructuredLogger"
     ],
+    "src/game/hot-status-tips.cpp": [
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/game/main-menu-command-module.cpp": [
+      "DebugLog",
+      "TerminalState"
+    ],
     "src/game/module-host-bridge-module.cpp": [
       "ModuleHost"
     ],
     "src/game/persistence-bridge-module.cpp": [
       "PersistenceQueue"
+    ],
+    "src/game/server-runtime-module.cpp": [
+      "GamemodeRegistry",
+      "StructuredLogger",
+      "serverGamemodeState"
     ],
     "src/game/spawn-override.cpp": [
       "DebugLog"
@@ -799,6 +829,7 @@
     ],
     "src/host/host-runtime.cpp": [
       "ModuleHost",
+      "MultiplayerContextGlobal",
       "PersistenceQueue",
       "StructuredLogger"
     ],
@@ -818,9 +849,6 @@
     "src/impact/destructible-render.cpp": [
       "PhysicalEntitySystem"
     ],
-    "src/impact/destructible-selftest.cpp": [
-      "PhysicalEntitySystem"
-    ],
     "src/impact/destructible-world-config.cpp": [
       "DebugLog"
     ],
@@ -837,6 +865,9 @@
       "StructuredLogger",
       "TerminalState",
       "VehicleSystem"
+    ],
+    "src/input/input-router.cpp": [
+      "StructuredLogger"
     ],
     "src/input/mouse-lock.cpp": [
       "StructuredLogger"
@@ -967,11 +998,6 @@
     "src/network/badconn/badconn.cpp": [
       "DebugLog"
     ],
-    "src/network/client.cpp": [
-      "DebugVis",
-      "GuiLayoutManager",
-      "StructuredLogger"
-    ],
     "src/network/community-match-client.cpp": [
       "AuthSystem",
       "DebugLog",
@@ -991,14 +1017,14 @@
     "src/network/coordinator-client.cpp": [
       "DebugLog"
     ],
-    "src/network/destruction-replication-selftest.cpp": [
-      "PhysicalEntitySystem"
-    ],
     "src/network/disagreement-visuals.cpp": [
       "StructuredLogger"
     ],
     "src/network/ice/ice-agent.cpp": [
       "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/network/ice/ice-events.cpp": [
       "StructuredLogger"
     ],
     "src/network/movement-validation.cpp": [
@@ -1011,7 +1037,6 @@
     "src/network/multiplayer-interpolation.cpp": [
       "DebugLog",
       "ModuleHost",
-      "MultiplayerContextGlobal",
       "StructuredLogger",
       "TerminalState",
       "WeaponRegistry"
@@ -1056,6 +1081,9 @@
     ],
     "src/network/network-weapons.cpp": [
       "WeaponRegistry"
+    ],
+    "src/network/packet-route.cpp": [
+      "StructuredLogger"
     ],
     "src/network/physical-entity-replication.cpp": [
       "PhysicalEntitySystem"
@@ -1437,7 +1465,6 @@
     ],
     "src/physics/physics-mini.cpp": [
       "DebugLog",
-      "MultiplayerContextGlobal",
       "Perf",
       "StructuredLogger",
       "TerminalState"
@@ -1462,7 +1489,6 @@
       "GamemodeRegistry",
       "MapConfigRegistry",
       "ModuleHost",
-      "MultiplayerContextGlobal",
       "StructuredLogger",
       "Terminal"
     ],
@@ -1500,9 +1526,11 @@
       "Terminal"
     ],
     "src/render/post-fx.cpp": [
-      "DebugLog"
+      "DebugLog",
+      "StructuredLogger"
     ],
     "src/render/postfx-commands.cpp": [
+      "StructuredLogger",
       "Terminal"
     ],
     "src/render/render-player.cpp": [
@@ -1636,14 +1664,12 @@
     ],
     "src/terminal/actor-commands.cpp": [
       "GamemodeRegistry",
-      "MultiplayerContextGlobal",
       "StructuredLogger",
       "Terminal",
       "TerminalState",
       "serverGamemodeState"
     ],
     "src/terminal/admin-commands.cpp": [
-      "MultiplayerContextGlobal",
       "Terminal",
       "TerminalState"
     ],
@@ -1664,7 +1690,6 @@
       "DebugVis",
       "GamemodeRegistry",
       "MapConfigRegistry",
-      "MultiplayerContextGlobal",
       "Terminal",
       "TerminalState",
       "serverGamemodeState"
@@ -1694,7 +1719,6 @@
       "TerminalState"
     ],
     "src/terminal/npc-commands.cpp": [
-      "MultiplayerContextGlobal",
       "NpcDifficultyConfig",
       "Terminal",
       "TerminalState"
@@ -1712,7 +1736,6 @@
       "TerminalState"
     ],
     "src/terminal/procedural-world-commands.cpp": [
-      "MultiplayerContextGlobal",
       "Terminal",
       "TerminalState"
     ],
@@ -1872,7 +1895,6 @@
     ],
     "BehaviorProfileRegistry": [
       "src/engine/engine-tick-setup.cpp",
-      "src/game/game-cli.cpp",
       "src/main-systems.cpp",
       "src/network/server-gamemode.cpp",
       "src/network/server-melee-actions.cpp",
@@ -1939,6 +1961,7 @@
       "src/config/spawn-velocity-config.cpp",
       "src/config/weapon-tracers-config.cpp",
       "src/debug/debug-log.cpp",
+      "src/debug/npckillfeed-log.cpp",
       "src/debug/structured-log.cpp",
       "src/devtools/dev-overlay-commands.cpp",
       "src/devtools/dev-teleport.cpp",
@@ -1972,6 +1995,7 @@
       "src/game/duel.cpp",
       "src/game/game-cli.cpp",
       "src/game/gamemode-manager.cpp",
+      "src/game/main-menu-command-module.cpp",
       "src/game/spawn-override.cpp",
       "src/game/spawn-utils.cpp",
       "src/gamemode/gamemode-runtime-resolver.cpp",
@@ -2126,7 +2150,6 @@
       "src/interaction/interaction-system.cpp",
       "src/main-init.cpp",
       "src/mapeditor/map-editor.cpp",
-      "src/network/client.cpp",
       "src/network/multiplayer-projectiles.cpp",
       "src/npc/npc.cpp",
       "src/physics/constraints/constraint-debug.cpp",
@@ -2152,6 +2175,7 @@
       "src/entities/player-animation.cpp",
       "src/game/game-cli.cpp",
       "src/game/gamemode-manager.cpp",
+      "src/game/server-runtime-module.cpp",
       "src/gamemode/gamemode.cpp",
       "src/gamemode/map-config.cpp",
       "src/main-systems.cpp",
@@ -2210,7 +2234,6 @@
       "src/gui/menus/sign-in-menu.cpp",
       "src/gui/password-popup.cpp",
       "src/mapeditor/map-editor.cpp",
-      "src/network/client.cpp",
       "src/notifications/notifications.cpp"
     ],
     "HotReloadSystem": [
@@ -2313,27 +2336,12 @@
       "src/terminal/movement-commands.cpp"
     ],
     "MultiplayerContextGlobal": [
-      "src/combat/death-system.cpp",
-      "src/combat/revolver-system.cpp",
-      "src/combat/weapon-audio.cpp",
-      "src/combat/weapon-fire-damage.cpp",
-      "src/combat/weapon-godball-movement.cpp",
-      "src/combat/weapon-spyknife.cpp",
-      "src/combat/weapon-system.cpp",
-      "src/debug/debug-visuals-scene.cpp",
-      "src/devtools/terminal.cpp",
-      "src/engine/engine-tick-setup.cpp",
+      "src/engine/whole-game-entry.cpp",
+      "src/game/game-globals.cpp",
+      "src/host/host-runtime.cpp",
       "src/main-init.cpp",
       "src/main-systems.cpp",
-      "src/main.cpp",
-      "src/network/multiplayer-interpolation.cpp",
-      "src/physics/physics-mini.cpp",
-      "src/procedural/infinite-world-runtime.cpp",
-      "src/terminal/actor-commands.cpp",
-      "src/terminal/admin-commands.cpp",
-      "src/terminal/debug-commands.cpp",
-      "src/terminal/npc-commands.cpp",
-      "src/terminal/procedural-world-commands.cpp"
+      "src/main.cpp"
     ],
     "NpcDifficultyConfig": [
       "src/engine/engine-tick-setup.cpp",
@@ -2404,9 +2412,7 @@
       "src/gamemode/arena-ball.cpp",
       "src/impact/destructible-async-cut.cpp",
       "src/impact/destructible-render.cpp",
-      "src/impact/destructible-selftest.cpp",
       "src/impact/impact-system.cpp",
-      "src/network/destruction-replication-selftest.cpp",
       "src/network/multiplayer-physical-entities.cpp",
       "src/network/multiplayer-projectiles.cpp",
       "src/network/physical-entity-replication.cpp",
@@ -2454,6 +2460,7 @@
       "src/audio/music-manager.cpp",
       "src/avatar/avatar-atlas.cpp",
       "src/avatar/avatar.cpp",
+      "src/avatar/cosmetic-system.cpp",
       "src/combat/death-system.cpp",
       "src/combat/explosion-fx.cpp",
       "src/combat/grenade-registry.cpp",
@@ -2495,16 +2502,23 @@
       "src/engine/engine-tick-state.cpp",
       "src/engine/engine-tick-ui-game-hud.cpp",
       "src/engine/engine-tick-ui-overlays.cpp",
+      "src/engine/engine-tick-ui.cpp",
       "src/engine/engine-tick.cpp",
+      "src/engine/whole-game-entry.cpp",
       "src/entities/player-animation-config.cpp",
       "src/entities/player-animation.cpp",
       "src/entities/player-avatar-animations.cpp",
       "src/entities/player-loader.cpp",
       "src/entities/player-render.cpp",
       "src/entities/player.cpp",
+      "src/game/audio-analysis-bridge-module.cpp",
       "src/game/game-cli.cpp",
+      "src/game/game-input-module.cpp",
+      "src/game/game-module.cpp",
       "src/game/host-compat-bridge-module.cpp",
       "src/game/host-log-bridge-module.cpp",
+      "src/game/hot-status-tips.cpp",
+      "src/game/server-runtime-module.cpp",
       "src/gamemode/arena-ball.cpp",
       "src/gamemode/gamemode.cpp",
       "src/gamemode/map-config.cpp",
@@ -2520,6 +2534,7 @@
       "src/impact/destructible-async-cut.cpp",
       "src/impact/impact-system.cpp",
       "src/input/input-poll.cpp",
+      "src/input/input-router.cpp",
       "src/input/mouse-lock.cpp",
       "src/interaction/interaction-system.cpp",
       "src/interaction/world-interaction-runtime.cpp",
@@ -2536,11 +2551,11 @@
       "src/mapeditor/map-editor.cpp",
       "src/mapeditor/world-edit-commands.cpp",
       "src/network/avatar-network-client.cpp",
-      "src/network/client.cpp",
       "src/network/community-match-client.cpp",
       "src/network/confirmed-damage-presentation.cpp",
       "src/network/disagreement-visuals.cpp",
       "src/network/ice/ice-agent.cpp",
+      "src/network/ice/ice-events.cpp",
       "src/network/multiplayer-context.cpp",
       "src/network/multiplayer-interpolation.cpp",
       "src/network/multiplayer-packets.cpp",
@@ -2549,6 +2564,7 @@
       "src/network/multiplayer-reconcile.cpp",
       "src/network/multiplayer-shots.cpp",
       "src/network/multiplayer-tick.cpp",
+      "src/network/packet-route.cpp",
       "src/network/server-attack.cpp",
       "src/network/server-avatar-network.cpp",
       "src/network/server-browser.cpp",
@@ -2592,6 +2608,8 @@
       "src/pobjects/persistent-physics.cpp",
       "src/procedural/infinite-world-runtime.cpp",
       "src/ragdoll/ragdoll-mode.cpp",
+      "src/render/post-fx.cpp",
+      "src/render/postfx-commands.cpp",
       "src/render/render-player.cpp",
       "src/render/render-world-mesh.cpp",
       "src/render/render-world.cpp",
@@ -2647,11 +2665,16 @@
       "src/effects/hitfx-commands.cpp",
       "src/engine/engine-tick-camera.cpp",
       "src/engine/engine-tick-combat.cpp",
+      "src/engine/engine-tick-net.cpp",
       "src/engine/engine-tick-replay.cpp",
       "src/engine/engine-tick-state.cpp",
       "src/engine/engine-tick-ui-replay-hud.cpp",
       "src/engine/engine-tick.cpp",
+      "src/engine/whole-game-entry.cpp",
       "src/entities/aim-commands.cpp",
+      "src/game/game-input-module.cpp",
+      "src/game/game-module.cpp",
+      "src/game/hot-status-tips.cpp",
       "src/gui/gui-editor-commands.cpp",
       "src/gui/gui-main.cpp",
       "src/gui/menus/pause-menu.cpp",
@@ -2744,10 +2767,12 @@
       "src/engine/engine-tick-ui-replay-hud.cpp",
       "src/engine/engine-tick-ui.cpp",
       "src/engine/engine-tick.cpp",
+      "src/engine/whole-game-entry.cpp",
       "src/fister/fister-port.cpp",
       "src/game/bomb-tag-state.cpp",
       "src/game/game-cli.cpp",
       "src/game/gamemode-manager.cpp",
+      "src/game/main-menu-command-module.cpp",
       "src/gui/gui-main.cpp",
       "src/gui/hud/chat-window.cpp",
       "src/gui/hud/player-nameplates.cpp",
@@ -2889,6 +2914,7 @@
     "serverGamemodeState": [
       "src/devtools/scenario-server-playback.cpp",
       "src/devtools/scenario-server-recorder.cpp",
+      "src/game/server-runtime-module.cpp",
       "src/mapeditor/map-editor.cpp",
       "src/network/server-attack.cpp",
       "src/network/server-avatar-network.cpp",

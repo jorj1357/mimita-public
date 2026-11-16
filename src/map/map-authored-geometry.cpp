@@ -1,4 +1,5 @@
 // 2026-10-23
+#include <cstdint>
 #include "map/map-authored-geometry.h"
 #include "map/map-glb-authored.h"
 
@@ -147,7 +148,7 @@ uint64_t serverCellHash(uint32_t seed, const std::string& version,
     return h ^ (h >> 27);
 }
 
-GLuint resolveBlockTexture(const std::string& material)
+std::uint32_t resolveBlockTexture(const std::string& material)
 {
     if (material.empty()) return 0;
     if (material.find('/') != std::string::npos ||

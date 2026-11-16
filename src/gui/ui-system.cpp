@@ -12,7 +12,6 @@
 #include <string>
 #include <vector>
 
-#include <glad/glad.h>
 #include "renderer/renderer.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
@@ -24,14 +23,14 @@
 
 namespace UISys {
 GLFWwindow* gWindow = nullptr;
-GLuint gProgram = 0;
-GLuint gVao = 0;
-GLuint gVbo = 0;
-GLint gScreenLoc = -1;
-GLint gColorLoc = -1;
-GLint gUseTexLoc = -1;
-GLint gTexLoc = -1;
-GLint gImageTexLoc = -1;
+std::uint32_t gProgram = 0;
+std::uint32_t gVao = 0;
+std::uint32_t gVbo = 0;
+std::int32_t gScreenLoc = -1;
+std::int32_t gColorLoc = -1;
+std::int32_t gUseTexLoc = -1;
+std::int32_t gTexLoc = -1;
+std::int32_t gImageTexLoc = -1;
 int gFbW = 1;
 int gFbH = 1;
 bool gDebug = false;

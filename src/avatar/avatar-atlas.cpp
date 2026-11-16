@@ -34,7 +34,6 @@ static void fillAvatarRigExtraNodes(const AvatarRig& rig)
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #include "entities/player.h"

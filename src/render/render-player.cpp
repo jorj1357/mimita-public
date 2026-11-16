@@ -41,7 +41,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <glad/glad.h>
 #include "render/render-command.h"
 #include "render/world-shader.h"
 

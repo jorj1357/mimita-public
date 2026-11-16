@@ -151,7 +151,7 @@ static void finalizeServerNpcMirrorSpawn(ServerNpc& npc,
 }
 
 namespace {
-void migrateServerGamemodeBlock(void* oldBlock, std::uint32_t oldSize,
+bool migrateServerGamemodeBlock(void* oldBlock, std::uint32_t oldSize,
                                 void* newBlock, std::uint32_t newSize) {
     auto* next = new (newBlock) ServerGamemodeState();
     if (oldBlock && oldSize == sizeof(ServerGamemodeState)) {
@@ -159,7 +159,7 @@ void migrateServerGamemodeBlock(void* oldBlock, std::uint32_t oldSize,
         *next = std::move(*previous);
         previous->~ServerGamemodeState();
         next->schemaVersion = kServerGamemodeSchemaVersion;
-        return;
+        return true;
     }
     // Older/smaller layout: start from defaults. Version-specific field
     // copies belong here when a schema version is added.
@@ -172,6 +172,7 @@ void migrateServerGamemodeBlock(void* oldBlock, std::uint32_t oldSize,
             nlohmann::json{{"old_size", oldSize}, {"new_size", newSize}},
             __FILE__, __LINE__, __FUNCTION__);
     }
+    return true;
 }
 }  // namespace
 

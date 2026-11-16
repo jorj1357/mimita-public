@@ -29,7 +29,6 @@
 #include <vector>
 #include <chrono>
 
-#include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -55,12 +54,6 @@ void GLBDebugData::clear()
 
 namespace {
 
-#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
-#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
-#endif
-#ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
-#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
-#endif
 
 #define GLB_LOG(...) Debug::logAuto(Debug::Category::GLB, __VA_ARGS__)
 
@@ -231,9 +224,9 @@ Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/, Mesh* skyMesh,
             glbDir = resolvedPath.substr(0, slashPos);
     }
 
-    std::vector<GLuint> imageTextures(model.images.size(), 0);
-    std::vector<GLuint> colorTextures;
-    std::vector<GLuint> materialTextures(model.materials.size(), 0);
+    std::vector<std::uint32_t> imageTextures(model.images.size(), 0);
+    std::vector<std::uint32_t> colorTextures;
+    std::vector<std::uint32_t> materialTextures(model.materials.size(), 0);
 
     auto tMat = std::chrono::steady_clock::now();
     processGLBMaterials(model, glbDir, imageTextures, materialTextures, colorTextures);
@@ -243,12 +236,12 @@ Mesh loadGLB(const std::string& path, bool /*storeDebugInfo*/, Mesh* skyMesh,
     }
 
     Mesh mesh;
-    for (GLuint texture : imageTextures)
+    for (std::uint32_t texture : imageTextures)
     {
         if (texture)
             mesh.ownedTextures.push_back(texture);
     }
-    for (GLuint texture : colorTextures)
+    for (std::uint32_t texture : colorTextures)
     {
         if (texture)
             mesh.ownedTextures.push_back(texture);
@@ -498,7 +491,7 @@ void releaseMeshGLResources(Mesh& mesh)
 {
     if (!mesh.ownedTextures.empty())
     {
-        for (GLuint texture : mesh.ownedTextures)
+        for (std::uint32_t texture : mesh.ownedTextures)
             if (texture) mimita::game::deleteTexture(texture);
         GLB_LOG("[GLB] released owned textures=%zu\n", mesh.ownedTextures.size());
     }

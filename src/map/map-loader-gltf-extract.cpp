@@ -30,7 +30,7 @@ void appendPrimitive(
     int primitiveIndex,
     const tinygltf::Primitive& primitive,
     const glm::mat4& transform,
-    const std::vector<GLuint>& materialTextures,
+    const std::vector<std::uint32_t>& materialTextures,
     Mesh& mesh
 ) {
     if (shouldLogPrimitiveDetails(meshIndex, primitiveIndex))
@@ -127,7 +127,7 @@ void appendPrimitive(
     batch.materialName = primitive.material >= 0 && primitive.material < (int)model.materials.size()
         ? model.materials[primitive.material].name
         : "default";
-    static GLuint defaultTexture = 0;
+    static std::uint32_t defaultTexture = 0;
     if (!defaultTexture)
         defaultTexture = gTextures.get("default");
     batch.texture = defaultTexture;
