@@ -680,32 +680,6 @@ namespace {
 
 ServerGameOverrides gServerOverrides;
 
-std::vector<std::string> communityMapPool()
-{
-    // Automatic community rotation is deliberately restricted to the
-    // validated, JSON-owned gamemode pool. Explicit map commands still use
-    // the normal map-loading path and may select maps outside this pool.
-    return GamemodeMapPool::instance().list();
-}
-
-// If the selected community mode maps to a gamemode that declares its own
-// `maps` list, that list's first entry is the mode's authoritative default
-// map. Explicit user map selection still wins when it differs from the
-// generic fallback. Returns empty when the mode has no declared map.
-std::string gamemodeDefaultMap(const std::string& communityModeId)
-{
-    if (communityModeId.empty() || communityModeId == "sandbox")
-        return {};
-    CommunityServerConfig& cfg = CommunityServerConfig::instance();
-    if (cfg.modes().empty()) cfg.load();
-    const CommunityMode* mode = cfg.modeById(communityModeId);
-    const std::string gamemodeId = mode ? mode->gamemodeId : communityModeId;
-    const Gamemode& gm = GamemodeRegistry::instance().get(gamemodeId);
-    if (!gm.maps.empty())
-        return gm.maps.front();
-    return {};
-}
-
 } // namespace
 
 std::string gServerHostPlayerName;
@@ -2173,22 +2147,9 @@ void stopListenServer(ListenServerState& state)
 // and extracted from the old tickListenServer accumulator loop.
 static void simulateOneServerTick(ListenServerState& state)
 {
-    // Hot-reload networkingconfig.json so hosted servers pick up changes live.
-    NetworkingConfig::instance().pollReload();
-
-    // Hot-reload NPC difficulty so hosted-server NPCs honor the JSON live.
-    NpcDifficultyConfig::instance().pollReload();
-    static uint64_t listenNpcDifficultyRevision = 0;
-    if (listenNpcDifficultyRevision != NpcDifficultyConfig::instance().revision())
-    {
-        state.npcSystem->refreshDifficultyTuning();
-        listenNpcDifficultyRevision = NpcDifficultyConfig::instance().revision();
-    }
-    CommunityServerConfig::instance().pollReload();
-    SpawnVelocityConfig::instance().pollReload();
-    if (MatchRoleRegistry::instance().pollReload())
-        ActorPresetWeapons::refresh();
-    BehaviorProfileRegistry::instance().pollReload();
+    // Game-owned config reload policy runs in the active generation.
+    mimita::host::HostRuntime::instance().serverPolicyPollReload(
+        state.npcSystem.get(), state.tick);
 
     {
         char buffer[2048];

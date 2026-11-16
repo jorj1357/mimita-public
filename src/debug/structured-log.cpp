@@ -1,5 +1,4 @@
 #include "structured-log.h"
-#include "debug-log.h"
 #include "log-manager.h"
 #include "../config.h"
 #include "../utils/path_utils.h"
@@ -717,8 +716,8 @@ void StructuredLogger::loadConfig() {
     const std::string configPath = "config/debuglogger.json";
     std::ifstream f(configPath);
     if (!f.is_open()) {
-        Debug::log(Debug::Category::General,
-            "[STRUCTURED_LOG] Config not found: %s\n", configPath.c_str());
+        std::fprintf(stderr, "[STRUCTURED_LOG] Config not found: %s\n",
+                     configPath.c_str());
         return;
     }
 
@@ -868,7 +867,7 @@ void StructuredLogger::loadConfig() {
     }
     catch (const std::exception& e) {
         mConfigReloadErrors++;
-        Debug::error(Debug::Category::General,
+        std::fprintf(stderr,
             "[STRUCTURED_LOG] Config parse error: %s (file: %s, errors=%d)\n",
             e.what(), configPath.c_str(), mConfigReloadErrors);
     }
@@ -1256,8 +1255,9 @@ void StructuredLogger::init() {
                 for (auto it = parsed.begin(); it != parsed.end(); ++it)
                     runFields[it.key()] = it.value();
         } catch (const std::exception& e) {
-            Debug::warn(Debug::Category::General,
-                "[STRUCTURED_LOG] invalid MIMITA_RUN_METADATA: %s\n", e.what());
+            std::fprintf(stderr,
+                "[STRUCTURED_LOG] invalid MIMITA_RUN_METADATA: %s\n",
+                e.what());
         }
     }
     writeEvent(StructuredCategory::General, StructuredLevel::Important,
@@ -1273,9 +1273,8 @@ void StructuredLogger::init() {
                  {"executable", exePath},
                  {"pid", static_cast<unsigned long long>(GetCurrentProcessId())}});
 
-    Debug::log(Debug::Category::General,
-        "[STRUCTURED_LOG] Initialized: events=%s run=%s\n",
-        mEventsPath.c_str(), mRunId.c_str());
+    std::fprintf(stderr, "[STRUCTURED_LOG] Initialized: events=%s run=%s\n",
+                 mEventsPath.c_str(), mRunId.c_str());
 }
 
 void StructuredLogger::shutdown() {
@@ -1373,8 +1372,7 @@ void StructuredLogger::pollConfig() {
             }
         }
 
-        Debug::log(Debug::Category::General,
-            "[STRUCTURED_LOG] Config hot-reloaded\n");
+        std::fprintf(stderr, "[STRUCTURED_LOG] Config hot-reloaded\n");
     }
 }
 

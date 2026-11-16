@@ -124,6 +124,9 @@ EXE_NAME = os.environ.get("MIMITA_EXE_NAME", "mimita.exe")
 # authority; this only allows a development EXE to publish while the cutover is
 # still in progress. It must never be enabled by default. Enable it with
 # MIMITA_CUTOVER_MIGRATION=1 or build/hot-reload/migration-lane.enable.
+# The marker is removed at the Cutover-1 strict flip. Migration builds include
+# the game bridge modules so the development EXE can link; this list is
+# migration-only and not part of the cold EXE. Remove this list at the flip.
 MIGRATION_LANE = (
     os.environ.get("MIMITA_CUTOVER_MIGRATION") == "1" or
     os.path.isfile(os.path.join(ROOT, "build", "hot-reload",
