@@ -170,6 +170,9 @@ public:
     void clearWorldAdapter();
 
     std::uint64_t activeGeneration() const { return loader_.activeGeneration(); }
+    void* activeGameModule() const {
+        return loader_.activeGenerationInfo().module;
+    }
     const GameServerV1* activeServerApi() const {
         return loader_.activeGenerationInfo().serverApi;
     }
@@ -184,7 +187,17 @@ public:
 
 private:
     HostRuntime();
-    ~HostRuntime() = default;
+    ~HostRuntime();
+
+    struct ReadySnapshot {
+        bool invalid = false;
+        std::uint64_t generation = 0;
+        std::string dll;
+        std::string error;
+    };
+
+    void startReadyWatcher();
+    void stopReadyWatcher();
 
     HostRuntime(const HostRuntime&) = delete;
     HostRuntime& operator=(const HostRuntime&) = delete;
@@ -384,8 +397,12 @@ private:
     std::uint64_t lastFailedGeneration_ = 0;
     std::string lastFailedDll_;
     std::chrono::steady_clock::time_point lastFailedAt_{};
-    std::chrono::steady_clock::time_point lastPoll_{};
     std::mutex swapMutex_;
+    std::thread readyWatchThread_;
+    std::atomic<bool> readyWatchStop_{false};
+    std::atomic<bool> readyPending_{false};
+    std::mutex readyResultMutex_;
+    ReadySnapshot readySnapshot_;
 };
 
 }  // namespace mimita::host

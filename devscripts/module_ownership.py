@@ -19,6 +19,8 @@ ENTRY_SUFFIX = "-module.cpp"
 
 def read_catalog(root: Path) -> dict:
     path = Path(root) / CATALOG_REL
+    if not path.is_file():
+        return {"version": 2, "modules": []}
     with open(path, "r", encoding="utf-8") as handle:
         catalog = json.load(handle)
     if not isinstance(catalog, dict):

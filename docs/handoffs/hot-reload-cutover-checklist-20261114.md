@@ -28,6 +28,22 @@ specification is `docs/specs/hotreload/hotreload.md`.
 | Legacy renderer | `src/render/render-command-legacy.cpp:13`, `src/host/game-gl-legacy.cpp:9` |
 | State fails closed on size change | `src/host/host-runtime.cpp:2067` `if (record.size != size || record.alignment != alignment) return nullptr;` |
 
+## Refreshed status (2026-11-16)
+
+- Gate 3, state migration: passed. Live same-PID `player_core` v1→v3 and
+  v2→v3 commits, plus poisoned-v2 rejection with old-state retention, are in
+  run `20261116_180054`, client PID `25896`.
+- Gates 5-6, EXE cutover/link gate: current generated reports show
+  `exe=46`, `cold=45`, `game_in_exe=0`, `cold_undefined=0`, and
+  `linked_game_sources=0`.
+- Gate 1 still needs a fresh connected hot-client gate run. The migration run
+  disconnected after repeated swaps, so it is not final gameplay acceptance.
+- Gate 4 safe unload needs regeneration against the current generation set.
+- Gates 7-8 remain open.
+
+The blocker table below is historical code-location context. Re-check current
+code before using it.
+
 ## Suggested order
 
 1. B checkpoints the packet split and resident pump.

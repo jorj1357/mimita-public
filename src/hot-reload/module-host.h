@@ -180,6 +180,8 @@ public:
 
 private:
     void startup(bool serverProcess);
+    bool loadLocalModules(bool serverProcess);
+    bool mLocalModules = false;
     ModuleHost() = default;
     ~ModuleHost();
     ModuleHost(const ModuleHost&) = delete;

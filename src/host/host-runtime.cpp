@@ -1522,6 +1522,60 @@ bool HostRuntime::hotnessStrictMode() const {
 
 HostRuntime::HostRuntime() : barrier_(hostBarrier()) {}
 
+HostRuntime::~HostRuntime() {
+    stopReadyWatcher();
+}
+
+void HostRuntime::startReadyWatcher() {
+    if (readyWatchThread_.joinable())
+        return;
+    readyWatchStop_.store(false, std::memory_order_release);
+    readyWatchThread_ = std::thread([this]() {
+        using Clock = std::chrono::steady_clock;
+        auto nextPoll = Clock::now();
+        while (!readyWatchStop_.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+            const auto now = Clock::now();
+            if (now < nextPoll)
+                continue;
+            nextPoll = now + std::chrono::milliseconds(250);
+
+            std::ifstream input(readyPath_);
+            if (!input.is_open())
+                continue;
+            nlohmann::json ready;
+            try {
+                input >> ready;
+            } catch (const std::exception& error) {
+                std::lock_guard<std::mutex> lock(readyResultMutex_);
+                readySnapshot_ = ReadySnapshot{};
+                readySnapshot_.invalid = true;
+                readySnapshot_.error = error.what();
+                readyPending_.store(true, std::memory_order_release);
+                continue;
+            }
+            if (ready.value("status", std::string()) != "ready")
+                continue;
+            const std::uint64_t generation =
+                ready.value("generation", std::uint64_t{0});
+            std::string dll = ready.value("dll", std::string());
+            if (generation == 0 || dll.empty())
+                continue;
+            std::lock_guard<std::mutex> lock(readyResultMutex_);
+            readySnapshot_ = ReadySnapshot{};
+            readySnapshot_.generation = generation;
+            readySnapshot_.dll = std::move(dll);
+            readyPending_.store(true, std::memory_order_release);
+        }
+    });
+}
+
+void HostRuntime::stopReadyWatcher() {
+    readyWatchStop_.store(true, std::memory_order_release);
+    if (readyWatchThread_.joinable())
+        readyWatchThread_.join();
+}
+
 void* HostRuntime::ensureStateObject(std::uint32_t id, std::uint32_t size,
                                      std::uint32_t alignment, std::int32_t* created) {
     if (created) *created = 0;
@@ -1743,6 +1797,7 @@ bool HostRuntime::startFromEnvironment() {
                    nlohmann::json{{"generation", generation},
                                   {"dll", dllPath},
                                   {"abi", kGameHostAbiVersion}});
+    startReadyWatcher();
     return true;
 }
 
@@ -1750,6 +1805,7 @@ void HostRuntime::shutdown() {
     if (!started_) {
         return;
     }
+    stopReadyWatcher();
     probeEnabled_.store(false, std::memory_order_release);
     barrier_.beginQuiesce(QuiesceMode::Shutdown);
     barrier_.finishQuiesce(2000);
@@ -2442,34 +2498,36 @@ void HostRuntime::poll() {
     if (!probeEnabled_.load(std::memory_order_acquire)) {
         return;
     }
-    const auto now = std::chrono::steady_clock::now();
-    if (now - lastPoll_ < std::chrono::milliseconds(250)) {
+    if (!readyPending_.load(std::memory_order_acquire)) {
         return;
     }
-    lastPoll_ = now;
 
-    std::lock_guard<std::mutex> swapLock(swapMutex_);
-    std::ifstream input(readyPath_);
-    if (!input.is_open()) {
-        return;
+    ReadySnapshot snapshot;
+    {
+        std::unique_lock<std::mutex> lock(readyResultMutex_, std::try_to_lock);
+        if (!lock.owns_lock()) {
+            return;
+        }
+        if (!readyPending_.load(std::memory_order_relaxed)) {
+            return;
+        }
+        snapshot = readySnapshot_;
+        readyPending_.store(false, std::memory_order_release);
     }
-    nlohmann::json ready;
-    try {
-        input >> ready;
-    } catch (const std::exception& error) {
-        emitProbeEvent("game.generation.ready-invalid", error.what(), 0,
+    if (snapshot.invalid) {
+        emitProbeEvent("game.generation.ready-invalid", snapshot.error, 0,
                        nlohmann::json{{"path", readyPath_}});
         return;
     }
-    if (ready.value("status", std::string()) != "ready") {
-        return;
-    }
-    const std::uint64_t generation = ready.value("generation", std::uint64_t{0});
-    const std::string dll = ready.value("dll", std::string());
+    const std::uint64_t generation = snapshot.generation;
+    const std::string& dll = snapshot.dll;
     if (generation == 0 || dll.empty() ||
         generation == activePublishedGeneration_) {
         return;
     }
+
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> swapLock(swapMutex_);
     {
         std::error_code pathError;
         const auto candidatePath = std::filesystem::absolute(dll, pathError);

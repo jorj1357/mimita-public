@@ -14,6 +14,7 @@
 #include "engine/engine-tick.h"
 #include "network/multiplayer-context.h"
 #include "perf/perf-frame.h"
+#include "perf/perf-spike.h"
 #include "terminal/terminal-state.h"
 #include "devtools/terminal.h"
 
@@ -95,7 +96,8 @@ void tickWholeGame(double deltaSeconds) {
     if (!gWholeGameReady || !gWholeGameEngine)
         return;
     engineTickSimulate(*gWholeGameEngine, gWholeGameFrameState);
-    executePendingStartupCommands();
+    { MIMITA_PERF_SCOPE("EngineTick::StartupCommands");
+      executePendingStartupCommands(); }
 }
 
 void renderWholeGame(void* renderContext) {

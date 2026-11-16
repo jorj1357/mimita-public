@@ -1,4 +1,5 @@
 #include "perf/perf.h"
+#include "perf/perf-accounting.h"
 #include "perf/perf-spike.h"
 #include "perf/perf-gpu.h"
 #include "perf/perf-frame.h"
@@ -26,6 +27,7 @@
 extern FramePacer gFramePacer;
 
 PerfState gState;
+PerfFrameAccounting gPerfFrameAccounting;
 
 static uint64_t nowUs()
 {
@@ -256,6 +258,111 @@ void Perf::logDetailedSubsystemStats()
     }
 }
 
+static void finalizeFrameAccounting(PerfState& s)
+{
+    const double cycleMs = (double)gFramePacer.frameTimeMs();
+    if (cycleMs <= 0.0 || s.lastFrameTimeMs <= 0.0)
+        return;
+    if (gPerfScopeCount <= 0)
+        return;
+
+    PerfFrameAccounting next;
+    next.times = s.current;
+    next.frameNumber = (std::uint32_t)s.frameNumber;
+    next.frameMs = (double)s.lastFrameTimeMs;
+    next.cycleMs = cycleMs;
+    next.hostGapMs = std::max(0.0, cycleMs - next.frameMs);
+    next.swapMs = s.current.swapTime;
+    next.sleepMs = s.current.sleepTime;
+
+    double childSum[MAX_SCOPES_PER_FRAME] = {};
+    for (int i = 0; i < gPerfScopeCount; ++i) {
+        const int parent = gPerfScopes[i].parentIndex;
+        if (parent >= 0 && parent < gPerfScopeCount) {
+            childSum[parent] +=
+                (double)gPerfScopes[i].cyclesInclusive / 1000000.0;
+        }
+    }
+
+    for (int i = 0; i < gPerfScopeCount; ++i) {
+        const PerfScopeCapture& cap = gPerfScopes[i];
+        if (cap.parentIndex < 0 && !cap.crossedBoundary && cap.label &&
+            std::strncmp(cap.label, "EngineTick::", 12) == 0) {
+            next.rootAccountedMs +=
+                (double)cap.cyclesInclusive / 1000000.0;
+        }
+    }
+    next.unaccountedMs = std::max(0.0, next.frameMs - next.rootAccountedMs);
+
+    for (int i = 0; i < gPerfScopeCount; ++i) {
+        const PerfScopeCapture& cap = gPerfScopes[i];
+        if (!cap.label || cap.crossedBoundary ||
+            std::strcmp(cap.label, "ProfilerOverhead") == 0)
+            continue;
+        const double inclMs = (double)cap.cyclesInclusive / 1000000.0;
+        double selfMs = inclMs - childSum[i];
+        if (selfMs < 0.0)
+            selfMs = 0.0;
+        if (selfMs <= 0.001)
+            continue;
+        if (next.scopeCount >= PerfFrameAccounting::kMaxScopes &&
+            selfMs <= next.scopes[PerfFrameAccounting::kMaxScopes - 1].selfMs) {
+            continue;
+        }
+
+        int depth = 0;
+        int parent = cap.parentIndex;
+        while (parent >= 0 && depth < 32) {
+            ++depth;
+            parent = gPerfScopes[parent].parentIndex;
+        }
+
+        PerfAccountedScope entry;
+        std::snprintf(entry.label, sizeof(entry.label), "%s", cap.label);
+        entry.selfMs = selfMs;
+        entry.inclMs = inclMs;
+        entry.depth = depth;
+
+        int pos = next.scopeCount < PerfFrameAccounting::kMaxScopes
+            ? next.scopeCount : PerfFrameAccounting::kMaxScopes - 1;
+        while (pos > 0 && next.scopes[pos - 1].selfMs < selfMs) {
+            next.scopes[pos] = next.scopes[pos - 1];
+            --pos;
+        }
+        next.scopes[pos] = entry;
+        if (next.scopeCount < PerfFrameAccounting::kMaxScopes)
+            ++next.scopeCount;
+    }
+
+    next.valid = true;
+    gPerfFrameAccounting = next;
+
+    static uint64_t lastLogUs = 0;
+    const uint64_t now = nowUs();
+    if ((s.showPerfReport || s.deepProfiling) && now - lastLogUs >= 1000000ull) {
+        lastLogUs = now;
+        nlohmann::json top = nlohmann::json::array();
+        for (int i = 0; i < next.scopeCount && i < 8; ++i) {
+            top.push_back({{"name", next.scopes[i].label},
+                           {"self_ms", next.scopes[i].selfMs},
+                           {"incl_ms", next.scopes[i].inclMs}});
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "performance.frame-accounting", "performance",
+            "1s completed-frame accounting summary", next.frameNumber,
+            {{"cycle_ms", next.cycleMs},
+             {"host_gap_ms", next.hostGapMs},
+             {"frame_ms", next.frameMs},
+             {"root_accounted_ms", next.rootAccountedMs},
+             {"unaccounted_ms", next.unaccountedMs},
+             {"swap_ms", next.swapMs},
+             {"sleep_ms", next.sleepMs},
+             {"scopes", top}},
+            __FILE__, __LINE__, "Perf::finalizeFrameAccounting");
+    }
+}
+
 void Perf::beginFrame()
 {
     static bool budgetConfigLoaded = false;
@@ -265,6 +372,7 @@ void Perf::beginFrame()
     }
 
     PerfState& s = gState;
+    finalizeFrameAccounting(s);
     s.allocationsThisFrame = 0;
     s.assetLoadsThisFrame = 0;
     s.renderPerf = RenderPerfStats{};
@@ -394,8 +502,10 @@ void Perf::addTime(const char* name, double ms)
     else if (std::strcmp(name, "FileIO") == 0)                  t.fileIO += ms;
     else if (std::strcmp(name, "DebugLogging") == 0)            t.debugLogging += ms;
     else if (std::strcmp(name, "FrameOverhead") == 0)           t.frameOverhead += ms;
-    else if (std::strcmp(name, "Sleep") == 0)                   t.sleepTime += ms;
-    else if (std::strcmp(name, "Swap") == 0)                    t.swapTime += ms;
+    else if (std::strcmp(name, "Sleep") == 0 ||
+             std::strcmp(name, "FramePacing::PacerSleep") == 0) t.sleepTime += ms;
+    else if (std::strcmp(name, "Swap") == 0 ||
+             std::strcmp(name, "FramePacing::BeforeSwap") == 0) t.swapTime += ms;
     else if (std::strcmp(name, "Terminal") == 0)                t.terminalTime += ms;
     else if (std::strcmp(name, "Menus") == 0)                   t.menusTime += ms;
     else if (std::strcmp(name, "DevOverlay") == 0)              t.devOverlay += ms;
@@ -490,8 +600,10 @@ void Perf::addChildTime(const char* name, double ms)
     else if (std::strcmp(name, "FileIO") == 0)                  c.fileIO += ms;
     else if (std::strcmp(name, "DebugLogging") == 0)            c.debugLogging += ms;
     else if (std::strcmp(name, "FrameOverhead") == 0)           c.frameOverhead += ms;
-    else if (std::strcmp(name, "Sleep") == 0)                   c.sleepTime += ms;
-    else if (std::strcmp(name, "Swap") == 0)                    c.swapTime += ms;
+    else if (std::strcmp(name, "Sleep") == 0 ||
+             std::strcmp(name, "FramePacing::PacerSleep") == 0) c.sleepTime += ms;
+    else if (std::strcmp(name, "Swap") == 0 ||
+             std::strcmp(name, "FramePacing::BeforeSwap") == 0) c.swapTime += ms;
     else if (std::strcmp(name, "Terminal") == 0)                c.terminalTime += ms;
     else if (std::strcmp(name, "Menus") == 0)                   c.menusTime += ms;
     else if (std::strcmp(name, "DevOverlay") == 0)              c.devOverlay += ms;

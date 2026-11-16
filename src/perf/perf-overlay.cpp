@@ -1,4 +1,5 @@
 #include "perf/perf.h"
+#include "perf/perf-accounting.h"
 
 #include <algorithm>
 #include <cmath>
@@ -16,7 +17,10 @@ extern PerfState gState;
 void Perf::renderOverlay()
 {
     PerfState& s = gState;
+    PerfFrameAccounting& acct = gPerfFrameAccounting;
     float sw = uiScreenW();
+    float reportBottomY = 8.0f;
+    float npcBottomY = 8.0f;
 
     if (s.showPerfReport)
     {
@@ -65,36 +69,43 @@ void Perf::renderOverlay()
             }
         };
 
-        char buf[128];
+        char buf[160];
         float ms = gFramePacer.frameTimeMs();
         int fps = ms > 0.0f ? (int)(1000.0f / ms + 0.5f) : 0;
         int avgFps = gFramePacer.avgFrameTimeMs() > 0.0f ? (int)(1000.0f / gFramePacer.avgFrameTimeMs() + 0.5f) : 0;
         float budget = gFramePacer.targetFrameTimeMs();
+        const double cycleMs = acct.cycleMs > 0.0 ? acct.cycleMs : (double)ms;
+        auto pctOf = [&](double value) {
+            return cycleMs > 0.0 ? 100.0 * value / cycleMs : 0.0;
+        };
 
         snprintf(buf, sizeof(buf), "FPS: %d  AVG: %d", fps, avgFps);
         text(buf, {0.3f, 1.0f, 0.5f, 1.0f});
         snprintf(buf, sizeof(buf), "FRAME: %.2fms  BUDGET: %.2fms", ms, budget);
         text(buf, {0.3f, 1.0f, 0.5f, 1.0f});
 
-        // Worst frame and per-subsystem worsts since the report was opened, so a
-        // single stall is visible instead of averaged away.
         snprintf(buf, sizeof(buf),
                  "MAX: %.2fms  PHYS %.2f  ENT %.2f  REND %.2f",
                  s.maxFrameTimeMs, s.maxPhysicsMs, s.maxEntityPhysicsMs,
                  s.maxRenderingMs);
         text(buf, {1.0f, 0.7f, 0.4f, 1.0f});
 
-        snprintf(buf, sizeof(buf), "CPU: %.2fms", s.current.total);
-        text(buf, {0.8f, 0.9f, 1.0f, 1.0f});
+        if (acct.valid)
         {
-            // A frame is spent somewhere; show how much is not covered by the
-            // named timers (perf-scope stages, swap/sleep, logging, GPU wait).
-            // Clamped at 0: named timers can overlap, which would otherwise
-            // read as a confusing negative value.
-            const double unaccounted =
-                std::max(0.0, (double)ms - s.current.total);
-            snprintf(buf, sizeof(buf), "UNACCOUNTED: %.2fms", unaccounted);
+            snprintf(buf, sizeof(buf),
+                     "HOST GAP: %.2fms (%.1f%%)  GAME: %.2fms (%.1f%%)",
+                     acct.hostGapMs, pctOf(acct.hostGapMs),
+                     acct.rootAccountedMs, pctOf(acct.rootAccountedMs));
+            text(buf, {1.0f, 0.85f, 0.4f, 1.0f});
+            snprintf(buf, sizeof(buf),
+                     "SWAP: %.2fms  SLEEP: %.2fms  UNACCOUNTED: %.2fms",
+                     acct.swapMs, acct.sleepMs, acct.unaccountedMs);
             text(buf, {1.0f, 0.5f, 0.5f, 1.0f});
+        }
+        else
+        {
+            text("HOST GAP: warming up  GAME: --  UNACCOUNTED: --",
+                 {1.0f, 0.5f, 0.5f, 1.0f});
         }
 
         double gpuMs = 0.0;
@@ -152,13 +163,35 @@ void Perf::renderOverlay()
         }
 
         y += 4.0f;
-        text("[Subsystem Timing]", {0.5f, 0.8f, 1.0f, 1.0f});
+        text("[Frame Scopes]", {0.5f, 0.8f, 1.0f, 1.0f});
+        if (acct.valid)
+        {
+            for (int i = 0; i < acct.scopeCount; ++i)
+            {
+                const PerfAccountedScope& scope = acct.scopes[i];
+                int indent = scope.depth * 2;
+                if (indent > 12)
+                    indent = 12;
+                snprintf(buf, sizeof(buf), "%*s%s: %.2fms (%.1f%%)",
+                         indent, "", scope.label, scope.selfMs,
+                         pctOf(scope.selfMs));
+                text(buf, {0.8f, 0.95f, 1.0f, 1.0f});
+            }
+        }
+        else
+        {
+            text("warming up", {0.8f, 0.95f, 1.0f, 1.0f});
+        }
 
-        PerfTimes& t = s.current;
+        y += 4.0f;
+        text("[Timers]", {0.5f, 0.8f, 1.0f, 1.0f});
+
+        const PerfTimes& t = acct.valid ? acct.times : s.current;
         auto subLine = [&](const char* label, double val, glm::vec4 col = {1.0f, 1.0f, 1.0f, 1.0f}) {
             if (val > 0.001)
             {
-                snprintf(buf, sizeof(buf), "%s: %.2fms", label, val);
+                snprintf(buf, sizeof(buf), "%s: %.2fms (%.1f%%)", label, val,
+                         pctOf(val));
                 text(buf, col);
             }
         };
@@ -211,24 +244,15 @@ void Perf::renderOverlay()
             snprintf(buf, sizeof(buf), "Receive: %.2fms", s.receiveMs);
             text(buf);
         }
+        reportBottomY = y;
     }
 
     if (s.showNpcPerf && s.npcCount > 0)
     {
         float x = sw - 310.0f;
-        float y = 8.0f;
+        float y = s.showPerfReport ? reportBottomY + 8.0f : 8.0f;
         float lineH = 17.0f;
         float small = 0.28f;
-
-        if (s.showPerfReport)
-        {
-            int lines = 21;
-            if (s.allocAudit) lines++;
-            if (s.audioAudit && s.soundLoadsDetected) lines++;
-            if (s.replayMemoryMb > 0.0) lines++;
-            if (s.netBytesIn > 0.0 || s.netBytesOut > 0.0) lines += 3;
-            y = (float)lines * 17.0f + 24.0f;
-        }
 
         auto text = [&](const char* str, glm::vec4 col = {1.0f, 1.0f, 1.0f, 1.0f}) {
             uiDrawText(str, x, y, small, col);
@@ -241,7 +265,7 @@ void Perf::renderOverlay()
         snprintf(buf, sizeof(buf), "Spawned/Destroyed: %d / %d", s.totalNpcsSpawned, s.totalNpcsDestroyed);
         text(buf, {0.8f, 0.8f, 0.8f, 1.0f});
 
-        PerfTimes& t = s.current;
+        const PerfTimes& t = acct.valid ? acct.times : s.current;
         auto subLine = [&](const char* label, double val, glm::vec4 col = {1.0f, 1.0f, 1.0f, 1.0f}) {
             if (val > 0.001)
             {
@@ -261,6 +285,7 @@ void Perf::renderOverlay()
             snprintf(buf, sizeof(buf), "Avg per NPC: %.3fms", t.npcUpdate / (double)s.npcCount);
             text(buf, {0.6f, 0.8f, 1.0f, 1.0f});
         }
+        npcBottomY = y;
     }
 
     if (s.showMemory)
@@ -270,10 +295,10 @@ void Perf::renderOverlay()
         float lineH = 17.0f;
         float small = 0.28f;
 
-        int offsetLines = 0;
-        if (s.showPerfReport) offsetLines += 21;
-        if (s.showNpcPerf) offsetLines += 12;
-        y = (float)offsetLines * 17.0f + 24.0f;
+        if (s.showNpcPerf && s.npcCount > 0)
+            y = npcBottomY + 8.0f;
+        else if (s.showPerfReport)
+            y = reportBottomY + 8.0f;
 
         auto text = [&](const char* str, glm::vec4 col = {1.0f, 1.0f, 1.0f, 1.0f}) {
             uiDrawText(str, x, y, small, col);

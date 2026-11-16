@@ -19,6 +19,12 @@ status tracker or a work log.
   session progress, current bug lists, plans, phases, or next steps here.
 - Current machine state belongs in `build/hot-reload/status.json`.
 - Work history, evidence, and "what next" belong in `docs/changelog/`.
+- Historical counts in handoffs, audits, or prior reviews are not current
+  claims. In particular, old figures such as `must_move=570` or
+  `42 raw GL sources` are point-in-time snapshots. Regenerate
+  `build/source-manifest.json`, `build/hot-reload/audit.json`,
+  `build/hot-reload/cap-render.json`, and the cold-link trial before using any
+  count as Cutover-1 evidence.
 - Temporary agent focus belongs in
   `docs/handoffs/hot-reload-agent-focus.md`.
 - If code disagrees with this document, the code is wrong unless this

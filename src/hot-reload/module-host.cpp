@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <mutex>
 #include <set>
 #include <system_error>
@@ -779,6 +780,94 @@ const mimita_chunk_collision::HostServicesV1* chunkCollisionServices()
 
 } // namespace
 
+bool ModuleHost::loadLocalModules(bool /*serverProcess*/)
+{
+    HMODULE game = static_cast<HMODULE>(
+        mimita::host::HostRuntime::instance().activeGameModule());
+    if (!game) {
+        rememberError("no active game module for local modules");
+        return false;
+    }
+
+    static const std::uint32_t kActorRenderingEvents[] = {600, 601, 602, 603};
+    static const std::uint32_t kWorldRenderingEvents[] = {200, 201};
+    static const std::uint32_t kInfiniteWorldgenEvents[] = {300, 301};
+    static const std::uint32_t kChunkCollisionEvents[] = {
+        400, 401, 402, 403, 404, 405, 406};
+    static const std::uint32_t kNetworkPolicyEvents[] = {
+        700, 701, 702, 703, 704, 705, 706, 707, 708, 709, 710};
+    static const std::uint32_t kNavigationPolicyEvents[] = {800};
+    static const std::uint32_t kNpcPerceptionEvents[] = {509};
+    static const std::uint32_t kNpcBehaviorEvents[] = {
+        500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511, 512,
+        714, 715, 716};
+
+    struct LocalModuleSpec {
+        const char* name;
+        const char* symbol;
+        const std::uint32_t* events;
+        std::size_t eventCount;
+        bool shared;
+    };
+    static const LocalModuleSpec kModules[] = {
+        {"actor-rendering", "GetMimitaActorRenderingModuleAPI",
+         kActorRenderingEvents, std::size(kActorRenderingEvents), false},
+        {"world-rendering", "GetMimitaWorldRenderingModuleAPI",
+         kWorldRenderingEvents, std::size(kWorldRenderingEvents), false},
+        {"infinite-worldgen", "GetMimitaInfiniteWorldgenModuleAPI",
+         kInfiniteWorldgenEvents, std::size(kInfiniteWorldgenEvents), false},
+        {"chunk-collision", "GetMimitaChunkCollisionModuleAPI",
+         kChunkCollisionEvents, std::size(kChunkCollisionEvents), false},
+        {"network-policy", "GetMimitaNetworkPolicyModuleAPI",
+         kNetworkPolicyEvents, std::size(kNetworkPolicyEvents), true},
+        {"navigation-policy", "GetMimitaNavigationPolicyModuleAPI",
+         kNavigationPolicyEvents, std::size(kNavigationPolicyEvents), true},
+        {"npc-perception", "GetMimitaNpcPerceptionModuleAPI",
+         kNpcPerceptionEvents, std::size(kNpcPerceptionEvents), false},
+        {"npc-behavior", "GetMimitaNpcBehaviorModuleAPI",
+         kNpcBehaviorEvents, std::size(kNpcBehaviorEvents), true},
+    };
+
+    mModules.clear();
+    for (const LocalModuleSpec& spec : kModules) {
+        const auto resolve = reinterpret_cast<mimita_module::GetModuleAPIFn>(
+            ::GetProcAddress(game, spec.symbol));
+        if (!resolve) {
+            rememberError(std::string("missing game module export ") +
+                          spec.symbol);
+            continue;
+        }
+        const mimita_module::BaseV1* base =
+            resolve(mimita_module::ABI_VERSION);
+        if (!base || base->structSize < sizeof(mimita_module::ModuleV1) ||
+            !base->name || std::strcmp(base->name, spec.name) != 0) {
+            rememberError(std::string("invalid game module export ") +
+                          spec.symbol);
+            continue;
+        }
+        const auto* api =
+            reinterpret_cast<const mimita_module::ModuleV1*>(base);
+        if (!api->initialize || !api->initialize(genericHostServices())) {
+            rememberError(std::string("module initialize rejected host: ") +
+                          spec.name);
+            continue;
+        }
+        ModuleEntry entry;
+        entry.name = spec.name;
+        entry.abi = base->abiVersion;
+        entry.stateSchema = base->stateSchema;
+        entry.events.assign(spec.events, spec.events + spec.eventCount);
+        entry.shared = spec.shared;
+        entry.api = api;
+        entry.moduleHandle = nullptr;
+        entry.activeGeneration = base->generation;
+        entry.activeCodeHash = base->codeHash ? base->codeHash : "";
+        mModules.push_back(std::move(entry));
+    }
+    mLocalModules = true;
+    return !mModules.empty();
+}
+
 ModuleHost& ModuleHost::instance()
 {
     static ModuleHost host;
@@ -1012,13 +1101,10 @@ void ModuleHost::startup(bool serverProcess)
         mAgreementDir = std::filesystem::current_path() / "build" / "modules" /
             "agreement" / ((runId && *runId) ? runId : "local");
     }
-    if (!loadCatalog(serverProcess)) {
-        rememberError("module catalog could not be loaded");
+    if (!loadLocalModules(serverProcess)) {
+        rememberError("local game modules could not be loaded");
         return;
     }
-
-    for (ModuleEntry& entry : mModules)
-        initializeEntry(entry);
     {
         std::unique_lock<std::shared_mutex> lock(mModuleMutex);
         publishAgreementLocked();
@@ -1974,7 +2060,7 @@ bool ModuleHost::loadCatalog(bool serverProcess)
 
 void ModuleHost::reloadCatalogIfChanged()
 {
-    if (mCatalogPath.empty())
+    if (mLocalModules || mCatalogPath.empty())
         return;
     const std::uint64_t writeTime = fileWriteTime(mCatalogPath);
     if (writeTime == 0 || writeTime == mCatalogWriteTime)

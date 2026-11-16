@@ -818,6 +818,18 @@ void registerAgentCommands()
         },
         "2026-11-16", CommandCategory::Debug
     });
+    Terminal::instance().registerCommand({
+        "state.player-core-migrate-v2", "Migrate the resident player_core domain from v1 to v2.",
+        "state.player-core-migrate-v2",
+        [](const std::vector<std::string>&) {
+            const bool ok = mimita::game::migratePlayerCoreStateToV2();
+            Terminal::instance().addLog(
+                ok ? "[STATE] player_core v1->v2 PASS"
+                   : "[STATE] player_core v1->v2 FAIL");
+        },
+        "2026-11-16", CommandCategory::Debug
+    });
+
 }
 
 } // namespace

@@ -126,21 +126,78 @@ link demand without breaking the audited migration EXE.
 - These host fallbacks are diagnostic-path coverage; normal clients use the
   generation-owned coordinator/badconn/snapshot implementations.
 
+
+### player_core schema v3 and live migration
+
+- `config/hot-reload/state-schema.json`: `player_core` moved from v1 to v3.
+  v2 added `migration_epoch`; v3 removed the packed `flags` field and added
+  `migration_revision` so the final record size is distinct from both older
+  records.
+- Regenerated `src/host/generated/resident-state-v1.h` and
+  `config/hot-reload/state-ledger.json`.
+- Updated `HostServerEntityAdapter` read/write for v3.
+- Added `src/game/player-core-migration.h/.cpp`:
+  - `state.migration.prepare`, `.commit`, `.reject` owner events;
+  - v1 → v3 and v2 → v3 field-preserving migrations;
+  - poison v2 value for atomic rejected-migration proof;
+  - seed helpers for v1/v2;
+  - `ensurePlayerCoreState()` called from `gameInitSubsystems`.
+- Added `StateObjectId::PlayerCore`.
+- Added dev commands:
+  - `state.player-core-seed <1|2> [reject]`
+  - `state.player-core-migrate`
+
+## Live player_core evidence
+
+- Run `20261116_180054`, client PID `25896`.
+- Journal:
+  `logs/2026-11-16/20261116_180054/client-01/events.jsonl`.
+- Generation 271: v1 (136 bytes) → v3 (152 bytes), `state.migration.commit`.
+- Generation 272: v2 (144 bytes) → v3 (152 bytes), `state.migration.commit`.
+- Generation 273: poisoned v2 (144 bytes) → v3 rejected; old resident state
+  retained (`state.migration.reject` plus bootstrap failure event).
+- Same PID across all three activations.
+- Added `state.player-core-migrate-v2` for the explicit v1→v2 add-field stage.
+  Client-02 PID `26540` in the same run recorded
+  `state.migration.commit` `old_size=136`, `new_size=144`,
+  reason `player_core v1 migrated to v2` (seq 120912). The v1→v3 and v2→v3
+  generation commits above exercise the same add/remove transformation across
+  activations.
+
+## Refreshed generated evidence
+
+- `build/hot-reload/cold-link-trial.json`: `undefined_symbol_count=0`.
+- `build/hot-reload/build-target-gate.json`: `exe=46`, `cold=45`,
+  `game_in_exe=0`, `test_sources=0`, `cold_undefined=0`.
+- `build/hot-reload/exe-cutover.json`: `linked_game_sources=0`.
+- `build/hot-reload/cap-render.json`: `game_sources=633`,
+  `raw_gl_sources=0`, `clean=true`.
+- `build/hot-reload/audit.json` and `audit-classified.json` regenerated:
+  `UNRESOLVED=0`; `NON_GAME=130`, `RESIDENT_ADAPTER_REQUIRED=216`,
+  `RESIDENT_HOST=45`, `RUNTIME_PROOF_REQUIRED=277`,
+  `STATIC_CLOSABLE_CANDIDATE=5`, `STATIC_CLOSED=64`,
+  `STATIC_STATE_REVIEW=71`.
+- The historical figures `42 raw GL sources` and `audit must_move=570` are
+  stale. Freshness rules are recorded in
+  `docs/specs/hotreload/hotreload.md`; current evidence is recorded in
+  `docs/handoffs/hotness-cutover-direct-plan-20261116.md`.
+
+
 ## Build evidence
 
-- Normal audited migration EXE build published after the final cold reduction:
-  `2026-11-16T17:21:34.920460Z`,
-  `.dev/builds/2026-11-16T17-21-34.920460Z`.
-- Whole-game generation 266 published:
-  `build/game/generation-266/game-g266.dll`.
-- Strict cold link trial:
-  `build/hot-reload/cold-link-trial.json`
-  - `undefined_symbol_count=6`
-  - `link_return=1`
-  - revision `b756746f925a8a6e27ff37f8e15746381e07c0cf012399f112a841b7bd12bc13`
-- Cold undefined count during this session: `138 -> 114 -> 112 -> 100 -> 102
-  -> 94 -> 91 -> 59 -> 40 -> 35 -> 25 -> 19 -> 6`. Intermediate counts include
-  concurrent manifest and server-policy changes.
+- Normal migration EXE build published:
+  `2026-11-16T17:59:12.782763Z`,
+  `.dev/builds/2026-11-16T17-59-12.782763Z`.
+- Whole-game generation 274 published after the migration command hook:
+  `build/game/generation-274/game-g274.dll`.
+- Strict cold link trial: `undefined_symbol_count=0` at source revision
+  `0998a6378dbff6c9c38b21e44af75d20d3363510df3cb063e667e75671acc6a6`.
+- Strict build target gate: `exe=46`, `cold=45`, `game_in_exe=0`,
+  `test_sources=0`, `cold_undefined=0`.
+- EXE cutover gate: `linked_game_sources=0`.
+- Cold undefined count during this session: `138 -> ... -> 6 -> 0`.
+  Intermediate counts include concurrent manifest, server-policy, and
+  module-host service work.
 
 ## Runtime evidence
 
@@ -151,27 +208,17 @@ link demand without breaking the audited migration EXE.
 
 ## Remaining cold link clusters
 
-The strict cold trial now reports only 6 undefined symbols, all in the resident
-module-host fallback:
+The strict cold trial now reports zero undefined symbols. The final
+module-host service bridge was completed concurrently by another session; this
+changelog records the player_core migration and the regenerated gate evidence,
+not authorship of that bridge.
 
-- `MapConfigRegistry::instance()`;
-- `MimitaWorldGen::WorldGenLibrary::instance()`;
-- `MimitaWorldGen::WorldGenLibrary::loadMode(...)`;
-- `npcWorldRaycastBlocked(...)`;
-- `npcWorldLineOfSightBlocked(...)`;
-- `setNpcWorldQueryWorld(...)`.
-
-These are the map editor/worldgen/NPC-perception module-host services. They
-should be replaced by game-owned capability calls or removed when the remaining
-subsystem modules are folded; no host degradation is claimed.
-
-No strict cold gate or `game_in_exe=0` claim is made.
+The regenerated strict gate now reports `game_in_exe=0` and `cold_undefined=0`.
 
 ## Next step
 
-Finish the last module-host capability boundary:
-`MapConfigRegistry` revision/map data, `WorldGenLibrary` mode data, and the NPC
-world query should be provided by the active generation. Then rerun
-`python devscripts/dev-loop.py --request cold-link-trial` and require zero before
-the strict EXE flip. Runtime acceptance for audio-device ownership, ICE
-diagnostics, and generation unload remains pending.
+Run a fresh connected hot-client gate (the migration run later entered
+`ReconnectFailed` during repeated swaps), then complete the remaining
+Cutover-1 evidence: same-PID server config/gamemode change with rollback,
+packet unknown-ID review, audit review-class closure, and human visual/gameplay
+acceptance.

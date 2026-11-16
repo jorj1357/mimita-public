@@ -36,6 +36,70 @@ All three must be AI-readable. Static rows must expose `declared`, `observed`,
 `owner`, `status`, `evidence`, and `reason`. Unknown must never be reported as
 resident or pass.
 
+## Refreshed evidence (2026-11-16 18:20 UTC)
+
+The counts elsewhere in this handoff are historical snapshots. Read current
+counts only from the generated files.
+
+- `build/source-manifest.json`: revision
+  `0998a6378dbff6c9c38b21e44af75d20d3363510df3cb063e667e75671acc6a6`;
+  current owners include `game=633`, `resident=42`, `module:*=9`,
+  `bootstrap=3`, `test=27`, and `vendor=88`.
+- `build/hot-reload/cold-link-trial.json`: `undefined_symbol_count=0`.
+- `build/hot-reload/build-target-gate.json`: `exe=46`, `cold=45`,
+  `game_in_exe=0`, `test_sources=0`, `cold_undefined=0`.
+- `build/hot-reload/exe-cutover.json`: `linked_game_sources=0`.
+- `build/hot-reload/cap-render.json`: `game_sources=633`,
+  `raw_gl_sources=0`, `clean=true`.
+
+The older “42 raw GL sources” figure is stale. The raw-GL gate was regenerated
+and currently reports zero. Rerun
+`python devscripts/cap_render_gate.py` before reusing any such count.
+
+The older `audit must_move=570` bucket is stale: it came from the old audit
+format and source set. Current generated audit files are
+`build/hot-reload/audit.json` and
+`build/hot-reload/audit-classified.json`. Current classes:
+
+- `NON_GAME=130`
+- `RESIDENT_ADAPTER_REQUIRED=216`
+- `RESIDENT_HOST=45`
+- `RUNTIME_PROOF_REQUIRED=277`
+- `STATIC_CLOSABLE_CANDIDATE=5`
+- `STATIC_CLOSED=64`
+- `STATIC_STATE_REVIEW=71`
+- `UNRESOLVED=0`
+
+`audit_clean` remains false because those review classes contain open work,
+not because of unresolved ownership.
+
+### Live player_core migration proof
+
+Run `20261116_180054`, client PID `25896`, same process across generations
+271, 272, and 273. Evidence:
+`logs/2026-11-16/20261116_180054/client-01/events.jsonl`.
+
+- v1 seed → generation 271 activation: `state.migration.commit`,
+  `old_size=136`, `new_size=152`, `migration_epoch=1`.
+- v2 seed → generation 272 activation: `state.migration.commit`,
+  `old_size=144`, `new_size=152`, `migration_epoch=1`.
+- poisoned v2 seed → generation 273 activation: `state.migration.reject`,
+  `old_size=144`, `new_size=152`, followed by
+  `previous resident state retained`.
+- Client-02 PID `26540` in the same run recorded the explicit v1→v2
+  add-field commit (`old_size=136`, `new_size=144`, seq `120912`), then
+  generation 277 activation recorded v2→v3 (`old_size=144`, `new_size=152`,
+  seq `171840`). This is the full v1→v2→v3 chain in one PID.
+
+This is a real generation-to-generation migration and rejected-migration
+rollback proof, not the standalone probe self-test.
+
+### Runtime caveat
+
+The same client later entered `ReconnectFailed` during repeated swaps. A fresh
+connected hot-client gate run is still required before final gameplay
+acceptance.
+
 ## Current direct blockers
 
 1. **EXE cutover/link gate**

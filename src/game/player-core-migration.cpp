@@ -118,6 +118,34 @@ void copyCommon(const PlayerCoreV2& oldValue,
     newValue.migration_revision = 3;
 }
 
+bool migrateToV2(void* oldBlock, std::uint32_t oldSize, void* newBlock,
+                 std::uint32_t newSize) {
+    if (!oldBlock || !newBlock || oldSize < sizeof(PlayerCoreV1) ||
+        newSize < sizeof(PlayerCoreV2)) {
+        logMigration("state.migration.reject",
+                     "invalid v1 to v2 migration buffers", oldSize, newSize, 0);
+        return false;
+    }
+    const auto& old = *static_cast<const PlayerCoreV1*>(oldBlock);
+    auto& next = *static_cast<PlayerCoreV2*>(newBlock);
+    next = PlayerCoreV2{};
+    next.handle = old.handle;
+    next.fieldMask = old.fieldMask;
+    next.id = old.id;
+    next.kind = old.kind;
+    next.team = old.team;
+    std::memcpy(next.position, old.position, sizeof(next.position));
+    std::memcpy(next.velocity, old.velocity, sizeof(next.velocity));
+    next.health = old.health;
+    next.max_health = old.max_health;
+    std::snprintf(next.name, sizeof(next.name), "%s", old.name);
+    next.migration_epoch = 1;
+    logMigration("state.migration.commit",
+                 "player_core v1 migrated to v2", oldSize, newSize,
+                 next.migration_epoch);
+    return true;
+}
+
 bool migrateToV3(void* oldBlock, std::uint32_t oldSize, void* newBlock,
                  std::uint32_t newSize) {
     if (!oldBlock || !newBlock ||
@@ -247,6 +275,24 @@ bool seedPlayerCoreState(int version, bool reject) {
         return result != nullptr;
     }
     return false;
+}
+
+bool migratePlayerCoreStateToV2() {
+    bool created = false;
+    void* result = ensureObject(sizeof(PlayerCoreV2), alignof(PlayerCoreV2),
+                                migrateToV2, created);
+    if (!result) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Errors,
+            "state.migration.reject", "player-core-migration",
+            "player_core v1 to v2 migration failed", 0,
+            nlohmann::json{{"domain", "player_core"},
+                           {"target_version", 2},
+                           {"created", created}},
+            __FILE__, __LINE__, __func__);
+        return false;
+    }
+    return true;
 }
 
 bool migratePlayerCoreState() {

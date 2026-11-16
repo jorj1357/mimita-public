@@ -15,4 +15,8 @@ bool seedPlayerCoreState(int version, bool reject);
 // generation bootstrap).
 bool migratePlayerCoreState();
 
+// Stage the explicit v1 -> v2 add-field step. The next generation bootstrap
+// then proves v2 -> v3 remove-field.
+bool migratePlayerCoreStateToV2();
+
 }  // namespace mimita::game

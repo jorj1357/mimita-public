@@ -38,7 +38,13 @@ if we make things hot reloadable, for these next bugs, we can see the effects of
 - how am i stuck on this
 - what even do we need to  do this for 
 
+5. performance 2026 11 16 1322
+- fps dips its consisntet, unaccounted is liek a buch
+- get all of it to be accounted, how to get it to all be accounted 
+
 ## other issues 
+
+### 
 
 ### distributed data and map eidotr
 

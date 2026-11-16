@@ -521,6 +521,22 @@ def build(args: argparse.Namespace) -> int:
                 "GetMimitaMapEditorModuleAPI",
             "src/map/map-geometry-module.cpp":
                 "GetMimitaMapGeometryModuleAPI",
+            "src/render/actor-rendering-module.cpp":
+                "GetMimitaActorRenderingModuleAPI",
+            "src/render/world-rendering-module.cpp":
+                "GetMimitaWorldRenderingModuleAPI",
+            "src/worldgen/infinite-worldgen-module.cpp":
+                "GetMimitaInfiniteWorldgenModuleAPI",
+            "src/world/chunk-collision-module.cpp":
+                "GetMimitaChunkCollisionModuleAPI",
+            "src/network/network-policy-module.cpp":
+                "GetMimitaNetworkPolicyModuleAPI",
+            "src/navigation/navigation-policy-module.cpp":
+                "GetMimitaNavigationPolicyModuleAPI",
+            "src/npc/npc-perception-module.cpp":
+                "GetMimitaNpcPerceptionModuleAPI",
+            "src/npc/npc-behavior-module.cpp":
+                "GetMimitaNpcBehaviorModuleAPI",
         }
         extra_flags = []
         if source_path in folded_module_symbols:
