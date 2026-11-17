@@ -11,6 +11,7 @@
 #include "network/server.h"
 #if defined(MIMITA_GAME_DLL)
 #include "game/session-identity-bridge-module.h"
+#include "game/transport-bridge-module.h"
 #else
 #include "host/host-session-identity.h"
 #endif
@@ -81,6 +82,47 @@ void logJoinStage(const char* stage, const char* result, const char* reason,
         std::strcmp(result, "failed") == 0 || std::strcmp(result, "rejected") == 0
             ? StructuredLevel::Errors : StructuredLevel::Important,
         "network.join.stage", correlationId, reason, tick, extra,
+        __FILE__, __LINE__, __func__);
+
+    const bool joinStage = std::strncmp(stage, "join_", 5) == 0 ||
+                           std::strcmp(stage, "token_validation") == 0 ||
+                           std::strcmp(stage, "capacity_check") == 0 ||
+                           std::strcmp(stage, "password_validation") == 0 ||
+                           std::strcmp(stage, "player_record") == 0 ||
+                           std::strcmp(stage, "join_accept_send") == 0;
+    if (!joinStage)
+        return;
+
+    NetworkEvents::Context context;
+    context.role = "server";
+    context.transport = extra.value("transport", std::string("udp")) == "ice"
+        ? "ice" : "udp";
+    context.connectionId = extra.value("connection_id", 0u);
+    context.playerId = extra.value("player_id", 0u);
+    const char* eventName = nullptr;
+    const char* next = nullptr;
+    if (std::strcmp(stage, "join_request_received") == 0)
+    {
+        eventName = "network.server.join.received";
+        next = "network.server.join.validated";
+    }
+    else if (std::strcmp(stage, "token_validation") == 0 &&
+             std::strcmp(result, "success") == 0)
+    {
+        eventName = "network.server.join.validated";
+        next = "network.server.join.accepted";
+    }
+    else if (std::strcmp(result, "rejected") == 0)
+    {
+        eventName = "network.server.join.rejected";
+        next = "none";
+    }
+    if (!eventName)
+        return;
+    NetworkEvents::emit(
+        context, eventName, stage,
+        std::strcmp(result, "rejected") == 0 ? "rejected" : "ok",
+        reason ? reason : "join_stage", next, tick, extra,
         __FILE__, __LINE__, __func__);
 }
 
@@ -469,7 +511,7 @@ void serverLogPlayerSessionRemoval(const ServerPlayer& player,
         ? removalTimeMs - player.lastHeardMs : 0;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Network, StructuredLevel::Important,
-        "network.player.session.removed", std::to_string(player.id),
+        "network.server.player.removed", std::to_string(player.id),
         reason ? reason : "unspecified", tick,
         nlohmann::json{{"player_id", player.id},
                        {"removal_reason", reason ? reason : "unspecified"},
@@ -675,21 +717,28 @@ bool playerOwnsConnectionSource(const ServerPlayer& player,
 static bool sendToSourceOrPlayer(SOCKET sock,
                                  const sockaddr_in& from,
                                  const ServerPlayer* player,
-                                 std::unique_ptr<IGameTransport>* transport,
+                                 ServerTransportHandle* transport,
                                  const void* data,
                                  size_t size)
 {
     if (player)
         return serverSendToPlayer(sock, *player, data, size);
-    if (transport && transport->get())
-        return (*transport)->send(data, size);
+    if (transport && *transport != kNoServerTransport)
+    {
+        const std::uint32_t typeId =
+            (data && size >= sizeof(PacketHeader))
+                ? static_cast<std::uint32_t>(
+                      reinterpret_cast<const PacketHeader*>(data)->type)
+                : 0u;
+        return mimita::game::sendToSession(*transport, typeId, data, size);
+    }
     return serverSendToEndpoint(sock, from, data, size);
 }
 
 static void bindPlayerConnection(ServerPlayer& player,
                                  const sockaddr_in& from,
                                  const TransportConnectionId* connectionId,
-                                 std::unique_ptr<IGameTransport>* claimedTransport)
+                                 ServerTransportHandle* claimedTransport)
 {
     player.addr = from;
     if (connectionId)
@@ -703,11 +752,12 @@ static void bindPlayerConnection(ServerPlayer& player,
         player.hasConnectionId = true;
     }
 
-    if (claimedTransport && claimedTransport->get())
+    if (claimedTransport && *claimedTransport != kNoServerTransport)
     {
-        if (player.transport)
-            player.transport->close();
-        player.transport = std::move(*claimedTransport);
+        if (player.transportHandle != kNoServerTransport)
+            mimita::game::closeSession(player.transportHandle);
+        player.transportHandle = *claimedTransport;
+        *claimedTransport = kNoServerTransport;
     }
 }
 
@@ -1204,7 +1254,7 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
                  uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
                  const HeadlessWorld* world,
                  const TransportConnectionId* connectionId,
-                 std::unique_ptr<IGameTransport>* claimedTransport)
+                 ServerTransportHandle* claimedTransport)
 {
     if (bytes < (int)sizeof(HelloPacket))
         return;
@@ -1639,6 +1689,19 @@ void handleDisconnect(SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& p
     auto it = players.find(header->playerId);
     if (it != players.end())
     {
+        {
+            NetworkEvents::Context context;
+            context.role = "server";
+            context.transport =
+                it->second.transportHandle != kNoServerTransport ? "ice" : "udp";
+            context.connectionId = it->second.id;
+            context.playerId = it->second.id;
+            NetworkEvents::emit(
+                context, "network.server.disconnect.received", "received", "ok",
+                "client_explicit_disconnect", "network.server.player.removed",
+                tick, nlohmann::json{{"players", players.size()}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
         printf("%s [SERVER LEAVE] id=%u name=\"%s\"\n",
                serverTimestamp(), it->second.id, it->second.name.c_str());
 
@@ -1648,8 +1711,11 @@ void handleDisconnect(SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& p
             broadcastServerChatMessage(sock, players, tick, totalPacketsOut, leaveMsg.c_str());
         }
 
-        if (it->second.transport)
-            it->second.transport->close();
+        if (it->second.transportHandle != kNoServerTransport)
+        {
+            mimita::game::closeSession(it->second.transportHandle);
+            it->second.transportHandle = kNoServerTransport;
+        }
 
         if (pendingRemovals)
         {
@@ -1786,7 +1852,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                        uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
                        const HeadlessWorld* world,
                        const TransportConnectionId* connectionId,
-                       std::unique_ptr<IGameTransport>* claimedTransport)
+                       ServerTransportHandle* claimedTransport)
 {
     if (bytes < (int)sizeof(JoinRequestPacket))
     {
@@ -1802,7 +1868,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     logJoinStage("join_request_received", "started", "join packet received",
                  joinCorrelation, tick, players.size(),
                  nlohmann::json{{"packet_bytes", bytes},
-                                {"transport", claimedTransport && claimedTransport->get()
+                                {"transport", claimedTransport && *claimedTransport != kNoServerTransport
                                      ? "ice" : "udp"},
                                 {"remote_address", addressToString(from)}});
 
@@ -1837,10 +1903,10 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         reject.reason = 1; // full
         if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
             ++totalPacketsOut;
-        if (claimedTransport && claimedTransport->get())
+        if (claimedTransport && *claimedTransport != kNoServerTransport)
         {
-            (*claimedTransport)->close();
-            claimedTransport->reset();
+            mimita::game::closeSession(*claimedTransport);
+            *claimedTransport = kNoServerTransport;
         }
         printf("%s [SERVER JOIN REJECT] reason=server-full\n", serverTimestamp());
         logJoinStage("capacity_check", "rejected", "server_full",
@@ -1858,10 +1924,10 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         reject.reason = 2; // bad token
         if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
             ++totalPacketsOut;
-        if (claimedTransport && claimedTransport->get())
+        if (claimedTransport && *claimedTransport != kNoServerTransport)
         {
-            (*claimedTransport)->close();
-            claimedTransport->reset();
+            mimita::game::closeSession(*claimedTransport);
+            *claimedTransport = kNoServerTransport;
         }
         printf("%s [SERVER JOIN REJECT] reason=empty-token\n", serverTimestamp());
         logJoinStage("token_validation", "rejected", "empty_join_token",
@@ -1911,10 +1977,10 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             reject.reason = 2;
             if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
                 ++totalPacketsOut;
-            if (claimedTransport && claimedTransport->get())
+            if (claimedTransport && *claimedTransport != kNoServerTransport)
             {
-                (*claimedTransport)->close();
-                claimedTransport->reset();
+                mimita::game::closeSession(*claimedTransport);
+                *claimedTransport = kNoServerTransport;
             }
             printf("%s [SERVER JOIN REJECT] reason=coordinator-rejected-token\n", serverTimestamp());
             logJoinStage("token_validation", "rejected", "coordinator_rejected_token",
@@ -1935,10 +2001,10 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         reject.reason = 2;
         if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
             ++totalPacketsOut;
-        if (claimedTransport && claimedTransport->get())
+        if (claimedTransport && *claimedTransport != kNoServerTransport)
         {
-            (*claimedTransport)->close();
-            claimedTransport->reset();
+            mimita::game::closeSession(*claimedTransport);
+            *claimedTransport = kNoServerTransport;
         }
         printf("%s [SERVER JOIN REJECT] reason=no-coordinator-code\n", serverTimestamp());
         logJoinStage("token_validation", "rejected", "no_coordinator_code",
@@ -1981,10 +2047,10 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             reject.reason = 5; // wrong password
             if (sendToSourceOrPlayer(sock, from, nullptr, claimedTransport, &reject, sizeof(reject)))
                 ++totalPacketsOut;
-            if (claimedTransport && claimedTransport->get())
+            if (claimedTransport && *claimedTransport != kNoServerTransport)
             {
-                (*claimedTransport)->close();
-                claimedTransport->reset();
+                mimita::game::closeSession(*claimedTransport);
+                *claimedTransport = kNoServerTransport;
             }
             printf("%s [SERVER JOIN REJECT] reason=wrong-password name=%s\n",
                    serverTimestamp(), join->name);
@@ -2168,7 +2234,8 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     {
         NetworkEvents::Context context;
         context.role = "server";
-        context.transport = claimedTransport ? "ice" : "udp";
+        context.transport = claimedTransport && *claimedTransport != kNoServerTransport
+            ? "ice" : "udp";
         context.connectionId = id;
         context.playerId = id;
         context.serverAddress = addressToString(from);
@@ -2209,7 +2276,7 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
                             std::unordered_map<uint32_t, ServerPlayer>& players,
                             uint32_t tick, uint64_t& totalPacketsOut,
                             const TransportConnectionId* connectionId,
-                            std::unique_ptr<IGameTransport>* claimedTransport)
+                            ServerTransportHandle* claimedTransport)
 {
     if (bytes < (int)sizeof(ReconnectRequestPacket))
     {
@@ -2226,8 +2293,26 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     logJoinStage("reconnect_request_received", "started", "reconnect packet received",
                  reconnectCorrelation, tick, players.size(),
                  nlohmann::json{{"remote_address", addressToString(from)},
-                                {"transport", claimedTransport && claimedTransport->get()
-                                     ? "ice" : "udp"}});
+                                {"transport",
+                                 claimedTransport &&
+                                 *claimedTransport != kNoServerTransport
+                                     ? "ice" : "udp"},
+                                {"connection_id", req->header.playerId},
+                                {"player_id", req->header.playerId}});
+    {
+        NetworkEvents::Context context;
+        context.role = "server";
+        context.transport = claimedTransport && *claimedTransport != kNoServerTransport
+            ? "ice" : "udp";
+        context.connectionId = req->header.playerId;
+        context.playerId = req->header.playerId;
+        context.serverAddress = addressToString(from);
+        NetworkEvents::emit(
+            context, "network.server.reconnect.received", "received", "ok",
+            "reconnect_request", "network.server.reconnect.lookup", tick,
+            nlohmann::json{{"players", players.size()}}, __FILE__, __LINE__,
+            __FUNCTION__);
+    }
 
     // Find player with matching reconnect token
     uint32_t foundId = 0;
@@ -2249,6 +2334,26 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
         }
     }
 
+    {
+        NetworkEvents::Context context;
+        context.role = "server";
+        context.transport = claimedTransport && *claimedTransport != kNoServerTransport
+            ? "ice" : "udp";
+        context.connectionId = req->header.playerId;
+        context.playerId = foundId;
+        context.serverAddress = addressToString(from);
+        NetworkEvents::emit(
+            context, "network.server.reconnect.lookup", "lookup",
+            foundId != 0 ? "ok" : "failed",
+            foundId != 0 ? "token_found" : "token_not_found",
+            foundId != 0 ? "network.server.reconnect.accepted"
+                         : "network.server.reconnect.rejected",
+            tick,
+            nlohmann::json{{"players", players.size()},
+                           {"previous_token_match", resendExistingAccept},
+                           {"slot_state", foundId != 0 ? "held" : "not_found"}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     if (foundId == 0)
     {
         const auto& reconnectCfg = NetworkingConfig::instance().data();
@@ -2257,7 +2362,7 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
             (size_t)reconnectCfg.observability.tokenFingerprintChars);
         NetworkEvents::Context context;
         context.role = "server";
-        context.transport = claimedTransport && claimedTransport->get() ? "ice" : "udp";
+        context.transport = claimedTransport && *claimedTransport != kNoServerTransport ? "ice" : "udp";
         context.connectionId = req->header.playerId;
         context.playerId = req->header.playerId;
         context.serverAddress = addressToString(from);
@@ -2276,10 +2381,10 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
                serverTimestamp(), requestedToken.substr(0, 12).c_str());
         logJoinStage("reconnect_lookup", "rejected", "token_not_found",
                      reconnectCorrelation, tick, players.size());
-        if (claimedTransport && claimedTransport->get())
+        if (claimedTransport && *claimedTransport != kNoServerTransport)
         {
-            (*claimedTransport)->close();
-            claimedTransport->reset();
+            mimita::game::closeSession(*claimedTransport);
+            *claimedTransport = kNoServerTransport;
         }
         return;
     }
@@ -2354,7 +2459,7 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
         (size_t)reconnectCfg.observability.tokenFingerprintChars);
     NetworkEvents::Context context;
     context.role = "server";
-    context.transport = claimedTransport && claimedTransport->get() ? "ice" : "udp";
+    context.transport = claimedTransport && *claimedTransport != kNoServerTransport ? "ice" : "udp";
     context.connectionId = req->header.playerId;
     context.attemptId = 0;
     context.playerId = foundId;
@@ -2396,7 +2501,7 @@ ServerPacketProcessResult processServerPacket(
     ServerPacketStats* stats,
     DisagreementRetransmitState* retransmitState,
     ServerPlayer* authenticatedPlayer,
-    std::unique_ptr<IGameTransport>* claimedTransport,
+    ServerTransportHandle* claimedTransport,
     std::vector<uint32_t>* pendingRemovals,
     NpcSystem* npcSystem)
 {
@@ -2521,7 +2626,7 @@ ServerPacketProcessResult processServerPacket(
         handleHello(sock, from, buffer, bytes, players, nextPlayerId, tick,
                     totalPacketsOut, &world, sourceConnection, claimedTransport);
         result.handled = true;
-        result.transportConsumed = claimedTransport && !claimedTransport->get();
+        result.transportConsumed = claimedTransport && *claimedTransport == kNoServerTransport;
     }
     else if (header->type == PACKET_JOIN_REQUEST)
     {
@@ -2529,7 +2634,7 @@ ServerPacketProcessResult processServerPacket(
                           totalPacketsOut, &world, sourceConnection,
                           claimedTransport);
         result.handled = true;
-        result.transportConsumed = claimedTransport && !claimedTransport->get();
+        result.transportConsumed = claimedTransport && *claimedTransport == kNoServerTransport;
     }
     else if (header->type == PACKET_RECONNECT_REQUEST)
     {
@@ -2537,7 +2642,7 @@ ServerPacketProcessResult processServerPacket(
                                totalPacketsOut, sourceConnection,
                                claimedTransport);
         result.handled = true;
-        result.transportConsumed = claimedTransport && !claimedTransport->get();
+        result.transportConsumed = claimedTransport && *claimedTransport == kNoServerTransport;
     }
     else if (header->type == PACKET_AVATAR_MANIFEST)
     {
@@ -2756,10 +2861,38 @@ ServerPacketProcessResult processServerPacket(
                 }
                 else if (!it->second.spawned)
                 {
+                    {
+                        NetworkEvents::Context context;
+                        context.role = "server";
+                        context.transport = "udp";
+                        context.connectionId = it->second.id;
+                        context.playerId = it->second.id;
+                        NetworkEvents::emit(
+                            context, "network.server.map.ready_received",
+                            "received", "ok", "client_map_ready",
+                            "network.server.spawn.assigned", tick,
+                            nlohmann::json{{"map", readyMap},
+                                           {"connection_id", event.connectionId.value}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
                     it->second.spawned = true;
                     it->second.vel = glm::vec3(0.0f);
                     it->second.clientStateUpdated = false;
                     completeAuthoritativeSpawn(sock, it->second, true);
+                    {
+                        NetworkEvents::Context context;
+                        context.role = "server";
+                        context.transport = "udp";
+                        context.connectionId = it->second.id;
+                        context.playerId = it->second.id;
+                        NetworkEvents::emit(
+                            context, "network.server.spawn.assigned", "assigned",
+                            "ok", "authoritative_spawn",
+                            "network.client.spawn.applied", tick,
+                            nlohmann::json{{"spawn_generation", it->second.spawnGeneration},
+                                           {"map", readyMap}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
                     printf("%s [SERVER MAP READY] transport=%s connection=%llu "
                            "id=%u name=\"%s\"\n",
                            serverTimestamp(), transportKindName(event.transportKind),
@@ -3142,7 +3275,7 @@ void buildAndSendSnapshot(SOCKET sock,
             NetworkEvents::Context context;
             context.role = "server";
             context.transport = "udp";
-            context.connectionId = tick;
+            context.connectionId = 0;
             NetworkEvents::emit(
                 context, "network.server.snapshot.build", "built", "ok",
                 "snapshot_window", "network.server.snapshot.send", tick,
@@ -3166,6 +3299,21 @@ void buildAndSendSnapshot(SOCKET sock,
                                {"sent_chunks", sentChunks},
                                {"failed_chunks", failedChunks},
                                {"sent_bytes", sentBytes}},
+                __FILE__, __LINE__, __FUNCTION__);
+            NetworkEvents::emit(
+                context, "network.metrics.window", "window", "ok",
+                "metrics_window", "network.metrics.window", tick,
+                nlohmann::json{{"window_ms", snapshotEventInterval},
+                               {"role", "server"},
+                               {"transport", "udp"},
+                               {"players", players.size()},
+                               {"npcs", npcs.size()},
+                               {"entity_count", entityCount},
+                               {"chunk_count", chunks.size()},
+                               {"packets_out_total", totalPacketsOut},
+                               {"snapshot_bytes", queueBytes},
+                               {"sent_chunks", sentChunks},
+                               {"failed_chunks", failedChunks}},
                 __FILE__, __LINE__, __FUNCTION__);
         }
     }

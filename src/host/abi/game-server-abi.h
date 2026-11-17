@@ -12,12 +12,12 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kGameServerAbiVersion = 1;
+inline constexpr std::uint32_t kGameServerAbiVersion = 2;
 inline constexpr char kGetGameServerSymbol[] = "GetMimitaGameServerV1";
 // Optional additive policy export. Old EXEs ignore it; a new EXE uses it to
 // move server startup/config/world behavior into the replaceable generation
 // without changing the GameServerV1 layout.
-inline constexpr std::uint32_t kGameServerPolicyAbiVersion = 1;
+inline constexpr std::uint32_t kGameServerPolicyAbiVersion = 2;
 inline constexpr char kGetGameServerPolicySymbol[] =
     "GetMimitaGameServerPolicyV1";
 
@@ -27,7 +27,7 @@ enum ServerFrameFlags : std::uint32_t {
 };
 
 struct ServerFrameV1 {
-    std::uint32_t version = 1;
+    std::uint32_t version = 2;
     std::uint32_t structSize = sizeof(ServerFrameV1);
     std::uint32_t tick = 0;
     std::uint32_t flags = kServerFrameNone;
@@ -62,6 +62,10 @@ struct ServerFrameV1 {
     std::uint64_t simulate_world_us = 0;
     std::uint64_t publish_us = 0;
     std::uint64_t gamemode_us = 0;
+    // Opaque resident server session handle (TransportCapability v5). The pump
+    // owns the session; hot policy uses it for attach/poll/send and never keeps
+    // a ListenServerState pointer across the binary boundary.
+    std::uint64_t net_session = 0;
 };
 
 struct ServerPacketResultV1 {
@@ -91,7 +95,7 @@ struct ServerConnectionIdV1 {
 };
 
 struct ServerStartupV1 {
-    std::uint32_t version = 1;
+    std::uint32_t version = kGameServerPolicyAbiVersion;
     std::uint32_t structSize = sizeof(ServerStartupV1);
     const char* mapName = nullptr;
     const char* mapPath = nullptr;
@@ -128,7 +132,7 @@ struct ServerStartupResultV1 {
 };
 
 struct ServerWorldLoadV1 {
-    std::uint32_t version = 1;
+    std::uint32_t version = kGameServerPolicyAbiVersion;
     std::uint32_t structSize = sizeof(ServerWorldLoadV1);
     const char* mapName = nullptr;
     const char* mapPath = nullptr;
@@ -149,7 +153,7 @@ struct ServerWorldLoadResultV1 {
 };
 
 struct ServerConfigureV1 {
-    std::uint32_t version = 1;
+    std::uint32_t version = kGameServerPolicyAbiVersion;
     std::uint32_t structSize = sizeof(ServerConfigureV1);
     const char* mapName = nullptr;
     const char* gameMode = nullptr;
@@ -200,6 +204,62 @@ struct ServerProjectilePerfV1 {
     std::uint32_t sleepingProjectiles = 0;
 };
 
+// Hot ICE/room policy decision request. The resident server fills the inputs
+// and invokes the game-owned decider at each ICE lifecycle stage; it acts on
+// the bounded outputs. No pointer, SOCKET, or STL value crosses this struct.
+enum ServerIcePolicyStage : std::uint32_t {
+    kIcePolicyListenerConfig = 0,
+    kIcePolicyCoordinatorPoll = 1,
+    kIcePolicyPeerGather = 2,
+    kIcePolicyPeerConnect = 3,
+    kIcePolicyTransportDrain = 4,
+};
+
+struct ServerIcePolicyV1 {
+    std::uint32_t version = kGameServerPolicyAbiVersion;
+    std::uint32_t structSize = sizeof(ServerIcePolicyV1);
+    std::uint32_t stage = kIcePolicyListenerConfig;
+    std::uint32_t state = 0;
+    std::uint64_t elapsedMs = 0;
+    std::uint64_t netSession = 0;
+    std::uint32_t playerCount = 0;
+    std::uint32_t pendingPeers = 0;
+    std::uint32_t turnConfigured = 0;
+    std::uint32_t forceRelay = 0;
+    std::uint32_t relayCandidates = 0;
+    std::uint32_t totalCandidates = 0;
+    // Outputs: 0 means "leave the resident default".
+    std::uint32_t gatherTimeoutMs = 0;
+    std::uint32_t connectTimeoutMs = 0;
+    std::uint32_t pollIntervalMs = 0;
+    std::uint32_t maxPendingPeers = 0;
+    std::uint32_t maxPacketsPerPoll = 0;
+    std::uint32_t acceptPeer = 1;
+    std::uint32_t expirePeer = 0;
+    std::uint32_t relayOnly = 0;
+};
+
+// Hot room/session publication policy. The resident pump supplies the launch
+// facts and performs the socket/thread mechanics; the game generation decides
+// local-only, coordinator registration, publication, and room-file policy.
+struct ServerSessionPolicyV1 {
+    std::uint32_t version = kGameServerPolicyAbiVersion;
+    std::uint32_t structSize = sizeof(ServerSessionPolicyV1);
+    std::uint32_t stage = 0;
+    std::uint32_t startLocalServer = 0;
+    std::uint32_t externalProcessLaunched = 0;
+    std::uint32_t hasExistingRoom = 0;
+    std::uint32_t passwordProtected = 0;
+    std::uint32_t playerCount = 0;
+    std::uint32_t maxPlayers = 0;
+    // Outputs.
+    std::uint32_t localOnly = 0;
+    std::uint32_t registerWithCoordinator = 1;
+    std::uint32_t publishRoom = 1;
+    std::uint32_t writeRoomFile = 1;
+    std::uint32_t allowDuplicateRoom = 0;
+};
+
 struct GameServerPolicyV1 {
     std::uint32_t abiVersion = kGameServerPolicyAbiVersion;
     std::uint32_t structSize = sizeof(GameServerPolicyV1);
@@ -223,6 +283,9 @@ struct GameServerPolicyV1 {
     int (*clear_runtime_objects)(const char* reason) = nullptr;
     int (*coordinator_ice_done)(const char* roomCode) = nullptr;
     int (*shutdown)() = nullptr;
+    // Version 2: game-owned ICE/room policy decisions for the resident pump.
+    int (*ice_decide)(ServerIcePolicyV1* inout) = nullptr;
+    int (*session_decide)(ServerSessionPolicyV1* inout) = nullptr;
 };
 
 using GetGameServerFn = const GameServerV1* (*)(std::uint32_t abiVersion);

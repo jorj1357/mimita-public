@@ -20,6 +20,7 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "utils/path_utils.h"
 
 using json = nlohmann::json;
@@ -593,6 +594,29 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
             r, "max_suspend_ms", c.maxSuspendMs, 1000.0, 300000.0);
     }
 
+    // ── ice_policy ───────────────────────────────────────────────────
+    if (root.contains("ice_policy") && root["ice_policy"].is_object())
+    {
+        const json& r = root["ice_policy"];
+        NetworkIcePolicyConfig& c = next.icePolicy;
+        c.listenerGatherTimeoutMs = readUintRange(
+            r, "listener_gather_timeout_ms", c.listenerGatherTimeoutMs,
+            1000, 120000);
+        c.peerGatherTimeoutMs = readUintRange(
+            r, "peer_gather_timeout_ms", c.peerGatherTimeoutMs,
+            1000, 120000);
+        c.peerConnectTimeoutMs = readUintRange(
+            r, "peer_connect_timeout_ms", c.peerConnectTimeoutMs,
+            1000, 300000);
+        c.coordinatorPollIntervalMs = readUintRange(
+            r, "coordinator_poll_interval_ms",
+            c.coordinatorPollIntervalMs, 100, 10000);
+        c.maxPendingPeers = readUintRange(
+            r, "max_pending_peers", c.maxPendingPeers, 1, 1024);
+        c.maxPacketsPerPoll = readUintRange(
+            r, "max_packets_per_poll", c.maxPacketsPerPoll, 1, 4096);
+    }
+
     // ── runtime_rates ────────────────────────────────────────────────
     if (root.contains("runtime_rates") && root["runtime_rates"].is_object())
     {
@@ -766,6 +790,15 @@ bool NetworkingConfig::load(const std::string& path)
                     "[NETWORK CONFIG] Missing %s; using compiled defaults. "
                     "Expected file: %s\n",
                     fileName.c_str(), mPath.c_str());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Errors,
+            "network.config.loaded", "config", "networking config missing",
+            0,
+            nlohmann::json{{"path", mPath},
+                           {"result", "failed"},
+                           {"reason_code", "missing_file"},
+                           {"config_revision", mRevision}},
+            __FILE__, __LINE__, __func__);
         return false;
     }
 
@@ -778,6 +811,16 @@ bool NetworkingConfig::load(const std::string& path)
                      "[NETWORK CONFIG] Reload failed (%s); keeping previous "
                      "valid configuration.\n",
                      error.c_str());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Errors,
+            "network.config.reloaded", "config", "networking config rejected",
+            0,
+            nlohmann::json{{"path", mPath},
+                           {"result", "failed"},
+                           {"reason_code", "parse_or_validation_failed"},
+                           {"error", error},
+                           {"config_revision", mRevision}},
+            __FILE__, __LINE__, __func__);
         return false;
     }
 
@@ -785,9 +828,29 @@ bool NetworkingConfig::load(const std::string& path)
                            next.remotePlayers.interpolationDelaySeconds == mData.remotePlayers.interpolationDelaySeconds &&
                            next.remotePlayers.enabled == mData.remotePlayers.enabled &&
                            next.remotePlayers.allowExtrapolation == mData.remotePlayers.allowExtrapolation);
+    const bool firstLoad = mRevision == 0;
     mData = next;
+    ++mRevision;
     mOverrideInterpolationDelayMs.reset();
     mLastWrite = getLastWrite(mPath);
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        firstLoad ? "network.config.loaded" : "network.config.reloaded",
+        "config", firstLoad ? "networking config loaded" : "networking config reloaded",
+        0,
+        nlohmann::json{{"path", mPath},
+                       {"result", "ok"},
+                       {"config_revision", mRevision},
+                       {"reconnect_interval_ms", mData.retries.reconnectIntervalMs},
+                       {"reconnect_grace_ms", mData.retries.reconnectGraceMs},
+                       {"reconnect_max_attempts", mData.retries.reconnectMaxAttempts},
+                       {"client_timeout_ms", mData.timeouts.clientTimeoutMs},
+                       {"stale_packet_threshold_ms", mData.timeouts.stalePacketThresholdMs},
+                       {"snapshot_diagnostics_interval_ms",
+                        mData.observability.snapshotDiagnosticsIntervalMs},
+                       {"max_events_per_second", mData.observability.maxEventsPerSecond}},
+        __FILE__, __LINE__, __func__);
 
     // The same file also owns the badconn preset block — re-apply it so both
     // share one source of truth and hot-reload together.

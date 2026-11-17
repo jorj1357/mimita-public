@@ -1938,6 +1938,7 @@ void simulateSharedNpcs(SOCKET sock,
     const bool freezeWaveBanner = serverGamemodeState().npcWaves
         && serverGamemodeState().waveBannerVisible
         && npcDifficulty.freezeDuringWaveBanner;
+    npcBeginSimulationTick(tick);
     const auto npcAiStart = std::chrono::steady_clock::now();
     uint64_t targetScans = 0;
     uint64_t targetScanSkipped = 0;
@@ -2366,6 +2367,8 @@ void simulateSharedNpcs(SOCKET sock,
             worstAiMs = oneAiMs;
             worstAiActor = n.id;
         }
+        if (aiUpdateMs > 10.0)
+            npcExhaustPresentationBudget();
 
         // Ground clamp: only accept a floor within a small bounded distance.
         // A 100 m downward query can find a lower floor through a solid and

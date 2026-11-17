@@ -18,7 +18,7 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kTransportCapabilityVersion = 4u;
+inline constexpr std::uint32_t kTransportCapabilityVersion = 5u;
 inline constexpr std::uint32_t kEventTransportMessage = 721u;
 inline constexpr std::uint32_t kEventTransportDispatch = 722u;
 inline constexpr std::uint32_t kTransportMaxPayloadBytes = 64u * 1024u;
@@ -141,6 +141,21 @@ struct TransportEventV1 {
     std::int32_t reason;  // host-defined bounded reason
 };
 
+// Resident swap bookkeeping. A generation swap is not a disconnect: the
+// resident core keeps the socket/agent/queues alive and reports the suspend /
+// resume state so the next generation can reattach without reconnecting.
+struct TransportSwapStateV1 {
+    std::uint32_t structSize;
+    std::uint32_t version;
+    std::uint32_t generationAttached;  // 0/1
+    std::uint32_t suspended;           // 0/1
+    std::uint32_t sessionCount;
+    std::uint32_t queuedEvents;
+    std::uint64_t suspends;
+    std::uint64_t resumes;
+    std::uint64_t activeGeneration;
+};
+
 struct TransportCapabilityV1 {
     std::uint32_t version;
     std::uint32_t structSize;
@@ -178,6 +193,40 @@ struct TransportCapabilityV1 {
     // player. Used by join/reconnect after the game validates the token/policy.
     TransportResult (*bind_session)(void* hostUserData, PeerHandle peer,
                                     std::uint32_t playerId);
+
+    // Version 5: opaque resident session/transport operations. The resident
+    // core owns sockets, ICE agents, raw queues, and maintenance payloads. The
+    // game generation refers to them by handle only and never retains a host
+    // pointer across a swap.
+    TransportResult (*send_to_session)(void* hostUserData, SessionHandle session,
+                                       TransportChannel channel,
+                                       std::uint32_t typeId, std::uint32_t flags,
+                                       const std::uint8_t* payload,
+                                       std::uint32_t payloadSize);
+    // Explicit shutdown only. A DLL unload must detach, never close.
+    TransportResult (*close_session)(void* hostUserData, SessionHandle session);
+    SessionHandle (*open_session)(void* hostUserData, std::uint32_t role,
+                                  std::uint64_t connectionKey);
+    // Re-find an existing resident session after a generation swap.
+    SessionHandle (*attach_session)(void* hostUserData,
+                                    std::uint64_t connectionKey);
+    TransportResult (*poll_inbound)(void* hostUserData, SessionHandle session,
+                                    TransportMessageV1* out, std::uint32_t capacity,
+                                    std::uint32_t* count);
+    TransportResult (*poll_events)(void* hostUserData, SessionHandle session,
+                                   TransportEventV1* out, std::uint32_t capacity,
+                                   std::uint32_t* count);
+    TransportResult (*query_swap_state)(void* hostUserData,
+                                        TransportSwapStateV1* out);
+    // Maintenance bytes are copied into resident memory and may be sent while
+    // no game generation is active.
+    TransportResult (*set_maintenance_payload)(void* hostUserData,
+                                               SessionHandle session,
+                                               const std::uint8_t* bytes,
+                                               std::uint32_t size,
+                                               std::uint32_t intervalMs);
+    TransportResult (*clear_maintenance_payload)(void* hostUserData,
+                                                 SessionHandle session);
 };
 
 }  // namespace mimita::host

@@ -20,6 +20,8 @@ Related:
 | 2026-11-17 | Conditional `ActorPair::FinalPose` + clean payload baseline | Client ~7–14 FPS; `ActorPair::FinalPose` ~26–51 ms | Client ~23 FPS; second final-pose sample skipped on unchanged ticks | `performance.report`, `performance.fps`, run `20261117_170234` | partial; `Simulation::FinalPose` still large |
 | 2026-11-17 | Idle final-pose cadence + connection-independent client path | Prior idle client ~23 FPS after generation 318 | client-02 ~96–106 FPS idle on generation 320, p50 ~5.6–6.1 ms | `performance.fps`, `performance.report`, client-02 | partial; not connected gameplay |
 | 2026-11-17 | Projectile catch-up cap + NPC 4-tick decision cadence | Unbounded projectile catch-up; NPC decisions every 3 ticks; 8 plans/s | Max 2 steps/projectile, 12 steps/tick; 4-tick decisions; 4 plans/s | source implemented; needs projectile-active clean window | needs runtime |
+| 2026-11-17 | 500 ms hot-reload poll + idle final-pose cadence | Client idle ~96–106 FPS | Client-02 idle ~211–231 FPS, p50 ~3.8–4.1 ms | `performance.fps` client-02, generation 322 | partial; 40–47% frames still over budget, idle only |
+| 2026-11-17 | NPC physics sub-stage timing + 30 Hz idle animation budget | Server NPC `physics_ms` 122–134 ms/s, no sub-stage visibility | `collision_ms`, `animation_ms`, `aim_ms`, `pose_containment_ms`; idle animation 30 Hz, budget capped | source implemented; needs build/runtime | server tick cost not yet re-measured |
 
 ## Entry rules
 

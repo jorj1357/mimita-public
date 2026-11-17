@@ -146,6 +146,36 @@ bool sendToEndpoint(std::uint32_t addressNetworkOrder,
            mimita::host::TransportResult::Ok;
 }
 
+bool sendToSession(std::uint64_t session, std::uint32_t typeId,
+                   const void* data, std::size_t size) {
+    if (!gTransport || !gTransport->send_to_session || !session || !data ||
+        size == 0) {
+        return false;
+    }
+    return gTransport->send_to_session(
+               gHostData, session, mimita::host::TransportChannel::Control,
+               typeId, 0, static_cast<const std::uint8_t*>(data),
+               static_cast<std::uint32_t>(size)) ==
+           mimita::host::TransportResult::Ok;
+}
+
+void closeSession(std::uint64_t session) {
+    if (gTransport && gTransport->close_session && session) {
+        gTransport->close_session(gHostData, session);
+    }
+}
+
+bool queryTransportSwapState(mimita::host::TransportSwapStateV1* out) {
+    if (!gTransport || !gTransport->query_swap_state || !out) {
+        return false;
+    }
+    std::memset(out, 0, sizeof(*out));
+    out->structSize = static_cast<std::uint32_t>(sizeof(*out));
+    out->version = mimita::host::kTransportCapabilityVersion;
+    return gTransport->query_swap_state(gHostData, out) ==
+           mimita::host::TransportResult::Ok;
+}
+
 bool sessionIsServerHost() {
     if (!gTransport || !gTransport->session_state) {
         return false;
@@ -200,6 +230,10 @@ bool isServerHost() {
 
 bool serverSendToPlayer(SOCKET, const ServerPlayer& player, const void* data,
                         std::size_t size) {
+    if (player.transportHandle) {
+        return mimita::game::sendToSession(player.transportHandle,
+                                           packetTypeId(data, size), data, size);
+    }
     return mimita::game::sendToPlayer(player.id, packetTypeId(data, size), data,
                                       size);
 }

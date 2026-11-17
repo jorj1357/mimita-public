@@ -5,6 +5,7 @@
 
 #include <cstring>
 
+#include "host/net-core-primitive.h"
 #include "network/packets.h"
 
 namespace mimita::host {
@@ -43,7 +44,7 @@ void HostServerTransportAdapter::setEndpointSender(ServerEndpointSendFn sender) 
 void HostServerTransportAdapter::noteInbound(
     std::uint64_t peer, std::uint32_t addressNetworkOrder,
     std::uint16_t portNetworkOrder,
-    std::unique_ptr<IGameTransport>* claimedTransport) {
+    MimitaNet::ServerTransportHandle* claimedTransport) {
     inboundPeer_ = peer;
     inboundAddress_ = addressNetworkOrder;
     inboundPort_ = portNetworkOrder;
@@ -141,11 +142,13 @@ bool HostServerTransportAdapter::bindSession(void* owner, std::uint64_t peer,
         player.connectionId.value = peer;
         player.hasConnectionId = true;
     }
-    if (adapter->claimedTransport_ && adapter->claimedTransport_->get()) {
-        if (player.transport) {
-            player.transport->close();
+    if (adapter->claimedTransport_ &&
+        *adapter->claimedTransport_ != MimitaNet::kNoServerTransport) {
+        if (player.transportHandle != MimitaNet::kNoServerTransport) {
+            closeTransport(player.transportHandle);
         }
-        player.transport = std::move(*adapter->claimedTransport_);
+        player.transportHandle = *adapter->claimedTransport_;
+        *adapter->claimedTransport_ = MimitaNet::kNoServerTransport;
     }
     return true;
 }

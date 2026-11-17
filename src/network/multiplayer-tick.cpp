@@ -210,7 +210,7 @@ void logClientSnapshotDiagnostics(MultiplayerContext& ctx,
     ctx.lastSnapshotDiagnosticArrivalMs = now;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Network, StructuredLevel::Important,
-        "network.client-snapshot-window", "", "complete authoritative snapshot applied",
+        "network.client.snapshot.applied", "", "complete authoritative snapshot applied",
         snapshotTick,
         {{"transport", transport},
          {"snapshot_tick", snapshotTick},
@@ -226,6 +226,46 @@ void logClientSnapshotDiagnostics(MultiplayerContext& ctx,
          {"server_tick", ctx.latestServerTick}},
         __FILE__, __LINE__, __FUNCTION__);
 
+    {
+        NetworkEvents::Context context;
+        context.connectionId = ctx.connectionAttemptId;
+        context.attemptId = static_cast<std::uint32_t>(ctx.reconnectAttempts);
+        context.playerId = ctx.localPlayerId;
+        context.role = "client";
+        context.transport = transport;
+        context.serverAddress = ctx.serverAddress;
+        context.roomCode = ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode;
+        NetworkEvents::emit(
+            context, "network.client.snapshot.received", "received", "ok",
+            "complete_snapshot", "network.client.snapshot.applied", snapshotTick,
+            nlohmann::json{{"snapshot_tick", snapshotTick},
+                           {"tick_gap", tickGap},
+                           {"packet_bytes", packetBytes},
+                           {"chunk_count", chunkCount},
+                           {"entity_count", entityCount},
+                           {"snapshot_interarrival_ms", interarrivalMs}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+    static bool firstSnapshotForGeneration = true;
+    if (firstSnapshotForGeneration)
+    {
+        firstSnapshotForGeneration = false;
+        NetworkEvents::Context context;
+        context.connectionId = ctx.connectionAttemptId;
+        context.attemptId = static_cast<std::uint32_t>(ctx.reconnectAttempts);
+        context.playerId = ctx.localPlayerId;
+        context.role = "client";
+        context.transport = transport;
+        context.serverAddress = ctx.serverAddress;
+        context.roomCode = ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode;
+        NetworkEvents::emit(
+            context, "game.generation.first_snapshot", "applied", "ok",
+            "first_generation_snapshot", "network.client.snapshot.received",
+            snapshotTick,
+            nlohmann::json{{"snapshot_tick", snapshotTick},
+                           {"entity_count", entityCount}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     if (tickGap > 1)
     {
         NetworkEvents::Context context;
@@ -1022,6 +1062,25 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
                        {"server_address", ctx.serverAddress},
                        {"reliable_event_id", spawn->eventId}},
         __FILE__, __LINE__, __FUNCTION__);
+    {
+        NetworkEvents::Context context;
+        context.connectionId = ctx.connectionAttemptId;
+        context.attemptId = static_cast<std::uint32_t>(ctx.reconnectAttempts);
+        context.playerId = ctx.localPlayerId;
+        context.role = "client";
+        context.transport = ctx.transport ? "ice" : "udp";
+        context.serverAddress = ctx.serverAddress;
+        context.roomCode = ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode;
+        NetworkEvents::emit(
+            context, "network.client.spawn.applied", "applied", "ok",
+            "authoritative_spawn", "network.client.snapshot.received",
+            ctx.latestLocalSnapshotTick,
+            nlohmann::json{{"spawn_generation", spawn->spawnGeneration},
+                           {"old_spawn_generation", oldGen},
+                           {"transform_epoch", spawn->transformEpoch},
+                           {"required_map_id", ctx.requiredMapId}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     if (oldGen == 0)
     {
         mpLogConnectStage(ctx, "spawn", "applied",
@@ -1130,6 +1189,68 @@ bool mpLocalGameplaySimulationReady(const MultiplayerContext& ctx,
     return localGameplaySimulationReady(view);
 }
 
+static void emitClientMetricsWindow(MultiplayerContext& ctx)
+{
+    const auto& config = NetworkingConfig::instance().data();
+    const uint64_t intervalMs = (uint64_t)std::max(
+        100.0, config.observability.metricsWindowMs);
+    const uint64_t now = nowMs();
+    static thread_local uint64_t lastEmitMs = 0;
+    static thread_local uint64_t lastSent = 0;
+    static thread_local uint64_t lastReceived = 0;
+    static thread_local uint64_t lastSnapshots = 0;
+    if (lastEmitMs == 0)
+    {
+        lastEmitMs = now;
+        lastSent = ctx.packetsSent;
+        lastReceived = ctx.packetsReceived;
+        lastSnapshots = ctx.snapshotsReceived;
+        return;
+    }
+    if (now - lastEmitMs < intervalMs)
+        return;
+
+    const uint64_t sentDelta = ctx.packetsSent >= lastSent
+        ? ctx.packetsSent - lastSent : ctx.packetsSent;
+    const uint64_t receivedDelta = ctx.packetsReceived >= lastReceived
+        ? ctx.packetsReceived - lastReceived : ctx.packetsReceived;
+    const uint64_t snapshotDelta = ctx.snapshotsReceived >= lastSnapshots
+        ? ctx.snapshotsReceived - lastSnapshots : ctx.snapshotsReceived;
+    const uint64_t elapsedMs = now - lastEmitMs;
+    lastEmitMs = now;
+    lastSent = ctx.packetsSent;
+    lastReceived = ctx.packetsReceived;
+    lastSnapshots = ctx.snapshotsReceived;
+
+    NetworkEvents::Context context;
+    context.connectionId = ctx.connectionAttemptId;
+    context.attemptId = static_cast<std::uint32_t>(ctx.reconnectAttempts);
+    context.playerId = ctx.localPlayerId;
+    context.role = "client";
+    context.transport = ctx.transport ? "ice" : "udp";
+    context.serverAddress = ctx.serverAddress;
+    context.roomCode = ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode;
+    NetworkEvents::emit(
+        context, "network.metrics.window", "window", "ok", "metrics_window",
+        "network.metrics.window", ctx.tick,
+        nlohmann::json{
+            {"window_ms", elapsedMs},
+            {"packets_sent_delta", sentDelta},
+            {"packets_received_delta", receivedDelta},
+            {"snapshots_received_delta", snapshotDelta},
+            {"packets_sent_total", ctx.packetsSent},
+            {"packets_received_total", ctx.packetsReceived},
+            {"snapshots_received_total", ctx.snapshotsReceived},
+            {"snapshot_age_ms", ctx.lastSnapshotReceivedMs > 0
+                ? now - ctx.lastSnapshotReceivedMs : 0},
+            {"last_heard_age_ms", ctx.lastHeardServerMs > 0
+                ? now - ctx.lastHeardServerMs : 0},
+            {"server_tick", ctx.latestServerTick},
+            {"connection_state", connectionStateName(ctx.connectionState)},
+            {"rtt_ms", ctx.localPingMs}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, World& world)
 {
     MIMITA_PERF_SCOPE("Network::MpTick");
@@ -1197,6 +1318,30 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 ctx.reconnectTransportToken.clear();
                 ctx.reconnectTransportRoomCode.clear();
                 ctx.connectionStatus = connect.message;
+                {
+                    NetworkEvents::Context context;
+                    context.connectionId = ctx.connectionAttemptId;
+                    context.attemptId = static_cast<std::uint32_t>(ctx.reconnectAttempts);
+                    context.playerId = ctx.localPlayerId;
+                    context.role = "client";
+                    context.transport = "ice";
+                    context.serverAddress = ctx.serverAddress;
+                    context.roomCode = ctx.roomCode.empty()
+                        ? ctx.currentRoomCode : ctx.roomCode;
+                    NetworkEvents::emit(
+                        context,
+                        reconnectFailed ? "network.client.reconnect.rejected"
+                                        : "network.client.transport.failed",
+                        "transport", "failed",
+                        reconnectFailed ? "ice_reconnect_transport_failed"
+                                        : "ice_join_transport_failed",
+                        reconnectFailed ? "network.client.reconnect.terminal"
+                                        : "network.client.connect.requested",
+                        ctx.tick,
+                        nlohmann::json{{"message", connect.message},
+                                       {"room_code", connect.roomCode}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
                 ctx.connectionState = reconnectFailed
                     ? ConnectionState::ReconnectFailed
                     : ConnectionState::Disconnected;
@@ -1264,6 +1409,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     if (!ctx.active)
         return;
 
+    emitClientMetricsWindow(ctx);
+
     // Decay old disagreement events
     {
         constexpr uint64_t DISAGREEMENT_LIFETIME_MS = 3000;
@@ -1321,6 +1468,21 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             {
                 sendJoinRequest(ctx, playerName);
                 ctx.connectionState = ConnectionState::WaitJoinAccept;
+                NetworkEvents::Context context;
+                context.connectionId = ctx.connectionAttemptId;
+                context.attemptId = static_cast<std::uint32_t>(ctx.reconnectAttempts);
+                context.playerId = ctx.localPlayerId;
+                context.role = "client";
+                context.transport = ctx.transport ? "ice" : "udp";
+                context.serverAddress = ctx.serverAddress;
+                context.roomCode = ctx.roomCode.empty()
+                    ? ctx.currentRoomCode : ctx.roomCode;
+                NetworkEvents::emit(
+                    context, "network.client.join.request_sent", "sent", "ok",
+                    "join_token_present", "network.server.join.received",
+                    ctx.tick,
+                    nlohmann::json{{"join_request_sends", ctx.joinRequestSends}},
+                    __FILE__, __LINE__, __FUNCTION__);
             }
             else
             {
@@ -1336,7 +1498,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                     StructuredLogger::instance().writeEvent(
                         StructuredCategory::Network,
                         StructuredLevel::Important,
-                        "network.client.hello-sent", "",
+                        "network.client.hello.sent", "",
                         "sent first handshake hello to server", ctx.tick,
                         {{"server_address", ctx.serverAddress},
                          {"transport", ctx.transport ? "active" : "missing"}},
@@ -1592,6 +1754,25 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                  {"server_address", ctx.serverAddress},
                  {"required_map_id", ctx.requiredMapId}},
                 __FILE__, __LINE__, __FUNCTION__);
+            {
+                NetworkEvents::Context context;
+                context.connectionId = ctx.connectionAttemptId;
+                context.attemptId = static_cast<std::uint32_t>(ctx.reconnectAttempts);
+                context.playerId = ctx.localPlayerId;
+                context.role = "client";
+                context.transport = ctx.transport ? "ice" : "udp";
+                context.serverAddress = ctx.serverAddress;
+                context.roomCode = ctx.roomCode.empty()
+                    ? ctx.currentRoomCode : ctx.roomCode;
+                const std::string reasonCode =
+                    "join_reject_reason_" + std::to_string(reject->reason);
+                NetworkEvents::emit(
+                    context, "network.client.join.rejected", "rejected",
+                    "rejected", reasonCode.c_str(),
+                    reject->reason == 5 ? "network.client.connect.requested" : "none",
+                    ctx.tick, nlohmann::json{{"reject_reason_code", reject->reason}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
             if (reject->reason == 5)
             {
                 ctx.wrongPassword = true;
@@ -1677,9 +1858,26 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                    ctx.localPlayerId, accept->restoredHealth,
                    accept->restoredKills, accept->restoredDeaths,
                    ctx.transformEpoch, ctx.lastKnownSpawnGeneration);
-            mpLogConnectStage(ctx, "reconnect_accept", "ok",
-                ctx.disconnectStartedMs ? nowMs() - ctx.disconnectStartedMs : 0,
-                0, "", "reconnect accept received");
+            {
+                NetworkEvents::Context context;
+                context.connectionId = ctx.connectionAttemptId;
+                context.attemptId = static_cast<std::uint32_t>(ctx.reconnectAttempts);
+                context.playerId = ctx.localPlayerId;
+                context.role = "client";
+                context.transport = ctx.transport ? "ice" : "udp";
+                context.serverAddress = ctx.serverAddress;
+                context.roomCode = ctx.roomCode.empty()
+                    ? ctx.currentRoomCode : ctx.roomCode;
+                NetworkEvents::emit(
+                    context, "network.client.reconnect.accepted", "accepted",
+                    "ok", "reconnect_accept", "network.client.snapshot.recovery",
+                    ctx.tick,
+                    nlohmann::json{{"assigned_player_id", ctx.localPlayerId},
+                                   {"required_map_id", ctx.requiredMapId},
+                                   {"spawn_generation", ctx.lastKnownSpawnGeneration},
+                                   {"server_build_id", std::string(accept->runtimeBuildId)}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Network, StructuredLevel::Important,
                 "network.join.stage", std::to_string(ctx.connectionAttemptId),

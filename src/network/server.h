@@ -271,6 +271,11 @@ struct TransportConnectionId
     }
 };
 
+// Opaque resident transport handle. Game policy may store and pass it, but
+// must never dereference it or keep a host object pointer across a swap.
+using ServerTransportHandle = std::uint64_t;
+inline constexpr ServerTransportHandle kNoServerTransport = 0;
+
 struct TransportReceiveEvent
 {
     TransportConnectionId connectionId{};
@@ -286,7 +291,7 @@ struct PendingServerTransport
     TransportConnectionId connectionId{};
     sockaddr_in diagnosticEndpoint{};
     uint64_t connectedAtMs = 0;
-    std::unique_ptr<IGameTransport> transport;
+    ServerTransportHandle transport = kNoServerTransport;
 };
 
 struct ServerPacketStats
@@ -500,7 +505,7 @@ struct ServerPlayer
     uint16_t lastPresentationDirectionChangeSerial = 0;
     uint16_t lastPresentationFreezeSerial = 0;
     ServerInput input;
-    std::unique_ptr<IGameTransport> transport;
+    ServerTransportHandle transportHandle = kNoServerTransport;
     std::string iceSessionId;
     QuickHitState quickHitState;
     SpyKnifeState spyKnifeState;
@@ -1193,7 +1198,7 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
                  uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
                  const HeadlessWorld* world = nullptr,
                  const TransportConnectionId* connectionId = nullptr,
-                 std::unique_ptr<IGameTransport>* claimedTransport = nullptr);
+                 ServerTransportHandle* claimedTransport = nullptr);
 void handleInputPacket(const char* buffer, int bytes,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
                        const HeadlessWorld& world,
@@ -1374,12 +1379,12 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                        uint32_t& nextPlayerId, uint32_t tick, uint64_t& totalPacketsOut,
                        const HeadlessWorld* world = nullptr,
                        const TransportConnectionId* connectionId = nullptr,
-                       std::unique_ptr<IGameTransport>* claimedTransport = nullptr);
+                       ServerTransportHandle* claimedTransport = nullptr);
 void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
                             uint32_t tick, uint64_t& totalPacketsOut,
                             const TransportConnectionId* connectionId = nullptr,
-                            std::unique_ptr<IGameTransport>* claimedTransport = nullptr);
+                            ServerTransportHandle* claimedTransport = nullptr);
 void handleAvatarManifestPacket(SOCKET sock, const sockaddr_in& from,
                                 const char* buffer, int bytes,
                                 std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -1416,7 +1421,7 @@ ServerPacketProcessResult processServerPacket(
     ServerPacketStats* stats = nullptr,
     DisagreementRetransmitState* retransmitState = nullptr,
     ServerPlayer* authenticatedPlayer = nullptr,
-    std::unique_ptr<IGameTransport>* claimedTransport = nullptr,
+    ServerTransportHandle* claimedTransport = nullptr,
     std::vector<uint32_t>* pendingRemovals = nullptr,
     NpcSystem* npcSystem = nullptr);
 
@@ -1639,6 +1644,7 @@ struct ListenServerState
 
     bool active = false;
     SOCKET sock = INVALID_SOCKET;
+    std::uint64_t netSession = 0;
     std::unordered_map<uint32_t, ServerPlayer> players;
     std::unordered_map<uint32_t, ServerNpc> npcs;
     std::unordered_map<uint32_t, ServerProjectile> projectiles;

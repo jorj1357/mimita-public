@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 15
+Entries: 16
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -118,3 +118,10 @@ Entries: 15
 - Status: FIXED IN SOURCE; initial-load journal proof recorded; non-zero map-switch runtime proof pending
 - Summary: The client loaded skyhouse while 9 badhouse NPCs from the previous session remained visible at old-map coordinates until teardown. New map loads now clear remote actors/projectiles/ragdolls before the new world is shown.
 - Detail: [stale-remote-npcs-map-switch-REG-2026-11-06.md](stale-remote-npcs-map-switch-REG-2026-11-06.md)
+
+## Entry 16 — Server policy startup request ABI defaults rejected Payload launch
+
+- Recorded: 2026-11-17T21:06:37Z
+- Status: FIX ATTEMPTED; fresh Payload runtime verification pending
+- Summary: The hot server policy expected request ABI version 2 while the resident startup, world-load, and configure requests defaulted to version 1.
+- Detail: [server-policy-startup-abi-REG-2026-11-17.md](server-policy-startup-abi-REG-2026-11-17.md)

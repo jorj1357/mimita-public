@@ -1,5 +1,6 @@
 // 2026-11-13
 #include "game/window-bridge-module.h"
+#include "game/transport-bridge-module.h"
 #include "engine/whole-game-entry.h"
 
 #include <new>
@@ -25,6 +26,7 @@ namespace {
 
 Engine* gWholeGameEngine = nullptr;
 bool gWholeGameReady = false;
+bool gFirstTickEmitted = false;
 EngineFrameState gWholeGameFrameState;
 std::vector<std::string> gStartupCommands;
 
@@ -79,6 +81,7 @@ bool initializeWholeGameEntry(int width, int height, const char* title) {
                 {"visible", true}},
             __FILE__, __LINE__, __FUNCTION__);
     }
+    gFirstTickEmitted = false;
     gWholeGameReady = true;
     return true;
 }
@@ -95,6 +98,40 @@ void tickWholeGame(double deltaSeconds) {
     (void)deltaSeconds;
     if (!gWholeGameReady || !gWholeGameEngine)
         return;
+    if (!gFirstTickEmitted)
+    {
+        gFirstTickEmitted = true;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "game.generation.first_tick", "generation",
+            "first gameplay tick after generation initialization", 0, {},
+            __FILE__, __LINE__, __FUNCTION__);
+        mimita::host::TransportSwapStateV1 swapState{};
+        const bool swapStateKnown =
+            mimita::game::queryTransportSwapState(&swapState);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.hotswap.queue_drained", "generation",
+            swapStateKnown
+                ? "generation attached to the resident transport swap state"
+                : "resident transport swap state unavailable",
+            0,
+            nlohmann::json{{"result", swapStateKnown ? "skipped" : "failed"},
+                           {"reason_code", "resident_pump_not_installed"},
+                           {"messages", swapStateKnown
+                                ? swapState.queuedEvents : 0},
+                           {"bytes", 0},
+                           {"overflow", false},
+                           {"session_count", swapStateKnown
+                                ? swapState.sessionCount : 0},
+                           {"queued_events", swapStateKnown
+                                ? swapState.queuedEvents : 0},
+                           {"suspended", swapStateKnown
+                                ? (swapState.suspended != 0) : false},
+                           {"generation_attached", swapStateKnown
+                                ? (swapState.generationAttached != 0) : false}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     engineTickSimulate(*gWholeGameEngine, gWholeGameFrameState);
     { MIMITA_PERF_SCOPE("EngineTick::StartupCommands");
       executePendingStartupCommands(); }

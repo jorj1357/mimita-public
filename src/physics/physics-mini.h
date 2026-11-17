@@ -19,6 +19,19 @@ struct InputState;
 // `overrideConfig` (optional) supplies a MovementConfig that replaces the
 // global player movement preset for this update. Used by NPCs so they can run
 // a different movement preset than the player. nullptr = global config.
+struct PhysicsStageCost {
+    double configMs = 0.0;
+    double movePreMs = 0.0;
+    double collisionMs = 0.0;
+    double movePostMs = 0.0;
+    double facingMs = 0.0;
+    double animationMs = 0.0;
+    double totalMs = 0.0;
+    bool animationUpdated = false;
+};
+
+const PhysicsStageCost& physicsStageCost();
+
 void physicsMainUpdate(
     Player& player,
     const World& world,
@@ -28,5 +41,6 @@ void physicsMainUpdate(
     // physics-mini.cpp adds only the extra speed-derived substeps needed to
     // keep a fast actor below CollisionConfig::maxSubStepDistance().
     int subSteps = 1,
-    const MovementConfig* overrideConfig = nullptr
+    const MovementConfig* overrideConfig = nullptr,
+    bool updateAnimation = true
 );

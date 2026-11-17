@@ -17,6 +17,8 @@
 
 #include "network/server.h"
 #include "network/server-gamemode.h"
+#include "network/server-ice-policy.h"
+#include "network/server-session-policy.h"
 #include "network/community-server-config.h"
 #include "network/coordinator-client.h"
 #include "physics/runtime-objects.h"
@@ -494,6 +496,26 @@ int serverPolicyShutdown() {
     return 1;
 }
 
+int serverPolicyIceDecide(mimita::host::ServerIcePolicyV1* inout) {
+    if (!inout ||
+        inout->version != mimita::host::kGameServerPolicyAbiVersion ||
+        inout->structSize < sizeof(mimita::host::ServerIcePolicyV1)) {
+        return 0;
+    }
+    MimitaNet::serverIcePolicyDecide(*inout);
+    return 1;
+}
+
+int serverPolicySessionDecide(mimita::host::ServerSessionPolicyV1* inout) {
+    if (!inout ||
+        inout->version != mimita::host::kGameServerPolicyAbiVersion ||
+        inout->structSize < sizeof(mimita::host::ServerSessionPolicyV1)) {
+        return 0;
+    }
+    MimitaNet::serverSessionPolicyDecide(*inout);
+    return 1;
+}
+
 }  // namespace mimita::game
 
 extern "C" __declspec(dllexport)
@@ -527,6 +549,8 @@ const mimita::host::GameServerPolicyV1* GetMimitaGameServerPolicyV1(
         policy.coordinator_ice_done =
             &mimita::game::serverPolicyCoordinatorIceDone;
         policy.shutdown = &mimita::game::serverPolicyShutdown;
+        policy.ice_decide = &mimita::game::serverPolicyIceDecide;
+        policy.session_decide = &mimita::game::serverPolicySessionDecide;
         return policy;
     }();
     return &api;

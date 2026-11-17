@@ -296,6 +296,68 @@ with the profile's 19 NPCs.
   Connected 42-NPC gameplay remains unmeasured after generation 321 because the
   server was building/stalled.
 
+### Best-guess latency reduction without a build
+
+- `src/engine/engine-tick-setup.cpp`: hot-reload/config polling interval raised
+  from 167 ms to 500 ms. This cuts repeated `Setup::ConfigPolling::*` and
+  `Setup::HotReloadDLL` work by roughly 3x while keeping live edits responsive.
+- `docs/specs/open-gameplay-issues.md`: added OGI-034, event-driven AI/agent
+  work instead of timer- or wait-based loops.
+- No build was run for this change; it is source-only until the next normal
+  dev-loop build.
+
+### Generation 325 — idle FPS and navigation stage evidence
+
+- Client-02 idle reached ~211–231 FPS on generation 322, p50 ~3.77–4.06 ms,
+  with 40–47% of frames still over 4.17 ms. This is idle, not connected
+  gameplay.
+- Server generation 325 active in PID 12272. `npc.phase-window` total dropped
+  to ~364 ms/s; `navigator_ms` 94–120, `physics_ms` 122–134,
+  `decision_ms` 146–158, `path_ms` 29–45.
+- No `npc.nav.plan-cost` records were emitted, meaning no single plan exceeded
+  5 ms after the tighter budget. The remaining navigator time is distributed
+  across many updates, not one large plan.
+- Server per-tick stalls still reached `npc_ms` 192–452 ms with 42 NPCs and
+  `actual_hz` ~3–8 Hz. The next measured owner is per-NPC physics, not the
+  local planner.
+- Source-only change after generation 325: NPC `physicsMainUpdate` substeps
+  reduced from 2 to 1; not yet built or measured.
+
+### Server NPC physics sub-stages and presentation budget
+
+- `physics-mini` now records `config_ms`, `move_pre_ms`, `collision_ms`,
+  `move_post_ms`, `facing_ms`, `animation_ms`, and total physics time. The
+  values are exposed through `physicsStageCost()` and reported by
+  `npc.slow-update` and `npc.phase-window`.
+- `npc.slow-update` and `npc.phase-window` now also report `aim_ms` (NPC
+  hybrid aim-body solve), `pose_containment_ms`, and skipped counts.
+- Server idle NPCs animate procedural pose and aim at 30 Hz; server NPCs with
+  a target keep 60 Hz animation. Movement, collision, and firing still run at
+  60 Hz. Local/client NPC simulation is unchanged.
+- A 4 ms per-tick animation/aim budget and a 10 ms server-tick presentation
+  cutoff skip only optional presentation work for remaining idle NPCs. The
+  movement/collision path is never skipped, so NPC speed and collision cadence
+  are preserved.
+- This is source-only until the normal dev-loop build; no compiler or build
+  was run by the agent.
+
+### Validation attempted
+
+- Dev loop was already running and was confirmed with `--ensure-running`;
+  server PID 12272 remained alive. The game build was still in progress and no
+  client was online.
+- `devscripts/quality/test_manual_build_guard.py`: 4 passed.
+- `devscripts/quality/test_path_containment.py`: 6 passed.
+- `devscripts/dev_loop/test_artifacts.py`: 4 passed.
+- Weapon JSON sync: passed. Gamemode JSON sync: passed.
+- `lint.py --gate` failed against its accepted baseline with pre-existing
+  aggregate increases: damage-authority 93 > 81, weapon_id_branches 43 > 41,
+  dead-code 9 > 8, duplicate windows 569 > 551. No new finding was attributed
+  to the files changed here; the baseline was not updated.
+- The optional C++ tools (`clang-format`, `clang-tidy`, `cppcheck`, `jscpd`)
+  were not installed.
+- `agent-gate.py` was not used because it stops the dev loop before running.
+
 # Contract / ABI changes
 
 - Contract: none. No game/host ABI, packet, or state schema changed.

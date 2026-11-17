@@ -32,7 +32,7 @@ public:
     void setEndpointSender(ServerEndpointSendFn sender);
     void noteInbound(std::uint64_t peer, std::uint32_t addressNetworkOrder,
                      std::uint16_t portNetworkOrder,
-                     std::unique_ptr<IGameTransport>* claimedTransport = nullptr);
+                     MimitaNet::ServerTransportHandle* claimedTransport = nullptr);
     void clearInbound();
     void clear();
 
@@ -61,7 +61,7 @@ private:
     std::uint64_t inboundPeer_ = 0;
     std::uint32_t inboundAddress_ = 0;
     std::uint16_t inboundPort_ = 0;
-    std::unique_ptr<IGameTransport>* claimedTransport_ = nullptr;
+    MimitaNet::ServerTransportHandle* claimedTransport_ = nullptr;
     TransportAdapterV1 adapter_{};
 };
 

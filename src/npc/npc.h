@@ -343,6 +343,13 @@ struct PlayerMovementEvent {
     bool froze = false;
 };
 
+// Enables and resets the server-side optional NPC animation/presentation
+// budget once per simulation tick. Movement and collision still run every tick;
+// procedural animation and NPC aim/pose are rate-limited when it is exhausted.
+// Local/client NPC simulation does not call this and keeps 60 Hz animation.
+void npcBeginSimulationTick(std::uint32_t tick);
+void npcExhaustPresentationBudget();
+
 class NpcSystem {
 public:
     void spawnPrototypeScene();

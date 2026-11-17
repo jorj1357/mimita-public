@@ -19,9 +19,23 @@
 
 IceAgent::IceAgent() = default;
 
+IceAgent::IceAgent(AttachedTag) {}
+
 IceAgent::~IceAgent()
 {
     shutdown();
+}
+
+std::unique_ptr<IceAgent> IceAgent::attachView(const std::string&)
+{
+    // Resident agents are created by the resident owner, not reattached.
+    return nullptr;
+}
+
+void IceAgent::destroyNow()
+{
+    // Resident agents are owned by the resident host; explicit close paths
+    // call shutdown(), and destroying the wrapper is the owner's job.
 }
 
 bool IceAgent::initialize(const IceConfiguration& config)

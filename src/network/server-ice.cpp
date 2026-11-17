@@ -12,6 +12,7 @@
 #include "host/abi/game-server-abi.h"
 #include "host/host-runtime.h"
 #include "host/host-session-identity.h"
+#include "host/net-core-primitive.h"
 #include "network/server-gamemode.h"
 #include "network/game-transport.h"
 #include "network/ice-transport.h"
@@ -190,6 +191,34 @@ void shutdownIceCoordinatorPoller()
     gCoordinatorPollWorker.shutdown();
 }
 
+// ── Hot policy decisions ─────────────────────────────────────────────
+// The game generation owns timeout/admission/expiry policy. The resident pump
+// applies bounded outputs and keeps the libjuice/socket mechanism.
+static mimita::host::ServerIcePolicyV1 icePolicyDecision(
+    std::uint32_t stage, std::uint32_t state = 0,
+    std::uint64_t elapsedMs = 0, std::uint32_t pendingPeers = 0,
+    std::uint32_t playerCount = 0, std::uint64_t netSession = 0)
+{
+    mimita::host::ServerIcePolicyV1 policy{};
+    policy.version = mimita::host::kGameServerPolicyAbiVersion;
+    policy.structSize = sizeof(policy);
+    policy.stage = stage;
+    policy.state = state;
+    policy.elapsedMs = elapsedMs;
+    policy.pendingPeers = pendingPeers;
+    policy.playerCount = playerCount;
+    policy.netSession = netSession;
+    if (!mimita::host::HostRuntime::instance().serverPolicyIceDecide(&policy))
+    {
+        // No resident fallback policy. The server must refuse ICE policy work
+        // when the hot server policy export is unavailable.
+        policy.acceptPeer = 0;
+        policy.expirePeer = 0;
+        policy.maxPacketsPerPoll = 0;
+    }
+    return policy;
+}
+
 // ── Wait for agent state (blocking, for startup only) ────────────────
 
 bool waitForAgentState(IceAgent& agent, IceAgentState target, int timeoutMs)
@@ -226,6 +255,10 @@ static IceAgentState tickAgentOnce(IceAgent& agent)
 bool initServerIceListener(ListenServerState& state)
 {
     printf("[SERVER ICE] initializing ICE listener\n");
+    const auto listenerPolicy = icePolicyDecision(
+        mimita::host::kIcePolicyListenerConfig, 0, 0, 0, 0,
+        state.netSession);
+    const int gatherTimeoutMs = static_cast<int>(listenerPolicy.gatherTimeoutMs);
     const std::string startupCorrelationId =
         std::to_string(GetCurrentProcessId());
     auto logStartupStage = [&](const char* stage, uint64_t startedAtMs,
@@ -272,7 +305,7 @@ bool initServerIceListener(ListenServerState& state)
     // Non-blocking gather loop (up to 15s, but returns immediately for tick loop)
     {
         int waited = 0;
-        while (waited < 15000)
+        while (waited < gatherTimeoutMs)
         {
             auto s = tickAgentOnce(*agent);
             if (s == IceAgentState::GatheringComplete || s == IceAgentState::Connected || s == IceAgentState::Completed)
@@ -286,7 +319,7 @@ bool initServerIceListener(ListenServerState& state)
             Sleep(50);
             waited += 50;
         }
-        if (waited >= 15000) {
+        if (waited >= gatherTimeoutMs) {
             printf("[SERVER ICE] FATAL: gather timeout\n");
             logStartupStage("candidate_gather", gatherStartedMs, false,
                             "ICE candidate gathering timed out");
@@ -322,6 +355,8 @@ bool initServerIceListener(ListenServerState& state)
     state.serverCode = hostResult.roomCode;
     state.joinToken = hostResult.joinToken;
     state.iceListenerAgent = std::move(agent);
+    mimita::host::registerIceAgent(state.iceSessionId,
+                                   state.iceListenerAgent.get());
     state.lastIceCoordinatorPollMs = nowMs();
 
     printf("[SERVER ICE] listener registered: code=%s session=%s\n",
@@ -333,6 +368,16 @@ void publishServerIceListener(const ListenServerState& state)
 {
     if (state.serverCode.empty())
         return;
+
+    mimita::host::ServerSessionPolicyV1 sessionPolicy{};
+    sessionPolicy.version = mimita::host::kGameServerPolicyAbiVersion;
+    sessionPolicy.structSize = sizeof(sessionPolicy);
+    sessionPolicy.passwordProtected = state.passwordProtected ? 1u : 0u;
+    sessionPolicy.maxPlayers = state.maxPlayers;
+    if (!mimita::host::HostRuntime::instance().serverPolicySessionDecide(
+            &sessionPolicy) || !sessionPolicy.publishRoom) {
+        return;
+    }
 
     hostedRoomSession().active = true;
     hostedRoomSession().roomCode = state.serverCode;
@@ -354,6 +399,10 @@ void tickIceCoordinator(ListenServerState& state, size_t playerCount)
     static uint64_t s_lastDebugLog = 0;
     static uint64_t s_lastEntryLog = 0;
     uint64_t nowDbg = nowMs();
+    const auto coordinatorPolicy = icePolicyDecision(
+        mimita::host::kIcePolicyCoordinatorPoll, 0, 0,
+        static_cast<std::uint32_t>(gPendingIcePeers.size()),
+        static_cast<std::uint32_t>(playerCount), state.netSession);
 
     // Unconditional heartbeat — proves function is reached at runtime
     if (nowDbg - s_lastEntryLog >= 10000) {
@@ -392,6 +441,13 @@ void tickIceCoordinator(ListenServerState& state, size_t playerCount)
             __FILE__, __LINE__, __FUNCTION__);
 
         auto pending = std::move(completed.pending);
+        if (pending.hasRequest && !coordinatorPolicy.acceptPeer)
+        {
+            printf("[ICE HOST REQUEST] req=%s REJECTED: pending-peer admission policy\n",
+                   pending.requestId.substr(0, 12).c_str());
+            coordinatorIceRequestComplete(state.serverCode, pending.requestId);
+            return;
+        }
         if (pending.hasRequest)
         {
             // Validate SDP before creating agent
@@ -438,7 +494,8 @@ void tickIceCoordinator(ListenServerState& state, size_t playerCount)
         }
     }
 
-    if (nowDbg - state.lastIceCoordinatorPollMs < 500)
+    const uint64_t pollIntervalMs = coordinatorPolicy.pollIntervalMs;
+    if (nowDbg - state.lastIceCoordinatorPollMs < pollIntervalMs)
         return;
     state.lastIceCoordinatorPollMs = nowDbg;
 
@@ -455,6 +512,14 @@ void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId
                   std::vector<PendingServerTransport>& pendingIceTransports)
 {
     uint64_t now = nowMs();
+    const auto gatherPolicy = icePolicyDecision(
+        mimita::host::kIcePolicyPeerGather,
+        static_cast<std::uint32_t>(PendingIcePeer::State::Gathering), 0,
+        static_cast<std::uint32_t>(gPendingIcePeers.size()));
+    const auto connectPolicy = icePolicyDecision(
+        mimita::host::kIcePolicyPeerConnect,
+        static_cast<std::uint32_t>(PendingIcePeer::State::Connecting), 0,
+        static_cast<std::uint32_t>(gPendingIcePeers.size()));
 
     for (auto it = gPendingIcePeers.begin(); it != gPendingIcePeers.end(); )
     {
@@ -464,6 +529,10 @@ void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId
         if (!agent) { it = gPendingIcePeers.erase(it); continue; }
 
         IceAgentState agentState = tickAgentOnce(*agent);
+        const bool gathering = peer.state == PendingIcePeer::State::Gathering;
+        const auto& peerPolicy = gathering ? gatherPolicy : connectPolicy;
+        const std::uint64_t peerElapsedMs =
+            now >= peer.startedAtMs ? now - peer.startedAtMs : 0;
 
         if (agentState == IceAgentState::Failed) {
             printf("[ICE PEER FAIL] req=%s state=failed\n", peer.requestId.substr(0, 12).c_str());
@@ -492,10 +561,12 @@ void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId
                                          peer.requestId, agent->localSdp());
                 peer.state = PendingIcePeer::State::Connecting;
             }
-            else if (now - peer.startedAtMs > 15000)
+            else if (peerPolicy.expirePeer ||
+                     peerElapsedMs > peerPolicy.gatherTimeoutMs)
             {
-                printf("[ICE HOST GATHER] req=%s timed out (15s)\n",
-                       peer.requestId.substr(0, 12).c_str());
+                printf("[ICE HOST GATHER] req=%s timed out (%ums)\n",
+                       peer.requestId.substr(0, 12).c_str(),
+                       peerPolicy.gatherTimeoutMs);
                 coordinatorIceRequestComplete(serverCode, peer.requestId);
                 it = gPendingIcePeers.erase(it);
                 continue;
@@ -515,8 +586,8 @@ void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId
                 pending.diagnosticEndpoint =
                     residentLegacyEndpoint(pending.connectionId);
                 pending.connectedAtMs = now;
-                pending.transport =
-                    std::make_unique<IceTransport>(std::move(peer.agent));
+                pending.transport = mimita::host::registerTransport(
+                    std::make_unique<IceTransport>(std::move(peer.agent)));
                 pendingIceTransports.push_back(std::move(pending));
                 printf("[ICE PEER] transport pushed connection=%llu pending=%zu\n",
                        (unsigned long long)pendingIceTransports.back().connectionId.value,
@@ -526,10 +597,12 @@ void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId
                 it = gPendingIcePeers.erase(it);
                 continue;
             }
-            else if (now - peer.startedAtMs > 30000)
+            else if (peerPolicy.expirePeer ||
+                     peerElapsedMs > peerPolicy.connectTimeoutMs)
             {
-                printf("[ICE HOST CONNECT] req=%s timed out (30s)\n",
-                       peer.requestId.substr(0, 12).c_str());
+                printf("[ICE HOST CONNECT] req=%s timed out (%ums)\n",
+                       peer.requestId.substr(0, 12).c_str(),
+                       peerPolicy.connectTimeoutMs);
                 coordinatorIceRequestComplete(serverCode, peer.requestId);
                 it = gPendingIcePeers.erase(it);
                 continue;
@@ -565,7 +638,7 @@ void tickServerIceTransports(SOCKET sock,
 
     auto processIcePacket = [&](const TransportReceiveEvent& event,
                                 ServerPlayer* authenticated,
-                                std::unique_ptr<IGameTransport>* claimed,
+                                ServerTransportHandle* claimed,
                                 std::vector<uint32_t>* removals) {
         ServerPacketProcessResult result{};
         const bool handledByDll =
@@ -604,6 +677,13 @@ void tickServerIceTransports(SOCKET sock,
         return result;
     };
 
+    const auto drainPolicy = icePolicyDecision(
+        mimita::host::kIcePolicyTransportDrain, 0, 0,
+        static_cast<std::uint32_t>(pendingIceTransports.size()),
+        static_cast<std::uint32_t>(players.size()));
+    const size_t kMaxPacketsPerPoll =
+        static_cast<size_t>(drainPolicy.maxPacketsPerPoll);
+
     std::vector<uint32_t> playerIds;
     playerIds.reserve(players.size());
     for (const auto& kv : players)
@@ -615,7 +695,7 @@ void tickServerIceTransports(SOCKET sock,
         if (pit == players.end())
             continue;
         ServerPlayer& player = pit->second;
-        if (!player.transport)
+        if (player.transportHandle == kNoServerTransport)
             continue;
         if (!player.hasConnectionId)
         {
@@ -627,7 +707,7 @@ void tickServerIceTransports(SOCKET sock,
         std::vector<ReceivedPacket> pkts;
         {
             uint64_t pollStart = nowMs();
-            player.transport->poll(pkts);
+            mimita::host::pollTransport(player.transportHandle, pkts);
             uint64_t pollUs = nowMs() - pollStart;
             if (pollUs > 5)
             {
@@ -643,8 +723,8 @@ void tickServerIceTransports(SOCKET sock,
         }
 
         // Limit processed packets per poll to prevent flooding from
-        // a single transport (e.g. stale ICE packets after disconnect).
-        constexpr size_t kMaxPacketsPerPoll = 64;
+        // a single transport (e.g. stale ICE packets after disconnect). The
+        // bound is a hot policy decision (hoisted above the player loop).
         size_t packetsProcessed = 0;
         for (const ReceivedPacket& rp : pkts)
         {
@@ -666,7 +746,7 @@ void tickServerIceTransports(SOCKET sock,
             if (pit == players.end())
                 break;
             ServerPlayer& current = pit->second;
-            if (!current.transport)
+            if (current.transportHandle == kNoServerTransport)
                 break;
             TransportReceiveEvent event{};
             event.connectionId = current.connectionId;
@@ -702,7 +782,7 @@ void tickServerIceTransports(SOCKET sock,
                     ? removalTimeMs - removed.lastHeardMs : 0;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Network, StructuredLevel::Important,
-                "network.player.session.removed", std::to_string(removed.id),
+                "network.server.player.removed", std::to_string(removed.id),
                 "client_explicit_disconnect", tick,
                 nlohmann::json{
                     {"player_id", removed.id},
@@ -718,6 +798,8 @@ void tickServerIceTransports(SOCKET sock,
                 __FILE__, __LINE__, __FUNCTION__);
             printf("[DEFERRED REMOVE] removing id=%u — players left: %zu\n",
                    id, players.size() - 1);
+            if (removed.transportHandle != kNoServerTransport)
+                mimita::host::closeTransport(removed.transportHandle);
             mimita::host::HostRuntime::instance().serverPolicyClearActorPreset(id);
             players.erase(it);
         }
@@ -729,14 +811,14 @@ void tickServerIceTransports(SOCKET sock,
     for (auto it = pendingIceTransports.begin(); it != pendingIceTransports.end(); )
     {
         PendingServerTransport& pending = *it;
-        if (!pending.transport)
+        if (pending.transport == kNoServerTransport)
         {
             it = pendingIceTransports.erase(it);
             continue;
         }
 
         std::vector<ReceivedPacket> pkts;
-        pending.transport->poll(pkts);
+        mimita::host::pollTransport(pending.transport, pkts);
 
         bool processed = false;
         for (const ReceivedPacket& rp : pkts)
@@ -767,7 +849,8 @@ void tickServerIceTransports(SOCKET sock,
 bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player,
                          const void* data, size_t size)
 {
-    if (player.transport && player.transport->send(data, size))
+    if (player.transportHandle != kNoServerTransport &&
+        mimita::host::sendTransport(player.transportHandle, data, size))
         return true;
     if (sock == INVALID_SOCKET) return false;
     int sent = sendto(sock, (const char*)data, (int)size, 0,

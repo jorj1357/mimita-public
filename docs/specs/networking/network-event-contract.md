@@ -108,6 +108,11 @@ logged; only a configured fingerprint prefix.
 | `network.hotswap.health_rebased` | client | health policy | old/new ages, reason | snapshot.recovery |
 | `network.hotswap.queue_drained` | both | transport policy | messages, bytes, overflow | normal tick |
 
+Until the resident transport pump exists, the game-side first tick emits
+`network.hotswap.queue_drained` with `result=skipped`,
+`reason_code=resident_pump_not_installed`, and zero messages. That is an honest
+placeholder, not proof that a queue was drained.
+
 ## Rate rules
 
 - Transitions, errors, accepts, rejects, terminal states, and swap phases always

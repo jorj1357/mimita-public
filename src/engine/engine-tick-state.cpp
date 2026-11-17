@@ -20,6 +20,7 @@
 #include "game/spawn-override.h"
 #include "duel/duel-queue.h"
 #include "network/multiplayer-context.h"
+#include "network/network-events.h"
 #include "network/net_common.h"
 #include "network/net_mode.h"
 #include "network/server.h"
@@ -289,6 +290,32 @@ void engineTickState(Engine& engine, float dt)
     {
             MultiplayerConnectInfo mci = getPendingMultiplayerConnect();
             if (mci.shouldConnect) {
+                {
+                    using namespace MimitaNet;
+                    NetworkEvents::Context context;
+                    context.connectionId = mpContext.connectionAttemptId;
+                    context.playerId = mpContext.localPlayerId;
+                    context.role = "client";
+                    context.transport = mci.directAddress.empty() ? "ice" : "udp";
+                    context.serverAddress = mci.directAddress;
+                    context.roomCode = mci.roomCode;
+                    NetworkEvents::emit(
+                        context, "network.client.connect.requested", "requested",
+                        "ok", "queued_connect", "network.client.connect.preflight",
+                        0,
+                        nlohmann::json{{"map", mci.mapName},
+                                       {"player_name", mci.playerName},
+                                       {"password_protected", mci.passwordProtected}},
+                        __FILE__, __LINE__, __func__);
+                    NetworkEvents::emit(
+                        context, "network.client.connect.preflight", "validated",
+                        worldLoaded ? "ok" : "degraded",
+                        worldLoaded ? "preflight_ready" : "map_not_loaded",
+                        "network.client.transport.open", 0,
+                        nlohmann::json{{"map", mci.mapName},
+                                       {"world_loaded", worldLoaded}},
+                        __FILE__, __LINE__, __func__);
+                }
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Network, StructuredLevel::Important,
                     "network.client.pending-connect-dispatched", "",

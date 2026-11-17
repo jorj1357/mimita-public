@@ -41,7 +41,7 @@ Read each client journal:
 
 ```powershell
 $p='logs/<date>/<run>/client-01/events.jsonl'
-Select-String -LiteralPath $p -Pattern 'network.client-snapshot-window' | Select-Object -Last 1
+Select-String -LiteralPath $p -Pattern 'network.client.snapshot.applied' | Select-Object -Last 1
 ```
 
 Expected for two clients:

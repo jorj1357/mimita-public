@@ -516,9 +516,24 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ++ctx.connectionAttemptId;
     ctx.joinRequestSends = 0;
 
+    const auto emitTransportFailure = [&](const char* reason, int error) {
+        NetworkEvents::Context context;
+        context.connectionId = ctx.connectionAttemptId;
+        context.playerId = ctx.localPlayerId;
+        context.role = "client";
+        context.transport = "udp";
+        context.serverAddress = ctx.serverAddress;
+        context.roomCode = ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode;
+        NetworkEvents::emit(
+            context, "network.client.transport.failed", "open", "failed",
+            reason, "network.client.reconnect.scheduled", ctx.tick,
+            nlohmann::json{{"error_code", error}}, __FILE__, __LINE__, __func__);
+    };
+
     if (!netStartup())
     {
         printf("[NET CONNECT] FATAL: WSA init failed\n");
+        emitTransportFailure("winsock_startup_failed", WSAGetLastError());
         return false;
     }
 
@@ -526,6 +541,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     if (ctx.sock == INVALID_SOCKET)
     {
         printf("[NET CONNECT] FATAL: socket open failed error=%d\n", WSAGetLastError());
+        emitTransportFailure("socket_open_failed", WSAGetLastError());
         netShutdown();
         return false;
     }
@@ -550,6 +566,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     if (!parseAddress(address, ctx.serverAddr))
     {
         printf("[NET CONNECT] FATAL: invalid address: %s\n", address.c_str());
+        emitTransportFailure("invalid_address", 0);
         mimita::game::closeSocket(ctx.sock);
         netShutdown();
         return false;
@@ -557,6 +574,25 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
 
     ctx.transport = std::make_unique<UdpTransport>(ctx.sock, ctx.serverAddr);
     ctx.active = true;
+    {
+        NetworkEvents::Context context;
+        context.connectionId = ctx.connectionAttemptId;
+        context.playerId = 0;
+        context.role = "client";
+        context.transport = "udp";
+        context.serverAddress = ctx.serverAddress;
+        context.roomCode = ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode;
+        NetworkEvents::emit(
+            context, "network.client.transport.open", "open", "ok",
+            "udp_socket_opened", "network.client.transport.ready", ctx.tick,
+            nlohmann::json{{"socket", static_cast<long long>(ctx.sock)}},
+            __FILE__, __LINE__, __func__);
+        NetworkEvents::emit(
+            context, "network.client.transport.ready", "ready", "ok",
+            "udp_transport_ready", "network.client.hello.sent", ctx.tick,
+            nlohmann::json{{"socket", static_cast<long long>(ctx.sock)}},
+            __FILE__, __LINE__, __func__);
+    }
     ctx.localPlayerId = 0;
     ctx.tick = 0;
     ctx.lastHelloMs = 0;
@@ -640,8 +676,22 @@ void mpShutdown(MultiplayerContext& ctx)
     }
 
     printf("[NET DISCONNECT] initiating shutdown for playerId=%u\n", ctx.localPlayerId);
+    {
+        NetworkEvents::Context context;
+        context.connectionId = ctx.connectionAttemptId;
+        context.playerId = ctx.localPlayerId;
+        context.role = "client";
+        context.transport = ctx.transport ? "ice" : "udp";
+        context.serverAddress = ctx.serverAddress;
+        context.roomCode = ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode;
+        NetworkEvents::emit(
+            context, "network.client.disconnect.requested", "requested", "ok",
+            "local_shutdown", "network.client.disconnect.sent", ctx.tick, {},
+            __FILE__, __LINE__, __func__);
+    }
 
     // Send goodbye
+    bool disconnectSent = false;
     if (ctx.localPlayerId)
     {
         DisconnectPacket bye{};
@@ -659,9 +709,38 @@ void mpShutdown(MultiplayerContext& ctx)
             else if (ctx.sock != INVALID_SOCKET)
                 mimita::game::sendToSocket(ctx.sock, &bye, sizeof(bye), &ctx.serverAddr);
         }
+        disconnectSent = true;
     }
 
+    {
+        NetworkEvents::Context context;
+        context.connectionId = ctx.connectionAttemptId;
+        context.playerId = ctx.localPlayerId;
+        context.role = "client";
+        context.transport = ctx.transport ? "ice" : "udp";
+        context.serverAddress = ctx.serverAddress;
+        context.roomCode = ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode;
+        NetworkEvents::emit(
+            context, "network.client.disconnect.sent", "sent",
+            disconnectSent ? "ok" : "skipped",
+            disconnectSent ? "disconnect_sent" : "no_local_player",
+            "network.client.transport.closed", ctx.tick, {},
+            __FILE__, __LINE__, __func__);
+    }
     teardownPreviousSession(ctx, DisconnectPolicy::Leave);
+    {
+        NetworkEvents::Context context;
+        context.connectionId = ctx.connectionAttemptId;
+        context.playerId = ctx.localPlayerId;
+        context.role = "client";
+        context.transport = "none";
+        context.serverAddress = ctx.serverAddress;
+        context.roomCode = ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode;
+        NetworkEvents::emit(
+            context, "network.client.transport.closed", "closed", "ok",
+            "local_shutdown", "none", ctx.tick, {},
+            __FILE__, __LINE__, __func__);
+    }
     clearRuntimeObjects("network-shutdown");
     netShutdown();
     printf("[NET DISCONNECT] shutdown complete\n");
@@ -1583,6 +1662,26 @@ void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& statu
 
     ctx.transport = std::move(status.transport);
     ctx.active = true;
+    {
+        NetworkEvents::Context context;
+        context.connectionId = ctx.connectionAttemptId;
+        context.playerId = ctx.localPlayerId;
+        context.role = "client";
+        context.transport = "ice";
+        context.serverAddress = status.serverAddress;
+        context.roomCode = status.roomCode.empty()
+            ? ctx.currentRoomCode : status.roomCode;
+        NetworkEvents::emit(
+            context, "network.client.transport.open", "open", "ok",
+            "ice_transport_installed", "network.client.transport.ready",
+            ctx.tick, nlohmann::json{{"join_token_present", !ctx.joinToken.empty()}},
+            __FILE__, __LINE__, __func__);
+        NetworkEvents::emit(
+            context, "network.client.transport.ready", "ready", "ok",
+            "ice_transport_ready", "network.client.hello.sent", ctx.tick,
+            nlohmann::json{{"reconnect_transport_pending", ctx.reconnectTransportPending}},
+            __FILE__, __LINE__, __func__);
+    }
     ctx.localPlayerId = 0;
     ctx.tick = 0;
     ctx.lastHelloMs = 0;
@@ -2019,6 +2118,11 @@ void mpStartReconnect(MultiplayerContext& ctx)
         Debug::warn(Debug::Category::Networking,
                     "[NET RECONNECT] cannot reconnect: no reconnect token "
                     "(state=%s)\n", connectionStateName(ctx.connectionState));
+        NetworkEvents::emit(
+            networkEventContext(ctx), "network.client.reconnect.rejected",
+            "reconnect", "rejected", "no_reconnect_token",
+            "network.client.reconnect.terminal", ctx.tick, {},
+            __FILE__, __LINE__, __func__);
         return;
     }
 
@@ -2250,6 +2354,25 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
         ? now - ctx.lastSnapshotReceivedMs : 0;
     const bool heardSinceDisconnect =
         ctx.disconnectStartedMs > 0 && ctx.lastHeardServerMs > ctx.disconnectStartedMs;
+
+    static bool healthRebasedForGeneration = false;
+    if (!healthRebasedForGeneration && ctx.localPlayerId != 0)
+    {
+        healthRebasedForGeneration = true;
+        NetworkEvents::emit(
+            networkEventContext(ctx), "network.hotswap.health_rebased",
+            "rebased", "ok", "generation_health_clock_rebased",
+            "network.session.health", ctx.tick,
+            nlohmann::json{{"old_last_heard_age_ms", lastHeardAge},
+                           {"new_last_heard_age_ms", 0},
+                           {"old_snapshot_age_ms", snapshotAge},
+                           {"new_snapshot_age_ms", 0},
+                           {"reason", "generation_init"}},
+            __FILE__, __LINE__, __func__);
+        ctx.lastHeardServerMs = now;
+        if (ctx.lastSnapshotReceivedMs != 0)
+            ctx.lastSnapshotReceivedMs = now;
+    }
 
     const ConnectionState before = ctx.connectionState;
     // A live packet stream is not proof that the client is playing. If the

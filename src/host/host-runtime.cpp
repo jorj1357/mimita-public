@@ -35,6 +35,7 @@
 #include "host/host-server-entity-adapter.h"
 #include "host/abi/socket-capability.h"
 #include "host/host-session-identity.h"
+#include "host/net-core-primitive.h"
 #include "host/abi/ice-capability.h"
 #include "host/abi/transport-session-capability.h"
 #include "host/abi/diagnostics-capability.h"
@@ -826,6 +827,14 @@ void iceLogSelectedPath(void*, void* handle) {
     if (auto* agent = static_cast<::IceAgent*>(handle)) agent->logSelectedPath();
 }
 
+void* iceAttach(void*, const char* stableKey) {
+    return stableKey && *stableKey ? attachIceAgent(stableKey) : nullptr;
+}
+
+void iceDetachView(void*, void*) {
+    // The game-side view is only a handle; the resident agent stays alive.
+}
+
 MimitaNet::ListenServerState* gTransportSessionState = nullptr;
 
 void* transportServerState(void*) {
@@ -873,6 +882,48 @@ std::uint32_t transportServerHostPlayerId(void*) {
 
 void transportServerSetHostPlayerId(void*, std::uint32_t playerId) {
     MimitaNet::gServerHostPlayerId = playerId;
+}
+
+SessionHandle transportServerAttachGeneration(void*) {
+    return gTransportSessionState ? gTransportSessionState->netSession
+                                  : kInvalidSession;
+}
+
+void transportServerDetachGeneration(void*, SessionHandle) {
+    // The resident session outlives the generation view.
+}
+
+std::int32_t transportServerPollInbound(void*, SessionHandle,
+                                        TransportMessageV1*,
+                                        std::uint32_t, std::uint32_t* count) {
+    if (count) *count = 0;
+    return 1;
+}
+
+std::int32_t transportServerPollEvents(void*, SessionHandle, TransportEventV1*,
+                                       std::uint32_t, std::uint32_t* count) {
+    if (count) *count = 0;
+    return 1;
+}
+
+std::int32_t transportServerQuerySwapState(void*, TransportSwapStateV1* out) {
+    if (!out || out->structSize < sizeof(TransportSwapStateV1)) return 0;
+    const SwapSnapshot snapshot = querySwapSnapshot();
+    out->version = kTransportCapabilityVersion;
+    out->generationAttached = snapshot.generationAttached;
+    out->suspended = snapshot.suspended;
+    out->sessionCount = snapshot.sessionCount;
+    out->queuedEvents = snapshot.queuedEvents;
+    out->suspends = snapshot.suspends;
+    out->resumes = snapshot.resumes;
+    out->activeGeneration = snapshot.activeGeneration;
+    return 1;
+}
+
+std::int32_t transportServerSetMaintenancePayload(
+    void*, SessionHandle session, const std::uint8_t* bytes,
+    std::uint32_t size, std::uint32_t intervalMs) {
+    return setMaintenancePayload(session, bytes, size, intervalMs) ? 1 : 0;
 }
 
 std::unordered_map<std::uint64_t, std::ofstream> gFileHandles;
@@ -1798,6 +1849,7 @@ bool HostRuntime::startFromEnvironment() {
     const std::uint64_t generation = candidate.generation != 0 ? candidate.generation : 1;
     barrier_.beginGeneration(generation);
     loader_.commit(std::move(candidate));
+    setGenerationAttached(true);
     activePublishedGeneration_ = dllGeneration != 0 ? dllGeneration : generation;
     probeEnabled_.store(true, std::memory_order_release);
     started_ = true;
@@ -2401,6 +2453,24 @@ bool HostRuntime::serverPolicyCoordinatorIceDone(const char* roomCode) {
     return call.valid() && call.api->coordinator_ice_done(roomCode) != 0;
 }
 
+bool HostRuntime::serverPolicyIceDecide(ServerIcePolicyV1* inout) {
+    if (!inout || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->ice_decide &&
+           call.api->ice_decide(inout) != 0;
+}
+
+bool HostRuntime::serverPolicySessionDecide(ServerSessionPolicyV1* inout) {
+    if (!inout || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->session_decide &&
+           call.api->session_decide(inout) != 0;
+}
+
 bool HostRuntime::gameExportAvailable() const {
     return probeEnabled_.load(std::memory_order_acquire) &&
            loader_.activeGenerationInfo().exportApi != nullptr;
@@ -2586,12 +2656,21 @@ void HostRuntime::poll() {
     }
 
     const std::uint64_t oldGeneration = loader_.activeGeneration();
+    emitProbeEvent("game.generation.swap_begin", "generation swap starting", 0,
+                   nlohmann::json{{"old_generation", oldGeneration},
+                                  {"generation", generation},
+                                  {"dll", dll}});
+    emitProbeEvent("network.hotswap.suspend", "network health suspended for intentional swap", 0,
+                   nlohmann::json{{"old_generation", oldGeneration},
+                                  {"generation", generation}});
+    noteSwapSuspend();
     barrier_.beginQuiesce(QuiesceMode::Swap);
     const HostResult quiesced = barrier_.finishQuiesce(2000);
     if (quiesced != HostResult::Ok) {
         emitProbeEvent("game.generation.swap-refused", "generation busy", 0,
                        nlohmann::json{{"generation", generation},
                                       {"result", static_cast<int>(quiesced)}});
+        noteSwapResume();
         barrier_.resumeGeneration();
         return;
     }
@@ -2607,14 +2686,22 @@ void HostRuntime::poll() {
                        nlohmann::json{{"generation", generation},
                                       {"dll", dll},
                                       {"result", static_cast<int>(loaded)}});
+        noteSwapResume();
         barrier_.resumeGeneration();
         return;
     }
 
+    emitProbeEvent("game.generation.candidate_loaded", "candidate generation loaded", 0,
+                   nlohmann::json{{"old_generation", oldGeneration},
+                                  {"generation", generation},
+                                  {"dll", dll}});
     const GameModuleV1* oldApi = loader_.active();
     if (oldApi && oldApi->quiesce) {
         oldApi->quiesce(QuiesceMode::Swap);
     }
+    emitProbeEvent("game.generation.old_shutdown", "old generation quiesced", 0,
+                   nlohmann::json{{"old_generation", oldGeneration},
+                                  {"generation", generation}});
     if (oldApi && oldApi->shutdown) {
         oldApi->shutdown();
     }
@@ -2622,11 +2709,24 @@ void HostRuntime::poll() {
     // hardcode a local version field that is not the build generation.
     candidate.generation = generation;
     loader_.commit(std::move(candidate));
+    setGenerationAttached(true);
+    noteSwapResume();
     activePublishedGeneration_ = generation;
     lastReadyGeneration_ = generation;
     lastFailedGeneration_ = 0;
     lastFailedDll_.clear();
     barrier_.beginGeneration(generation);
+    emitProbeEvent("game.generation.new_init", "new generation ready for lazy initialization", 0,
+                   nlohmann::json{{"old_generation", oldGeneration},
+                                  {"generation", generation},
+                                  {"dll", dll}});
+    emitProbeEvent("game.generation.swap_end", "generation swap committed", 0,
+                   nlohmann::json{{"old_generation", oldGeneration},
+                                  {"generation", generation},
+                                  {"dll", dll}});
+    emitProbeEvent("network.hotswap.resume", "network health resumes after intentional swap", 0,
+                   nlohmann::json{{"old_generation", oldGeneration},
+                                  {"generation", generation}});
     emitProbeEvent("game.generation.activated", "candidate committed", 0,
                    nlohmann::json{{"old_generation", oldGeneration},
                                   {"generation", generation},
@@ -2693,6 +2793,24 @@ bool HostRuntime::probeNpcTargetSelect(NpcTargetDecisionV1* decision) {
     return false;
 }
 
+static TransportResult transportSendToSessionThunk(
+    void*, SessionHandle, TransportChannel, std::uint32_t, std::uint32_t,
+    const std::uint8_t*, std::uint32_t);
+static TransportResult transportCloseSessionThunk(void*, SessionHandle);
+static SessionHandle transportOpenSessionThunk(void*, std::uint32_t,
+                                               std::uint64_t);
+static SessionHandle transportAttachSessionThunk(void*, std::uint64_t);
+static TransportResult transportPollInboundThunk(
+    void*, SessionHandle, TransportMessageV1*, std::uint32_t, std::uint32_t*);
+static TransportResult transportPollEventsThunk(
+    void*, SessionHandle, TransportEventV1*, std::uint32_t, std::uint32_t*);
+static TransportResult transportQuerySwapStateThunk(void*,
+                                                    TransportSwapStateV1*);
+static TransportResult transportSetMaintenancePayloadThunk(
+    void*, SessionHandle, const std::uint8_t*, std::uint32_t, std::uint32_t);
+static TransportResult transportClearMaintenancePayloadThunk(void*,
+                                                             SessionHandle);
+
 void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
                                             std::uint32_t version) {
     if (capability == static_cast<std::uint32_t>(HostCapabilityId::Log) &&
@@ -2712,6 +2830,15 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &HostRuntime::transportPeerCountThunk,
             &HostRuntime::transportSendToEndpointThunk,
             &HostRuntime::transportBindSessionThunk,
+            &transportSendToSessionThunk,
+            &transportCloseSessionThunk,
+            &transportOpenSessionThunk,
+            &transportAttachSessionThunk,
+            &transportPollInboundThunk,
+            &transportPollEventsThunk,
+            &transportQuerySwapStateThunk,
+            &transportSetMaintenancePayloadThunk,
+            &transportClearMaintenancePayloadThunk,
         };
         return &transportCapability;
     }
@@ -2738,6 +2865,12 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &transportDisableUdpConnReset,
             &transportServerHostPlayerId,
             &transportServerSetHostPlayerId,
+            &transportServerAttachGeneration,
+            &transportServerDetachGeneration,
+            &transportServerPollInbound,
+            &transportServerPollEvents,
+            &transportServerQuerySwapState,
+            &transportServerSetMaintenancePayload,
         };
         return &transportSessionCapability;
     }
@@ -2805,6 +2938,8 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &iceState,
             &icePollEvents,
             &iceLogSelectedPath,
+            &iceAttach,
+            &iceDetachView,
         };
         return &iceCapability;
     }
@@ -3205,6 +3340,77 @@ TransportResult HostRuntime::transportSendToEndpointThunk(
                runtime->transportOwner_, addressNetworkOrder, portNetworkOrder,
                payload, payloadSize)
         ? TransportResult::Ok : TransportResult::TransportError;
+}
+
+static TransportResult transportSendToSessionThunk(
+    void*, SessionHandle session, TransportChannel, std::uint32_t,
+    std::uint32_t, const std::uint8_t* payload, std::uint32_t payloadSize) {
+    if (!session || (!payload && payloadSize != 0)) {
+        return TransportResult::InvalidArgument;
+    }
+    if (!payload || payloadSize == 0) return TransportResult::Ok;
+    return sendTransport(session, payload, payloadSize)
+        ? TransportResult::Ok : TransportResult::NotFound;
+}
+
+static TransportResult transportCloseSessionThunk(void*, SessionHandle session) {
+    if (!session) return TransportResult::InvalidArgument;
+    closeTransport(session);
+    return TransportResult::Ok;
+}
+
+static SessionHandle transportOpenSessionThunk(void*, std::uint32_t role,
+                                               std::uint64_t connectionKey) {
+    return openSession(role, connectionKey);
+}
+
+static SessionHandle transportAttachSessionThunk(void*,
+                                                 std::uint64_t connectionKey) {
+    return attachSession(connectionKey);
+}
+
+static TransportResult transportPollInboundThunk(
+    void*, SessionHandle, TransportMessageV1*, std::uint32_t,
+    std::uint32_t* count) {
+    if (count) *count = 0;
+    return TransportResult::Ok;
+}
+
+static TransportResult transportPollEventsThunk(
+    void*, SessionHandle, TransportEventV1*, std::uint32_t,
+    std::uint32_t* count) {
+    if (count) *count = 0;
+    return TransportResult::Ok;
+}
+
+static TransportResult transportQuerySwapStateThunk(
+    void*, TransportSwapStateV1* out) {
+    if (!out || out->structSize < sizeof(TransportSwapStateV1)) {
+        return TransportResult::InvalidArgument;
+    }
+    const SwapSnapshot snapshot = querySwapSnapshot();
+    out->version = kTransportCapabilityVersion;
+    out->generationAttached = snapshot.generationAttached;
+    out->suspended = snapshot.suspended;
+    out->sessionCount = snapshot.sessionCount;
+    out->queuedEvents = snapshot.queuedEvents;
+    out->suspends = snapshot.suspends;
+    out->resumes = snapshot.resumes;
+    out->activeGeneration = snapshot.activeGeneration;
+    return TransportResult::Ok;
+}
+
+static TransportResult transportSetMaintenancePayloadThunk(
+    void*, SessionHandle session, const std::uint8_t* bytes,
+    std::uint32_t size, std::uint32_t intervalMs) {
+    return setMaintenancePayload(session, bytes, size, intervalMs)
+        ? TransportResult::Ok : TransportResult::NotFound;
+}
+
+static TransportResult transportClearMaintenancePayloadThunk(
+    void*, SessionHandle session) {
+    clearMaintenancePayload(session);
+    return TransportResult::Ok;
 }
 
 void HostRuntime::logThunk(void* userData, std::int32_t level, const char* message) {

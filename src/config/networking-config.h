@@ -394,6 +394,16 @@ struct NetworkHotSwapConfig
     double maxSuspendMs = 30000.0;
 };
 
+struct NetworkIcePolicyConfig
+{
+    std::uint32_t listenerGatherTimeoutMs = 15000;
+    std::uint32_t peerGatherTimeoutMs = 15000;
+    std::uint32_t peerConnectTimeoutMs = 30000;
+    std::uint32_t coordinatorPollIntervalMs = 500;
+    std::uint32_t maxPendingPeers = 32;
+    std::uint32_t maxPacketsPerPoll = 64;
+};
+
 struct NetworkRuntimeRateConfig
 {
     double inputSendRateHz = 60.0;
@@ -516,6 +526,7 @@ struct NetworkingConfigData
     NetworkEventTimelineConfig eventTimeline;
     NetworkObservabilityConfig observability;
     NetworkHotSwapConfig hotSwap;
+    NetworkIcePolicyConfig icePolicy;
     NetworkRuntimeRateConfig runtimeRates;
     NetworkRetryConfig retries;
     ReliableGameplayEventConfig reliableEvents;
@@ -544,6 +555,7 @@ public:
 
     const NetworkingConfigData& data() const { return mData; }
     std::string configPath() const { return mPath; }
+    std::uint64_t revision() const { return mRevision; }
 
     // Runtime overrides (set by terminal commands). They only affect memory
     // until the file is reloaded; reloadFromDisk()/file change clears them.
@@ -560,6 +572,7 @@ private:
                       std::string& error) const;
 
     NetworkingConfigData mData;
+    std::uint64_t mRevision = 0;
     std::string mPath;
     std::filesystem::file_time_type mLastWrite{};
     bool mWatchLogged = false;

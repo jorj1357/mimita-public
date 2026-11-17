@@ -112,6 +112,8 @@ public:
     bool serverPolicyProjectilePerf(ServerProjectilePerfV1* out);
     bool serverPolicyClearRuntimeObjects(const char* reason);
     bool serverPolicyCoordinatorIceDone(const char* roomCode);
+    bool serverPolicyIceDecide(ServerIcePolicyV1* inout);
+    bool serverPolicySessionDecide(ServerSessionPolicyV1* inout);
     bool gameExportAvailable() const;
     int gameRunExport(const char* clipPath, const char* outputPath,
                       int width, int height, int visible, int verbose);

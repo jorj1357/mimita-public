@@ -46,6 +46,13 @@
 #include "terminal/terminal-state.h"
 #include "fister/fister-port.h"
 
+static thread_local PhysicsStageCost gPhysicsStageCost;
+
+const PhysicsStageCost& physicsStageCost()
+{
+    return gPhysicsStageCost;
+}
+
 static float shortestAngleDegrees(float from, float to)
 {
     float delta = std::fmod(to - from + 540.0f, 360.0f) - 180.0f;
@@ -191,14 +198,20 @@ static void physicsMainUpdate_Internal(
     bool crouchHeld,
     int subSteps,
     float inputMovementHeldDuration = 0.0f,
-    const MovementConfig* overrideConfig = nullptr
+    const MovementConfig* overrideConfig = nullptr,
+    bool updateAnimation = true
 ){
     Perf::ScopedTimer _t("Physics");
+    gPhysicsStageCost = PhysicsStageCost{};
+    const auto physicsStart = std::chrono::steady_clock::now();
     MovementConfig movementConfig;
+    const auto configStart = std::chrono::steady_clock::now();
     { MIMITA_PERF_SCOPE("Physics::Config");
       movementConfig = overrideConfig
           ? applyRuntimeMovementTuning(*overrideConfig)
           : makeCurrentRuntimeMovementConfig(); }
+    gPhysicsStageCost.configMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - configStart).count();
     dt = movementClampStepDelta(dt, movementConfig);
     if (dt <= 0.0f)
         return;
@@ -338,11 +351,14 @@ static void physicsMainUpdate_Internal(
     MovementState movementState =
         movementStateFromPlayer(p, command.lifecycle);
     MovementStepEvents preCollisionEvents;
+    const auto movePreStart = std::chrono::steady_clock::now();
     { MIMITA_PERF_SCOPE("Physics::MovePre");
       applyPreCollisionBasicMovement(movementState, command, movementConfig, dt);
       applySpecialMovementPreCollision(
           movementState, command, movementConfig, dt, preCollisionEvents);
       applyMovementStateToPlayer(movementState, p); }
+    gPhysicsStageCost.movePreMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - movePreStart).count();
 
     // Anti-tunneling: at extreme speed a single fixed sub-step can move the
     // actor far enough that the swept narrowphase's sampling/contact budget is
@@ -378,11 +394,14 @@ static void physicsMainUpdate_Internal(
     const glm::vec3 positionBeforeCollision = p.pos;
     const glm::vec3 velocityBeforeCollision = p.vel;
 
+    const auto collisionStart = std::chrono::steady_clock::now();
     { MIMITA_PERF_SCOPE("Physics::CollisionSteps");
       for (int i = 0; i < steps; i++)
       {
           doCollisions(p, world, groundedThisFrame, subdt);
       } }
+    gPhysicsStageCost.collisionMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - collisionStart).count();
 
     MovementState collisionState =
         movementStateFromPlayer(p, command.lifecycle);
@@ -403,11 +422,14 @@ static void physicsMainUpdate_Internal(
         collisionState.ground.airborneTimerSeconds;
 
     MovementStepResult movementResult;
+    const auto movePostStart = std::chrono::steady_clock::now();
     { MIMITA_PERF_SCOPE("Physics::MovePost");
       movementResult = applyPostCollisionMovementWithSpecials(
           collisionState, command, movementConfig, collisionFeedback, dt,
           preCollisionEvents);
       applyMovementStateToPlayer(movementResult.state, p); }
+    gPhysicsStageCost.movePostMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - movePostStart).count();
 
     // Sample raw collision-ground changes while a Melee fighter is crouching.
     // Keep the journal bounded while retaining the number of transitions
@@ -499,14 +521,23 @@ static void physicsMainUpdate_Internal(
                 p.ground.worldContactLostTimer, p.jump.airJumpsLeft, (int)p.dash.dashAvailable, (int)p.groundReturn.available);
     }
 
+    const auto facingStart = std::chrono::steady_clock::now();
     { MIMITA_PERF_SCOPE("Physics::VisualFacing");
       updateVisualFacingFromCamera(p, camForward, dt); }
+    gPhysicsStageCost.facingMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - facingStart).count();
 
-    { MIMITA_PERF_SCOPE("Physics::Animation");
-      p.updateProceduralAnimation(dt,
-                                  camForward,
-                                  debugCamera ? debugCamera->pos : p.pos,
-                                  command.movementDirectionPressed); }
+    gPhysicsStageCost.animationUpdated = updateAnimation;
+    if (updateAnimation) {
+        const auto animationStart = std::chrono::steady_clock::now();
+        { MIMITA_PERF_SCOPE("Physics::Animation");
+          p.updateProceduralAnimation(dt,
+                                      camForward,
+                                      debugCamera ? debugCamera->pos : p.pos,
+                                      command.movementDirectionPressed); }
+        gPhysicsStageCost.animationMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - animationStart).count();
+    }
 
     // debug override
     if (debugEnabled && debugWindow && debugCamera) {
@@ -517,6 +548,9 @@ static void physicsMainUpdate_Internal(
             dt
         );
     }
+
+    gPhysicsStageCost.totalMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - physicsStart).count();
 }
 
 
@@ -530,7 +564,8 @@ void physicsMainUpdate(
     const InputState& input,
     float dt,
     int subSteps,
-    const MovementConfig* overrideConfig
+    const MovementConfig* overrideConfig,
+    bool updateAnimation
 ){
     if (FisterPort::tick(p, world, input, dt))
         return;
@@ -564,6 +599,7 @@ void physicsMainUpdate(
         input.crouchHeld,
         subSteps,
         input.movementHeldDuration,
-        overrideConfig
+        overrideConfig,
+        updateAnimation
     );
 }

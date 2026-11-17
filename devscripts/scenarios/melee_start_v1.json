@@ -19,7 +19,7 @@
     {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "win_condition", "equals": "last_actor_alive"},
     {"type": "event_present", "event": "melee.spawn_protection"},
     {"type": "event_field_equals", "event": "network.server-command.result", "field": "accepted", "equals": true},
-    {"type": "event_field_equals", "event": "network.client-snapshot-window", "field": "remote_npcs", "equals": 1}
+    {"type": "event_field_equals", "event": "network.client.snapshot.applied", "field": "remote_npcs", "equals": 1}
   ],
   "timeout_seconds": 120
 }

@@ -245,11 +245,22 @@ def main() -> int:
                     f"reconnect attempt during intentional swap at seq {record.get('seq')}"
                 )
 
+    connection_events = {
+        event_context(record)[0]
+        for record in records
+        if event_context(record)[0] != 0 and (
+            str(record.get("event", "")).startswith("network.client.")
+            or str(record.get("event", "")).startswith("network.server.reconnect.")
+            or str(record.get("event", "")).startswith("network.server.join.")
+        )
+    }
     summary = {
         "run_id": run.get("run_id"),
         "journals": [str(p) for p in paths],
         "network_events": len(records),
-        "connections": sorted({event_context(r)[0] for r in records}),
+        "connections": sorted(connection_events | {
+            key[0] for key in attempts if key[0] != 0
+        }),
         "attempts": sum(len(v) for v in attempts.values()),
         "swap_windows": len(swap_windows),
         "generation_activations": generation_activations,

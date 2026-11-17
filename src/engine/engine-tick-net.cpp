@@ -47,6 +47,7 @@
 #include "gui/hud/chat-window.h"
 #include "gui/menus/pause-menu.h"
 #include "network/multiplayer-context.h"
+#include "network/network-events.h"
 #include "network/community-server-config.h"
 #include "network/community-match-client.h"
 #include "network/network-weapons.h"
@@ -792,6 +793,24 @@ void engineTickNet(Engine& engine, float dt)
                 mpContext.lastMapLoadAttemptMs = now;
                 ++mpContext.mapLoadAttempts;
                 std::string requiredPath = "assets/maps/" + mpContext.requiredMapId + ".glb";
+                {
+                    NetworkEvents::Context context;
+                    context.connectionId = mpContext.connectionAttemptId;
+                    context.attemptId = static_cast<std::uint32_t>(mpContext.reconnectAttempts);
+                    context.playerId = mpContext.localPlayerId;
+                    context.role = "client";
+                    context.transport = mpContext.transport ? "ice" : "udp";
+                    context.serverAddress = mpContext.serverAddress;
+                    context.roomCode = mpContext.roomCode.empty()
+                        ? mpContext.currentRoomCode : mpContext.roomCode;
+                    NetworkEvents::emit(
+                        context, "network.client.map.sync.start", "started", "ok",
+                        "server_required_map", "network.client.map.loaded",
+                        mpContext.tick,
+                        nlohmann::json{{"required_map_id", mpContext.requiredMapId},
+                                       {"required_path", requiredPath}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
                 printf("[NET MAP REQUIRED] mapId=%s path=%s loadingMap=1\n",
                        mpContext.requiredMapId.c_str(), requiredPath.c_str());
 
@@ -808,6 +827,26 @@ void engineTickNet(Engine& engine, float dt)
                     ACTIVE_MAP_PATH = requiredPath;
                     WORLD_LOADED = true;
                     mpContext.mapLoadAttempts = 0;
+                    {
+                        NetworkEvents::Context context;
+                        context.connectionId = mpContext.connectionAttemptId;
+                        context.attemptId = static_cast<std::uint32_t>(mpContext.reconnectAttempts);
+                        context.playerId = mpContext.localPlayerId;
+                        context.role = "client";
+                        context.transport = mpContext.transport ? "ice" : "udp";
+                        context.serverAddress = mpContext.serverAddress;
+                        context.roomCode = mpContext.roomCode.empty()
+                            ? mpContext.currentRoomCode : mpContext.roomCode;
+                        NetworkEvents::emit(
+                            context, "network.client.map.loaded", "loaded", "ok",
+                            "server_required_map_loaded",
+                            "network.client.map.ready_sent", mpContext.tick,
+                            nlohmann::json{{"required_map_id", mpContext.requiredMapId},
+                                           {"previous_map_path", oldMap},
+                                           {"loaded_map_path", requiredPath},
+                                           {"duration_ms", loadElapsedMs}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
                     printf("[CLIENT MAP SWITCH] old=%s new=%s attempts=%u\n",
                            oldMap.c_str(), requiredPath.c_str(), mpContext.mapLoadAttempts);
                      mpClearRemoteWorldState(mpContext, "server-required-map-loaded");
@@ -817,6 +856,24 @@ void engineTickNet(Engine& engine, float dt)
                 }
                 else
                 {
+                    NetworkEvents::Context context;
+                    context.connectionId = mpContext.connectionAttemptId;
+                    context.attemptId = static_cast<std::uint32_t>(mpContext.reconnectAttempts);
+                    context.playerId = mpContext.localPlayerId;
+                    context.role = "client";
+                    context.transport = mpContext.transport ? "ice" : "udp";
+                    context.serverAddress = mpContext.serverAddress;
+                    context.roomCode = mpContext.roomCode.empty()
+                        ? mpContext.currentRoomCode : mpContext.roomCode;
+                    NetworkEvents::emit(
+                        context, "network.client.map.load_failed", "loaded",
+                        "failed", "map_load_failed",
+                        "network.client.map.loaded", mpContext.tick,
+                        nlohmann::json{{"required_map_id", mpContext.requiredMapId},
+                                       {"required_path", requiredPath},
+                                       {"load_attempts", mpContext.mapLoadAttempts},
+                                       {"duration_ms", loadElapsedMs}},
+                        __FILE__, __LINE__, __FUNCTION__);
                     printf("[CLIENT MAP ERROR] failed to load map=%s attempt=%u retryMs=500\n",
                            requiredPath.c_str(), mpContext.mapLoadAttempts);
                     // Fail visibly instead of silently continuing on the stale
@@ -932,6 +989,21 @@ void engineTickNet(Engine& engine, float dt)
                     MimitaNet::mpLogConnectStage(mpContext, "map_ready", "sent",
                         0, 0, "",
                         "client reported the authoritative map as ready");
+                    NetworkEvents::Context context;
+                    context.connectionId = mpContext.connectionAttemptId;
+                    context.attemptId = static_cast<std::uint32_t>(mpContext.reconnectAttempts);
+                    context.playerId = mpContext.localPlayerId;
+                    context.role = "client";
+                    context.transport = mpContext.transport ? "ice" : "udp";
+                    context.serverAddress = mpContext.serverAddress;
+                    context.roomCode = mpContext.roomCode.empty()
+                        ? mpContext.currentRoomCode : mpContext.roomCode;
+                    NetworkEvents::emit(
+                        context, "network.client.map.ready_sent", "sent", "ok",
+                        "client_map_ready", "network.server.map.ready_received",
+                        mpContext.tick,
+                        nlohmann::json{{"required_map_id", mpContext.requiredMapId}},
+                        __FILE__, __LINE__, __FUNCTION__);
                 } else {
                     static thread_local uint64_t lastRetryLogMs = 0;
                     if (now - lastRetryLogMs >= 1000) {

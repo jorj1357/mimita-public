@@ -7,12 +7,15 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
 #include <nlohmann/json.hpp>
 
+#include "config/networking-config.h"
 #include "debug/structured-log.h"
 
 namespace MimitaNet {
@@ -23,8 +26,12 @@ struct Context
     std::uint32_t connectionId = 0;
     std::uint32_t attemptId = 0;
     std::uint32_t playerId = 0;
+    std::uint64_t generation = 0;
+    std::uint64_t oldGeneration = 0;
+    std::uint64_t configRevision = 0;
     const char* role = "client";
     const char* transport = "udp";
+    std::string localEndpoint;
     std::string serverAddress;
     std::string roomCode;
 };
@@ -44,6 +51,29 @@ inline bool isFailureResult(const char* result)
            std::strcmp(result, "expired") == 0;
 }
 
+inline bool allowEvent(const NetworkingConfigData& config)
+{
+    if (!config.observability.enabled)
+        return false;
+    const std::uint32_t limit = config.observability.maxEventsPerSecond;
+    if (limit == 0)
+        return false;
+
+    using Clock = std::chrono::steady_clock;
+    static thread_local Clock::time_point windowStart = Clock::now();
+    static thread_local std::uint32_t emittedThisWindow = 0;
+    const Clock::time_point now = Clock::now();
+    if (now - windowStart >= std::chrono::seconds(1))
+    {
+        windowStart = now;
+        emittedThisWindow = 0;
+    }
+    if (emittedThisWindow >= limit)
+        return false;
+    ++emittedThisWindow;
+    return true;
+}
+
 inline void emit(const Context& context,
                  const char* eventName,
                  const char* stage,
@@ -59,6 +89,10 @@ inline void emit(const Context& context,
     if (!fields.is_object())
         fields = nlohmann::json::object();
 
+    const NetworkingConfigData& config = NetworkingConfig::instance().data();
+    if (!allowEvent(config))
+        return;
+
     const std::string correlation = context.attemptId > 0
         ? "reconnect:" + std::to_string(context.attemptId)
         : "conn:" + std::to_string(context.connectionId);
@@ -72,10 +106,27 @@ inline void emit(const Context& context,
     fields["result"] = result ? result : "";
     fields["reason_code"] = reasonCode ? reasonCode : "";
     fields["next_expected_event"] = nextExpectedEvent ? nextExpectedEvent : "";
+    fields["config_revision"] = context.configRevision != 0
+        ? context.configRevision
+        : NetworkingConfig::instance().revision();
+    if (context.generation != 0)
+        fields["generation"] = context.generation;
+    if (context.oldGeneration != 0)
+        fields["old_generation"] = context.oldGeneration;
+    if (!context.localEndpoint.empty())
+        fields["local_endpoint"] = context.localEndpoint;
     if (!context.serverAddress.empty())
+    {
         fields["server_address"] = context.serverAddress;
+        fields["remote_endpoint"] = context.serverAddress;
+    }
     if (!context.roomCode.empty())
         fields["room_code"] = context.roomCode;
+    if (const char* buildId = std::getenv("MIMITA_BUILD_ID"))
+    {
+        if (buildId[0] != '\0')
+            fields["build_id"] = buildId;
+    }
 
     const bool failed = isFailureResult(result);
     StructuredLogger::instance().writeEvent(
@@ -93,5 +144,6 @@ inline void emit(const Context& context,
 
 } // namespace NetworkEvents
 } // namespace MimitaNet
+
 
 

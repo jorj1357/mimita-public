@@ -72,7 +72,7 @@ extern FramePacer gFramePacer;
 // zero config files are polled for changes (no filesystem overhead).
 // When enabled=true, polling is throttled to every N frames.
 static bool sHotReloadEnabled = true;
-static constexpr auto HOT_RELOAD_POLL_INTERVAL = std::chrono::milliseconds(167);
+static constexpr auto HOT_RELOAD_POLL_INTERVAL = std::chrono::milliseconds(500);
 
 static void loadHotReloadConfig()
 {

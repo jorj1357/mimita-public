@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 #include <mutex>
@@ -32,11 +33,22 @@ struct IceEvent
 class IceAgent
 {
 public:
+    // Tag constructor: build a game-side view without creating a resident
+    // agent. Used with attachView() after a generation swap.
+    struct AttachedTag {};
     IceAgent();
+    explicit IceAgent(AttachedTag);
     ~IceAgent();
+
+    // Reattach to an existing resident agent by stable key. Returns null when
+    // the resident agent no longer exists. The view never owns the agent.
+    static std::unique_ptr<IceAgent> attachView(const std::string& stableKey);
 
     bool initialize(const IceConfiguration& config);
     void shutdown();
+    // Explicit destroy. Only intentional shutdown paths call this; an unload
+    // detaches its view instead.
+    void destroyNow();
     bool gatherCandidates();
 
     std::string localSdp() const;

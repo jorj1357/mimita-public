@@ -10,6 +10,7 @@
 #include <cstdint>
 
 #include "host/abi/game-host-abi.h"
+#include "host/abi/transport-capability.h"
 
 namespace mimita::game {
 
@@ -26,6 +27,12 @@ bool sendToPlayer(std::uint32_t playerId, std::uint32_t typeId,
 bool sendToEndpoint(std::uint32_t addressNetworkOrder,
                     std::uint16_t portNetworkOrder, std::uint32_t typeId,
                     const void* data, std::size_t size);
+// Opaque resident transport/session. `session` is a host-owned handle; the
+// game generation never dereferences it.
+bool sendToSession(std::uint64_t session, std::uint32_t typeId,
+                   const void* data, std::size_t size);
+void closeSession(std::uint64_t session);
 bool sessionIsServerHost();
+bool queryTransportSwapState(mimita::host::TransportSwapStateV1* out);
 
 }  // namespace mimita::game

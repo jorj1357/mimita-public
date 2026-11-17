@@ -10,6 +10,9 @@
 * DOES NOT own NPC combat, projectile, or movement packet handling.
 */
 #include "network/server.h"
+#if defined(MIMITA_GAME_DLL)
+#include "game/transport-bridge-module.h"
+#endif
 #include "persistence/persistence-emit.h"
 #include "network/server-gamemode.h"
 #include "procedural/procedural-world.h"
@@ -1488,7 +1491,8 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
                                     nlohmann::json fields) {
         NetworkEvents::Context context;
         context.role = "server";
-        context.transport = player.transport ? "ice" : "udp";
+        context.transport = player.transportHandle != kNoServerTransport
+            ? "ice" : "udp";
         context.connectionId = player.id;
         context.playerId = player.id;
         NetworkEvents::emit(context, eventName, stage, result, reason,
@@ -1544,6 +1548,15 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
                             {"hard_timeout_ms", hardTimeout},
                             {"grace_deadline_ms",
                              p.lastHeardMs + hardTimeout + graceMs}});
+            emitPeerHealth(p, "network.server.timeout.stale", "stale",
+                           "degraded", "silence_exceeded_stale_threshold",
+                           "network.server.reconnect.received",
+                           {{"silence_ms", silentMs},
+                            {"slot_state", "held"},
+                            {"stale_threshold_ms", staleThreshold},
+                            {"hard_timeout_ms", hardTimeout},
+                            {"grace_deadline_ms",
+                             p.lastHeardMs + hardTimeout + graceMs}});
             printf("%s [SERVER STALE] id=%u name=\"%s\" lastHeard=%llums ago — body frozen, "
                    "slot kept for reconnect\n",
                    serverTimestamp(), p.id, p.name.c_str(),
@@ -1564,6 +1577,13 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
                             {"hard_timeout_ms", hardTimeout},
                             {"grace_deadline_ms", deadline},
                             {"grace_remaining_ms", 0}});
+            emitPeerHealth(p, "network.server.reconnect.expired", "expired",
+                           "terminal", "reconnect_grace_expired",
+                           "network.server.player.removed",
+                           {{"silence_ms", silentMs},
+                            {"slot_state", "released"},
+                            {"grace_deadline_ms", deadline},
+                            {"grace_remaining_ms", 0}});
             printf("%s [NET DISCONNECT] reason=grace_expired id=%u name=\"%s\" "
                    "silent=%llums slotReleased=1\n",
                    serverTimestamp(), p.id, p.name.c_str(),
@@ -1573,8 +1593,11 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
                 std::string leaveMsg = std::string(p.name) + " left the game";
                 broadcastServerChatMessage(sock, players, 0, totalPacketsOut, leaveMsg.c_str());
             }
-            if (p.transport)
-                p.transport->close();
+            if (p.transportHandle != kNoServerTransport)
+            {
+                mimita::game::closeSession(p.transportHandle);
+                p.transportHandle = kNoServerTransport;
+            }
             toRemove.push_back(p.id);
             continue;
         }

@@ -222,6 +222,14 @@ physics below 60 Hz. Evidence must show `actual_hz` near 60 and separate NPC
 phase costs (`sense_ms`, `npc_ms`, `navigator_ms`, `physics_ms`) so a stalled
 tick is attributed to its owner.
 
+Server NPC physics reports its own sub-stages: `physics_config_ms`,
+`move_pre_ms`, `collision_ms`, `move_post_ms`, `facing_ms`, `animation_ms`,
+`aim_ms`, and `pose_containment_ms`. When a server tick exceeds 10 ms of NPC
+presentation work, optional animation and aim for remaining idle NPCs may be
+skipped; movement, collision, firing, and target-facing NPC animation remain
+on the 60 Hz path. Idle server NPCs may animate at 30 Hz, while NPCs with a
+target keep 60 Hz animation.
+
 ## FPS improvement ledger (2026-11-17)
 
 Confirmed runtime improvements are tracked in

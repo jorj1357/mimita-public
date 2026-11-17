@@ -1734,7 +1734,7 @@ class DevLoop:
             journal = record.get("journal_path")
             last = self._journal_last(journal)
             snap = self._journal_last(
-                journal, {"network.client-snapshot-window"},
+                journal, {"network.client.snapshot.applied"},
                 max_bytes=1024 * 1024)
             event_age = self._age_ms(last, now_ms)
             snap_age = self._age_ms(snap, now_ms)

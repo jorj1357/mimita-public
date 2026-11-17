@@ -40,7 +40,7 @@ __attribute__((weak)) void serverLogPlayerSessionRemoval(
         ? removalTimeMs - player.lastHeardMs : 0;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Network, StructuredLevel::Important,
-        "network.player.session.removed", std::to_string(player.id),
+        "network.server.player.removed", std::to_string(player.id),
         reason ? reason : "unspecified", tick,
         nlohmann::json{{"player_id", player.id},
                        {"removal_reason", reason ? reason : "unspecified"},

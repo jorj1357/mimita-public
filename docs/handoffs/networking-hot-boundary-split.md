@@ -210,6 +210,116 @@ Keep WSA startup and socket option syscalls in the resident host helper.
 Record as tools/diagnostics per the specification. Do not use them as
 production hotness evidence. They may remain cold.
 
+## How the cold files become hot in source
+
+The file owner cannot simply be changed to `game`. A translation unit has one
+owner, and these files currently mix primitive code with game policy. They must
+be split first, then the resulting files are owned separately.
+
+### Step 1 — Split by responsibility
+
+- `server-ice.cpp` becomes:
+  - `src/network/server-ice-policy.cpp` → `game`
+  - resident primitive portions → `src/host/net-core-primitive.cpp` → `resident`
+- `ice-agent.cpp` becomes:
+  - ICE policy in the game-side bridge → `game`
+  - libjuice/callback/queue primitive → `src/host/ice-primitive.cpp` → `resident`
+- `server.cpp` becomes:
+  - `src/network/server.cpp` → `resident`, pump only
+  - `src/network/server-session-policy.cpp` → `game`
+- `net_common.cpp` becomes:
+  - pure helpers → inline header or game-owned helper
+  - WSA/socket-option syscalls → `src/host/net-common-host.cpp` → `resident`
+- `ice-server.cpp` and `udp-echo.cpp` remain tools/diagnostics.
+
+The split is real only when the hot file no longer calls raw `SOCKET`,
+`sendto`/`recvfrom`, libjuice callbacks, resident pump state, or
+`ListenServerState*`.
+
+### Step 2 — Add the resident core
+
+The game policy needs a stable mechanism to call. Add one cold ABI batch:
+
+- opaque session/peer/agent handles;
+- attach/detach without destroying live agents;
+- inbound-message and event polling;
+- maintenance payload;
+- swap state;
+- resident session and agent registry;
+- `ServerFrameV1.net_session`;
+- version bumps for the extended capabilities;
+- removal of the cross-binary `ListenServerState*` layout cast.
+
+This is an EXE-level change. Bundle it, build once, and prove old behavior still
+works before moving policy.
+
+### Step 3 — Move ICE policy hot
+
+Move these into game-owned files:
+
+- STUN/TURN configuration policy;
+- SDP exchange and candidate filtering;
+- gather/connect retry, timeout, and state interpretation;
+- listener publication;
+- pending-peer admission, expiry, and player mapping;
+- room/session publication policy.
+
+Keep only libjuice calls, callback queue, raw sockets, timers, and handles
+resident.
+
+### Step 4 — Move server session policy hot
+
+Move these into game-owned files:
+
+- accept/reject;
+- player-slot policy;
+- join/reconnect/disconnect decisions;
+- peer lifecycle and expiry policy;
+- send-routing policy;
+- outage/error policy;
+- room/local-only policy.
+
+Leave `server.cpp` as the pump: bind/listen/send/receive, sleep/timers,
+thread/process lifetime.
+
+### Step 5 — Update source ownership and prove it
+
+After the files exist:
+
+1. Update `config/source-owners.json` with the new hot and resident paths.
+2. Regenerate `build/source-manifest.json`.
+3. Run `cold_change_guard.py`; no production policy source may remain cold.
+4. Run `dependency_graph.py`; review hot-to-cold edges.
+5. Build only the game DLL after the cold ABI batch.
+6. Prove live activation, repeated swaps, and no swap-caused reconnect.
+7. Update the hotness matrix and regression status.
+
+## What becomes live-fixable
+
+After the split, these can be changed in the same PID without an EXE restart:
+
+- reconnect interval, retries, grace, terminal classification;
+- reconnect attempt cadence and health transitions;
+- ICE gather/connect timeout, retry, candidate filtering;
+- ICE listener admission, pending-peer expiry, peer mapping;
+- room publication, room-code, local-only policy;
+- server session accept/reject and player-slot policy;
+- packet handlers, validation, snapshot policy, map sync;
+- lag compensation, movement validation, reconnect presentation.
+
+Still cold after the split:
+
+- libjuice internals, callback thread, socket handles;
+- OS socket/WSA failures;
+- resident pump/scheduler/timer failures;
+- transport ABI/layout changes;
+- tool-only `ice-server`/`udp-echo` paths.
+
+So most connection/reconnect **policy** failures become live-fixable. A failure
+inside libjuice, a raw socket, the scheduler, or the ABI still requires an EXE
+restart. A DLL swap that unloads the resident agent also still causes a
+reconnect unless the resident core retains it and the new generation reattaches.
+
 ## Initial function audit
 
 Line numbers are a starting map, not stable API. Re-check before editing.
@@ -456,3 +566,29 @@ After ABI review, the sequence is:
 
 No source edits until shared-file ownership and the ABI review are confirmed.
 The codegen check is currently green; runtime proof remains blocked on the ABI/split landing.
+
+## Implementation progress 2026-11-17
+
+Agent A applied the cold ABI/resident-core batch and split the policy decisions:
+
+- `TransportCapabilityV1` v5 adds opaque session open/attach/close, inbound/event
+  polling, swap state, and maintenance payload.
+- `IceCapabilityV1` v2 adds resident-agent `attach`/`detach_view`; a game view no
+  longer destroys a live agent on unload.
+- `TransportSessionCapabilityV1` v2 adds generation attach/poll/swap/maintenance.
+- `ServerFrameV1.net_session` and server ABI v2; `GameServerPolicyV1` v2 adds
+  `ice_decide` and `session_decide`.
+- `src/host/net-core-primitive.*` is the resident transport/agent/session
+  registry. `ServerPlayer` now carries an opaque transport handle instead of a
+  game-owned `unique_ptr<IGameTransport>`.
+- `src/network/server-ice-policy.cpp` and `src/network/server-session-policy.cpp`
+  are game-owned decision owners (timeouts, admission, expiry, local-only,
+  publication). `server-ice.cpp`, `ice-agent.cpp`, and the pump remain the
+  resident mechanism.
+- `net_common` pure helpers are inline in `network/net_common.h`; the duplicate
+  cold/game translation units are deleted.
+
+Remaining: game-generation build and live proof. The resident orchestration in
+`server-ice.cpp` still performs the libjuice/socket mechanics; moving the whole
+state machine into the DLL requires the async coordinator/maintenance work from
+Phase 1 to be exercised first.

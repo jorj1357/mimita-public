@@ -1158,6 +1158,9 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         reason = "navmesh_stale";
     }
 
+    double globalGraphMs = 0.0;
+    double localPlanMs = 0.0;
+    double recastMs = 0.0;
     if (needPlan && wantPlanning && consumePlanToken()) {
         const MovementConfig& cfg = movement ? *movement
                                              : MovementJsonConfig::instance().config();
@@ -1179,6 +1182,7 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         // it directly. This removes the dominant fixed-tick planning cost.
         const bool graphAllowed = (!commitment || commitment->useNavGraph) &&
             navBackend != RecastBackend::Recast;
+        const auto globalGraphStart = std::chrono::steady_clock::now();
         if (graphAllowed && toGoal > localReach) {
             // Rebuild the cached graph if the live tuning file changed, so
             // editing chunk/cell size while the game runs takes effect.
@@ -1224,17 +1228,23 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
                 planned = !plan.empty();
             }
         }
+        globalGraphMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - globalGraphStart).count();
 
+        const auto localPlanStart = std::chrono::steady_clock::now();
         if (!planned) {
             planned = planLocalPath(npc, dest, world, cfg, eff, policy,
                                     plan, planGaps, planCaps) && !plan.empty();
         }
+        localPlanMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - localPlanStart).count();
 
         // Recast/Detour request. In compare mode the custom plan above stays
         // authoritative and Recast is observational evidence. In recast mode a
         // successful corridor replaces the custom path (same format), so the
         // shared follow/traversal/movement execution is reused unchanged. If
         // Recast cannot route, the custom plan remains the bounded fallback.
+        const auto recastStart = std::chrono::steady_clock::now();
         if (navBackend != RecastBackend::Custom) {
             const Capsule& capsule = npc.body.getCapsule();
             NavigationAgentProfile profile;
@@ -1289,6 +1299,8 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
                 }
             }
         }
+        recastMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - recastStart).count();
 
         if (planned) {
             path = std::move(plan);
@@ -1322,6 +1334,33 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
             repathTimer = kBlockedRetryInterval;
             result.planFailed = true;
             result.replanReason = reason;
+        }
+
+        const double planTotalMs =
+            globalGraphMs + localPlanMs + recastMs;
+        if (planTotalMs > 5.0)
+        {
+            static thread_local uint64_t lastPlanLogMs = 0;
+            const uint64_t nowMs = (uint64_t)std::chrono::duration_cast<
+                std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            if (nowMs - lastPlanLogMs >= 1000)
+            {
+                lastPlanLogMs = nowMs;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcMovement, StructuredLevel::Important,
+                    "npc.nav.plan-cost", std::to_string(npc.id),
+                    "npc planning stage cost", (uint32_t)(npc.sensors.time * 60.0f),
+                    nlohmann::json{{"actor", npc.id},
+                                   {"to_goal_m", toGoal},
+                                   {"global_graph_ms", globalGraphMs},
+                                   {"local_plan_ms", localPlanMs},
+                                   {"recast_ms", recastMs},
+                                   {"total_ms", planTotalMs},
+                                   {"planned", planned},
+                                   {"path_nodes", path.size()}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
         }
     }
 

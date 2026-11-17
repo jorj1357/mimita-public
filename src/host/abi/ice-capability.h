@@ -12,7 +12,7 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kIceCapabilityVersion = 1u;
+inline constexpr std::uint32_t kIceCapabilityVersion = 2u;
 inline constexpr std::uint32_t kIceMaxEventData = 64u * 1024u;
 
 enum class IceEventKindV1 : std::int32_t {
@@ -51,6 +51,13 @@ struct IceCapabilityV1 {
                                 IceEventV1* out, std::uint32_t capacity,
                                 std::uint32_t* count);
     void (*log_selected_path)(void* hostUserData, void* handle);
+
+    // Version 2: reattach/detach without destroying a live resident agent.
+    // `attach` looks up an existing resident agent by its stable key (the
+    // listener session id or peer connection id). `detach_view` drops the
+    // game-side view only; `destroy` remains the explicit shutdown operation.
+    void* (*attach)(void* hostUserData, const char* stableKey);
+    void (*detach_view)(void* hostUserData, void* handle);
 };
 
 }  // namespace mimita::host

@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include "host/host-server-transport-adapter.h"
+#include "host/net-core-primitive.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -570,8 +571,8 @@ HostResult HostServerEntityAdapter::removeThunk(void* owner,
             if (it == adapter->players_->end()) {
                 return HostResult::NotFound;
             }
-            if (it->second.transport) {
-                it->second.transport->close();
+            if (it->second.transportHandle != MimitaNet::kNoServerTransport) {
+                closeTransport(it->second.transportHandle);
             }
             adapter->players_->erase(it);
             return HostResult::Ok;

@@ -21,7 +21,6 @@ COMPILER = (
 
 SOURCES = [
     ROOT / "tests" / "network-protocol-smoke.cpp",
-    ROOT / "src" / "network" / "net_common.cpp",
     ROOT / "src" / "network" / "snapshot-chunks.cpp",
     ROOT / "src" / "network" / "movement-validation.cpp",
 ]

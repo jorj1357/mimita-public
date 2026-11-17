@@ -41,8 +41,11 @@ def git_lines(args: list[str]) -> list[str]:
 
 def changed_paths() -> list[str]:
     paths = []
-    paths.extend(git_lines(["diff", "--name-only", "--cached"]))
-    paths.extend(git_lines(["diff", "--name-only"]))
+    # A deletion removes a build input; it cannot introduce cold behavior. The
+    # build/link gates still prove the removal is safe, so do not classify the
+    # deleted path as UNKNOWN.
+    paths.extend(git_lines(["diff", "--name-only", "--diff-filter=d", "--cached"]))
+    paths.extend(git_lines(["diff", "--name-only", "--diff-filter=d"]))
     paths.extend(git_lines(["ls-files", "--others", "--exclude-standard"]))
     return sorted(dict.fromkeys(path.replace("\\", "/") for path in paths))
 

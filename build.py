@@ -120,14 +120,16 @@ _LAST_CURRENT_PROGRESS = 0.0
 # OBJ_DIR and PCH_OUTPUT are set per build mode after MODE is resolved below.
 
 EXE_NAME = os.environ.get("MIMITA_EXE_NAME", "mimita.exe")
-# Machine-wide policy serializes EXE builds. Each active build uses all
-# logical processors unless the operator pins a lower job count for a
-# memory-constrained machine.
+# Machine-wide policy serializes EXE builds. The default is capped at four
+# compiler jobs; MIMITA_BUILD_JOBS can set a lower or higher cap.
 _MAX_BUILD_JOBS = max(1, os.cpu_count() or 1)
 try:
+    # Previous default: use all logical processors unless overridden.
     _requested_jobs = int(os.environ.get("MIMITA_BUILD_JOBS", "0"))
+    # _requested_jobs = int(os.environ.get("MIMITA_BUILD_JOBS", "4"))
+    # _requested_jobs = int(os.environ.get("MIMITA_BUILD_JOBS", "8"))
 except ValueError:
-    _requested_jobs = 0
+    _requested_jobs = 4
 if _requested_jobs > 0:
     _MAX_BUILD_JOBS = min(_MAX_BUILD_JOBS, _requested_jobs)
 BUILD_JOBS = _MAX_BUILD_JOBS

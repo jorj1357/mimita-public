@@ -20,7 +20,9 @@ accepted, and `ice-server`/`udp-echo` are recorded as diagnostic tools rather
 than production policy. Added the function/line audit and the ABI checkpoint
 proposal: extend the existing transport, ICE, and transport-session capabilities
 with opaque attach/detach, polling, maintenance, and swap state instead of
-adding a parallel network API.
+adding a parallel network API. Added the source-conversion plan: split mixed
+translation units first, add the resident core, move ICE/server policy hot, then
+update ownership and prove the live-fixable boundary.
 
 No network source split was implemented in this change. The networking owner
 must still move ICE negotiation/listener policy and server session policy out of

@@ -46,9 +46,8 @@
     },
     {
       "owner": "resident",
-      "reason": "socket, ICE, and per-session server loop",
+      "reason": "resident socket, ICE, and server pump mechanics; hot policy decisions live in game-owned server-ice-policy.cpp, server-session-policy.cpp, and server-policy-module.cpp",
       "include": [
-        "src/network/net_common.cpp",
         "src/network/server.cpp",
         "src/network/server-ice.cpp",
         "src/network/ice/ice-agent.cpp",
@@ -140,6 +139,21 @@
     }
   ],
   "overrides": [
+    {
+      "path": "src/network/server-ice-policy.cpp",
+      "owner": "game",
+      "reason": "hot ICE listener/peer timeout, admission, expiry, and relay policy"
+    },
+    {
+      "path": "src/network/server-session-policy.cpp",
+      "owner": "game",
+      "reason": "hot room/local-only/coordinator publication policy"
+    },
+    {
+      "path": "src/host/net-core-primitive.cpp",
+      "owner": "resident",
+      "reason": "resident transport/ICE/session registry, queues, and maintenance payload"
+    },
     {
       "path": "src/game/game-cli.cpp",
       "owner": "bootstrap",

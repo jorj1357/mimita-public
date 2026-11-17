@@ -43,7 +43,27 @@ IceAgent::IceAgent() {
         mHostHandle = mimita::game::gIce->create(mimita::game::gHostData);
 }
 
+IceAgent::IceAgent(AttachedTag) {}
+
 IceAgent::~IceAgent() {
+    // A generation unload must not destroy a live resident agent. Explicit
+    // shutdown paths call destroyNow().
+    if (mimita::game::gIce && mimita::game::gIce->detach_view && mHostHandle)
+        mimita::game::gIce->detach_view(mimita::game::gHostData, mHostHandle);
+    mHostHandle = nullptr;
+}
+
+std::unique_ptr<IceAgent> IceAgent::attachView(const std::string& stableKey) {
+    if (!mimita::game::gIce || !mimita::game::gIce->attach) return nullptr;
+    void* handle = mimita::game::gIce->attach(
+        mimita::game::gHostData, stableKey.c_str());
+    if (!handle) return nullptr;
+    std::unique_ptr<IceAgent> agent(new IceAgent(AttachedTag{}));
+    agent->mHostHandle = handle;
+    return agent;
+}
+
+void IceAgent::destroyNow() {
     if (mimita::game::gIce && mimita::game::gIce->destroy && mHostHandle)
         mimita::game::gIce->destroy(mimita::game::gHostData, mHostHandle);
     mHostHandle = nullptr;

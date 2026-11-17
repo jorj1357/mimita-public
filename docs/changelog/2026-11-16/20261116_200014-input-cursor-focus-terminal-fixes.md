@@ -118,6 +118,94 @@ longer lets a JSON serialization error terminate the server.
   dev-loop stack is watchdog PID `4740` and daemon PID `24944` (Python312).
   `--ensure-running` reused them without opening a dashboard or console.
 
+## Canonical event rename and lifecycle completion
+
+- Renamed existing event names to the contract names:
+  - `network.client-snapshot-window` -> `network.client.snapshot.applied`
+  - `network.client.hello-sent` -> `network.client.hello.sent`
+  - `network.player.session.removed` -> `network.server.player.removed`
+  - Updated `devscripts/dev-loop.py`, the melee scenario, and the multi-client
+    workflow to the new snapshot event name.
+- Added client connect/transport/map/spawn/disconnect events:
+  - `network.client.connect.requested` / `.preflight`
+  - `network.client.transport.open` / `.ready` / `.failed` / `.closed`
+  - `network.client.join.request_sent` / `.rejected`
+  - `network.client.map.sync.start` / `.loaded` / `.load_failed` / `.ready_sent`
+  - `network.client.spawn.applied`
+  - `network.client.reconnect.accepted`
+  - `network.client.disconnect.requested` / `.sent`
+  - `network.client.snapshot.received`
+- Added server lifecycle events:
+  - `network.server.transport.open` / `.ready` / `.closed`
+  - `network.server.join.received` / `.validated` / `.rejected`
+  - `network.server.map.ready_received`
+  - `network.server.spawn.assigned`
+  - `network.server.reconnect.received` / `.lookup` / `.expired`
+  - `network.server.disconnect.received`
+  - `network.server.timeout.stale`
+- Added `network.config.loaded` / `network.config.reloaded` with config revision
+  and active reconnect/timeout values.
+- Added `game.generation.swap_begin`, `.candidate_loaded`, `.old_shutdown`,
+  `.new_init`, `.first_tick`, `.swap_end`, plus `network.hotswap.suspend` /
+  `.resume`.
+- Extended the event helper with automatic `config_revision`, `build_id`,
+  generation fields, local/remote endpoints, and a config-driven
+  `max_events_per_second` token bucket.
+- Added `NetworkingConfig::revision()` so events can identify the active config.
+- Added `network.metrics.window` on client and server using
+  `network_observability.metrics_window_ms`.
+- Added `network.client.reconnect.rejected` for missing-token and failed ICE
+  reconnect transport paths.
+- Added `game.generation.first_snapshot` on the first snapshot applied by each
+  game generation.
+- Added `network.hotswap.health_rebased` on the first health evaluation for a
+  connected local player in a generation.
+- Added an honest `network.hotswap.queue_drained` placeholder on first tick:
+  `result=skipped`, `reason_code=resident_pump_not_installed`, zero messages.
+  Real drain evidence still requires the resident pump.
+- `git diff --check` passed, `devscripts/network_trace.py` and
+  `devscripts/dev-loop.py` pass `py_compile`, and `networkingconfig.json`
+  parses through the trace loader.
+- Runtime attempt used the open server run `20261117_170234` and client-04.
+  The open server journal contains `network.server.snapshot.build/send` and
+  `network_trace.py` reports `events=21063`, `connections=[1]`, `attempts=10`,
+  ten server rejections, and nine spacing errors (about 1,009–1,058 ms versus
+  the configured 6,000 ms). The open client is on the older artifact and never
+  reached a new-generation connection; latest game builds are failing on the
+  concurrent `ServerPlayer.transport` refactor and a stale PCH `mRevision`
+  error. New event proof is therefore not available yet.
+
+## Networking hot-policy cleanup
+
+- Added `NetworkIcePolicyConfig` and the `ice_policy` JSON section for listener
+  gather, peer gather/connect, coordinator poll, pending-peer, and packet-drain
+  limits.
+- `server-ice-policy.cpp` now reads those values from `networkingconfig.json`;
+  its hardcoded timeout/admission constants are removed.
+- Removed resident fallback policy from `server-ice.cpp`: missing hot ICE policy
+  now refuses admission/expiry work instead of silently using resident values.
+- `publishServerIceListener` now requires the hot session-publication decision;
+  it no longer publishes unconditionally.
+- Removed resident session-policy fallback from `server.cpp`; an unavailable hot
+  session decision no longer silently registers or publishes a room.
+- `network.hotswap.queue_drained` now reports the resident swap snapshot
+  (`session_count`, `queued_events`, `suspended`, `generation_attached`) while
+  retaining the honest `resident_pump_not_installed` reason because no client
+  queue pump exists yet.
+- Updated `source-owners.json` reason text so the resident networking files are
+  described as pump/ICE/socket mechanism with hot policy delegated to the
+  game-owned policy files.
+- Build verification is still blocked in the shared checkout: the EXE link used
+  a stale `network_server.o` referencing hot config, and the game build is
+  queued/building. A fresh successful build and runtime proof remain pending.
+
+## Handoff added
+
+- Added `docs/handoffs/networking-cutover1-finish-handoff-20261117.md` with
+  current build state, the remaining hot-policy split, client pump blocker,
+  stale gate warnings, and exact runtime evidence required before Cutover-1 can
+  be claimed.
+
 ## Human acceptance
 
 - Visual review: not performed.

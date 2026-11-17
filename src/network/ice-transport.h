@@ -70,6 +70,7 @@ public:
         if (mAgent)
         {
             mAgent->shutdown();
+            mAgent->destroyNow();
             // Brief drain window — juice_destroy() closes the socket and
             // joins the background thread, but a few final OS-queued
             // packets may still fire callbacks.  A 50ms yield is enough

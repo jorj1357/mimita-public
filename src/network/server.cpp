@@ -14,6 +14,7 @@
 #include "network/net_mode.h"
 #include "network/server-gamemode.h"
 #include "network/server-infinite-collision.h"
+#include "network/server-session-policy.h"
 #include "procedural/procedural-world.h"
 #include "gamemode/arena-ball.h"
 #include "gamemode/gamemode.h"
@@ -38,7 +39,6 @@
 #include "world/world.h"
 #include "map/map-catalog.h"
 #include "map/map-authored-geometry.h"
-#include "config/networking-config.h"
 #include "config/movement-config.h"
 #include "config/collision-config.h"
 #include "config/spawn-velocity-config.h"
@@ -53,6 +53,7 @@
 #include "host/host-server-world-adapter.h"
 #include "host/host-server-session-events.h"
 #include "host/host-session-identity.h"
+#include "host/net-core-primitive.h"
 #include "host/abi/game-server-abi.h"
 #include "host/abi/transport-capability.h"
 #include "host/generated/packet-registry-v1.h"
@@ -325,10 +326,12 @@ static void sendProbeResponse(
             reinterpret_cast<const PacketHeader*>(dispatch.message.payload);
         playerId = header->playerId;
         auto it = players.find(playerId);
-        if (it != players.end() && it->second.transport) {
+        if (it != players.end() &&
+            it->second.transportHandle != kNoServerTransport) {
             usedTransport = true;
-            sent = it->second.transport->send(
-                dispatch.response.payload, dispatch.response.payloadSize);
+            sent = mimita::host::sendTransport(
+                it->second.transportHandle, dispatch.response.payload,
+                dispatch.response.payloadSize);
         }
     }
     if (!sent) {
@@ -685,6 +688,30 @@ ServerGameOverrides gServerOverrides;
 std::string gServerHostPlayerName;
 uint32_t gServerHostPlayerId = 0;
 
+static mimita::host::ServerSessionPolicyV1 decideSessionPolicy(
+    bool startLocalServer, bool externalProcessLaunched,
+    bool passwordProtected, std::uint32_t maxPlayers) {
+    mimita::host::ServerSessionPolicyV1 policy{};
+    policy.version = mimita::host::kGameServerPolicyAbiVersion;
+    policy.structSize = sizeof(policy);
+    policy.startLocalServer = startLocalServer ? 1u : 0u;
+    policy.externalProcessLaunched = externalProcessLaunched ? 1u : 0u;
+    policy.hasExistingRoom = hostedRoomSession().active ? 1u : 0u;
+    policy.passwordProtected = passwordProtected ? 1u : 0u;
+    policy.maxPlayers = maxPlayers;
+    if (!mimita::host::HostRuntime::instance().serverPolicySessionDecide(
+            &policy)) {
+        // No resident fallback policy. An unavailable hot server decision
+        // must not silently publish or register a room.
+        policy.localOnly = 0;
+        policy.registerWithCoordinator = 0;
+        policy.publishRoom = 0;
+        policy.writeRoomFile = 0;
+        policy.allowDuplicateRoom = 0;
+    }
+    return policy;
+}
+
 uint32_t serverHostPlayerId()
 {
     return gServerHostPlayerId;
@@ -777,6 +804,15 @@ int runServer(const LaunchOptions& options)
                            {"mode", options.gameMode}, {"map", options.mapName},
                            {"events_jsonl", ::StructuredLogger::instance().eventsPath()},
                            {"run_id", ::StructuredLogger::instance().runId()}},
+            __FILE__, __LINE__, __func__);
+        ::StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.server.transport.closed", roomCode,
+            reason ? reason : "server transport closing", serverTick,
+            nlohmann::json{{"exit_code", exitCode},
+                           {"role", "server"},
+                           {"transport", "udp"},
+                           {"slot_state", "released"}},
             __FILE__, __LINE__, __func__);
     };
     ::StructuredLogger::instance().writeEvent(
@@ -967,11 +1003,32 @@ int runServer(const LaunchOptions& options)
 
     sockaddr_in actualBindAddr = actualSocketAddress(sock, bindAddr);
     const uint16_t actualPort = ntohs(actualBindAddr.sin_port);
+    const mimita::host::SessionHandle netSession =
+        mimita::host::openSession(1u, static_cast<std::uint64_t>(actualPort));
     logStartupStage("network_bind", "complete", "UDP socket bound",
         std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - startupStageStart).count(),
         nlohmann::json{{"actual_bind", addressToString(actualBindAddr)},
                        {"port", actualPort}});
+    ::StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.server.transport.open", "server",
+        "dedicated UDP transport opened", 0,
+        nlohmann::json{{"local_endpoint", addressToString(actualBindAddr)},
+                       {"port", actualPort},
+                       {"protocol_version", PROTOCOL_VERSION},
+                       {"role", "server"},
+                       {"transport", "udp"}},
+        __FILE__, __LINE__, __func__);
+    ::StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.server.transport.ready", "server",
+        "dedicated UDP transport ready for joins", 0,
+        nlohmann::json{{"local_endpoint", addressToString(actualBindAddr)},
+                       {"port", actualPort},
+                       {"role", "server"},
+                       {"transport", "udp"}},
+        __FILE__, __LINE__, __func__);
     printf("%s [SERVER TRANSPORT READY] protocol=%u role=dedicated-udp pid=%lu exe=\"%s\" cwd=\"%s\" "
            "requested=%s actual=%s family=AF_INET reuse=1 nonblocking=%d\n",
            residentServerTimestamp(), PROTOCOL_VERSION, (unsigned long)GetCurrentProcessId(),
@@ -1012,8 +1069,9 @@ int runServer(const LaunchOptions& options)
                                   reinterpret_cast<const sockaddr*>(&it->second.addr),
                                   sizeof(it->second.addr)) == static_cast<int>(size);
                 }
-                if (it->second.transport) {
-                    return it->second.transport->send(data, size);
+                if (it->second.transportHandle != kNoServerTransport) {
+                    return mimita::host::sendTransport(
+                        it->second.transportHandle, data, size);
                 }
                 return false;
             });
@@ -1057,6 +1115,7 @@ int runServer(const LaunchOptions& options)
 
     // ── Dedicated server ICE support ──
     ListenServerState dedicatedIceState;
+    dedicatedIceState.netSession = netSession;
     dedicatedIceState.serverName = options.name.empty() ? "MiMITA Server" : options.name;
     dedicatedIceState.mapName = mapName;
     dedicatedIceState.gameMode = options.gameMode;
@@ -1245,7 +1304,9 @@ int runServer(const LaunchOptions& options)
                                {"startup_npc_ids", startupNpcIds},
                                {"local_gameplay_started_first", true}},
                 __FILE__, __LINE__, __func__);
-            if (!options.roomFilePath.empty())
+            const auto roomFilePolicy = decideSessionPolicy(
+                false, false, options.passwordProtected, options.maxPlayers);
+            if (!options.roomFilePath.empty() && roomFilePolicy.writeRoomFile)
             {
                 FILE* rf = fopen(options.roomFilePath.c_str(), "w");
                 if (rf)
@@ -1387,6 +1448,7 @@ int runServer(const LaunchOptions& options)
                 packetFrame.npcSystem = &npcSystem;
                 packetFrame.world = &world;
                 packetFrame.npcWorld = &npcWorld;
+                packetFrame.net_session = netSession;
                 packetFrame.vehicleState = &dedicatedVehicleState;
                 packetFrame.physicalEntityReplication =
                     &physicalEntityReplication;
@@ -1439,6 +1501,7 @@ int runServer(const LaunchOptions& options)
             serverFrame.npcSystem = &npcSystem;
             serverFrame.world = &world;
             serverFrame.npcWorld = &npcWorld;
+            serverFrame.net_session = netSession;
             serverFrame.vehicleState = &dedicatedVehicleState;
             serverFrame.physicalEntityReplication = &physicalEntityReplication;
             serverFrame.transportStats = &transportStats;
@@ -1744,6 +1807,9 @@ int runServer(const LaunchOptions& options)
     if (registrationThread.joinable())
         registrationThread.join();
     PersistenceQueue::instance().flushBlocking();
+    if (!dedicatedIceState.iceSessionId.empty())
+        mimita::host::unregisterIceAgent(dedicatedIceState.iceSessionId);
+    gPendingIcePeers.clear();
     shutdownIceCoordinatorPoller();
     logServerExit(0, serverExitReason, serverCode, tick);
     mimita::host::HostRuntime::instance().shutdown();
@@ -1758,6 +1824,8 @@ int runServer(const LaunchOptions& options)
     mimita::host::HostRuntime::instance().clearWorldAdapter();
     mimita::host::HostRuntime::instance().clearTransportAdapter();
     mimita::host::HostServerSessionEvents::instance().clear();
+    mimita::host::closeSession(netSession);
+    mimita::host::closeAllTransports();
     closesocket(sock);
     netShutdown();
     printf("%s [SERVER] shutdown complete\n", residentServerTimestamp());
@@ -1792,6 +1860,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         netShutdown();
         return false;
     }
+    state.netSession = mimita::host::openSession(1u, static_cast<std::uint64_t>(port));
     disableUdpConnReset(state.sock);
 
     BOOL exclusiveAddressUse = TRUE;
@@ -1808,7 +1877,12 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     }
     setNonBlocking(state.sock);
 
-    const bool localOnly = settings && settings->startLocalServer;
+    const auto sessionPolicy = decideSessionPolicy(
+        settings && settings->startLocalServer,
+        settings && settings->externalProcessLaunched,
+        settings && settings->passwordProtected,
+        settings ? settings->maxPlayers : 999);
+    const bool localOnly = sessionPolicy.localOnly != 0;
 
     sockaddr_in bindAddr{};
     bindAddr.sin_family = AF_INET;
@@ -1954,8 +2028,9 @@ bool startListenServer(ListenServerState& state, uint16_t port,
                                   reinterpret_cast<const sockaddr*>(&it->second.addr),
                                   sizeof(it->second.addr)) == static_cast<int>(size);
                 }
-                if (it->second.transport) {
-                    return it->second.transport->send(data, size);
+                if (it->second.transportHandle != kNoServerTransport) {
+                    return mimita::host::sendTransport(
+                        it->second.transportHandle, data, size);
                 }
                 return false;
             });
@@ -2048,9 +2123,9 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         mimita::host::setSessionCoordinatorJoinToken("");
         printf("[LISTEN SERVER] local-only mode: code=%s\n", state.serverCode.c_str());
     }
-    else if (!settings || !settings->externalProcessLaunched)
+    else if (sessionPolicy.registerWithCoordinator)
     {
-        if (hostedRoomSession().active)
+        if (hostedRoomSession().active && !sessionPolicy.allowDuplicateRoom)
         {
             printf("[ROOM DUPLICATE ERROR] existingCode=%s attemptedCode=%s caller=startListenServer\n",
                    hostedRoomSession().roomCode.c_str(), state.serverCode.c_str());
@@ -2063,7 +2138,8 @@ bool startListenServer(ListenServerState& state, uint16_t port,
             netShutdown();
             return false;
         }
-        publishServerIceListener(state);
+        if (sessionPolicy.publishRoom)
+            publishServerIceListener(state);
         printf("[LISTEN SERVER] ICE registered: code=%s\n", state.serverCode.c_str());
         hostedRoomSession().coordinatorRoomType = "ice";
     }
@@ -2112,6 +2188,9 @@ void stopListenServer(ListenServerState& state)
         state.mirrorPlayer = nullptr;
     }
 
+    if (!state.iceSessionId.empty())
+        mimita::host::unregisterIceAgent(state.iceSessionId);
+    gPendingIcePeers.clear();
     shutdownIceCoordinatorPoller();
 
     // Flush any remaining persistence events before shutdown
@@ -2127,6 +2206,12 @@ void stopListenServer(ListenServerState& state)
         mimita::host::HostRuntime::instance().serverPolicyCoordinatorIceDone(
             state.serverCode.c_str());
 
+    if (state.netSession != mimita::host::kInvalidSession)
+    {
+        mimita::host::closeSession(state.netSession);
+        state.netSession = mimita::host::kInvalidSession;
+    }
+    mimita::host::closeAllTransports();
     closesocket(state.sock);
     state.sock = INVALID_SOCKET;
     state.active = false;
@@ -2222,6 +2307,7 @@ static void simulateOneServerTick(ListenServerState& state)
                 packetFrame.npcSystem = state.npcSystem.get();
                 packetFrame.world = &state.world;
                 packetFrame.npcWorld = state.npcWorld.get();
+                packetFrame.net_session = state.netSession;
                 packetFrame.vehicleState = &state.vehicleState;
                 packetFrame.physicalEntityReplication =
                     &state.physicalEntityReplication;
@@ -2260,6 +2346,7 @@ static void simulateOneServerTick(ListenServerState& state)
         mimita::host::ServerFrameV1 serverFrame{};
         serverFrame.tick = state.tick;
         serverFrame.flags = mimita::host::kServerFrameHazardScratch;
+        serverFrame.net_session = state.netSession;
         serverFrame.players = &state.players;
         serverFrame.npcs = &state.npcs;
         serverFrame.projectiles = &state.projectiles;

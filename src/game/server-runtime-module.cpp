@@ -100,7 +100,7 @@ int serverRuntimeProcessPacket(void* rawFrame, const void* rawEvent,
         static_cast<MimitaNet::DisagreementRetransmitState*>(
             frame.disagreementRetransmit),
         static_cast<MimitaNet::ServerPlayer*>(frame.authenticatedPlayer),
-        static_cast<std::unique_ptr<IGameTransport>*>(frame.claimedTransport),
+        static_cast<MimitaNet::ServerTransportHandle*>(frame.claimedTransport),
         static_cast<std::vector<std::uint32_t>*>(frame.pendingRemovals),
         frame.npcSystem ? &npcSystemOf(frame) : nullptr);
     out->handled = result.handled ? 1u : 0u;

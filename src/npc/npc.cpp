@@ -51,6 +51,28 @@
 #include "npc/npc-movement-context.h"
 #include "actor/actor-intent.h"
 
+static thread_local std::uint32_t gNpcAnimationBudgetTick =
+    std::numeric_limits<std::uint32_t>::max();
+static thread_local std::uint32_t gNpcAnimationStridePhase = 0;
+static thread_local double gNpcAnimationBudgetUsedMs = 0.0;
+static thread_local bool gNpcPresentationBudgetEnabled = false;
+
+void npcBeginSimulationTick(std::uint32_t tick)
+{
+    gNpcPresentationBudgetEnabled = true;
+    if (tick == gNpcAnimationBudgetTick)
+        return;
+    gNpcAnimationBudgetTick = tick;
+    ++gNpcAnimationStridePhase;
+    gNpcAnimationBudgetUsedMs = 0.0;
+}
+
+void npcExhaustPresentationBudget()
+{
+    if (gNpcPresentationBudgetEnabled)
+        gNpcAnimationBudgetUsedMs = 1.0e9;
+}
+
 static void logModuleWeaponChoice(
     const Npc& npc, const mimita_npc_behavior::WeaponChoiceV1& choice,
     const std::string& selected)
@@ -1649,6 +1671,15 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     double npcNavigatorMs = 0.0;
     double npcPathMs = 0.0;
     double npcPhysicsMs = 0.0;
+    double npcPhysicsConfigMs = 0.0;
+    double npcMovePreMs = 0.0;
+    double npcCollisionMs = 0.0;
+    double npcMovePostMs = 0.0;
+    double npcFacingMs = 0.0;
+    double npcAnimationMs = 0.0;
+    bool npcAnimationSkipped = false;
+    double npcAimMs = 0.0;
+    bool npcAimSkipped = false;
     double npcPoseMs = 0.0;
     double npcCombatMs = 0.0;
     uint64_t npcSenseRuns = 0;
@@ -3238,7 +3269,26 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         npcThinkMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - npcSlowMark).count();
         npcSlowMark = std::chrono::steady_clock::now();
-        physicsMainUpdate(npc.body, world, input, safeDt, 2, navMovement);
+        constexpr double kNpcAnimationBudgetMs = 4.0;
+        constexpr std::uint32_t kNpcAnimationStride = 2;
+        const bool animationBudgetLeft =
+            gNpcAnimationBudgetUsedMs < kNpcAnimationBudgetMs;
+        const bool animateNpc =
+            npc.sensors.hasTarget || !gNpcPresentationBudgetEnabled ||
+            (((gNpcAnimationStridePhase % kNpcAnimationStride) == 0u) &&
+             animationBudgetLeft);
+        physicsMainUpdate(npc.body, world, input, safeDt, 1, navMovement,
+                          animateNpc);
+        const PhysicsStageCost& physicsStages = physicsStageCost();
+        npcPhysicsConfigMs = physicsStages.configMs;
+        npcMovePreMs = physicsStages.movePreMs;
+        npcCollisionMs = physicsStages.collisionMs;
+        npcMovePostMs = physicsStages.movePostMs;
+        npcFacingMs = physicsStages.facingMs;
+        npcAnimationMs = physicsStages.animationMs;
+        npcAnimationSkipped = !physicsStages.animationUpdated;
+        if (physicsStages.animationUpdated)
+            gNpcAnimationBudgetUsedMs += physicsStages.animationMs;
         npcPhysicsMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - npcSlowMark).count();
         npcSlowMark = std::chrono::steady_clock::now();
@@ -3258,8 +3308,15 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             npcWeaponDef->armRagdoll.enabled &&
             !npcWeaponDef->armRagdoll.actionScoped
             ? &npcWeaponDef->armRagdoll : nullptr;
-        RagdollModeSystem::instance().updateNpcAim(
-            safeDt, world, npc, aimForward, aimPoint, attack, npcArmRagdoll);
+        npcAimSkipped = !animateNpc;
+        if (animateNpc) {
+            const auto aimStart = std::chrono::steady_clock::now();
+            RagdollModeSystem::instance().updateNpcAim(
+                safeDt, world, npc, aimForward, aimPoint, attack, npcArmRagdoll);
+            npcAimMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - aimStart).count();
+            gNpcAnimationBudgetUsedMs += npcAimMs;
+        }
 
         const uint32_t poseTick =
             static_cast<uint32_t>(npc.body.movementSimulationTick);
@@ -3689,6 +3746,15 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                                {"navigator_ms", npcNavigatorMs},
                                {"path_ms", npcPathMs},
                                {"physics_ms", npcPhysicsMs},
+                               {"physics_config_ms", npcPhysicsConfigMs},
+                               {"move_pre_ms", npcMovePreMs},
+                               {"collision_ms", npcCollisionMs},
+                               {"move_post_ms", npcMovePostMs},
+                               {"facing_ms", npcFacingMs},
+                               {"animation_ms", npcAnimationMs},
+                               {"animation_skipped", npcAnimationSkipped},
+                               {"aim_ms", npcAimMs},
+                               {"aim_skipped", npcAimSkipped},
                                {"pose_ms", npcPoseMs},
                                {"combat_ms", npcCombatMs},
                                {"state", npcStateName(npc.stateMachine.currentState)},
@@ -3716,6 +3782,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         uint64_t navCandidates = 0;
         double sense = 0, decision = 0, navigator = 0, path = 0;
         double physics = 0, pose = 0, total = 0, worst = 0;
+        double physicsConfig = 0, movePre = 0, collision = 0, movePost = 0;
+        double facing = 0, animation = 0, aim = 0;
+        uint64_t animationSkipped = 0, aimSkipped = 0;
         uint32_t worstActor = 0;
     };
     static thread_local PhaseWindow phaseWindow;
@@ -3731,6 +3800,15 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     phaseWindow.navigator += npcNavigatorMs;
     phaseWindow.path += npcPathMs;
     phaseWindow.physics += npcPhysicsMs;
+    phaseWindow.physicsConfig += npcPhysicsConfigMs;
+    phaseWindow.movePre += npcMovePreMs;
+    phaseWindow.collision += npcCollisionMs;
+    phaseWindow.movePost += npcMovePostMs;
+    phaseWindow.facing += npcFacingMs;
+    phaseWindow.animation += npcAnimationMs;
+    if (npcAnimationSkipped) ++phaseWindow.animationSkipped;
+    phaseWindow.aim += npcAimMs;
+    if (npcAimSkipped) ++phaseWindow.aimSkipped;
     phaseWindow.pose += npcPoseMs;
     phaseWindow.total += npcSlowTotalMs;
     if (npcSlowTotalMs > phaseWindow.worst) {
@@ -3753,6 +3831,15 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                            {"navigator_ms", phaseWindow.navigator},
                            {"path_ms", phaseWindow.path},
                            {"physics_ms", phaseWindow.physics},
+                           {"physics_config_ms", phaseWindow.physicsConfig},
+                           {"move_pre_ms", phaseWindow.movePre},
+                           {"collision_ms", phaseWindow.collision},
+                           {"move_post_ms", phaseWindow.movePost},
+                           {"facing_ms", phaseWindow.facing},
+                           {"animation_ms", phaseWindow.animation},
+                           {"animation_skipped", phaseWindow.animationSkipped},
+                           {"aim_ms", phaseWindow.aim},
+                           {"aim_skipped", phaseWindow.aimSkipped},
                            {"pose_containment_ms", phaseWindow.pose},
                            {"total_ms", phaseWindow.total},
                            {"worst_actor", phaseWindow.worstActor},
