@@ -16,6 +16,7 @@
 #include <cmath>
 #include "input/input-commands.h"
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
 
 #include "entities/player.h"
 #include "entities/aimbody-config.h"
@@ -193,9 +194,11 @@ static void physicsMainUpdate_Internal(
     const MovementConfig* overrideConfig = nullptr
 ){
     Perf::ScopedTimer _t("Physics");
-    const MovementConfig movementConfig = overrideConfig
-        ? applyRuntimeMovementTuning(*overrideConfig)
-        : makeCurrentRuntimeMovementConfig();
+    MovementConfig movementConfig;
+    { MIMITA_PERF_SCOPE("Physics::Config");
+      movementConfig = overrideConfig
+          ? applyRuntimeMovementTuning(*overrideConfig)
+          : makeCurrentRuntimeMovementConfig(); }
     dt = movementClampStepDelta(dt, movementConfig);
     if (dt <= 0.0f)
         return;
@@ -334,12 +337,12 @@ static void physicsMainUpdate_Internal(
 
     MovementState movementState =
         movementStateFromPlayer(p, command.lifecycle);
-    applyPreCollisionBasicMovement(movementState, command, movementConfig, dt);
-
     MovementStepEvents preCollisionEvents;
-    applySpecialMovementPreCollision(
-        movementState, command, movementConfig, dt, preCollisionEvents);
-    applyMovementStateToPlayer(movementState, p);
+    { MIMITA_PERF_SCOPE("Physics::MovePre");
+      applyPreCollisionBasicMovement(movementState, command, movementConfig, dt);
+      applySpecialMovementPreCollision(
+          movementState, command, movementConfig, dt, preCollisionEvents);
+      applyMovementStateToPlayer(movementState, p); }
 
     // Anti-tunneling: at extreme speed a single fixed sub-step can move the
     // actor far enough that the swept narrowphase's sampling/contact budget is
@@ -375,10 +378,11 @@ static void physicsMainUpdate_Internal(
     const glm::vec3 positionBeforeCollision = p.pos;
     const glm::vec3 velocityBeforeCollision = p.vel;
 
-    for (int i = 0; i < steps; i++)
-    {
-        doCollisions(p, world, groundedThisFrame, subdt);
-    }
+    { MIMITA_PERF_SCOPE("Physics::CollisionSteps");
+      for (int i = 0; i < steps; i++)
+      {
+          doCollisions(p, world, groundedThisFrame, subdt);
+      } }
 
     MovementState collisionState =
         movementStateFromPlayer(p, command.lifecycle);
@@ -398,14 +402,12 @@ static void physicsMainUpdate_Internal(
     const float previousAirborneTime =
         collisionState.ground.airborneTimerSeconds;
 
-    MovementStepResult movementResult =
-        applyPostCollisionMovementWithSpecials(collisionState,
-                                               command,
-                                               movementConfig,
-                                               collisionFeedback,
-                                               dt,
-                                               preCollisionEvents);
-    applyMovementStateToPlayer(movementResult.state, p);
+    MovementStepResult movementResult;
+    { MIMITA_PERF_SCOPE("Physics::MovePost");
+      movementResult = applyPostCollisionMovementWithSpecials(
+          collisionState, command, movementConfig, collisionFeedback, dt,
+          preCollisionEvents);
+      applyMovementStateToPlayer(movementResult.state, p); }
 
     // Sample raw collision-ground changes while a Melee fighter is crouching.
     // Keep the journal bounded while retaining the number of transitions
@@ -497,12 +499,14 @@ static void physicsMainUpdate_Internal(
                 p.ground.worldContactLostTimer, p.jump.airJumpsLeft, (int)p.dash.dashAvailable, (int)p.groundReturn.available);
     }
 
-    updateVisualFacingFromCamera(p, camForward, dt);
+    { MIMITA_PERF_SCOPE("Physics::VisualFacing");
+      updateVisualFacingFromCamera(p, camForward, dt); }
 
-    p.updateProceduralAnimation(dt,
-                                camForward,
-                                debugCamera ? debugCamera->pos : p.pos,
-                                command.movementDirectionPressed);
+    { MIMITA_PERF_SCOPE("Physics::Animation");
+      p.updateProceduralAnimation(dt,
+                                  camForward,
+                                  debugCamera ? debugCamera->pos : p.pos,
+                                  command.movementDirectionPressed); }
 
     // debug override
     if (debugEnabled && debugWindow && debugCamera) {

@@ -1998,8 +1998,7 @@ void simulateSharedNpcs(SOCKET sock,
         ServerPlayer* nearestPlayer = nullptr;
         Npc* nearestNpc = nullptr;
 
-        const bool staggerFcsThinking =
-            serverGamemodeState().matchMode == "funcounterstrike";
+        const bool staggerNpcThinking = true;
         bool cachedTargetValid = false;
         if (n.hasCachedServerTarget && n.serverTargetId != 0) {
             if (n.cachedServerTargetIsNpc) {
@@ -2017,7 +2016,7 @@ void simulateSharedNpcs(SOCKET sock,
                                           playerTeamOf(cachedPlayer->second));
             }
         }
-        const bool thinkingDue = !staggerFcsThinking ||
+        const bool thinkingDue = !staggerNpcThinking ||
             ((tick + n.id) % 3u == 0u) || !n.hasTargetScanSnapshot ||
             (n.hasCachedServerTarget && !cachedTargetValid);
         const bool targetWasInvalidated =
@@ -2359,7 +2358,7 @@ void simulateSharedNpcs(SOCKET sock,
 
         const auto aiUpdateStart = std::chrono::steady_clock::now();
         npcSystem.updateOneWithTarget(n.id, world, mirrorPlayer, SERVER_DT,
-                                      staggerFcsThinking, thinkingDue);
+                                      staggerNpcThinking, thinkingDue);
         const double oneAiMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - aiUpdateStart).count();
         aiUpdateMs += oneAiMs;

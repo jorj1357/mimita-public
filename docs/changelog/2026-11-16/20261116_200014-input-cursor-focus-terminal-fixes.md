@@ -46,25 +46,35 @@ longer lets a JSON serialization error terminate the server.
   - `weapon.attack.local_request` showed `weapon=revolver`,
     `gameplay_active=true`, and a fired shot after `lc` set cursor mode `2`.
   - Pause menu set cursor mode `0`; cursor was visible.
+- Build identity: EXE `2026-11-17T01:01:29.903571Z`; game generation `294`.
 - Build target gate: `PASS` (`exe=46`, `cold=45`, `tests=0`,
   `game_in_exe=0`, `cold_undefined=0`).
 - Audit triage: `UNRESOLVED=0`.
 - Cutover-1 remains green except `gameplay_live_fix_proven=false`.
 - Server crash reports for `PID 2304` and `PID 22292` show
   `CXX_EXCEPTION_GCC`; the symbolized stack enters
-  `mimita::game::log_bridge::emitEvent` and `nlohmann` serialization.
+  `mimita::game::log_bridge::emitEvent` and `nlohmann` serialization. The
+  reports are in `%LOCALAPPDATA%\Mimita\crashes\crash-2026-11-16_19-51-39-2304.txt`
+  and `crash-2026-11-16_19-59-19-22292.txt`.
+- Run `20261117_135530`, server PID `28212`, game generation `294`:
+  - The server survived three `server.death.transition` events from NPC rocket
+    explosions (`spawn_generation` 4, 5, and 6) and was still alive with no new
+    crash report.
+  - The client received `input.host-mouse` button `0`; the press produced a
+    `weapon.attack.local_request` (dry fire because the player was dead at the
+    time), proving the click path remained live.
+- The dev-loop game-build worker was wedged behind a stale
+  `.dev/build-serialization.lock` owned by a dead PID. The lock was removed and
+  the daemon restarted with permission; generation `294` published.
 
-## Open issue
+## Documentation added
 
-- The server process exited after the host player was killed by an NPC rocket
-  in two runs (`PID 2304` at `20261117_005045`, `PID 22292` at
-  `20261117_005850`). Crash reports are in
-  `%LOCALAPPDATA%\Mimita\crashes\crash-2026-11-16_19-51-39-2304.txt` and
-  `crash-2026-11-16_19-59-19-22292.txt`. The log-bridge hardening is the
-  bounded fix, but the game generation containing it had not published when
-  this note was written because the dev-loop game-build worker stopped with a
-  stale serialization lock. The stale lock was removed; the server must be
-  rerun through the dev loop to prove it survives a player death.
+- Added `docs/handoffs/networking-hot-cold-contract-20261117.md`, the approved
+  coordination brief between the ICE hot/cold split and the
+  reconnect/health/event/config work. It records file ownership, event
+  ownership, config keys, resident transport core API, swap/reattach invariants,
+  shared-file sequencing, and the validation gate.
+- This is coordination documentation only; it is not build or runtime evidence.
 
 ## Human acceptance
 

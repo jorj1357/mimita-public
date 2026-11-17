@@ -44,7 +44,9 @@ if we make things hot reloadable, for these next bugs, we can see the effects of
 
 ## other issues 
 
-### 
+### 2026 11 17 0920 jorj  cosmeticsssss
+
+this is a issue that hapepend before, need to look at regersions to see what we did to fix it but jason doesn thave his mask thats not good, all acotrs need to ahve their cosmtiecsss 
 
 ### distributed data and map eidotr
 

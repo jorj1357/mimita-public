@@ -1,3 +1,27 @@
+2026 11 17 0926 jorj 
+thins relates to 
+idk
+
+distribution or 
+bitcoin
+
+i think its beneficial if we make our own currency
+that
+AND 
+ENSURE
+THAT IT CANNOT BE RUG PULLED
+IT CAN BE EDITED but it cannot be rug pull  ed
+i dont have access to anuone elses funds other than mine
+AND
+
+NOTICE How i oculd
+jsut
+be doing all this just to make the currenc expesnive 
+no
+
+make a incentive to keep stauing amd making it more better
+and maek a anti incentive to leave 
+
 2026 10 17 1141 jorj todo explain  tix and 
 
 BC TIX GOT REMOVED FRMO TORLBOX

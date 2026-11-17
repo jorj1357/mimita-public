@@ -23,6 +23,14 @@ struct PerfFrameAccounting {
     double unaccountedMs = 0.0;
     double swapMs = 0.0;
     double sleepMs = 0.0;
+    double overlayMs = 0.0;
+    double serverRxHz = 0.0;
+    double serverActualHz = 0.0;
+    std::uint32_t serverTick = 0;
+    bool serverValid = false;
+    bool serverStale = false;
+    bool serverActualValid = false;
+    char publishedGeneration[32] = {};
     int scopeCount = 0;
     PerfAccountedScope scopes[kMaxScopes];
     PerfTimes times;

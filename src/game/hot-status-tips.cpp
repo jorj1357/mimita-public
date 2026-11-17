@@ -153,6 +153,7 @@ struct HotStatusTips::Impl {
     std::atomic<bool> parsing{false};
     std::string lastKey;
     std::string lastReadyGeneration;
+    std::string currentGeneration;
     bool firstPass = true;
 };
 
@@ -219,6 +220,10 @@ void HotStatusTips::update() {
         impl_->hasPending = false;
     }
     if (status.generation.empty()) return;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        impl_->currentGeneration = status.generation;
+    }
     const std::string verbosity = NotificationSystem::instance().hotReloadVerbosity();
     if (verbosity == "none") return;
 
@@ -283,6 +288,12 @@ void HotStatusTips::update() {
         __FILE__, __LINE__, __FUNCTION__);
     NotificationSystem::instance().pushHotReload(
         "Hot reload detected", "candidate build observed; activation follows the safe boundary\n" + header);
+}
+
+std::string HotStatusTips::currentGeneration() const {
+    if (!impl_) return {};
+    std::lock_guard<std::mutex> lock(impl_->mutex);
+    return impl_->currentGeneration;
 }
 
 void updateHotStatusTips() { HotStatusTips::instance().update(); }

@@ -33,7 +33,7 @@ VSync is **forced OFF globally** and must never be re-enabled. This is a permane
 
 ## Why
 
-VSync adds 16-29ms of driver-level stall per frame (measured at the Swap scope). The engine uses a software frame pacer (`FramePacer::endFrame()`) with `maxFrames` to control frame rate. VSync is incompatible with the performance target of <1ms frame times.
+VSync adds 16-29ms of driver-level stall per frame (measured at the Swap scope). The engine uses a software frame pacer (`FramePacer::endFrame()`) with `maxFrames` to control frame rate. VSync is incompatible with the 240 FPS working target (about 4.167 ms per frame) and with consistent frame pacing.
 
 ## Enforcement Points
 
@@ -176,3 +176,25 @@ Tradeoff: per-frame FPS logging would add I/O and distortion. The event is
 aggregated over one second and rate-limited to one record per second; it is not
 a substitute for a frame profiler. It is always emitted at `Important` under
 the `performance` category so a live reader can see FPS change over time.
+
+## NPC decision cadence and server tick budget (2026-11-17)
+
+Server NPC movement, collision, damage, and authoritative physics remain on the
+fixed 60 Hz tick. NPC sensing, target selection, navigation replanning, and
+state decisions may be staggered across ticks so each NPC thinks every third
+tick while every NPC still advances physics every tick. This spreads decision
+work without lowering the authoritative simulation rate.
+
+Staggering is a server budget tool, not a license to run collision, damage, or
+physics below 60 Hz. Evidence must show `actual_hz` near 60 and separate NPC
+phase costs (`sense_ms`, `npc_ms`, `navigator_ms`, `physics_ms`) so a stalled
+tick is attributed to its owner.
+
+## Performance report overlay modes (2026-11-16)
+
+The in-game performance report is specified in
+[perf-report-overlay.md](perf-report-overlay.md). Mode 2 (compact, sampled at
+1000 ms) is the default for sustained measurement. Mode 1 is live/full and is
+diagnostic only. Mode 3 is full detail sampled at 1000 ms and redrawn from
+cached lines. The report must expose its own `OVERLAY` cost and must emit a
+1 Hz `performance.report` journal event while enabled.

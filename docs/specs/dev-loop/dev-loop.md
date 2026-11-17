@@ -1,3 +1,8 @@
+2026 11 17 0917 jorj 
+
+" look at performance issues to see what the problem is and use events.jsonl data from the performance issues to implement fixes, trial/error, like do this loop over and over until we are at 240fps 99.99% of the time and server is 60hz or like 59.9-60.1hz 99.99% of the time
+look at events.jsonl for errors/logs, use that info to make a code change, make code change and get it to build/load live int he exe , no cold rebuild ideally, then repeat until goal is met"
+
 2026 11 05 1237
 
 1. put code into the game
@@ -1786,8 +1791,10 @@ Daemon`, and `MiMITA Dev Loop Dashboard`.
 
 Keep each status field stable and update it in place; never append the full
 status block again just because uptime or another value changed. The native
-window opens restored at 400x500 and remains resizable. Use a custom black
+window opens restored at 500x500 and remains resizable. Use a custom black
 title bar with minimize, maximize/restore, and close controls, plus resize edges.
+Keep launch/build and server/client/stop/restart controls visible in a fixed
+footer while status panels scroll independently above them.
 At compact sizes, show a concise build/runtime summary and the latest ten lines
 of build or loop activity; reveal full hashes, scenario evidence, and journal
 details as the window grows. Keep launch/build controls visible. The activity
@@ -2049,9 +2056,12 @@ The current source/spec comparison identifies these concrete gaps:
   command/control owner is gone. This does not meet section 19.1's availability
   check, which requires a live daemon PID, authenticated control socket, and
   fresh heartbeat.
-- `--auto-restart` is a client recovery option; it is not a daemon supervisor.
-  Closing the terminal, Ctrl-C, console termination, or an uncaught Python
-  exception can end the daemon while leaving the separately owned server.
+- `--auto-restart` is a client recovery option; it is not a daemon supervisor
+  and it must not replace a live client after a successful build. A dead client
+  may be relaunched; a live client remains on its current executable until an
+  explicit launch/restart request. Closing the terminal, Ctrl-C, console
+  termination, or an uncaught Python exception can end the daemon while leaving
+  the separately owned server.
 - `config/command-aliases.json` maps `ss` to
   `server_start_preset sandbox_1`. The desired behavior in networking
   section 67.1 is one idempotent start-or-rejoin action. The helper now

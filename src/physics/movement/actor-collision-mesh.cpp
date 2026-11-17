@@ -210,13 +210,17 @@ std::vector<ActorCollisionMesh> collectActorCollisionMeshes(Player& player)
     if ((!player.weaponCollisionDebug.valid || player.weaponCollisionDebug.usesJsonMesh) &&
         !player.weaponColliderMesh.empty())
     {
-        ActorCollisionMesh mesh;
-        mesh.label = "weapon";
-        mesh.localTriangles = &player.weaponColliderMesh;
-        mesh.previousTransform = player.previousWeaponModelTransform;
-        mesh.desiredTransform = player.weaponModelTransform;
-        mesh.affectsMovement = true;
-        meshes.push_back(mesh);
+        const glm::vec3 weaponOrigin(player.weaponModelTransform[3]);
+        if (glm::distance(weaponOrigin, glm::vec3(player.pos)) <= 5.0f)
+        {
+            ActorCollisionMesh mesh;
+            mesh.label = "weapon";
+            mesh.localTriangles = &player.weaponColliderMesh;
+            mesh.previousTransform = player.previousWeaponModelTransform;
+            mesh.desiredTransform = player.weaponModelTransform;
+            mesh.affectsMovement = true;
+            meshes.push_back(mesh);
+        }
     }
 
     // Future held objects / tools append here with the same representation.

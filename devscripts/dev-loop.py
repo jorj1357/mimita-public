@@ -2599,7 +2599,7 @@ class DevLoop:
                 self.record_control_event(request, "accepted", self.last_message)
                 self.save_state("game_build_queued")
             elif action == "cold-link-trial":
-                trial = subprocess.run(
+                trial = run_hidden(
                     [sys.executable,
                      str(ROOT / "devscripts" / "exe_cold_link_trial.py"),
                      "--link"],
@@ -3051,7 +3051,7 @@ class DevLoop:
                         else "published_current"
                     )
                     try:
-                        cutover = subprocess.run(
+                        cutover = run_hidden(
                             [sys.executable,
                              str(ROOT / "devscripts" / "exe_cutover_gate.py"),
                              "--report-only"],
@@ -3065,7 +3065,7 @@ class DevLoop:
                     except OSError:
                         pass
                     try:
-                        cap_render = subprocess.run(
+                        cap_render = run_hidden(
                             [sys.executable,
                              str(ROOT / "devscripts" / "cap_render_gate.py"),
                              "--report-only"],
@@ -3088,11 +3088,15 @@ class DevLoop:
                 self.build_requests = dict(list(self.build_requests.items())[-32:])
                 self.build_pending = self.build_pending or bool(self.pending_build_request_ids)
                 pending_launch = success and self.launch_after_build and not self.shutting_down
-                auto_replace = bool(
-                    success and not self.shutting_down and not pending_launch and self.auto_restart
-                    and any(process.poll() is None for process in self.processes)
-                    and not self.latest_stale
-                )
+                live_process = any(process.poll() is None for process in self.processes)
+                if success and not pending_launch and live_process and not self.latest_stale:
+                    self.record_runtime_event(
+                        "dev-loop.build.published_live_process_unchanged",
+                        {"build": self.latest_build,
+                         "pid": [process.pid for process in self.processes
+                                 if process.poll() is None]},
+                        "build published; live games remain on their current executable",
+                    )
                 if pending_launch:
                     self.launch_after_build = False
 
@@ -3103,7 +3107,7 @@ class DevLoop:
             else:
                 print(f"[DEV] {self.last_message}; the last successful build is retained")
 
-            if pending_launch or auto_replace:
+            if _should_relaunch_after_build(pending_launch):
                 self.last_message = (
                     f"launching build {self.latest_build} after successful publication"
                 )
@@ -4327,7 +4331,7 @@ class DevLoop:
         last_output = "hot-client gate did not run"
         while time.time() < deadline:
             try:
-                result = subprocess.run(
+                result = run_hidden(
                     [sys.executable, str(ROOT / "devscripts" / "hot_client_gate.py"),
                      journal_path, "--json", str(result_path)],
                     cwd=ROOT, text=True, capture_output=True, check=False)
@@ -6516,6 +6520,10 @@ def _manual_build_override_enabled() -> bool:
 
 def _build_request_authorized(requested_by: str) -> bool:
     return str(requested_by or "ai").strip().lower() in ("human", "dashboard")
+
+
+def _should_relaunch_after_build(pending_launch: bool) -> bool:
+    return bool(pending_launch)
 
 
 def _refuse_agent_build_request(action: str) -> int:

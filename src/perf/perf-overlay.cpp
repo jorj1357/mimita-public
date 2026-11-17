@@ -1,10 +1,14 @@
 #include "perf/perf.h"
 #include "perf/perf-accounting.h"
+#include "perf/perf-report-state.h"
+#include "perf/perf-spike.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "video/frame-pacer.h"
@@ -14,15 +18,219 @@
 extern FramePacer gFramePacer;
 extern PerfState gState;
 
+namespace {
+
+struct OverlayLine {
+    std::string text;
+    glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
+};
+
+struct TimerValue {
+    const char* label;
+    double ms;
+};
+
+uint64_t overlayNowUs()
+{
+    using namespace std::chrono;
+    return (uint64_t)duration_cast<microseconds>(
+        steady_clock::now().time_since_epoch()).count();
+}
+
+void addTimer(std::vector<TimerValue>& out, const char* label, double ms)
+{
+    if (ms > 0.001)
+        out.push_back({label, ms});
+}
+
+float renderSampledPerfReport(int mode, float sw)
+{
+    static PerfFrameAccounting cached;
+    static std::vector<OverlayLine> lines;
+    static uint64_t lastBuildUs = 0;
+    static int cachedMode = -1;
+
+    const uint64_t now = overlayNowUs();
+    const uint64_t intervalUs =
+        (uint64_t)Perf::reportSampleMs() * 1000ull;
+    if (lines.empty() || cachedMode != mode ||
+        now - lastBuildUs >= intervalUs) {
+        cached = gPerfFrameAccounting;
+        cachedMode = mode;
+        lastBuildUs = now;
+        lines.clear();
+
+        const float ms = gFramePacer.frameTimeMs();
+        const int fps = ms > 0.0f ? (int)(1000.0f / ms + 0.5f) : 0;
+        const int avgFps = gFramePacer.avgFrameTimeMs() > 0.0f
+            ? (int)(1000.0f / gFramePacer.avgFrameTimeMs() + 0.5f) : 0;
+        const float budget = gFramePacer.targetFrameTimeMs();
+        const double cycleMs = cached.cycleMs > 0.0 ? cached.cycleMs : (double)ms;
+        auto pct = [&](double value) {
+            return cycleMs > 0.0 ? 100.0 * value / cycleMs : 0.0;
+        };
+        char buf[192];
+
+        std::snprintf(buf, sizeof(buf), "FPS: %d  AVG: %d", fps, avgFps);
+        lines.push_back({buf, {0.3f, 1.0f, 0.5f, 1.0f}});
+        std::snprintf(buf, sizeof(buf), "FRAME: %.2fms  BUDGET: %.2fms",
+                      ms, budget);
+        lines.push_back({buf, {0.3f, 1.0f, 0.5f, 1.0f}});
+        std::snprintf(buf, sizeof(buf), "MAX: %.2fms", gState.maxFrameTimeMs);
+        lines.push_back({buf, {1.0f, 0.7f, 0.4f, 1.0f}});
+
+        if (cached.valid) {
+            std::snprintf(buf, sizeof(buf),
+                          "HOST GAP: %.2fms (%.1f%%)  GAME: %.2fms (%.1f%%)",
+                          cached.hostGapMs, pct(cached.hostGapMs),
+                          cached.rootAccountedMs, pct(cached.rootAccountedMs));
+            lines.push_back({buf, {1.0f, 0.85f, 0.4f, 1.0f}});
+            std::snprintf(buf, sizeof(buf),
+                          "SWAP: %.2fms  SLEEP: %.2fms  UNACCOUNTED: %.2fms",
+                          cached.swapMs, cached.sleepMs, cached.unaccountedMs);
+            lines.push_back({buf, {1.0f, 0.5f, 0.5f, 1.0f}});
+        } else {
+            lines.push_back({"warming up", {1.0f, 0.5f, 0.5f, 1.0f}});
+        }
+
+        std::snprintf(buf, sizeof(buf), "OVERLAY: %.2fms", cached.overlayMs);
+        lines.push_back({buf, {0.7f, 0.7f, 1.0f, 1.0f}});
+
+        if (cached.serverValid) {
+            char actual[32];
+            if (cached.serverActualValid)
+                std::snprintf(actual, sizeof(actual), "%.1f Hz",
+                              cached.serverActualHz);
+            else
+                std::snprintf(actual, sizeof(actual), "n/a");
+            std::snprintf(buf, sizeof(buf),
+                          "SERVER RX: %.1f Hz  ACTUAL: %s  TICK: %u%s",
+                          cached.serverRxHz, actual, cached.serverTick,
+                          cached.serverStale ? " (stale)" : "");
+            lines.push_back({buf, {0.5f, 1.0f, 0.9f, 1.0f}});
+        } else {
+            lines.push_back({"SERVER: off", {0.6f, 0.8f, 0.9f, 1.0f}});
+        }
+
+        if (cached.publishedGeneration[0])
+        {
+            std::snprintf(buf, sizeof(buf), "GEN: %s",
+                          cached.publishedGeneration);
+            lines.push_back({buf, {0.7f, 0.7f, 0.8f, 1.0f}});
+        }
+
+        const int scopeLimit = mode == 3
+            ? cached.scopeCount
+            : std::min(5, cached.scopeCount);
+        if (scopeLimit > 0) {
+            lines.push_back({"[Frame Scopes]", {0.5f, 0.8f, 1.0f, 1.0f}});
+            for (int i = 0; i < scopeLimit; ++i) {
+                const PerfAccountedScope& scope = cached.scopes[i];
+                std::snprintf(buf, sizeof(buf), "%s: %.2fms (%.1f%%)",
+                              scope.label, scope.selfMs, pct(scope.selfMs));
+                lines.push_back({buf, {0.8f, 0.95f, 1.0f, 1.0f}});
+            }
+        }
+
+        std::vector<TimerValue> timers;
+        const PerfTimes& t = cached.times;
+        addTimer(timers, "Input", t.input);
+        addTimer(timers, "Setup", t.setup);
+        addTimer(timers, "Audio", t.audio);
+        addTimer(timers, "State", t.state);
+        addTimer(timers, "Replay", t.replay);
+        addTimer(timers, "Networking", t.networking);
+        addTimer(timers, "Camera", t.camera);
+        addTimer(timers, "Combat", t.combat);
+        addTimer(timers, "UI", t.ui);
+        addTimer(timers, "Physics", t.physics);
+        addTimer(timers, "SweepSlide", t.sweepSlide);
+        addTimer(timers, "Depenetration", t.depenetration);
+        addTimer(timers, "GroundDetection", t.groundDetection);
+        addTimer(timers, "ChunkQuery", t.chunkQuery);
+        addTimer(timers, "BodyWeaponColl.", t.weaponCollisions);
+        addTimer(timers, "Movement", t.movement);
+        addTimer(timers, "NPC Update", t.npcUpdate);
+        addTimer(timers, "NPC Think", t.npcThink);
+        addTimer(timers, "NPC Pathfinding", t.npcPathfinding);
+        addTimer(timers, "NPC Combat", t.npcCombat);
+        addTimer(timers, "NPC Collision", t.npcCollision);
+        addTimer(timers, "NPC Render", t.npcRender);
+        addTimer(timers, "Weapons", t.weapons);
+        addTimer(timers, "Projectiles", t.projectiles);
+        addTimer(timers, "Particles", t.particles);
+        addTimer(timers, "Blood", t.blood);
+        addTimer(timers, "Damage Numbers", t.damageNumbers);
+        addTimer(timers, "Rendering", t.rendering);
+        addTimer(timers, "ShadowRender", t.shadowRender);
+        addTimer(timers, "PostFX", t.postFX);
+        addTimer(timers, "WorldRender", t.worldRender);
+        addTimer(timers, "PlayerRender", t.playerRender);
+        addTimer(timers, "WeaponRender", t.weaponRender);
+        addTimer(timers, "EffectRender", t.effectRender);
+        addTimer(timers, "WorldCulling", t.worldCulling);
+        addTimer(timers, "MapTraversal", t.mapTraversal);
+        std::sort(timers.begin(), timers.end(),
+                  [](const TimerValue& a, const TimerValue& b) {
+                      return a.ms > b.ms;
+                  });
+        const int timerLimit = mode == 3
+            ? (int)timers.size()
+            : std::min<int>(5, (int)timers.size());
+        if (timerLimit > 0) {
+            lines.push_back({"[Timers]", {0.5f, 0.8f, 1.0f, 1.0f}});
+            for (int i = 0; i < timerLimit; ++i) {
+                std::snprintf(buf, sizeof(buf), "%s: %.2fms (%.1f%%)",
+                              timers[(size_t)i].label, timers[(size_t)i].ms,
+                              pct(timers[(size_t)i].ms));
+                lines.push_back({buf, {0.9f, 0.95f, 1.0f, 1.0f}});
+            }
+        }
+
+        if (mode == 3 &&
+            (gState.snapshotBuildMs > 0.0 || gState.serializeMs > 0.0 ||
+             gState.receiveMs > 0.0)) {
+            lines.push_back({"[Network Timing]", {0.5f, 1.0f, 0.5f, 1.0f}});
+            std::snprintf(buf, sizeof(buf), "Snapshot Build: %.2fms",
+                          gState.snapshotBuildMs);
+            lines.push_back({buf, {0.8f, 1.0f, 0.8f, 1.0f}});
+            std::snprintf(buf, sizeof(buf), "Serialize: %.2fms",
+                          gState.serializeMs);
+            lines.push_back({buf, {0.8f, 1.0f, 0.8f, 1.0f}});
+            std::snprintf(buf, sizeof(buf), "Receive: %.2fms",
+                          gState.receiveMs);
+            lines.push_back({buf, {0.8f, 1.0f, 0.8f, 1.0f}});
+        }
+    }
+
+    const float x = sw - 310.0f;
+    float y = 8.0f;
+    const float lineH = 17.0f;
+    const float small = mode == 3 ? 0.26f : 0.28f;
+    for (const OverlayLine& line : lines) {
+        uiDrawText(line.text.c_str(), x, y, small, line.color);
+        y += lineH;
+    }
+    return y;
+}
+
+}  // namespace
+
 void Perf::renderOverlay()
 {
+    MIMITA_PERF_SCOPE("Perf::Overlay");
     PerfState& s = gState;
     PerfFrameAccounting& acct = gPerfFrameAccounting;
+    const int reportMode = Perf::reportMode();
     float sw = uiScreenW();
     float reportBottomY = 8.0f;
     float npcBottomY = 8.0f;
 
-    if (s.showPerfReport)
+    if (reportMode == 2 || reportMode == 3)
+    {
+        reportBottomY = renderSampledPerfReport(reportMode, sw);
+    }
+    else if (s.showPerfReport && reportMode == 1)
     {
         float x = sw - 310.0f;
         float y = 8.0f;
@@ -106,6 +314,33 @@ void Perf::renderOverlay()
         {
             text("HOST GAP: warming up  GAME: --  UNACCOUNTED: --",
                  {1.0f, 0.5f, 0.5f, 1.0f});
+        }
+
+        snprintf(buf, sizeof(buf), "OVERLAY: %.2fms", acct.overlayMs);
+        text(buf, {0.7f, 0.7f, 1.0f, 1.0f});
+
+        if (acct.serverValid)
+        {
+            char actual[32];
+            if (acct.serverActualValid)
+                snprintf(actual, sizeof(actual), "%.1f Hz", acct.serverActualHz);
+            else
+                snprintf(actual, sizeof(actual), "n/a");
+            snprintf(buf, sizeof(buf),
+                     "SERVER RX: %.1f Hz  ACTUAL: %s  TICK: %u%s",
+                     acct.serverRxHz, actual, acct.serverTick,
+                     acct.serverStale ? " (stale)" : "");
+            text(buf, {0.5f, 1.0f, 0.9f, 1.0f});
+        }
+        else
+        {
+            text("SERVER: off", {0.6f, 0.8f, 0.9f, 1.0f});
+        }
+
+        if (acct.publishedGeneration[0])
+        {
+            snprintf(buf, sizeof(buf), "GEN: %s", acct.publishedGeneration);
+            text(buf, {0.7f, 0.7f, 0.8f, 1.0f});
         }
 
         double gpuMs = 0.0;

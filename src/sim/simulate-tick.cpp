@@ -466,7 +466,8 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     // occupied chassis and produces the repeating 0.7-1.1 m seat snap.
     if (!sim.player->dead && !sim.player->ragdollModeActive &&
         !VehicleSystem::instance().hasLocalDriver())
-        containAndLogPlayerFinalPose(*sim.player, *sim.world, "post_animation");
+    { MIMITA_PERF_SCOPE("Simulation::FinalPose");
+      containAndLogPlayerFinalPose(*sim.player, *sim.world, "post_animation"); }
 
     {
         MIMITA_PERF_SCOPE("NpcUpdate");
@@ -483,7 +484,6 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         static thread_local std::vector<Npc*> collisionNpcs;
         collisionActors.clear();
         collisionNpcs.clear();
-
         const ActorCollisionConfig& collisionConfig =
             ActorCollisionConfig::instance();
         const ActorCollisionData& collisionData = collisionConfig.data();
@@ -495,6 +495,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 ? MimitaNet::CommunityMatchClient::instance().actorPresetId()
                 : std::string();
 
+        { MIMITA_PERF_SCOPE("ActorPair::Build");
         ActorPairCollisionActor localActor;
         localActor.id = mpContext.active ? mpContext.localPlayerId : 0u;
         localActor.kind = ActorPairKind::Player;
@@ -540,7 +541,6 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             collisionNpcs.push_back(&npc);
         }
 
-        const std::size_t localNpcActorCount = collisionNpcs.size();
         if (mpContext.active)
         {
             for (const auto& entry : mpContext.remotePlayers)
@@ -583,12 +583,16 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             }
         }
 
+        } // ActorPair::Build
+
+        const std::size_t localNpcActorCount = collisionNpcs.size();
         collisionOutputs.assign(collisionActors.size(), ActorPairCollisionOutput{});
         ActorPairCollisionStats collisionStats;
+        { MIMITA_PERF_SCOPE("ActorPair::Resolve");
         resolveActorPairCollisions(collisionActors.data(), collisionActors.size(),
                                    TICK_DT, collisionData,
                                    collisionOutputs.data(), &collisionStats,
-                                   "client", sim.tick);
+                                   "client", sim.tick); }
 
         Perf::state().current.collisionPairs =
             static_cast<int>(collisionStats.candidatePairs);
@@ -620,8 +624,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             }
             sim.player->updateModelWorldTransforms();
             if (!sim.player->dead && !sim.player->ragdollModeActive)
-                containAndLogPlayerFinalPose(*sim.player, *sim.world,
-                                             "post_actor_pair");
+            { MIMITA_PERF_SCOPE("ActorPair::FinalPose");
+              containAndLogPlayerFinalPose(*sim.player, *sim.world,
+                                           "post_actor_pair"); }
         }
 
         for (std::size_t i = 0; i < localNpcActorCount; ++i)

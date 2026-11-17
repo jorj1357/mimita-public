@@ -369,7 +369,7 @@ src/game/game-objects-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=3,1
 src/game/gamemode-manager.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: DebugLog, DebugVis, GamemodeRegistry, GuiLayoutManager, MapConfigRegistry, TerminalState",371,936030d64ca5e26427e824c4e5bf951f5a44370fb9438a1e3d1baa59acc11bd1
 src/game/gl-resource-bridge-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=1,58,0e8007a2a5e41560f0d5448d3560265d0fc112d736f0e12f7a807a5bb0a71804
 src/game/host-compat-bridge-module.cpp,game,STATIC_CLOSED,pure nowMs and CAP_LOG crash-breadcrumb bridge; no persistent state/resource,52,5032be022dc361ed7c54c4526fc262c2c7af2010bb56562d7fbfadae7f70b9a7
-src/game/host-log-bridge-module.cpp,game,STATIC_CLOSED,CAP_LOG bridge; generation-scoped capability pointers; no persistent state/resource,214,962a5651ac0d7ba6243bf96782d04d68908c7718d636dd76c0702ecf54b10061
+src/game/host-log-bridge-module.cpp,game,STATIC_CLOSED,CAP_LOG bridge; generation-scoped capability pointers; no persistent state/resource,222,c23fd3fc55fdc26a91e6d920401e0429e008bf6d6f0a9476946e26f5ec8c6d18
 src/game/hot-status-tips.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,290,728f44998c32346fc794fa523dc16978c0b124c0eeafd62fea7afbb53cab5670
 src/game/ice-session-bridge-module.cpp,game,RUNTIME_PROOF_REQUIRED,callback hits=1,128,01b6a1b624b03f6066db48726e9931ebeaa20e13e2896698e834d2c15b8a37ff
 src/game/job-bridge-module.cpp,game,RUNTIME_PROOF_REQUIRED,callback hits=3,82,604eb92fbd894729e2f36c8b65504438a8843cf40c544b12a70d9413cd0e5dd2
@@ -507,7 +507,7 @@ src/killfeed/killfeed.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: Deb
 src/leaderboard/leaderboard-ui.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,140,a03092390c1c5a6ed7628b5a17d5d1f18148bfa81d522082f2b68bfb70de2f95
 src/main-init.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl; network context,291,eddd3836d2b0674eac83af8e8afb937de3bc9f7fdc1a816cbc450be5181fc83a
 src/main-systems.cpp,game,RUNTIME_PROOF_REQUIRED,network context,1394,188b11b9d2a8ff63bddcad0b040862d2d492559ffa92a35dbfaa70de3f685492
-src/main.cpp,bootstrap,RESIDENT_HOST,owner=bootstrap,759,b831499bb24d2f3a478a8ae725d83f27698bd0766f50954ce951fd1ddef8fb72
+src/main.cpp,bootstrap,RESIDENT_HOST,owner=bootstrap,759,955d62d14501a7a8477cb8293e354afa2b0c56c76f9055199214f5af372c7659
 src/map/map-authored-geometry.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,1659,1bd6087e45050b199b3157afe34685ab27c1fd21cec3d739bb72c5a4f2e537cc
 src/map/map-catalog.cpp,game,STATIC_CLOSED,pure filesystem catalog scan; no persistent handle or service,130,bf893829cee2657d57c842cd251530e9b52c013ed4770b0ed6bf91a6fd1a5b47
 src/map/map-geometry-module.cpp,game,STATIC_STATE_REVIEW,global/extern keyword mentions=1,157,31338bbf3e7084c6e2f9e8f467d66d48500986bc5b420ce7a2affb90feaf2a63

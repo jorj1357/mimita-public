@@ -49,6 +49,10 @@ class ManualBuildGuardTests(unittest.TestCase):
         self.assertFalse(self.dev_loop._build_request_authorized("ai"))
         self.assertFalse(self.dev_loop._build_request_authorized(""))
 
+    def test_build_completion_never_auto_replaces_live_process(self) -> None:
+        self.assertFalse(self.dev_loop._should_relaunch_after_build(False))
+        self.assertTrue(self.dev_loop._should_relaunch_after_build(True))
+
     def test_cli_refuses_manual_build_without_override(self) -> None:
         env = {key: value for key, value in os.environ.items()
                if key != "MIMITA_BUILD_OVERRIDE"}

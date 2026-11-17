@@ -5,12 +5,15 @@
 // Does NOT own build state, file polling threads, or a persistent HUD.
 #pragma once
 
+#include <string>
+
 namespace mimita::game {
 
 class HotStatusTips {
 public:
     static HotStatusTips& instance();
     void update();
+    std::string currentGeneration() const;
 
 private:
     HotStatusTips();

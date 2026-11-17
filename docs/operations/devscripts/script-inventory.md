@@ -1,6 +1,6 @@
 # Development script inventory
 
-As recorded: 2026-11-16  
+As recorded: 2026-11-17  
 Scope: `devscripts/` tooling and the repository entry points that invoke it.
 
 ## How to read this document
@@ -46,6 +46,7 @@ changelog is history, not current status.
 | `devscripts/build_exclusive.py` | Canonical | Checkout-level build mutex. | lock file | lock file | imported by `build.py` |
 | `devscripts/module_ownership.py` | Canonical | Single source for module/EXE source ownership and the cold source set. | module catalog, source manifest | none | imported by build/gates |
 | `devscripts/source_manifest.py` | Canonical | Captures one coherent source revision, headers, dependencies, and exactly one owner per source. | `config/source-owners.json`, module catalog, source tree | `build/source-manifest.json` | before builds and ownership checks |
+| `devscripts/dependency_graph.py` | Report-only | Reports compiler-derived direct/transitive dependents, header fan-in, stale `.d` files, and hot-to-cold include edges. | `.d` files, `build/source-manifest.json` | optional `build/reports/dependency-graph.json` | before shared-header or hot-boundary changes |
 | `devscripts/resident_state_codegen.py` | Canonical | Generates resident state domain structs/masks from the state schema. | `config/hot-reload/state-schema.json` | `src/host/generated/resident-state-v1.h`, state ledger | when state schema changes |
 | `devscripts/packet_registry_codegen.py` | Canonical | Generates packet paths/registry from actual dispatch and references. | source dispatch, packet schemas | packet ledger/registry | when packet code changes |
 | `devscripts/module-build-worker.py` | Deferred | Legacy subsystem ModuleV1 DLL worker. Module lanes are deferred; do not use for normal work. | module catalog | module DLL artifacts | deferred |
@@ -148,3 +149,4 @@ audited.
 - [Runtime scenario validation](../../workflows/runtime-scenario-validation.md)
 - [Build and EXE](../../operations/build-and-exe/build-and-exe.md)
 - [Cold-change guard](cold-change-guard.md)
+- [Dependency graph](dependency-graph.md)

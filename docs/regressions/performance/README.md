@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 11
+Entries: 13
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -94,4 +94,11 @@ Entries: 11
 - Status: OPEN — measured client frame windows are over the 4 ms / 240 FPS target; fix not accepted
 - Summary: Current resident and hot clients complete only about 10–50 ms average frames. 100% of sampled frames exceed 4 ms. The largest measured scopes are simulation lifecycle, actor-pair collision, hot-reload/module polling, weapon containment, shadows, UI, and swap. Cosmetic rendering is not the measured CPU bottleneck.
 - Detail: [fps-frame-budget-REG-2026-11-15.md](fps-frame-budget-REG-2026-11-15.md)
+
+## Entry 13 — Unaccounted frame time was computed from the wrong frame
+
+- Recorded: 2026-11-16T20:45:00Z
+- Status: SOURCE CORRECTED — live accounting observed; 240 FPS target remains open
+- Summary: The overlay compared the previous full `gFramePacer` cycle to the current partial legacy `PerfTimes` totals. It now uses the completed frame's `gPerfScopes`, names the host gap, and reports the true residual. Observed residual dropped to 0.04 ms; `GAME` remained about 31 ms in the same scene.
+- Detail: [unaccounted-frame-time-REG-2026-11-16.md](unaccounted-frame-time-REG-2026-11-16.md)
 

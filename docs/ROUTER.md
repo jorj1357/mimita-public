@@ -90,7 +90,7 @@ systems first. Use this default order:
 | Animation, rigs, monster/NPC clips, arbitrary body parts, flying/crawling actors | `docs/specs/animations/animations.md`, `docs/specs/avatar/avatar-editor.md`, `docs/skills/spec-behavior-review-v1.md` |
 | Multiplayer or server behavior | `docs/specs/networking/networking.md`, `docs/specs/gamemodes/gamemodes.md` |
 | Logging or diagnostics | `docs/specs/debug-logging/debug-logging.md`, `docs/skills/logging-checker-v1.md` |
-| Performance | `docs/specs/performance/performance.md`, `docs/skills/efficiency-checker-v1.md` |
+| Performance | `docs/specs/performance/performance.md`, `docs/specs/performance/perf-report-overlay.md`, `docs/skills/efficiency-checker-v1.md` |
 | Terminal commands | `docs/architecture/terminal-commands/terminal-commands.md`, `docs/skills/terminal-command-checker-v1.md` |
 | Runtime behavior validation | `docs/workflows/runtime-scenario-validation.md`, `docs/specs/dev-loop/quality-gates.md`, `docs/specs/debug-logging/debug-logging.md`, `docs/architecture/terminal-commands/terminal-commands.md` |
 | Human-recorded scenarios, replay checkpoints, or collision trace capture | `docs/specs/dev-loop/scenario-input-recording.md`, `docs/workflows/runtime-scenario-validation.md`, `docs/specs/debug-logging/debug-logging.md`, `docs/specs/dev-loop/quality-gates.md` |

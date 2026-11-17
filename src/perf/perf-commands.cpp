@@ -1,7 +1,10 @@
 #include "perf/perf.h"
+#include "perf/perf-report-state.h"
 #include "perf/perf-spike.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <cstdint>
 
 #include "debug/structured-log.h"
 #include "devtools/terminal.h"
@@ -18,20 +21,19 @@ void registerPerfCommands()
 {
     auto& t = Terminal::instance();
 
-    // Umbrella toggle: enable/disable all perf overlays
+    // Performance report mode: 0 off, 1 live/full, 2 compact sampled (default),
+    // 3 full sampled.
     t.registerCommand({
         "perf",
-        "Toggle all performance overlays (report, graph, NPC, memory, spikes)",
-        "perf [0|1]",
+        "Set performance report mode: 0 off, 1 live/full, 2 compact sampled (default), 3 full sampled",
+        "perf [0|1|2|3]",
         [](const std::vector<std::string>& args) {
-            PerfState& s = Perf::state();
-            bool val = args.empty() ? !s.showPerfReport : args[0] != "0";
-            s.showPerfReport = val;
-            s.showGraph = val;
-            s.showNpcPerf = val;
-            s.showMemory = val;
-            s.showSpikes = val;
-            Terminal::instance().addLog(std::string("[PERF] perf=") + (val ? "ON" : "OFF"));
+            int mode = Perf::reportMode() > 0 ? 0 : 2;
+            if (!args.empty())
+                mode = std::atoi(args[0].c_str());
+            Perf::setReportMode(mode);
+            Terminal::instance().addLog("[PERF] mode=" +
+                std::to_string(Perf::reportMode()));
         }
     });
 
@@ -83,16 +85,29 @@ void registerPerfCommands()
     // Part 2: Performance report
     t.registerCommand({
         "perf_report",
-        "Toggle detailed performance overlay (FPS, CPU, GPU, draw calls, entities, effects)",
-        "perf_report [0|1]",
+        "Performance overlay: 0 off, 1 live/full, 2 compact sampled (default), 3 full sampled",
+        "perf_report [0|1|2|3]",
         [](const std::vector<std::string>& args) {
-            if (args.empty())
-                Perf::togglePerfReport();
-            else
-                Perf::state().showPerfReport = args[0] == "1";
-            Perf::setDeepProfiling(Perf::state().showPerfReport);
+            int mode = Perf::reportMode() > 0 ? 0 : 2;
+            if (!args.empty())
+                mode = std::atoi(args[0].c_str());
+            Perf::setReportMode(mode);
+            Perf::setDeepProfiling(mode > 0);
             Terminal::instance().addLog(std::string("[PERF] perf_report=") +
-                (Perf::state().showPerfReport ? "ON" : "OFF"));
+                (mode > 0 ? "ON" : "OFF") + " mode=" +
+                std::to_string(Perf::reportMode()));
+        }
+    });
+
+    t.registerCommand({
+        "perf_sample_ms",
+        "Set sampled performance report interval in milliseconds (100-10000)",
+        "perf_sample_ms [ms]",
+        [](const std::vector<std::string>& args) {
+            if (!args.empty())
+                Perf::setReportSampleMs((uint32_t)std::atoi(args[0].c_str()));
+            Terminal::instance().addLog("[PERF] sample_ms=" +
+                std::to_string(Perf::reportSampleMs()));
         }
     });
 

@@ -33,6 +33,13 @@ def _write_json(path: Path, payload: dict) -> None:
 
 
 def _run_checked(root: Path, command: list[str], on_output) -> int:
+    startupinfo = None
+    creationflags = 0
+    if os.name == "nt":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     process = subprocess.Popen(
         command,
         cwd=root,
@@ -41,6 +48,9 @@ def _run_checked(root: Path, command: list[str], on_output) -> int:
         stderr=subprocess.STDOUT,
         bufsize=1,
         env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        creationflags=creationflags,
+        startupinfo=startupinfo,
+        close_fds=os.name == "nt",
     )
     assert process.stdout is not None
     for line in process.stdout:

@@ -423,7 +423,7 @@ def ccache_stats():
     if not os.path.isfile(CCACHE):
         return {}
     try:
-        result = subprocess.run(
+        result = run_tool(
             [CCACHE, "--print-stats", "--format=json"],
             env=os.environ.copy(), capture_output=True, text=True, timeout=15)
         if result.returncode != 0 or not result.stdout.strip():
@@ -1224,7 +1224,7 @@ if not os.path.isfile(link_candidate) or os.path.getsize(link_candidate) == 0:
                    link_reason=link_reason)
     sys.exit(1)
 
-cold_gate = subprocess.run(
+cold_gate = run_tool(
     [sys.executable, os.path.join(ROOT, "devscripts", "build_target_gate.py"),
      "--link-inputs", os.path.relpath(LINK_INPUTS, ROOT),
      "--require-cold-zero"],

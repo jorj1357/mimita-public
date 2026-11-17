@@ -2125,6 +2125,7 @@ grow over time under the configured quota; do not create parallel log files.
 | `npc.anim.playback` | `animation` | off | clip, speed, playback rate |
 | `effect.freeze` / `effect.down_dash` | `rendering` | important | actor, effect id, spawned, culled |
 | `performance.fps` | `performance` | important | fps, frame quantiles, budget, over-budget frames |
+| `performance.report` | `performance` | important | mode, host/game/swap/sleep/unaccounted, overlay, server RX/actual/tick, generation, top scopes |
 | `hot-status.notice` | `general` | important | generation, result, phase, files |
 
 AI workflow:

@@ -19,8 +19,8 @@ RED = "#ff0000"
 GREEN = "#00ff00"
 WHITE = "#ffffff"
 FONT_PATH = Path(r"C:\important\mingliu-font\mingliu.ttf")
-MIN_WIDTH = 760
-MIN_HEIGHT = 680
+MIN_WIDTH = 500
+MIN_HEIGHT = 500
 APP_USER_MODEL_ID = "MiMITA.DevLoop.Dashboard"
 
 
@@ -154,7 +154,7 @@ def run(status_provider: Callable[[], dict],
     root.overrideredirect(True)
     root.resizable(True, True)
     root.minsize(MIN_WIDTH, MIN_HEIGHT)
-    root.geometry("1120x900")
+    root.geometry("500x500")
     root.configure(background=BLACK)
 
     state = {
@@ -291,7 +291,7 @@ def run(status_provider: Callable[[], dict],
     content = tk.Frame(shell, bg=BLACK, padx=7, pady=5)
     content.grid(row=1, column=0, sticky="nsew")
     content.grid_columnconfigure(0, weight=1)
-    content.grid_rowconfigure(5, weight=1)
+    content.grid_rowconfigure(2, weight=1)
 
     caption_buttons = tk.Frame(titlebar, bg=BLACK)
     caption_buttons.grid(row=0, column=1, sticky="e", padx=(0, 4))
@@ -424,8 +424,38 @@ def run(status_provider: Callable[[], dict],
     subtitle = label(content, "Connecting to the build/runtime service…", size=10)
     subtitle.grid(row=1, column=0, sticky="ew", pady=(0, 4))
 
-    cards = tk.Frame(content, bg=BLACK)
-    cards.grid(row=2, column=0, sticky="ew")
+    body_shell = tk.Frame(content, bg=BLACK)
+    body_shell.grid(row=2, column=0, sticky="nsew")
+    body_shell.grid_rowconfigure(0, weight=1)
+    body_shell.grid_columnconfigure(0, weight=1)
+    body_canvas = tk.Canvas(body_shell, background=BLACK, highlightthickness=0, bd=0)
+    body_canvas.grid(row=0, column=0, sticky="nsew")
+    body_scroll = tk.Scrollbar(
+        body_shell, orient="vertical", command=body_canvas.yview,
+        bg=BLACK, troughcolor=BLACK, activebackground=RED,
+        highlightbackground=RED, bd=1)
+    body_scroll.grid(row=0, column=1, sticky="ns")
+    body_canvas.configure(yscrollcommand=body_scroll.set)
+    body = tk.Frame(body_canvas, bg=BLACK)
+    body.grid_columnconfigure(0, weight=1)
+    body_window = body_canvas.create_window((0, 0), window=body, anchor="nw")
+    body.bind("<Configure>", lambda _event: body_canvas.configure(
+        scrollregion=body_canvas.bbox("all")))
+    body_canvas.bind("<Configure>", lambda event: body_canvas.itemconfigure(
+        body_window, width=event.width))
+    def scroll_body(event):
+        left, top = body_canvas.winfo_rootx(), body_canvas.winfo_rooty()
+        right = left + body_canvas.winfo_width()
+        bottom = top + body_canvas.winfo_height()
+        if left <= event.x_root < right and top <= event.y_root < bottom:
+            body_canvas.yview_scroll(int(-event.delta / 120), "units")
+            return "break"
+        return None
+
+    body_canvas.bind_all("<MouseWheel>", scroll_body)
+
+    cards = tk.Frame(body, bg=BLACK)
+    cards.grid(row=0, column=0, sticky="ew")
     cards.grid_columnconfigure(0, weight=1)
     cards.grid_columnconfigure(1, weight=1)
 
@@ -448,8 +478,8 @@ def run(status_provider: Callable[[], dict],
     runtime_card, runtime_value, runtime_detail = make_card("Runtime and mode/map")
     scenario_card, scenario_value, scenario_detail = make_card("Scenario evidence")
 
-    checkout_card = frame(content, padx=5, pady=3)
-    checkout_card.grid(row=3, column=0, sticky="ew", pady=(3, 0))
+    checkout_card = frame(body, padx=5, pady=3)
+    checkout_card.grid(row=1, column=0, sticky="ew", pady=(3, 0))
     checkout_card.grid_columnconfigure(0, weight=1)
     label(checkout_card, "CHECKOUTS AND AGENT LANES", size=9, bold=True).grid(
         row=0, column=0, sticky="w")
@@ -472,8 +502,8 @@ def run(status_provider: Callable[[], dict],
         "<Configure>", lambda event: checkout_canvas.itemconfigure(
             checkout_rows_window, width=event.width))
 
-    process_card = frame(content, padx=5, pady=3)
-    process_card.grid(row=4, column=0, sticky="ew", pady=(3, 0))
+    process_card = frame(body, padx=5, pady=3)
+    process_card.grid(row=2, column=0, sticky="ew", pady=(3, 0))
     process_card.grid_columnconfigure(0, weight=1)
     process_card.grid_columnconfigure(1, weight=0)
     label(process_card, "MIMITA PROCESSES", size=9, bold=True).grid(
@@ -501,8 +531,8 @@ def run(status_provider: Callable[[], dict],
         "<Configure>",
         lambda event: process_canvas.itemconfigure(
             process_rows_window, width=event.width))
-    process_buttons = tk.Frame(process_card, bg=BLACK)
-    process_buttons.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(2, 0))
+    process_buttons = tk.Frame(content, bg=BLACK)
+    process_buttons.grid(row=3, column=0, sticky="ew", pady=(3, 0))
     for column in range(4):
         process_buttons.grid_columnconfigure(column, weight=1)
 
@@ -511,7 +541,7 @@ def run(status_provider: Callable[[], dict],
     refresh_process_button.grid(row=0, column=1, sticky="e")
 
     details = frame(content, padx=5, pady=3)
-    details.grid(row=5, column=0, sticky="nsew", pady=(1, 0))
+    details.grid(row=4, column=0, sticky="ew", pady=(3, 0))
     details.grid_columnconfigure(0, weight=1)
     label(details, "LATEST BUILD AND LOOP ACTIVITY  ·  LAST 10 LINES",
           size=9, bold=True).pack(anchor="w", pady=(0, 2))
@@ -520,7 +550,7 @@ def run(status_provider: Callable[[], dict],
     gutter = tk.Canvas(output_frame, width=28, bg=BLACK, highlightthickness=0,
                        bd=0, takefocus=False)
     gutter.pack(side="left", fill="y")
-    output = tk.Text(output_frame, height=10, wrap="word", state="disabled",
+    output = tk.Text(output_frame, height=5, wrap="word", state="disabled",
                      background=BLACK, foreground=RED, insertbackground=RED,
                      selectbackground="#660000", selectforeground=WHITE,
                      relief="flat", bd=0, highlightthickness=0,
@@ -552,13 +582,13 @@ def run(status_provider: Callable[[], dict],
     output.bind("<Configure>", lambda _event: update_gutter())
 
     action_status = label(content, "Ready", size=9)
-    action_status.grid(row=6, column=0, sticky="ew", pady=(3, 1))
+    action_status.grid(row=5, column=0, sticky="ew", pady=(3, 1))
     if state.get("window_registration_error"):
         action_status.configure(text=state["window_registration_error"])
     elif state.get("app_id_error"):
         action_status.configure(text="Windows app identity unavailable; taskbar window still enabled")
     controls = tk.Frame(content, bg=BLACK)
-    controls.grid(row=7, column=0, sticky="ew")
+    controls.grid(row=6, column=0, sticky="ew")
     controls.grid_columnconfigure(0, weight=3)
     controls.grid_columnconfigure(1, weight=1)
     controls.grid_columnconfigure(2, weight=1)

@@ -1,9 +1,13 @@
 #include "perf/perf.h"
 #include "perf/perf-accounting.h"
+#include "perf/perf-report-state.h"
 #include "perf/perf-spike.h"
 #include "perf/perf-gpu.h"
 #include "perf/perf-frame.h"
 #include "debug/structured-log.h"
+#include "game/hot-status-tips.h"
+#include "game/resident-state-module.h"
+#include "network/multiplayer-context.h"
 
 #include <algorithm>
 #include <array>
@@ -28,6 +32,39 @@ extern FramePacer gFramePacer;
 
 PerfState gState;
 PerfFrameAccounting gPerfFrameAccounting;
+
+namespace {
+int gReportMode = 0;
+int gLastReportMode = 2;
+uint32_t gReportSampleMs = 1000;
+}
+
+int Perf::reportMode() { return gReportMode; }
+
+void Perf::setReportMode(int mode)
+{
+    if (mode < 0) mode = 0;
+    if (mode > 3) mode = 3;
+    gReportMode = mode;
+    if (mode > 0)
+        gLastReportMode = mode;
+    gState.showPerfReport = mode > 0;
+    if (mode > 0) {
+        gState.maxFrameTimeMs = 0.0;
+        gState.maxPhysicsMs = 0.0;
+        gState.maxEntityPhysicsMs = 0.0;
+        gState.maxRenderingMs = 0.0;
+    }
+}
+
+uint32_t Perf::reportSampleMs() { return gReportSampleMs; }
+
+void Perf::setReportSampleMs(uint32_t ms)
+{
+    if (ms < 100) ms = 100;
+    if (ms > 10000) ms = 10000;
+    gReportSampleMs = ms;
+}
 
 static uint64_t nowUs()
 {
@@ -275,6 +312,44 @@ static void finalizeFrameAccounting(PerfState& s)
     next.swapMs = s.current.swapTime;
     next.sleepMs = s.current.sleepTime;
 
+    {
+        static uint64_t lastServerSampleUs = 0;
+        static uint32_t lastServerTick = 0;
+        static double serverRxHz = 0.0;
+        const uint64_t sampleNowUs = nowUs();
+        const auto* ctx = mimita::game::mpContextPtr();
+        const uint32_t serverTick = ctx ? ctx->latestServerTick : 0;
+        if (lastServerSampleUs == 0) {
+            lastServerSampleUs = sampleNowUs;
+            lastServerTick = serverTick;
+        }
+        const uint64_t elapsedUs = sampleNowUs - lastServerSampleUs;
+        if (elapsedUs >= 1000000ull) {
+            if (ctx && ctx->active && lastServerTick > 0 &&
+                serverTick >= lastServerTick) {
+                serverRxHz = (double)(serverTick - lastServerTick) /
+                    (double)elapsedUs * 1000000.0;
+            } else {
+                serverRxHz = 0.0;
+            }
+            lastServerTick = serverTick;
+            lastServerSampleUs = sampleNowUs;
+        }
+        next.serverRxHz = serverRxHz;
+        next.serverTick = serverTick;
+        next.serverValid = ctx && ctx->active;
+        next.serverStale = ctx && ctx->active &&
+            ctx->lastHeardServerMs > 0 &&
+            sampleNowUs / 1000ull > ctx->lastHeardServerMs + 2000ull;
+        next.serverActualValid = false;
+
+        const std::string generation =
+            mimita::game::HotStatusTips::instance().currentGeneration();
+        std::snprintf(next.publishedGeneration,
+                      sizeof(next.publishedGeneration), "%s",
+                      generation.c_str());
+    }
+
     double childSum[MAX_SCOPES_PER_FRAME] = {};
     for (int i = 0; i < gPerfScopeCount; ++i) {
         const int parent = gPerfScopes[i].parentIndex;
@@ -300,6 +375,8 @@ static void finalizeFrameAccounting(PerfState& s)
             std::strcmp(cap.label, "ProfilerOverhead") == 0)
             continue;
         const double inclMs = (double)cap.cyclesInclusive / 1000000.0;
+        if (std::strcmp(cap.label, "Perf::Overlay") == 0)
+            next.overlayMs = inclMs;
         double selfMs = inclMs - childSum[i];
         if (selfMs < 0.0)
             selfMs = 0.0;
@@ -339,7 +416,8 @@ static void finalizeFrameAccounting(PerfState& s)
 
     static uint64_t lastLogUs = 0;
     const uint64_t now = nowUs();
-    if ((s.showPerfReport || s.deepProfiling) && now - lastLogUs >= 1000000ull) {
+    if ((gReportMode > 0 || s.showPerfReport || s.deepProfiling) &&
+        now - lastLogUs >= 1000000ull) {
         lastLogUs = now;
         nlohmann::json top = nlohmann::json::array();
         for (int i = 0; i < next.scopeCount && i < 8; ++i) {
@@ -349,15 +427,25 @@ static void finalizeFrameAccounting(PerfState& s)
         }
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Performance, StructuredLevel::Important,
-            "performance.frame-accounting", "performance",
-            "1s completed-frame accounting summary", next.frameNumber,
-            {{"cycle_ms", next.cycleMs},
+            "performance.report", "performance",
+            "1s completed-frame performance report", next.frameNumber,
+            {{"mode", gReportMode},
+             {"cycle_ms", next.cycleMs},
              {"host_gap_ms", next.hostGapMs},
              {"frame_ms", next.frameMs},
              {"root_accounted_ms", next.rootAccountedMs},
              {"unaccounted_ms", next.unaccountedMs},
              {"swap_ms", next.swapMs},
              {"sleep_ms", next.sleepMs},
+             {"overlay_ms", next.overlayMs},
+             {"server_rx_hz", next.serverRxHz},
+             {"server_actual_hz",
+              next.serverActualValid ? next.serverActualHz : 0.0},
+             {"server_actual_valid", next.serverActualValid},
+             {"server_tick", next.serverTick},
+             {"server_valid", next.serverValid},
+             {"server_stale", next.serverStale},
+             {"published_generation", next.publishedGeneration},
              {"scopes", top}},
             __FILE__, __LINE__, "Perf::finalizeFrameAccounting");
     }
@@ -1704,18 +1792,11 @@ void Perf::printEntityCounts()
 
 void Perf::togglePerfReport()
 {
-    gState.showPerfReport = !gState.showPerfReport;
-    setDeepProfiling(gState.showPerfReport);
-    if (gState.showPerfReport)
-    {
-        // Fresh worst-case window each time the report is opened.
-        gState.maxFrameTimeMs = 0.0;
-        gState.maxPhysicsMs = 0.0;
-        gState.maxEntityPhysicsMs = 0.0;
-        gState.maxRenderingMs = 0.0;
-    }
-    Debug::log(Debug::Category::General, "[PERF] perf_report=%s",
-               gState.showPerfReport ? "ON" : "OFF");
+    const int next = gReportMode > 0 ? 0 : gLastReportMode;
+    setReportMode(next);
+    setDeepProfiling(next > 0);
+    Debug::log(Debug::Category::General, "[PERF] perf_report=%s mode=%d",
+               next > 0 ? "ON" : "OFF", next);
 }
 
 void Perf::toggleGraph() { gState.showGraph = !gState.showGraph; }

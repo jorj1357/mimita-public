@@ -701,8 +701,14 @@ void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber)
     }
 
     // Any frame over the 4 ms / 240 FPS budget is a defect. Emit the top
-    // scopes so the journal shows exactly what blew the budget.
-    if (totalMs > 4.0) {
+    // scopes at most once per second so repeated over-budget frames do not
+    // turn the profiler into a per-frame journal writer.
+    static auto lastBudgetLog = std::chrono::steady_clock::time_point{};
+    const auto budgetNow = std::chrono::steady_clock::now();
+    if (totalMs > 4.0 &&
+        (lastBudgetLog == std::chrono::steady_clock::time_point{} ||
+         budgetNow - lastBudgetLog >= std::chrono::seconds(1))) {
+        lastBudgetLog = budgetNow;
         std::vector<int> order;
         order.reserve(static_cast<size_t>(frame.entryCount));
         for (int i = 0; i < frame.entryCount; ++i) order.push_back(i);

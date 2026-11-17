@@ -35,8 +35,8 @@ deployment.
 - Quality and evidence: `quality/`, `perf-watch.py`, and
   `perf-evidence.py`.
 - Whole-game hot-reload evidence: `source_manifest.py`, `game_build_worker.py`,
-  `game_link_worklist.py`, `audit_triage.py`, `audit_passes.py`, and
-  `game_static_gate.py`.
+  `dependency_graph.py`, `game_link_worklist.py`, `audit_triage.py`,
+  `audit_passes.py`, and `game_static_gate.py`.
 - Configuration and content validation: `jsonc.py`, `config_selftest.py`,
   `animation_json_check.py`, `gamemode_json_sync.py`, and
   `weapon_json_sync.py`.
@@ -52,6 +52,7 @@ The complete description of every current script, its outputs, authority,
 run cadence, and suggested keep/combine/archive disposition is:
 
 - [Development script inventory](../docs/operations/devscripts/script-inventory.md)
+- [Dependency graph](../docs/operations/devscripts/dependency-graph.md)
 
 Use the cold-change guard before saving a group of source edits:
 

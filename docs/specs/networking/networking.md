@@ -1,3 +1,98 @@
+2026 11 17 0949 jorj
+
+"Total networking event contract
+The goal is one followable chain: every state-changing step emits exactly one event with the stage, result, owner, correlation, timing, and next expected step. StructuredLogger already adds run_id, pid, instance_id, event_id, wall_time, source, line, and func; network events must never use line 0 or anonymous printf as their only evidence.
+
+Common envelope
+Every network event should carry:
+
+correlation_id: conn:<connection_attempt_id>, reconnect:<attempt_id>, snap:<server_tick>, or swap:<generation>.
+connection_id: stable for the session, unchanged across reconnect.
+attempt_id: increments once per reconnect attempt, never per frame.
+stage: requested, started, validated, sent, received, accepted, rejected, applied, expired, failed, skipped.
+result: ok, retry, degraded, terminal, intentional_swap.
+reason_code: stable machine name, not prose only.
+role: client or server.
+transport: udp, ice, or none.
+local_endpoint, remote_endpoint.
+player_id, server_slot_state, token_fingerprint (never the raw token).
+generation, old_generation, build_id, config_revision.
+client_tick, server_tick, snapshot_tick, sequence.
+duration_ms, queue_depth, bytes, chunks.
+last_heard_age_ms, snapshot_age_ms, stale_threshold_ms, hard_timeout_ms, grace_remaining_ms.
+attempt, max_attempts, interval_ms, backoff_ms.
+next_expected_event: the literal next event name in the chain, so a reader can follow it without guessing.
+Lifecycle event names
+Startup and config
+
+network.config.loaded / network.config.reloaded: path, revision, changed keys, all timing values.
+network.client.connect.requested: direct/room, address or room code, map, player name, password-protected flag.
+network.client.connect.preflight: build/generation match, map present, config valid.
+network.hotswap.suspend: old/new generation, connection ID, active socket, snapshot age at suspend.
+network.hotswap.resume: swap duration, packets drained, first snapshot expected.
+Transport
+
+network.client.transport.open: UDP/ICE, local bind, socket/agent state.
+network.client.ice.state: every ICE state change, candidate pair, local/remote candidate type, elapsed.
+network.client.transport.ready: remote endpoint, selected path, setup duration.
+network.client.transport.failed: stage, OS error, peer endpoint, retry eligibility.
+network.client.transport.closed: normal/leave/timeout/reload, bytes transferred, queue depth.
+Join and session
+
+network.client.hello.sent
+network.client.join.request_sent: attempt, bytes, join token present.
+network.server.join.received: source endpoint, bytes, transport.
+network.server.join.validated: name, map, password, build identity.
+network.server.join.accepted / network.server.join.rejected: player ID or reason code.
+network.server.player.registered: player ID, slot, name, map, team.
+network.client.join.accepted / network.client.join.rejected: assigned player ID, map, spawn generation, build.
+Map and spawn
+
+network.client.map.sync.start, .loaded, .failed: map id, revision, bytes, duration.
+network.client.map.ready_sent; network.server.map.ready_received.
+network.server.spawn.assigned; network.client.spawn.applied.
+Authoritative snapshots
+
+network.server.snapshot.build: server tick, players/NPCs/projectiles, entity bytes, chunks, build duration.
+network.server.snapshot.send: tick, sequence, chunks, bytes, send failures, queue depth.
+network.client.snapshot.received: tick, sequence, chunk index/count, bytes, arrival gap, duplicate/reorder flag.
+network.client.snapshot.applied: tick, entity counts, interpolation delay, correction mode, apply duration.
+network.client.snapshot.gap: expected range, actual range, missed tick count, age, likely cause.
+network.metrics.window: once per second on both sides: packets in/out, bytes, RTT, loss, snapshot Hz, tick Hz, queue depth, event rate.
+packet.route stays as one-shot route census; it must not be the only packet evidence.
+Health
+
+network.client.health.transition: from/to, trigger (snapshot_gap, hard_timeout, transport_closed, hot_swap, server_reject), all ages, thresholds, grace, attempt, false_positive_suspected.
+network.server.peer.health: stale, lost, recovered; silence duration, grace deadline, player slot state.
+network.client.health.waiting: snapshot starvation before the hard timeout, with last tick and age.
+network.client.snapshot.recovery: first authoritative snapshot after a gap/swap, age, reconnect suppressed or not.
+Reconnect
+
+network.client.reconnect.scheduled: reason, attempt ID, next attempt time, interval, grace deadline.
+network.client.reconnect.attempt: attempt number, send result, elapsed, interval, backoff, grace remaining, transport, remote endpoint.
+network.client.reconnect.accepted: player ID, map, spawn, token rotated.
+network.client.reconnect.rejected: server reason, token state, slot state, response endpoint.
+network.client.reconnect.terminal: only when grace expires or an explicit terminal server rejection arrives; include elapsed_ms, grace_deadline_ms, attempts_sent, attempts_expected.
+network.server.reconnect.received, .lookup, .accepted, .rejected, .expired: player slot, token fingerprint, previous-token match, silence, grace deadline, players map size.
+Disconnect
+
+network.client.disconnect.requested / .sent.
+network.server.disconnect.received / network.server.player.removed.
+network.server.timeout.stale, .lost, .expired.
+network.client.transport.closed.
+Hot swap
+
+game.generation.swap_begin, game.generation.candidate_loaded, game.generation.old_shutdown, game.generation.new_init, game.generation.first_tick, game.generation.first_snapshot, game.generation.swap_end: swap ID, old/new generation, phase duration, connection count, snapshot age.
+network.hotswap.suspend / resume: client/server, active connections, packets drained, reconnect suppressed.
+network.hotswap.health_rebased: old ages, new ages, reason intentional_swap.
+Rate and cardinality rules
+All transitions, errors, accepts, rejects, terminal states, and hot-swap phases: always emit.
+Per-packet events only for gaps, duplicates, reorders, rejects, send failures, and sampled packets.
+Aggregates once per second: network.metrics.window, packet rates, queue depth, RTT, loss, snapshot Hz.
+Config-driven limits under networkingconfig.json: heartbeat rate, snapshot sample rate, packet sample rate, max event rate, max bytes per event, token fingerprint length.
+Never let network diagnostics become the bottleneck; the existing journal rotation stays, but network events must be bounded.
+"
+
 2026 11 07 1957 jorj
 
 "Subtracting RTT from an arrival timestamp is not enough to establish when an event actually occurred. RTT includes both directions, which need not have equal delay. A stronger system uses bounded, validated event times, historical state and server-side authority." from https://chatgpt.com/share/6aefc908-0dd8-83ea-82ab-a3d9c69d0d17

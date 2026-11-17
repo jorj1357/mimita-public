@@ -219,3 +219,4 @@ uint64_t StructuredLogger::eventsBytes() const {
 StructuredLogger::IoStats StructuredLogger::ioStats(bool) {
     return IoStats{};
 }
+
