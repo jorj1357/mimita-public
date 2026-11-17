@@ -19,6 +19,7 @@
 #include "network/packet-route.h"
 #include "network/community-server-config.h"
 #include "network/multiplayer-context.h"
+#include "network/network-events.h"
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
 #include "network/network-weapons.h"
@@ -2164,6 +2165,24 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                  nlohmann::json{{"player_id", id}, {"packet_bytes", sizeof(accept)},
                                 {"total_packets_out", totalPacketsOut},
                                 {"spawned", p.spawned}});
+    {
+        NetworkEvents::Context context;
+        context.role = "server";
+        context.transport = claimedTransport ? "ice" : "udp";
+        context.connectionId = id;
+        context.playerId = id;
+        context.serverAddress = addressToString(from);
+        NetworkEvents::emit(
+            context, "network.server.join.accepted", "accepted",
+            acceptSent ? "ok" : "degraded",
+            acceptSent ? "join_accept_sent" : "join_accept_send_failed",
+            "network.server.player.registered", tick,
+            nlohmann::json{{"assigned_player_id", id},
+                           {"map", getServerMapId()},
+                           {"spawned", p.spawned},
+                           {"packet_bytes", sizeof(accept)}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
 
     // Broadcast the joining player's full VIP style so every client renders
@@ -2232,15 +2251,26 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
 
     if (foundId == 0)
     {
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::Network, StructuredLevel::Errors,
-            "network.session.health", "SERVER_RECONNECT",
-            "server rejected a reconnect token", tick,
-            {{"trigger", "reconnect_rejected"},
-             {"token_state", "not_found"},
-             {"token_prefix", requestedToken.substr(0, 12)},
-             {"players", players.size()},
-             {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+        const auto& reconnectCfg = NetworkingConfig::instance().data();
+        const size_t fingerprintChars = std::min<size_t>(
+            requestedToken.size(),
+            (size_t)reconnectCfg.observability.tokenFingerprintChars);
+        NetworkEvents::Context context;
+        context.role = "server";
+        context.transport = claimedTransport && claimedTransport->get() ? "ice" : "udp";
+        context.connectionId = req->header.playerId;
+        context.playerId = req->header.playerId;
+        context.serverAddress = addressToString(from);
+        NetworkEvents::emit(
+            context, "network.server.reconnect.rejected", "lookup", "rejected",
+            "token_not_found", "network.client.reconnect.attempt", tick,
+            nlohmann::json{{"token_fingerprint", requestedToken.substr(0, fingerprintChars)},
+                           {"token_state", "not_found"},
+                           {"slot_state", "token_not_found"},
+                           {"players", players.size()},
+                           {"silence_ms", 0},
+                           {"grace_deadline_ms", 0},
+                           {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
             __FILE__, __LINE__, __FUNCTION__);
         printf("%s [SERVER RECONNECT] rejected token=%s not-found\n",
                serverTimestamp(), requestedToken.substr(0, 12).c_str());
@@ -2318,19 +2348,31 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
                                 {"token_state", resendExistingAccept ? "previous" : "current"}});
     sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
 
-    StructuredLogger::instance().writeEvent(
-        StructuredCategory::Network, StructuredLevel::Important,
-        "network.session.health", "SERVER_RECONNECT",
-        "server accepted a reconnect request", tick,
-        {{"trigger", resendExistingAccept ? "reconnect_resend" : "reconnect_accepted"},
-         {"token_state", resendExistingAccept ? "previous" : "current"},
-         {"token_prefix", requestedToken.substr(0, 12)},
-         {"player_id", foundId},
-         {"copies", acceptCopies},
-         {"previous_token_valid_ms", p.previousReconnectTokenValidUntilMs > currentMs
-             ? p.previousReconnectTokenValidUntilMs - currentMs : 0},
-         {"health", p.health},
-         {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+    const auto& reconnectCfg = NetworkingConfig::instance().data();
+    const size_t fingerprintChars = std::min<size_t>(
+        requestedToken.size(),
+        (size_t)reconnectCfg.observability.tokenFingerprintChars);
+    NetworkEvents::Context context;
+    context.role = "server";
+    context.transport = claimedTransport && claimedTransport->get() ? "ice" : "udp";
+    context.connectionId = req->header.playerId;
+    context.attemptId = 0;
+    context.playerId = foundId;
+    context.serverAddress = addressToString(from);
+    NetworkEvents::emit(
+        context, "network.server.reconnect.accepted", "accepted", "ok",
+        resendExistingAccept ? "previous_token" : "current_token",
+        "network.client.join.accepted", tick,
+        nlohmann::json{{"token_fingerprint", requestedToken.substr(0, fingerprintChars)},
+                       {"token_state", resendExistingAccept ? "previous" : "current"},
+                       {"slot_state", "held"},
+                       {"players", players.size()},
+                       {"copies", acceptCopies},
+                       {"copies_sent", acceptSendsSucceeded},
+                       {"previous_token_valid_ms", p.previousReconnectTokenValidUntilMs > currentMs
+                           ? p.previousReconnectTokenValidUntilMs - currentMs : 0},
+                       {"health", p.health},
+                       {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
         __FILE__, __LINE__, __FUNCTION__);
 
     printf("%s [SERVER RECONNECT] %s id=%u name=\"%s\" health=%d copies=%d\n",
@@ -3048,12 +3090,23 @@ void buildAndSendSnapshot(SOCKET sock,
     const std::vector<std::vector<uint8_t>>* previous =
         (resendPrevious && gPreviousTick != 0) ? &gPreviousChunks : nullptr;
 
+    uint64_t sentChunks = 0;
+    uint64_t failedChunks = 0;
+    uint64_t sentBytes = 0;
     const auto sendPayload = [&](const std::vector<uint8_t>& payload,
                                  const ServerPlayer& sp) {
         const bool sent =
             serverSendToPlayer(sock, sp, payload.data(), payload.size());
         if (sent)
+        {
             ++totalPacketsOut;
+            ++sentChunks;
+            sentBytes += payload.size();
+        }
+        else
+        {
+            ++failedChunks;
+        }
     };
 
     for (const auto& kv : players)
@@ -3077,6 +3130,46 @@ void buildAndSendSnapshot(SOCKET sock,
                   {"entity_count", entityCount} },
                 __FILE__, __LINE__, __FUNCTION__);
     }
+    {
+        static uint64_t lastSnapshotEventMs = 0;
+        const uint64_t snapshotEventNow = nowMs();
+        const uint64_t snapshotEventInterval = (uint64_t)std::max(
+            100.0, NetworkingConfig::instance().data()
+                       .observability.snapshotDiagnosticsIntervalMs);
+        if (snapshotEventNow - lastSnapshotEventMs >= snapshotEventInterval)
+        {
+            lastSnapshotEventMs = snapshotEventNow;
+            NetworkEvents::Context context;
+            context.role = "server";
+            context.transport = "udp";
+            context.connectionId = tick;
+            NetworkEvents::emit(
+                context, "network.server.snapshot.build", "built", "ok",
+                "snapshot_window", "network.server.snapshot.send", tick,
+                nlohmann::json{{"snapshot_tick", tick},
+                               {"players", players.size()},
+                               {"npcs", npcs.size()},
+                               {"entity_count", entityCount},
+                               {"chunk_count", chunks.size()},
+                               {"snapshot_bytes", queueBytes},
+                               {"sent_chunks", sentChunks},
+                               {"failed_chunks", failedChunks},
+                               {"sent_bytes", sentBytes}},
+                __FILE__, __LINE__, __FUNCTION__);
+            NetworkEvents::emit(
+                context, "network.server.snapshot.send", "sent",
+                failedChunks == 0 ? "ok" : "degraded",
+                failedChunks == 0 ? "snapshot_sent" : "snapshot_send_failed",
+                "network.client.snapshot.received", tick,
+                nlohmann::json{{"snapshot_tick", tick},
+                               {"chunk_count", chunks.size()},
+                               {"sent_chunks", sentChunks},
+                               {"failed_chunks", failedChunks},
+                               {"sent_bytes", sentBytes}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
+
     if (!chunks.empty())
     {
         gPreviousChunks = chunks;

@@ -1605,6 +1605,9 @@ void tickServerProjectiles(SOCKET sock,
     uint32_t worstStepProjectileId = 0;
     uint32_t worstExplosionProjectileId = 0;
     uint32_t simulationSteps = 0;
+    uint32_t budgetSkipped = 0;
+    constexpr uint32_t kMaxStepsPerProjectile = 2;
+    constexpr uint32_t kMaxStepsPerTick = 12;
     uint64_t triangleQueries = 0;
     uint64_t triangleCandidates = 0;
     uint64_t playerCapsuleCandidates = 0;
@@ -1683,11 +1686,23 @@ void tickServerProjectiles(SOCKET sock,
 
         if (sharedProjectile)
         {
-            const uint32_t firstStepTick = projectile.simulationTick != 0
+            uint32_t firstStepTick = projectile.simulationTick != 0
                 ? projectile.simulationTick + 1 : tick;
+            if (tick >= firstStepTick &&
+                (tick - firstStepTick) + 1 > kMaxStepsPerProjectile)
+            {
+                firstStepTick = tick - kMaxStepsPerProjectile + 1;
+                projectile.simulationTick = firstStepTick - 1;
+            }
             for (uint32_t stepTick = firstStepTick;
                  stepTick <= tick && !projectile.exploded; ++stepTick)
             {
+                if (simulationSteps >= kMaxStepsPerTick)
+                {
+                    ++budgetSkipped;
+                    projectile.simulationTick = tick;
+                    break;
+                }
                 projectile.previousPosition = projectile.position;
                 projectile.stateAccumulator += tickDt;
                 const int previousBounceCount = projectile.bounceCount;
@@ -2102,7 +2117,7 @@ void tickServerProjectiles(SOCKET sock,
 
     const double totalMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - tickStart).count();
-    if (totalMs >= 50.0 || worstProjectileMs >= 25.0)
+    if (totalMs >= 50.0 || worstProjectileMs >= 25.0 || budgetSkipped > 0)
     {
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Performance, StructuredLevel::Important,
@@ -2115,6 +2130,9 @@ void tickServerProjectiles(SOCKET sock,
                            {"worst_projectile_ms", worstProjectileMs},
                            {"worst_projectile_id", worstProjectileId},
                            {"simulation_steps", simulationSteps},
+                           {"budget_skipped", budgetSkipped},
+                           {"max_steps_per_projectile", kMaxStepsPerProjectile},
+                           {"max_steps_per_tick", kMaxStepsPerTick},
                            {"simulation_ms", simulationMs},
                            {"worst_simulation_step_ms", worstSimulationStepMs},
                            {"worst_step_projectile_id", worstStepProjectileId},

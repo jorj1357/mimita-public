@@ -14,6 +14,7 @@
 #include "network/server-gamemode.h"
 #include "procedural/procedural-world.h"
 #include "network/multiplayer-context.h"
+#include "network/network-events.h"
 #include "network/chat-rate-limiter.h"
 #include "void-death/void-death.h"
 #include "config/networking-config.h"
@@ -1480,6 +1481,21 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
     const uint64_t graceMs = (uint64_t)cfg.retries.reconnectGraceMs;
     const uint64_t now = nowMs();
 
+    const auto emitPeerHealth = [&](const ServerPlayer& player,
+                                    const char* eventName, const char* stage,
+                                    const char* result, const char* reason,
+                                    const char* nextExpected,
+                                    nlohmann::json fields) {
+        NetworkEvents::Context context;
+        context.role = "server";
+        context.transport = player.transport ? "ice" : "udp";
+        context.connectionId = player.id;
+        context.playerId = player.id;
+        NetworkEvents::emit(context, eventName, stage, result, reason,
+                            nextExpected, tick, std::move(fields),
+                            __FILE__, __LINE__, __func__);
+    };
+
     std::vector<uint32_t> toRemove;
     for (auto& kv : players)
     {
@@ -1497,6 +1513,13 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
                 if (p.connectionStateNotified)
                 {
                     p.connectionStateNotified = false;
+                    emitPeerHealth(p, "network.server.peer.health", "recovered",
+                                   "ok", "peer_recovered",
+                                   "network.session.health",
+                                   {{"silence_ms", silentMs},
+                                    {"slot_state", "healthy"},
+                                    {"stale_threshold_ms", staleThreshold},
+                                    {"hard_timeout_ms", hardTimeout}});
                     printf("%s [SERVER RECONNECTED] id=%u name=\"%s\" after %llums silent\n",
                            serverTimestamp(), p.id, p.name.c_str(),
                            (unsigned long long)(now - p.lastHeardMs));
@@ -1512,6 +1535,15 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
         {
             p.connectionStale = true;
             p.disconnectedSinceMs = now;
+            emitPeerHealth(p, "network.server.peer.health", "stale",
+                           "degraded", "silence_exceeded_stale_threshold",
+                           "network.server.reconnect.received",
+                           {{"silence_ms", silentMs},
+                            {"slot_state", "held"},
+                            {"stale_threshold_ms", staleThreshold},
+                            {"hard_timeout_ms", hardTimeout},
+                            {"grace_deadline_ms",
+                             p.lastHeardMs + hardTimeout + graceMs}});
             printf("%s [SERVER STALE] id=%u name=\"%s\" lastHeard=%llums ago — body frozen, "
                    "slot kept for reconnect\n",
                    serverTimestamp(), p.id, p.name.c_str(),
@@ -1524,6 +1556,14 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
         const uint64_t deadline = p.lastHeardMs + hardTimeout + graceMs;
         if (now >= deadline)
         {
+            emitPeerHealth(p, "network.server.timeout.expired", "expired",
+                           "terminal", "reconnect_grace_expired", "none",
+                           {{"silence_ms", silentMs},
+                            {"slot_state", "released"},
+                            {"stale_threshold_ms", staleThreshold},
+                            {"hard_timeout_ms", hardTimeout},
+                            {"grace_deadline_ms", deadline},
+                            {"grace_remaining_ms", 0}});
             printf("%s [NET DISCONNECT] reason=grace_expired id=%u name=\"%s\" "
                    "silent=%llums slotReleased=1\n",
                    serverTimestamp(), p.id, p.name.c_str(),
@@ -1544,6 +1584,14 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
         if (!p.connectionStateNotified && silentMs > hardTimeout)
         {
             p.connectionStateNotified = true;
+            emitPeerHealth(p, "network.server.peer.health", "lost",
+                           "degraded", "silence_exceeded_hard_timeout",
+                           "network.server.reconnect.received",
+                           {{"silence_ms", silentMs},
+                            {"slot_state", "held"},
+                            {"stale_threshold_ms", staleThreshold},
+                            {"hard_timeout_ms", hardTimeout},
+                            {"grace_deadline_ms", deadline}});
             printf("%s [SERVER PEER LOST] id=%u name=\"%s\" silent=%llums — notifying peers\n",
                    serverTimestamp(), p.id, p.name.c_str(),
                    (unsigned long long)silentMs);

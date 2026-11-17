@@ -9,6 +9,7 @@ Each active regression has exactly one detail file in one domain folder. The dom
 - [Collisions](collisions/README.md)
 - [Performance](performance/README.md)
 - [Networking](networking/README.md)
+- [Hot reload](hotreload/README.md)
 - [NPC movement](npc-movement/README.md)
 - [Dev loop](dev-loop/README.md)
 - [Gameplay](gameplay/README.md)

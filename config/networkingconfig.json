@@ -167,6 +167,26 @@
     "log_delays": false
   },
 
+  "network_observability": {
+    "enabled": true,
+    "snapshot_diagnostics_interval_ms": 1000,
+    "metrics_window_ms": 1000,
+    "max_events_per_second": 200,
+    "log_every_reconnect_attempt": true,
+    "log_every_rejection": true,
+    "log_queue_depth": true,
+    "log_rtt": true,
+    "token_fingerprint_chars": 8
+  },
+
+  "hot_swap": {
+    "suspend_network_health": true,
+    "rebase_after_swap": true,
+    "require_fresh_snapshot_after_swap": true,
+    "maintenance_interval_ms": 1000,
+    "max_suspend_ms": 30000
+  },
+
   "runtime_rates": {
     "input_send_rate_hz": 60,
     "ping_interval_ms": 1000

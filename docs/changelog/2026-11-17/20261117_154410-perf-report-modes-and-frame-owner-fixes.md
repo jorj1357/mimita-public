@@ -160,10 +160,141 @@ Game-only report mode state and `perf_sample_ms` interval API.
 | `src/physics/physics-mini.cpp` | coarse physics | owner scopes | expose cost | `git checkout -- <file>` |
 | `devscripts/dev-loop.py` | auto-replace live client | publish only | keep EXE open | `git checkout -- <file>` |
 | `devscripts/quality/test_manual_build_guard.py` | 3 tests | 4 tests | keep-open policy | `git checkout -- <file>` |
+| `assets/avatars/{abusivegirl3,abusivegirlheadless4,girllargev2,girllargev3,jason,jorj1357large}/avatar.json` | no animation profile | `general_set_1` layered profile | restore local keyframed animations | remove `animation_profile` block |
+| `assets/avatars/remote_*/avatar.json` | no animation profile | `general_set_1` layered profile | remote human avatars | remove `animation_profile` block |
+| `src/npc/npc-navigator.cpp` | unbounded local A* | 6 ms / 12k expansion budget + event | prevent navigator stalls | `git checkout -- <file>` |
+| `docs/features/performance/fps-improvement-ledger.md` | absent | new ledger | track FPS improvements | delete file |
+| `docs/regressions/performance/nonragdoll-animation-stall-REG-2026-11-17.md` | absent | new regression | ragdoll/non-ragdoll evidence | delete file |
+| `docs/regressions/collisions/world-triangle-candidate-scan-REG-2026-11-17.md` | absent | new regression | triangle scan tracking | delete file |
+| `docs/regressions/performance/README.md` | 13 entries | 14 entries | index | `git checkout -- <file>` |
+| `docs/regressions/collisions/README.md` | 20 entries | 21 entries | index | `git checkout -- <file>` |
+| `docs/specs/animations/animations.md` | no human default profile rule | default profile requirement | prevent old animation fallback | `git checkout -- <file>` |
+| `docs/specs/dev-loop/dev-loop.md` | no build/command event contract | build completion + delivery events | event-driven AI loop | `git checkout -- <file>` |
 | `docs/gold/2026-11-16-honest-frame-accounting-and-perf-overlay.md` | absent | new gold | method record | delete file |
 | `docs/regressions/performance/unaccounted-frame-time-REG-2026-11-16.md` | absent | new regression | old wrong number | delete file |
 | `docs/regressions/performance/README.md` | 12 entries | 13 entries | index | `git checkout -- <file>` |
 | `docs/changelog/2026-11-17/20261117_154410-perf-report-modes-and-frame-owner-fixes.md` | absent | this record | history | delete file |
+
+## Continuation — animation profiles, navigator budget, tracking
+
+### Human avatar animation profiles
+
+Added `animation_profile` with `"set": "general_set_1"` and
+`"poseComposition": "layered"` to human/local avatars that had none:
+
+- `abusivegirl3`, `abusivegirlheadless4`, `girllargev2`, `girllargev3`,
+  `jason`, `jorj1357large`
+- generated `remote_*` human avatars in `assets/avatars/`
+
+The local player previously had no profile and fell back to the old global
+procedural animation. Monster avatars were left alone; their
+`authored_only` profiles are separate.
+
+Validation: every edited `avatar.json` parsed as valid JSON and resolved
+`animation_profile.set = general_set_1`. Runtime animation binding still needs
+a visible client check (`anim.set.bound`, `anim.melee.pose_probe`).
+
+### NPC navigator planning budget
+
+`src/npc/npc-navigator.cpp` now bounds local A* planning to 6 ms and 12,000
+expansions. On exhaustion it returns no new route and emits
+`npc.nav.budget-exhausted` at most once per second with actor, expansions,
+nodes, candidates, and elapsed ms. This prevents a single navigator update from
+consuming hundreds of milliseconds. Movement/physics still run on every 60 Hz
+tick; only route planning is bounded.
+
+### Tracking documents
+
+- `docs/features/performance/fps-improvement-ledger.md`: one row per verified
+  FPS improvement with before/after evidence.
+- `docs/regressions/performance/nonragdoll-animation-stall-REG-2026-11-17.md`:
+  ragdoll bypasses the costly non-ragdoll animation/final-pose path.
+- `docs/regressions/collisions/world-triangle-candidate-scan-REG-2026-11-17.md`:
+  recurring world-triangle candidate/fallback-scan risk.
+- Performance/collision README entries updated.
+
+### Build and command events
+
+`devscripts/dev-loop.py` now emits:
+
+- `dev-loop.build.completed` / `dev-loop.build.failed`
+- `dev-loop.game-generation.ready` / `dev-loop.game-build.failed`
+- `dev-loop.build.published_live_process_unchanged`
+
+The dev-loop spec now defines command lifecycle events and a timeout event for
+a queued command with no host-read. This makes build readiness and delivery
+readable from the journal without polling.
+
+## Continuation — clean connected baseline (2026-11-17 17:02Z run)
+
+A clean server/client pair was launched through the dev loop on payload funworld3
+with the profile's 19 NPCs.
+
+- Client PID 8968, server PID 12272; build `2026-11-17T17:02:29.218920Z`.
+- Command delivery worked in this clean run: `perf_report 2` was delivered and
+  completed. The earlier failure was a stalled client host loop, not the queue
+  format.
+- Animation binding confirmed for `jason`: `anim.set.loaded` with
+  `clip_count=45` and `set_valid=true`; `anim.melee.pose_probe` shows
+  `authored_only=false`, `set_valid=true`.
+- Client baseline: about 7–14 FPS, frame 115–216 ms.
+- Server baseline: `actual_hz` about 10–13 Hz, `npc.phase-window` total about
+  419–522 ms/s for 19 NPCs.
+- New top client owners: `Simulation::FinalPose` ~26–47 ms,
+  `ActorPair::FinalPose` ~26–51 ms, `Rendering::Actors::NetworkEntities`
+  ~10–17 ms, `Physics::CollisionSteps` ~7–8 ms, `Audio::StartSound` ~15 ms,
+  `Combat::PostWeaponContainment` ~3–12 ms.
+- Navigator budget evidence: `npc.nav.budget-exhausted` fires at about
+  6 ms per plan, but 16 plans/s still leave `navigator_ms` ~127–205 ms/s.
+- Change made: `ActorPair::FinalPose` containment now runs only when the actor
+  pair actually changed (`corrected`, `pushed`, or `supportKey`), avoiding a
+  second full final-pose sample on unchanged ticks.
+- The 240 FPS / 60 Hz targets are still not met.
+
+### Generation 318 result after conditional final pose
+
+- `ActorPair::FinalPose` was removed from unchanged ticks; it no longer appears
+  in the top client scopes.
+- Client improved from about 7–14 FPS to about 23 FPS in the clean run
+  (`performance.fps`: 23.8, 22.9; p50 ~34–40 ms).
+- Remaining client owner: `Simulation::FinalPose` about 3.5–38 ms, plus
+  `Combat::PostWeaponContainment` ~3–12 ms and `Swap` ~2–3 ms.
+- Server remains below 60 Hz: `actual_hz` about 6–7; `performance.server-loop-window`
+  shows 24–27 active projectiles with `projectile_sim_ms` 328–411 per window,
+  and `npc.phase-window` total 326–390 ms/s.
+
+### Further pass — projectile catch-up, NPC cadence, final pose
+
+- Server projectile simulation now caps catch-up to 2 steps per projectile and
+  12 total projectile steps per tick; `server.projectile.tick-cost` includes
+  `budget_skipped` and the caps.
+- NPC global plan budget reduced from 8 to 4 plans/s; repath interval 1.5 s;
+  blocked retry 2.0 s; NPC thinking cadence changed from every 3 ticks to every
+  4 ticks. Movement and physics still run every tick.
+- Client `Simulation::FinalPose` now runs every 2 ticks for a stable idle actor
+  and every tick otherwise.
+- A second client (client-02) on generation 320 measured ~96–106 FPS while
+  unconnected/idle, p50 ~5.6–6.1 ms, `Swap` ~0.8 ms in normal frames. This is
+  not connected gameplay evidence.
+- The 42-NPC server still measured ~9 Hz with `npc.phase-window` total
+  398–744 ms/s and `navigator_ms` 221–428 ms/s. The next owner is navigator
+  stage tracing (global graph vs local A* vs Recast vs follow), not just the
+  per-plan budget.
+
+### Generation 321 — projectile cap and cadence result
+
+- Server activated generation 321 in the same PID 12272.
+- With zero active projectiles, `actual_hz` was ~5–7.7 and one 155-second outer
+  loop stall occurred while a concurrent build/link was running. That is not a
+  clean gameplay window.
+- `npc.phase-window` total remained 419–576 ms/s for 42 NPCs:
+  `physics_ms` 189–204, `navigator_ms` 39–161, `decision_ms` 112–260,
+  `path_ms` 28–41.
+- `server.projectile.tick-cost` emitted no records with zero projectiles, so
+  the projectile caps need a projectile-active window for proof.
+- Client-02 on generation 320 measured ~96–106 FPS idle, p50 ~5.6–6.1 ms.
+  Connected 42-NPC gameplay remains unmeasured after generation 321 because the
+  server was building/stalled.
 
 # Contract / ABI changes
 
@@ -205,6 +336,7 @@ Game-only report mode state and `perf_sample_ms` interval API.
 - Tests:
   - `python -m py_compile devscripts/dev-loop.py devscripts/dev_loop/cli.py devscripts/quality/test_manual_build_guard.py` -> PASS.
   - `python -m unittest devscripts.quality.test_manual_build_guard -v` -> 4 tests PASS.
+  - All edited avatar JSON files parsed with `animation_profile.set = general_set_1`.
 - Build:
   - Game generations 298, 300, 303, and 314 published during the loop; client
     activated 298, 300, 303, and 314 in the same PID.
@@ -215,6 +347,10 @@ Game-only report mode state and `perf_sample_ms` interval API.
   - Client FPS remained about 3–6 FPS in the pathological disconnected test
     state, not 240 FPS.
   - Server actual Hz remained about 3.9–4.6 Hz, not 60 Hz.
+  - Generation 317 activated in the same client PID 21068. A later
+    `perf_report 2` command was queued but did not reach `host-read`; the client
+    host loop was stalled. This confirms the command-delivery gap documented in
+    the dev-loop spec.
 
 # Measured evidence
 

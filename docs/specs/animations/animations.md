@@ -240,6 +240,21 @@ change to a visible result.
 the format and ownership rules. Read them when adding a new field, tool, or
 actor type.
 
+## Human avatar animation profiles
+
+Every local and remote human avatar must resolve an avatar animation profile.
+An avatar with no `animation_profile` and no valid `animations.json` must not
+silently fall back to the old global procedural animation when keyframed clips
+are expected. The default human profile is `general_set_1` with
+`poseComposition: "layered"`. Monster-specific `authored_only` profiles remain
+separate and must not receive human clips merely because their file lacks a
+profile.
+
+Generated `remote_*` human avatars must carry the source avatar's animation
+profile or resolve a documented default. The registry emits `anim.set.bound`
+and `anim.set.loaded`/`reload_rejected` events so a missing or invalid set is
+visible instead of silently showing old animation.
+
 ## NPC tick-locked playback
 
 An avatar animation profile may opt NPC actors into a fixed authored-tick clock:

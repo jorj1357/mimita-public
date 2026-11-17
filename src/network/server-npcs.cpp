@@ -2017,7 +2017,7 @@ void simulateSharedNpcs(SOCKET sock,
             }
         }
         const bool thinkingDue = !staggerNpcThinking ||
-            ((tick + n.id) % 3u == 0u) || !n.hasTargetScanSnapshot ||
+            ((tick + n.id) % 4u == 0u) || !n.hasTargetScanSnapshot ||
             (n.hasCachedServerTarget && !cachedTargetValid);
         const bool targetWasInvalidated =
             n.hasCachedServerTarget && !cachedTargetValid;

@@ -79,6 +79,9 @@ Exit status:
   into the game generation.
 - Report-only audit/census scripts do not override this guard.
 
+For a changed header or an uncertain include edge, use the report-only
+[dependency graph](dependency-graph.md) to see hot and cold dependents.
+
 The guard is advisory tooling. The authoritative build/link gates remain
 `build_target_gate.py`, `exe_cutover_gate.py`, and the cold-link trial.
 

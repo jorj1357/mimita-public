@@ -62,10 +62,41 @@ must be based on measured frame-time and simulation costs on representative
 devices, not total CPU utilization alone.
 
 The fixed 60 Hz gameplay simulation remains authoritative regardless of render
-rate. A 240 FPS target corresponds to about 4.17 ms per rendered frame; 999 FPS
-is an aspirational headroom goal of about 1.00 ms per frame, not a universal
-support promise or a reason to change gameplay tick rate. Record the target
-hardware and whether the measurement is CPU, GPU, or frame-pacing limited.
+rate. The working performance target is 240 FPS, about 4.167 ms per rendered
+frame. 999 FPS / about 1.00 ms is an aspirational headroom goal, not a gate, a
+support promise, or a reason to change gameplay tick rate. Record the target
+hardware, workload, frame count, and whether the measurement is CPU, GPU, or
+frame-pacing limited.
+
+### Performance acceptance goals
+
+Client frame acceptance is per-frame:
+
+- At least 99.99% of rendered frames must complete within the 240 FPS budget,
+  at or below 4.167 ms.
+- Report `p50`, `p95`, `p99`, `p99.99`, max, and the exact count and percentage
+  of frames over budget.
+- Do not use an average FPS or a one-second-window average as the acceptance
+  gate. One-second `performance.fps` records remain useful diagnostics and must
+  not hide a frame spike.
+- The aspirational 1 ms budget is reported separately. It must not replace the
+  240 FPS gate or make ordinary frames look like failures before the project
+  reaches that headroom.
+- Do not lower visual quality to satisfy the target. If the measured hardware
+  ceiling is below 240 FPS, report the ceiling and the largest measured scopes.
+
+Server tick acceptance is separate:
+
+- The authoritative simulation remains fixed at 60 Hz.
+- At least 99.99% of fixed ticks must complete at or below 16.667 ms under the
+  stated workload. Over 10 minutes that permits only a few late ticks.
+- Zero hard snapshot timeouts and zero `performance.server-tick-stall` entries
+  above 100 ms.
+- Server correctness wins over client frame rate whenever they conflict.
+
+The one-second-window wording in older handoffs and archived hot-reload notes
+is superseded by the per-frame client gate above. Runtime evidence still records
+the workload, duration, hardware, and build/generation identity.
 
 Before a multi-core redesign, profile per-thread CPU use and the critical path.
 Low total CPU use does not prove that only one core is used: one saturated
@@ -158,10 +189,11 @@ The largest measured scopes were `Simulation::Lifecycle`,
 shadow rendering, UI, and swap. `Rendering::Actors::Cosmetics` was about 0.1 ms
 CPU in those windows, so cosmetics are not the measured primary CPU cost.
 
-Required next evidence: a steady 60-second window after the hot client frame
+Required next evidence: a steady 60-second sample after the hot client frame
 stops stalling, with GPU timing when available, plus an A/B test with cosmetics
 disabled. Do not treat a cosmetic-only change as proof that the FPS issue is
-fixed.
+fixed. The acceptance calculation is per-frame; the sample duration is not a
+window-average gate.
 
 
 ## Always-on 1 Hz FPS journal event (2026-11-15)
@@ -189,6 +221,13 @@ Staggering is a server budget tool, not a license to run collision, damage, or
 physics below 60 Hz. Evidence must show `actual_hz` near 60 and separate NPC
 phase costs (`sense_ms`, `npc_ms`, `navigator_ms`, `physics_ms`) so a stalled
 tick is attributed to its owner.
+
+## FPS improvement ledger (2026-11-17)
+
+Confirmed runtime improvements are tracked in
+[`docs/features/performance/fps-improvement-ledger.md`](../../features/performance/fps-improvement-ledger.md).
+A change is added only with before/after runtime evidence and a named owner.
+Partial improvements and profiler-only cost reductions are labeled separately.
 
 ## Performance report overlay modes (2026-11-16)
 

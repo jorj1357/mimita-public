@@ -35,9 +35,9 @@ void decideReconnect(mimita_network_policy::ReconnectPolicyV1& p)
     const bool partialAlive = p.receivedChunks > 0 ||
         (p.expectedChunks > 0 && p.receivedChunks < p.expectedChunks);
     p.action = partialAlive ? 1 : 0;
-    p.backoffMs = 1000;
-    p.retryIntervalMs = 1000;
-    p.graceMs = 10000;
+    p.backoffMs = 0;
+    p.retryIntervalMs = 0;
+    p.graceMs = 0;
     p.result = 1;
 }
 

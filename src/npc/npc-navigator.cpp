@@ -28,6 +28,7 @@
 #include "config/movement-config.h"
 #include "world/world.h"
 #include "physics/physics-types.h"
+#include "debug/structured-log.h"
 #include "physics/movement/physics-collision.h"
 #include "debug/debug-log.h"
 #include "perf/perf.h"
@@ -46,10 +47,10 @@ constexpr float kReachXZ = 1.5f;       // waypoint arrival (planar)
 // a symmetric Z tolerance made every walk waypoint unreachable and the actor
 // orbited it forever.
 constexpr float kReachAbove = 1.5f;    // max waypoint height above the actor
-constexpr float kRepathInterval = 0.9f;
-constexpr float kBlockedRetryInterval = 0.5f;  // no-route retry delay
+constexpr float kRepathInterval = 1.5f;
+constexpr float kBlockedRetryInterval = 2.0f;  // no-route retry delay
 constexpr float kGoalMoveThreshold = 2.5f;
-constexpr int kMaxPlansPerSecond = 16;
+constexpr int kMaxPlansPerSecond = 4;
 constexpr int kMaxSurfacesPerColumn = 4;  // stacked floors/bridges per X/Y
 
 bool recastCompareEnabled()
@@ -351,7 +352,25 @@ bool planLocalPath(const Npc& npc, const glm::vec3& goalPos, const World& world,
     const float walkTan = std::sqrt(std::max(0.0f, 1.0f - walkableDot * walkableDot)) /
                           std::max(0.05f, walkableDot);
 
+    const auto planStart = std::chrono::steady_clock::now();
+    const auto planDeadline =
+        planStart + std::chrono::milliseconds(6);
+    constexpr int kMaxPlanExpansions = 12000;
+    int planExpansions = 0;
+    bool planBudgetExceeded = false;
+    auto planBudgetOk = [&]() {
+        if (planBudgetExceeded)
+            return false;
+        if (std::chrono::steady_clock::now() > planDeadline ||
+            planExpansions > kMaxPlanExpansions) {
+            planBudgetExceeded = true;
+            return false;
+        }
+        return true;
+    };
+
     auto tryConnect = [&](int from, int to, bool gap, float planar, float extraCost) {
+        if (!planBudgetOk()) return;
         if (from < 0 || to < 0 || from == to || nodes[to].closed) return;
         const NavigationSurface& a = nodes[from].surface;
         const NavigationSurface& b = nodes[to].surface;
@@ -405,6 +424,9 @@ bool planLocalPath(const Npc& npc, const glm::vec3& goalPos, const World& world,
     static const int DY[8] = {0,0,1,-1, 1,-1,1,-1};
 
     while (!open.empty()) {
+        ++planExpansions;
+        if (!planBudgetOk())
+            break;
         int bi = 0;
         for (int i = 1; i < (int)open.size(); ++i)
             if (nodes[open[i]].f < nodes[open[bi]].f) bi = i;
@@ -444,6 +466,33 @@ bool planLocalPath(const Npc& npc, const glm::vec3& goalPos, const World& world,
                     tryConnect(cur, nb, true, 2.0f * c, 2.0f * c + 2.5f);
             }
         }
+    }
+
+    if (planBudgetExceeded) {
+        const auto elapsedMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - planStart).count();
+        static thread_local uint64_t lastBudgetLogMs = 0;
+        const uint64_t nowMs = (uint64_t)std::chrono::duration_cast<
+            std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (nowMs - lastBudgetLogMs >= 1000) {
+            lastBudgetLogMs = nowMs;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.nav.budget-exhausted", std::to_string(npc.id),
+                "npc path planning exceeded its bounded budget",
+                (uint32_t)(npc.sensors.time * 60.0f),
+                nlohmann::json{{"actor", npc.id},
+                               {"expansions", planExpansions},
+                               {"nodes", nodes.size()},
+                               {"candidates", candidates.size()},
+                               {"elapsed_ms", elapsedMs},
+                               {"deadline_ms", 6.0},
+                               {"max_expansions", kMaxPlanExpansions},
+                               {"grid", N}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        return false;
     }
 
     if (nodes[goalNode].g >= 1e17f)

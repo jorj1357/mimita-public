@@ -9,6 +9,7 @@
 */
 
 #include "network/multiplayer-context.h"
+#include "network/network-events.h"
 #include "game/socket-bridge-module.h"
 #include "game/resident-state-module.h"
 #include "network/packets.h"
@@ -224,6 +225,27 @@ void logClientSnapshotDiagnostics(MultiplayerContext& ctx,
          {"snapshot_interarrival_ms", interarrivalMs},
          {"server_tick", ctx.latestServerTick}},
         __FILE__, __LINE__, __FUNCTION__);
+
+    if (tickGap > 1)
+    {
+        NetworkEvents::Context context;
+        context.connectionId = ctx.connectionAttemptId;
+        context.attemptId = static_cast<std::uint32_t>(ctx.reconnectAttempts);
+        context.playerId = ctx.localPlayerId;
+        context.role = "client";
+        context.transport = transport;
+        context.serverAddress = ctx.serverAddress;
+        context.roomCode = ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode;
+        NetworkEvents::emit(
+            context, "network.client.snapshot.gap", "received", "degraded",
+            "snapshot_tick_gap", "network.client.health.waiting", snapshotTick,
+            nlohmann::json{{"snapshot_tick", snapshotTick},
+                           {"tick_gap", tickGap},
+                           {"snapshots_missed", ctx.snapshotsMissed},
+                           {"snapshot_interarrival_ms", interarrivalMs},
+                           {"server_tick", ctx.latestServerTick}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 }
 
 MimitaVip::VipAppearance vipAppearanceFromEntity(const SnapshotEntity& entity)
@@ -1395,6 +1417,28 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.requiredMapId = welcome->mapId;
             ctx.transformEpoch = welcome->header.transformEpoch;
             ctx.nextMovementSequence = 1;
+            {
+                NetworkEvents::Context context;
+                context.connectionId = ctx.connectionAttemptId;
+                context.attemptId = static_cast<std::uint32_t>(ctx.reconnectAttempts);
+                context.playerId = ctx.localPlayerId;
+                context.role = "client";
+                context.transport = ctx.transport ? "ice" : "udp";
+                context.serverAddress = ctx.serverAddress;
+                context.roomCode = ctx.roomCode.empty()
+                    ? ctx.currentRoomCode : ctx.roomCode;
+                NetworkEvents::emit(
+                    context, "network.client.join.accepted", "accepted", "ok",
+                    "welcome", "network.client.map.sync.start",
+                    welcome->header.tick,
+                    nlohmann::json{{"assigned_player_id", ctx.localPlayerId},
+                                   {"required_map_id", std::string(welcome->mapId)},
+                                   {"server_build_id", std::string(welcome->runtimeBuildId)},
+                                   {"server_run_id", std::string(welcome->runtimeRunId)},
+                                   {"reconnect_attempt",
+                                    ctx.reconnectAttempts}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
             const bool mapSyncIdentityChanged =
                 previousPlayerId != ctx.localPlayerId ||
                 previousRequiredMap != ctx.requiredMapId ||

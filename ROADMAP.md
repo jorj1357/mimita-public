@@ -1,4 +1,32 @@
-﻿2026 11 03 1542
+﻿# MiMITA roadmap
+
+## Current priority — 2026-11-17
+
+This order is authoritative for product work. Owner specifications still define
+the behavior of each item; this section only decides what comes first.
+
+1. **Finish Cutover-1 and live-development cleanup.** Close the remaining
+   cold/hot ownership gaps, prove safe generation swaps, and make live editing
+   trustworthy rather than "mostly working."
+2. **Performance.** Hold the authoritative 60 Hz server at or better than
+   16.667 ms for 99.99% of ticks. Hold the client at 240 FPS for 99.99% of
+   rendered frames at or below 4.167 ms. Keep frame times consistent. Treat
+   999 FPS / about 1 ms as aspirational headroom, not the working gate.
+3. **Shared data and project format.** Define one expandable local project and
+   document format that can hold map, entity, replay, video, audio, animation,
+   and code-editor data without separate incompatible silos.
+4. **Creator tools and gameplay content.** Build the map/entity editor,
+   replay/video/audio tools, and later worlds on the shared format.
+5. **Long-horizon directions.** Distributed storage, collaboration, OS-like
+   integration, and cross-platform backends remain later work.
+
+Feature work must not start ahead of the current priority merely because it is
+more visible. Do not start blockchain, cross-platform, or OS-like integration
+work before Cutover-1 and performance are proven.
+
+---
+
+2026 11 03 1542
 
 grenades  getting me caught on the world
 not good

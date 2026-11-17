@@ -333,4 +333,10 @@
     "skin": ""
   },
   "updated_at": "2026-11-07T11:53:39Z"
+,
+  "animation_profile": {
+    "version": 2,
+    "poseComposition": "layered",
+    "set": "general_set_1"
+  }
 }

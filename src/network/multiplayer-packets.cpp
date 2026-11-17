@@ -17,6 +17,7 @@
 #include "game/transport-bridge-module.h"
 #endif
 #include "network/connection-health.h"
+#include "network/network-events.h"
 #include "network/simulation-constants.h"
 #include "network/udp-transport.h"
 #include "network/ice-transport.h"
@@ -1817,6 +1818,21 @@ static void mpNotifyReconnectAttempt(const MultiplayerContext& ctx)
     pushConnectionNotification(ctx, "Reconnecting", buf);
 }
 
+static NetworkEvents::Context networkEventContext(const MultiplayerContext& ctx,
+                                                  uint32_t attempt = 0)
+{
+    NetworkEvents::Context context;
+    context.connectionId = ctx.connectionAttemptId;
+    context.attemptId = attempt != 0 ? attempt
+                                    : static_cast<uint32_t>(ctx.reconnectAttempts);
+    context.playerId = ctx.localPlayerId;
+    context.role = "client";
+    context.transport = ctx.transport ? "ice" : "udp";
+    context.serverAddress = ctx.serverAddress;
+    context.roomCode = ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode;
+    return context;
+}
+
 static void writeSessionHealthEvent(const MultiplayerContext& ctx,
                                     ConnectionState before, ConnectionState next,
                                     const char* trigger,
@@ -1849,6 +1865,18 @@ static void writeSessionHealthEvent(const MultiplayerContext& ctx,
             {"from", connectionStateName(before)},
             {"to", connectionStateName(next)},
             {"trigger", trigger},
+            {"connection_id", ctx.connectionAttemptId},
+            {"attempt_id", ctx.reconnectAttempts},
+            {"role", "client"},
+            {"transport", ctx.transport ? "ice" : "udp"},
+            {"stage", "health_transition"},
+            {"result", terminal ? "terminal" : "ok"},
+            {"reason_code", trigger ? trigger : "health_transition"},
+            {"next_expected_event", next == ConnectionState::Connected
+                ? "network.client.snapshot.recovery"
+                : (next == ConnectionState::Reconnecting
+                    ? "network.client.reconnect.scheduled"
+                    : "network.client.reconnect.terminal")},
             {"last_heard_age_ms", lastHeardAge},
             {"snapshot_age_ms", ctx.lastSnapshotReceivedMs > 0
                 ? now - ctx.lastSnapshotReceivedMs : 0},
@@ -2007,27 +2035,47 @@ void mpStartReconnect(MultiplayerContext& ctx)
     if (ctx.disconnectStartedMs == 0)
         ctx.disconnectStartedMs = now;
 
-    // Attempt #1 immediately; later attempts run on reconnect_interval_ms.
+    // Attempt #1 is immediate; later attempts use the configured interval.
     ctx.reconnectBackoffMs = (uint64_t)
         NetworkingConfig::instance().data().retries.reconnectIntervalMs;
-    mimita_network_policy::ReconnectPolicyV1 reconnectPolicy{};
-    reconnectPolicy.version = mimita_network_policy::ABI_VERSION;
-    reconnectPolicy.structSize = sizeof(reconnectPolicy);
-    reconnectPolicy.lastHeardAgeMs = ctx.lastHeardServerMs > 0
-        ? now - ctx.lastHeardServerMs : 0;
-    reconnectPolicy.snapshotAgeMs = ctx.lastSnapshotReceivedMs > 0
-        ? now - ctx.lastSnapshotReceivedMs : 0;
-    reconnectPolicy.reconnectAttempts = ctx.reconnectAttempts;
-    if (ModuleHost::instance().networkReconnectPolicy(&reconnectPolicy) &&
-        reconnectPolicy.backoffMs > 0)
-        ctx.reconnectBackoffMs = (uint64_t)reconnectPolicy.backoffMs;
     ctx.lastReconnectAttemptMs = 0;
-    if (sendReconnectRequest(ctx))
+    const uint64_t lastHeardAge = ctx.lastHeardServerMs > 0
+        ? now - ctx.lastHeardServerMs : 0;
+    const uint64_t snapshotAge = ctx.lastSnapshotReceivedMs > 0
+        ? now - ctx.lastSnapshotReceivedMs : 0;
+    const uint64_t graceRemaining = ctx.reconnectGraceDeadlineMs > now
+        ? ctx.reconnectGraceDeadlineMs - now : 0;
+    NetworkEvents::emit(
+        networkEventContext(ctx, 0), "network.client.reconnect.scheduled",
+        "scheduled", "ok", "health_lost", "network.client.reconnect.attempt",
+        ctx.tick,
+        nlohmann::json{{"interval_ms", ctx.reconnectBackoffMs},
+                       {"max_attempts",
+                        NetworkingConfig::instance().data().retries.reconnectMaxAttempts},
+                       {"last_heard_age_ms", lastHeardAge},
+                       {"snapshot_age_ms", snapshotAge},
+                       {"grace_remaining_ms", graceRemaining}},
+        __FILE__, __LINE__, __func__);
+    const bool sent = sendReconnectRequest(ctx);
+    if (sent)
     {
         ++ctx.reconnectAttempts;
         ctx.lastReconnectAttemptMs = now;
     }
     logReconnectResourceProbe(ctx, "attempt-start");
+    NetworkEvents::emit(
+        networkEventContext(ctx), "network.client.reconnect.attempt",
+        "sent", sent ? "ok" : "failed", sent ? "attempt_sent" : "send_failed",
+        "network.server.reconnect.received", ctx.tick,
+        nlohmann::json{{"attempt", ctx.reconnectAttempts},
+                       {"send_ok", sent},
+                       {"interval_ms", ctx.reconnectBackoffMs},
+                       {"backoff_ms", ctx.reconnectBackoffMs},
+                       {"elapsed_ms", now - ctx.disconnectStartedMs},
+                       {"grace_remaining_ms", graceRemaining},
+                       {"last_heard_age_ms", lastHeardAge},
+                       {"snapshot_age_ms", snapshotAge}},
+        __FILE__, __LINE__, __func__);
 
     writeSessionHealthEvent(ctx, ConnectionState::Reconnecting,
                             ConnectionState::Reconnecting,
@@ -2067,16 +2115,38 @@ void mpTickReconnect(MultiplayerContext& ctx)
     ctx.lastReconnectAttemptMs = now;
     ++ctx.reconnectAttempts;
 
-    if (!sendReconnectRequest(ctx))
-    {
+    const bool sent = sendReconnectRequest(ctx);
+    if (!sent)
         logReconnectResourceProbe(ctx, "attempt-send-failed");
+    else
+        logReconnectResourceProbe(ctx, "attempt-sent");
+
+    const uint64_t graceRemaining = ctx.reconnectGraceDeadlineMs > now
+        ? ctx.reconnectGraceDeadlineMs - now : 0;
+    NetworkEvents::emit(
+        networkEventContext(ctx), "network.client.reconnect.attempt",
+        "sent", sent ? "ok" : "failed", sent ? "attempt_sent" : "send_failed",
+        "network.server.reconnect.received", ctx.tick,
+        nlohmann::json{{"attempt", ctx.reconnectAttempts},
+                       {"max_attempts", retryCfg.reconnectMaxAttempts},
+                       {"send_ok", sent},
+                       {"interval_ms", intervalMs},
+                       {"backoff_ms", ctx.reconnectBackoffMs},
+                       {"elapsed_ms", now - ctx.disconnectStartedMs},
+                       {"grace_remaining_ms", graceRemaining},
+                       {"last_heard_age_ms", ctx.lastHeardServerMs > 0
+                            ? now - ctx.lastHeardServerMs : 0},
+                       {"snapshot_age_ms", ctx.lastSnapshotReceivedMs > 0
+                            ? now - ctx.lastSnapshotReceivedMs : 0}},
+        __FILE__, __LINE__, __func__);
+
+    if (!sent)
+    {
         Debug::warn(Debug::Category::Networking,
                     "[NET RECONNECT] attempt=%d/%u failed to send (no transport)\n",
                     ctx.reconnectAttempts, (unsigned)retryCfg.reconnectMaxAttempts);
         return;
     }
-
-    logReconnectResourceProbe(ctx, "attempt-sent");
 
     mpNotifyReconnectAttempt(ctx);
     writeSessionHealthEvent(ctx, ConnectionState::Reconnecting,
@@ -2200,15 +2270,15 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
          before == ConnectionState::WaitingForServer))
     {
         static thread_local uint64_t lastSnapshotTimeoutMs = 0;
-        if (now - lastSnapshotTimeoutMs >= 1000)
+        const uint64_t intervalMs = (uint64_t)
+            std::max(100.0, cfg.observability.snapshotDiagnosticsIntervalMs);
+        if (now - lastSnapshotTimeoutMs >= intervalMs)
         {
             lastSnapshotTimeoutMs = now;
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::Network, StructuredLevel::Important,
-                "network.snapshot.timeout", "CONNECTION_" +
-                    std::to_string(ctx.localPlayerId),
-                "authoritative snapshots stopped while the client was connected",
-                ctx.tick,
+            NetworkEvents::emit(
+                networkEventContext(ctx), "network.client.snapshot.gap",
+                "waiting", "degraded", "snapshot_starved",
+                "network.client.health.waiting", ctx.tick,
                 nlohmann::json{
                     {"snapshot_age_ms", snapshotAge},
                     {"stale_threshold_ms", staleThreshold},
@@ -2217,10 +2287,7 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
                     {"last_snapshot_tick", ctx.latestLocalSnapshotTick},
                     {"server_tick", ctx.latestServerTick},
                     {"last_heard_age_ms", lastHeardAge},
-                    {"server_address", ctx.serverAddress},
-                    {"room_code", ctx.roomCode.empty()
-                        ? ctx.currentRoomCode : ctx.roomCode},
-                    {"local_player_id", ctx.localPlayerId}},
+                    {"observed_interval_ms", intervalMs}},
                 __FILE__, __LINE__, __func__);
         }
     }
@@ -2282,6 +2349,36 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
     if (next == before)
         return;
 
+    if (next == ConnectionState::Connected &&
+        before == ConnectionState::Reconnecting)
+    {
+        NetworkEvents::emit(
+            networkEventContext(ctx), "network.client.snapshot.recovery",
+            "received", "ok", "fresh_snapshot_after_reconnect",
+            "network.session.health", ctx.tick,
+            nlohmann::json{{"snapshot_age_ms", snapshotAge},
+                           {"last_heard_age_ms", lastHeardAge},
+                           {"snapshots_received", ctx.snapshotsReceived},
+                           {"server_tick", ctx.latestServerTick}},
+            __FILE__, __LINE__, __func__);
+    }
+    if (next == ConnectionState::ReconnectFailed)
+    {
+        NetworkEvents::emit(
+            networkEventContext(ctx), "network.client.reconnect.terminal",
+            "terminal", "terminal", "grace_expired", "none", ctx.tick,
+            nlohmann::json{{"elapsed_ms", ctx.disconnectStartedMs > 0
+                                ? now - ctx.disconnectStartedMs : 0},
+                           {"grace_deadline_ms", ctx.reconnectGraceDeadlineMs},
+                           {"grace_remaining_ms",
+                            ctx.reconnectGraceDeadlineMs > now
+                                ? ctx.reconnectGraceDeadlineMs - now : 0},
+                           {"attempts_sent", ctx.reconnectAttempts},
+                           {"last_heard_age_ms", lastHeardAge},
+                           {"snapshot_age_ms", snapshotAge}},
+            __FILE__, __LINE__, __func__);
+    }
+
     ctx.connectionState = next;
     const bool iceSession =
         ctx.transport != nullptr ||
@@ -2306,6 +2403,14 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
         // rebuild ICE first and resume with the retained reconnect token.
         if (iceSession && mpIceReconnectStart(ctx, ctx.approvedLocalName))
         {
+            NetworkEvents::emit(
+                networkEventContext(ctx), "network.client.reconnect.scheduled",
+                "scheduled", "ok", "ice_transport_rebuild",
+                "network.client.ice.state", ctx.tick,
+                nlohmann::json{{"grace_remaining_ms", graceMs},
+                               {"last_heard_age_ms", lastHeardAge},
+                               {"snapshot_age_ms", snapshotAge}},
+                __FILE__, __LINE__, __func__);
             // Reconnecting state is already set; the async job owns progress.
             mpNotifyConnectionStateChange(ctx, before,
                                           ConnectionState::Reconnecting);

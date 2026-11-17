@@ -382,4 +382,10 @@
     "skin": ""
   },
   "updated_at": "2026-09-02T23:57:21Z"
+,
+  "animation_profile": {
+    "version": 2,
+    "poseComposition": "layered",
+    "set": "general_set_1"
+  }
 }

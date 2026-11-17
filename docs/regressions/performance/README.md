@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 13
+Entries: 14
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -101,4 +101,11 @@ Entries: 13
 - Status: SOURCE CORRECTED — live accounting observed; 240 FPS target remains open
 - Summary: The overlay compared the previous full `gFramePacer` cycle to the current partial legacy `PerfTimes` totals. It now uses the completed frame's `gPerfScopes`, names the host gap, and reports the true residual. Observed residual dropped to 0.04 ms; `GAME` remained about 31 ms in the same scene.
 - Detail: [unaccounted-frame-time-REG-2026-11-16.md](unaccounted-frame-time-REG-2026-11-16.md)
+
+## Entry 14 — Non-ragdoll player animation stall
+
+- Recorded: 2026-11-17T16:00:00Z
+- Status: OPEN — ragdoll mode bypasses a costly non-ragdoll path
+- Summary: Ragdoll mode early-returns from `updateProceduralAnimation()` and skips normal final-pose containment. Non-ragdoll mode measured `PlayerAnimation` up to ~169 ms and `Physics::CollisionSteps` ~29–32 ms. Ragdoll is a diagnostic bypass, not the fix.
+- Detail: [nonragdoll-animation-stall-REG-2026-11-17.md](nonragdoll-animation-stall-REG-2026-11-17.md)
 

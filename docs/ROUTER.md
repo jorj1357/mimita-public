@@ -71,6 +71,7 @@ systems first. Use this default order:
 | Task type | Read first |
 |---|---|
 | Documentation | the relevant docs folder, `docs/skills/documentation-checker-v1.md` |
+| Current product priority, feature order, or roadmap | `ROADMAP.md` |
 | Time, dates, filenames, or generated artifacts | `docs/architecture/time-and-formatting/time-and-formatting.md` |
 | In-game UI, HUD, menus, text | `docs/specs/gui/guiv2.md`, `docs/skills/documentation-checker-v1.md` |
 | Vehicles, skateboards, BMX, vehicle controls, and the vehicle arena | `docs/specs/vehicles/vehicles.md`, `docs/specs/vehicles/vehicles-skateboard.md`, `docs/specs/vehicles/vehicles-bmx.md`, `docs/specs/gamemodes/gamemodes.md`, `docs/specs/gamemodes/vehicle-arena.md` |
@@ -104,7 +105,7 @@ systems first. Use this default order:
 | Assets or sound | `docs/operations/asset-management/asset-management.md`, `docs/skills/asset-checker-v1.md` |
 | Audio behavior, hot audio policy, sound recipes or sound resources | `docs/architecture/live-development/hot-audio-contract.md`, `docs/specs/hotreload/hotreload.md`, `docs/skills/logging-checker-v1.md` |
 | Build or EXE | `docs/operations/build-and-exe/build-and-exe.md`, `docs/operations/task-completion/task-completion.md`, `docs/specs/hotreload/hotreload.md`, `docs/specs/dev-loop/agent-lanes-build-authority.md`, `docs/architecture/live-development/module-migration-plan.md` |
-| Dev scripts, script inventory, or cold-change preflight | `docs/operations/devscripts/script-inventory.md`, `docs/operations/devscripts/cold-change-guard.md` |
+| Dev scripts, script inventory, dependency fan-in, or cold-change preflight | `docs/operations/devscripts/script-inventory.md`, `docs/operations/devscripts/dependency-graph.md`, `docs/operations/devscripts/cold-change-guard.md` |
 | Merge agent lanes into one EXE, or find pending lane compile/runtime validation | `docs/operations/build-and-exe/agent-lane-integration-and-pending-validation.md`, `docs/specs/dev-loop/agent-lanes-build-authority.md`, `docs/specs/dev-loop/dev-loop.md` |
 | Build duration, phase progress, or compile-time diagnosis | `docs/specs/dev-loop/build-time-observability.md`, `docs/specs/dev-loop/dev-loop.md`, `docs/operations/build-and-exe/build-and-exe.md`, `docs/architecture/time-and-formatting/time-and-formatting.md` |
 | Agent work, isolated lanes, or build authority | `docs/specs/dev-loop/agent-lanes-build-authority.md`, `docs/specs/dev-loop/dev-loop.md`, `docs/operations/build-and-exe/build-and-exe.md`, `docs/architecture/live-development/self-contained-workspace.md` |

@@ -1,5 +1,8 @@
 2026 11 17 0949 jorj
 
+Implementation table: [network-event-contract.md](network-event-contract.md).
+The canonical trace tool is `devscripts/network_trace.py`.
+
 "Total networking event contract
 The goal is one followable chain: every state-changing step emits exactly one event with the stage, result, owner, correlation, timing, and next expected step. StructuredLogger already adds run_id, pid, instance_id, event_id, wall_time, source, line, and func; network events must never use line 0 or anonymous printf as their only evidence.
 
@@ -289,21 +292,23 @@ The difference is only where the authoritative server process runs.
 
 ### Hot networking ownership (2026-11-09)
 
-Networking behavior is hot. The host owns sockets, ICE/UDP transport, packet
-wire structs, encode/decode/framing, map/asset loading, connection lifetime, and
-the fixed tick. A hot networking module owns map-sync, reconnect, session
-health, snapshot policy, spawn-authority decisions, and combat-validation
-policy. It receives bounded connection/session events and returns decisions or
-actions; the host validates and applies them.
+Networking behavior is hot. The host owns the OS socket/ICE primitive adapter,
+map/asset loading mechanism, timers, process lifetime, and the fixed-tick
+scheduler. The game generation owns packet wire structs, encode/decode/framing
+policy, map-sync, reconnect, session health, snapshot policy, spawn-authority
+decisions, and combat-validation policy. It receives bounded connection/session
+events and returns decisions or actions; the resident host applies them through
+versioned capabilities.
 
 Reconnect must restore the authoritative map id. If an older peer omits it, the
 client preserves its previous required map instead of clearing map-sync state.
 A reconnect re-arms the map-ready handshake even when the map did not change so
 the server can re-arm the authoritative transform epoch.
 
-Packet schema and transport changes remain cold boundaries. New networking
-behavior should use existing event/action schemas; adding a new one-off host
-call site is a `HOT_RELOAD_BOUNDARY_VIOLATION`.
+Transport primitive and host ABI changes remain cold boundaries. Packet
+schemas, handlers, and networking behavior are hot under the 2026-11-14
+single-authority contract below; adding a new one-off host call site is a
+`HOT_RELOAD_BOUNDARY_VIOLATION`.
 
 ### Remove offline/local gameplay paths
 
@@ -5540,6 +5545,60 @@ MiMITA policy or protocol behavior belongs in `game.dll`, including the server
 loop/session orchestration, ICE wrappers, join/reconnect/retry policy, snapshot
 policy, movement validation, lag compensation, server browser, coordinator
 client, and all packet handling.
+
+### Networking hot/cold boundary (normative)
+
+The resident host may own OS handles, callbacks, threads, timers, and opaque
+agent handles. It must not own MiMITA protocol decisions, session decisions, or
+peer policy. A resident source is not permission for resident behavior.
+
+| Part | Owner | Hot or cold | Boundary |
+|---|---|---|---|
+| Packet IDs, schemas, encode/decode | `game.dll` | Hot | Schema changes validate and default at activation |
+| Client/server packet handlers and validation | `game.dll` | Hot | Exactly one authoritative inbound path per role |
+| Join, reconnect, session health, timeout, disconnect | `game.dll` | Hot | Consumes resident transport events |
+| Room registration, room code, local-only status | `game.dll` | Hot | Coordinator transport remains a mechanism |
+| Snapshot build, publish, apply, interpolation | `game.dll` | Hot | Resident only sends/receives bytes |
+| Movement validation, lag compensation, rewind | `game.dll` | Hot | Fixed-tick and server authority preserved |
+| Server session orchestration and server policy | `game.dll` | Hot | Accept/reject, player slots, peer lifecycle, send policy |
+| ICE negotiation policy | `game.dll` | Hot | STUN/TURN choice, SDP, candidates, retry, timeout, state policy |
+| ICE listener policy | `game.dll` | Hot | Pending-peer admission, expiry, publication, peer mapping |
+| Server scheduler/pump | `resident` | Cold | Bind/listen, receive/send, sleep, timers, process lifetime |
+| Raw socket/WSA syscalls | `resident` | Cold | Handle lifetime and non-blocking loops |
+| libjuice agent/callbacks/thread | `resident` | Cold | External library; queues bounded raw events |
+| Transport/session capability layout | `resident` | Cold | Versioned ABI; changes require an EXE build |
+| ICE CLI probe and UDP echo diagnostics | tool | Cold | Not normal gameplay networking |
+
+#### Diagnostic tool exclusion
+
+`src/network/ice/ice-server.cpp` and `src/network/udp-echo.cpp` are development
+and diagnostic tools. They are not production networking policy, not normal
+client/server networking paths, and not Cutover-1 hotness evidence.
+
+This means:
+
+- They may remain cold or tool-owned in the source-owner map.
+- A cold guard result for them is not a Cutover-1 networking gap.
+- Their coldness must never justify keeping a production join, reconnect,
+  ICE negotiation, listener, room, snapshot, or session decision resident.
+- They must not be used as the only journal path for a live networking proof.
+- If either path becomes user-facing or normal gameplay, it loses this
+  exclusion and needs its own owner, specification, and hotness proof.
+- A change to code linked into the EXE still requires an EXE build/restart even
+  when the path is diagnostic.
+
+A generation swap is an intentional transport event, not a disconnect. The
+resident side keeps the socket, ICE agent, callback thread, and queued events.
+The new generation reattaches by stable connection/session ID, drains pending
+events, and continues the same room. It must not destroy a live agent merely
+because the old game generation unloaded. The required journal evidence is
+`network.hotswap.suspend`, `network.hotswap.resume`, generation activation in
+the same PID, and no `Reconnecting` transition caused only by the swap.
+
+The current source-owner map is implementation state, not a revision of this
+boundary. If a source contains policy listed as hot above, it must be split or
+moved; do not reclassify the policy as permanently cold to match the current
+file boundary.
 
 There is exactly one authoritative inbound path:
 

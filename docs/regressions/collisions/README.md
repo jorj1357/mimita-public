@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 20
+Entries: 21
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -157,3 +157,10 @@ applies to walkable slope impacts; runtime replay is still pending.
 - Recorded: 2026-11-08 (human report; exact time not supplied)
 - Status: REPORTED / NOT YET REPRODUCED
 - Detail: [funworld3-cylinder-embedding-REG-2026-11-08.md](funworld3-cylinder-embedding-REG-2026-11-08.md)
+
+## Entry 21 — World triangle candidate scan
+
+- Recorded: 2026-11-17T16:00:00Z
+- Status: REPORTED / NEEDS CURRENT TRACE
+- Summary: User reports collision queries checking far more world triangles than the local query needs. Existing records already cover uncached world gathers, full candidate scans, and missing entity broadphase. The current task is to prove whether `appendChunkTrianglesForAABB` is using the world tree or a fallback and to bound candidate counts.
+- Detail: [world-triangle-candidate-scan-REG-2026-11-17.md](world-triangle-candidate-scan-REG-2026-11-17.md)

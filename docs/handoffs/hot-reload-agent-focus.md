@@ -38,16 +38,22 @@ python devscripts/dev-loop.py --request start-client --hot-client
 - integration;
 - runtime acceptance;
 - final merge.
-- May help networking when not conflicting with B or C.
+- Owns the networking Agent A split for this phase: ICE hot/cold policy,
+  server session/pump policy, network ABI co-ownership, source-owner cleanup,
+  and verification. Follow `docs/handoffs/networking-hot-boundary-split.md`.
 
 ### Agent B
 
-- server networking;
-- `server.cpp` pump/session split;
-- ICE/session behavior;
-- server packet handling and validation;
-- resident fallback removal;
-- server runtime proof.
+- reconnect, health, reconnect/token events, and client transport continuity;
+- `multiplayer-packets.cpp` reconnect/health functions;
+- `connection-health.*`, `network-events.*`, `networkingconfig.*`, and
+  `network_trace.py`;
+- server packet reconnect/token fields without co-editing Agent A's ICE files;
+- server packet handling and validation except the ICE/server-pump split owned
+  by Agent A;
+- resident fallback removal and server runtime proof where not conflicting.
+- Follow `docs/handoffs/networking-hot-boundary-split.md` for the confirmed
+  Cutover-1 networking gap and file ownership.
 
 ### Agent C
 

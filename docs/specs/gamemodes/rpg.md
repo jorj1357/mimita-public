@@ -183,10 +183,12 @@ It may use a more mature tone, difficult fights, and blood. It is not a
 medieval-only RPG. The intended starting kit is a revolver, shotgun, and sword;
 movement is fast and expressive, and monsters use varied, readable approaches.
 
-Build RPG foundations through creator tools first. The first product priority
-is world projects and the in-game map/entity editor: open, fork, save, browse
-versions, author reusable world content, edit the live world collaboratively,
-place NPC spawns, and tune world-specific rules. Start with an authored grassy
+Build RPG foundations through creator tools after the current roadmap priority
+of Cutover-1 and performance are proven. The `docs/ROADMAP.md` order is
+authoritative. The first RPG foundation is then project storage and the in-game
+map/entity editor: open, fork, save, browse versions, author reusable world
+content, edit the live world collaboratively, place NPC spawns, and tune
+world-specific rules. Start with an authored grassy
 area and nearby easy enemies as the first content target, but do not make
 leveling, shop balance, or reward implementation a prerequisite for the
 storage/editor contracts.

@@ -466,8 +466,23 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     // occupied chassis and produces the repeating 0.7-1.1 m seat snap.
     if (!sim.player->dead && !sim.player->ragdollModeActive &&
         !VehicleSystem::instance().hasLocalDriver())
-    { MIMITA_PERF_SCOPE("Simulation::FinalPose");
-      containAndLogPlayerFinalPose(*sim.player, *sim.world, "post_animation"); }
+    {
+        static uint32_t sLastFinalPoseTick = 0;
+        const bool idleStable =
+            sim.player->ground.stableOnGround && !sim.player->crouching &&
+            glm::length(glm::vec2(sim.player->vel.x,
+                                  sim.player->vel.y)) < 0.05f;
+        const uint32_t cadence = idleStable ? 2u : 1u;
+        const uint32_t finalPoseTick = static_cast<uint32_t>(sim.tick);
+        if (sLastFinalPoseTick == 0 ||
+            finalPoseTick - sLastFinalPoseTick >= cadence)
+        {
+            sLastFinalPoseTick = finalPoseTick;
+            MIMITA_PERF_SCOPE("Simulation::FinalPose");
+            containAndLogPlayerFinalPose(*sim.player, *sim.world,
+                                         "post_animation");
+        }
+    }
 
     {
         MIMITA_PERF_SCOPE("NpcUpdate");
@@ -612,7 +627,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             sim.player->collision.supportActorVelocity = out.supportVelocity;
             // Any actor-pair position/velocity change must be re-checked against
             // static geometry in the same tick. Actor support alone is not floor.
-            if (out.corrected || out.pushed || out.supportKey != 0)
+            const bool pairChanged =
+                out.corrected || out.pushed || out.supportKey != 0;
+            if (pairChanged)
             {
                 bool grounded = false;
                 doCollisions(*sim.player, *sim.world, grounded, TICK_DT);
@@ -623,7 +640,8 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 sim.player->ground.stableOnGround = true;
             }
             sim.player->updateModelWorldTransforms();
-            if (!sim.player->dead && !sim.player->ragdollModeActive)
+            if (pairChanged && !sim.player->dead &&
+                !sim.player->ragdollModeActive)
             { MIMITA_PERF_SCOPE("ActorPair::FinalPose");
               containAndLogPlayerFinalPose(*sim.player, *sim.world,
                                            "post_actor_pair"); }

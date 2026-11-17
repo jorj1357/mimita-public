@@ -304,7 +304,23 @@ Hot:
 - avatar, vehicle, ragdoll, gamemode, chat, terminal, progression;
 - validation, rejection reasons, outage and timeout behavior;
 - lag compensation and snapshot policy;
+- ICE negotiation policy: STUN/TURN choice, SDP, candidate filtering, gathering,
+  retry, timeout, and state decisions;
+- ICE listener policy: pending-peer admission, expiry, publication, and
+  peer-to-player mapping;
 - ICE session policy and peer lifecycle decisions.
+
+Cold only:
+
+- libjuice's agent, callbacks, and callback thread;
+- OS socket/WSA calls and their handles;
+- OS timers and process/loader lifetime;
+- the versioned transport/session capability layout.
+
+A resident adapter may retain the agent handle, socket, callback thread, and
+bounded event queue across a generation swap. The new game generation
+reattaches by stable connection/session ID. An intentional swap must not emit a
+user-visible reconnect or call `juice_destroy` merely because code changed.
 
 Packet IDs are tombstones and are never reused. Unknown fields are ignored;
 missing fields receive documented defaults; schema changes validate at

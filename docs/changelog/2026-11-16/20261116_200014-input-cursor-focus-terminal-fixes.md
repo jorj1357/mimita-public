@@ -76,6 +76,48 @@ longer lets a JSON serialization error terminate the server.
   shared-file sequencing, and the validation gate.
 - This is coordination documentation only; it is not build or runtime evidence.
 
+## Networking event and dev-loop work
+
+- Added `NetworkObservabilityConfig` and `NetworkHotSwapConfig`, loaded from
+  `config/networkingconfig.json` sections `network_observability` and
+  `hot_swap`.
+- Added hot `src/network/network-events.h` with the common semantic envelope.
+- Reconnect attempts now use `reconnect_interval_ms` from config; the policy
+  module no longer overrides it with a hardcoded 1s backoff.
+- Added/renamed connection events:
+  - `network.client.reconnect.scheduled`
+  - `network.client.reconnect.attempt`
+  - `network.client.reconnect.terminal`
+  - `network.client.snapshot.gap`
+  - `network.client.snapshot.recovery`
+  - `network.client.join.accepted`
+  - `network.server.reconnect.accepted` / `.rejected`
+  - `network.server.peer.health`
+  - `network.server.timeout.expired`
+  - `network.server.snapshot.build` / `.send`
+  - `network.server.join.accepted`
+- `network.session.health` now carries connection ID, attempt ID, role,
+  transport, stage, result, reason code, and next expected event.
+- Added `docs/specs/networking/network-event-contract.md` and linked it from
+  `docs/specs/networking/networking.md`.
+- Added `devscripts/network_trace.py`; it reads run journals and config and
+  checks attempt spacing, grace/terminal ordering, swap reconnect suppression,
+  and server slot evidence.
+- Added the dev-loop `19.4b` one-stack/windowless-command contract and a TODO
+  to audit commands that can open dashboard/console windows.
+- Stopped the duplicate Python312 dev-loop watchdog/daemon stack. One
+  Python314 dashboard/watchdog/daemon stack remains.
+- Game generation `320` built successfully with the new events. Existing run
+  evidence shows `network.server.snapshot.build/send`; a fresh reconnect run is
+  still required to prove the client reconnect chain.
+- `network_trace.py` against run `20261117_170234` reported the legacy
+  reconnect attempts at about 1.0s spacing versus the configured 6.0s, which is
+  the expected pre-fix evidence. It also found ten legacy server reconnect
+  rejections and no new-generation recovery/terminal event in that mixed run.
+- The duplicate Python312 watchdog/daemon stack was stopped; the only remaining
+  dev-loop stack is watchdog PID `4740` and daemon PID `24944` (Python312).
+  `--ensure-running` reused them without opening a dashboard or console.
+
 ## Human acceptance
 
 - Visual review: not performed.

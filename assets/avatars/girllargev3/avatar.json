@@ -495,4 +495,10 @@
     "skin": ""
   },
   "updated_at": "2026-10-15T22:26:48Z"
+,
+  "animation_profile": {
+    "version": 2,
+    "poseComposition": "layered",
+    "set": "general_set_1"
+  }
 }

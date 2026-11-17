@@ -550,6 +550,49 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         c.logDelays = readBool(r, "log_delays", c.logDelays);
     }
 
+    // ── network_observability ────────────────────────────────────────
+    if (root.contains("network_observability") &&
+        root["network_observability"].is_object())
+    {
+        const json& r = root["network_observability"];
+        NetworkObservabilityConfig& c = next.observability;
+        c.enabled = readBool(r, "enabled", c.enabled);
+        c.snapshotDiagnosticsIntervalMs = readMsRange(
+            r, "snapshot_diagnostics_interval_ms",
+            c.snapshotDiagnosticsIntervalMs, 100.0, 60000.0);
+        c.metricsWindowMs = readMsRange(
+            r, "metrics_window_ms", c.metricsWindowMs, 100.0, 60000.0);
+        c.maxEventsPerSecond = readUintRange(
+            r, "max_events_per_second", c.maxEventsPerSecond, 1, 10000);
+        c.logEveryReconnectAttempt = readBool(
+            r, "log_every_reconnect_attempt", c.logEveryReconnectAttempt);
+        c.logEveryRejection = readBool(
+            r, "log_every_rejection", c.logEveryRejection);
+        c.logQueueDepth = readBool(
+            r, "log_queue_depth", c.logQueueDepth);
+        c.logRtt = readBool(r, "log_rtt", c.logRtt);
+        c.tokenFingerprintChars = readUintRange(
+            r, "token_fingerprint_chars", c.tokenFingerprintChars, 0, 32);
+    }
+
+    // ── hot_swap ─────────────────────────────────────────────────────
+    if (root.contains("hot_swap") && root["hot_swap"].is_object())
+    {
+        const json& r = root["hot_swap"];
+        NetworkHotSwapConfig& c = next.hotSwap;
+        c.suspendHealth = readBool(
+            r, "suspend_network_health", c.suspendHealth);
+        c.rebaseAfterSwap = readBool(
+            r, "rebase_after_swap", c.rebaseAfterSwap);
+        c.requireFreshSnapshotAfterSwap = readBool(
+            r, "require_fresh_snapshot_after_swap",
+            c.requireFreshSnapshotAfterSwap);
+        c.maintenanceIntervalMs = readMsRange(
+            r, "maintenance_interval_ms", c.maintenanceIntervalMs, 100.0, 10000.0);
+        c.maxSuspendMs = readMsRange(
+            r, "max_suspend_ms", c.maxSuspendMs, 1000.0, 300000.0);
+    }
+
     // ── runtime_rates ────────────────────────────────────────────────
     if (root.contains("runtime_rates") && root["runtime_rates"].is_object())
     {

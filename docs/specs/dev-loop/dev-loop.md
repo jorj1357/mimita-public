@@ -1981,6 +1981,55 @@ check. The daemon now records `daemon_pid`, `daemon_script_hash`, and
 detectable (`DAEMON_SOURCE_MISMATCH`). The AI restart authority above remains the
 fallback if the watcher itself is not running.
 
+### 19.4b One live stack and windowless agent commands
+
+The checkout must have exactly one live dev-loop stack:
+
+- one `dev-loop-watch.py` watchdog with `--dev-loop-role=watchdog`;
+- one `dev-loop.py` daemon with `--dev-loop-role=daemon`;
+- at most one visible dashboard with `--dev-loop-role=dashboard`.
+
+Locks alone are not sufficient proof when old Python processes from a previous
+script revision or a different Python installation are still alive. Before
+starting or recovering a stack, verify the lock owner and scan the process
+command lines for this checkout. If more than one watchdog, daemon, or
+dashboard is live, report the role, PID, executable, and command line; stop only
+verified extra dev-loop roles after the single owner is identified. Never kill
+every `python.exe`, unrelated Python tooling, or an unverified game/server.
+
+Window policy:
+
+- `--status`, `--command`, `--scenario-file`, `--request`, and
+  `--ensure-running` are headless control paths. They must not open or replace
+  a dashboard window.
+- Only an explicit `--dashboard` invocation or the canonical dashboard shortcut
+  may open a visible dashboard.
+- `--relaunch-terminal` is an explicit opt-in and must never be implied by a
+  one-shot agent command.
+- Watchdog and daemon are detached and windowless. Every helper subprocess uses
+  `CREATE_NO_WINDOW` and must not steal focus.
+- `open-dev-loop-dashboard.py` is the windowless dashboard launcher
+  (`pythonw.exe`); a visible Python console is a defect unless the user
+  explicitly requested a terminal dashboard.
+
+Current investigation and 2026-11-17 finding:
+
+- A duplicate Python312 watchdog/daemon stack was created while a Python314
+  stack was already live. The stale/missing watchdog lock let a one-shot
+  `--ensure-running` path start a new interpreter stack instead of adopting the
+  live daemon. `ensure_running` now scans for a live daemon first and refuses to
+  create a duplicate when the control endpoint is unresponsive.
+- `python devscripts/dev-loop.py --ensure-running`, `--command`, `--status`,
+  and `--request` are headless. They must not open a dashboard or Python console.
+- A visible dashboard is created only by an explicit `--dashboard`/shortcut.
+  `--relaunch-terminal` is an explicit opt-in, not an implied behavior.
+- Remaining TODO: audit every wrapper/shortcut that reaches
+  `run_dashboard`, `start_dashboard_detached`, `start_watchdog_detached`, or
+  `start_daemon_detached`; add `dev-loop.duplicate-stack.detected` with role,
+  PID, interpreter, script path, and command line; and prove two consecutive
+  `--ensure-running` calls leave exactly one watchdog and one daemon with no
+  new window.
+
 ### 19.5 Why a command can be visible but have no gameplay effect
 
 Every command must be diagnosed through this exact chain:
@@ -2411,7 +2460,7 @@ client. The `ss` alias is a game-terminal alias defined in
 | `--json` | Prints status or control response as JSON. | Useful with `--status`, `--request`, `--command`, or `--scenario-file`. |
 | `--command "GAME COMMAND"` / `--cmd "GAME COMMAND"` | Sends one game-terminal command to the daemon, waits for the correlated result, prints it, and exits. | Ensures one watchdog/daemon; main-checkout calls reuse the coordinator dashboard, lane calls do not open another. Sends the command once. `--cmd` is an alias. |
 | `--scenario-file PATH` | Runs a repository-local Markdown/JSON scenario and returns its verdict. | Ensures one watchdog/daemon; only the main checkout reuses/opens the coordinator dashboard. |
-| `--ensure-running` | Ensures one watchdog and daemon, then prints status and exits. | Main checkout also opens/reuses the coordinator dashboard; lanes ensure only their daemon. |
+| `--ensure-running` | Ensures one watchdog and daemon, then prints status and exits. | Headless: never opens or replaces a dashboard. Only an explicit `--dashboard`/shortcut opens the visible view. |
 | `--no-dashboard` | Ensures/controls the dev-loop without opening a dashboard. | Used by agent lanes; does not affect any existing coordinator window. |
 | `--request launch` | Requests a build if needed, then launches the selected mode. | May include `--launch-mode NUMBER`. |
 | `--request stop-client` | Stops the dev-loop-owned client. | Leaves a healthy dedicated server running. |
@@ -3066,3 +3115,9 @@ Remaining gaps for full AI proof:
 - broader assertion vocabulary for gameplay/network outcomes;
 - server/client journal correlation in the final report;
 - browser/mobile/controller adapter coverage.
+
+## Build completion and command delivery events (2026-11-17)
+
+Builds are event-driven. The daemon emits `dev-loop.build.completed` or `dev-loop.build.failed` with build ID, source generation, artifact, duration, and reason. Whole-game builds emit `dev-loop.game-generation.ready` or `dev-loop.game-build.failed` with generation and DLL. Clients emit `game.generation.activated` on same-PID activation. Agents read these events later; they do not poll or wait for a build.
+
+Command delivery uses the client queue plus a journaled lifecycle: `dev-loop.command.request` (queued), `dev-loop.command.host-read`, `dev-loop.command.delivered`, and `dev-loop.command.completed`. A queued command with no host-read within the control timeout must produce `dev-loop.command.timed-out` with the queue path, client PID, last known frame time, and a bounded retry attempt. A missing host-read means the client frame/host loop did not return, not that the command was accepted as gameplay.

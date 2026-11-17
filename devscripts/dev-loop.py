@@ -2520,6 +2520,17 @@ class DevLoop:
                     self.game_build_detail = str(result.get("error") or "game build failed")
                     self.last_message = self.game_build_detail
             self.save_state("game_build_succeeded" if success else "game_build_failed")
+            self.record_runtime_event(
+                "dev-loop.game-generation.ready" if success
+                else "dev-loop.game-build.failed",
+                {"generation": self.game_build_generation,
+                 "dll": result.get("dll") or "",
+                 "duration_seconds": self.last_game_build_duration_seconds,
+                 "request_ids": request_ids,
+                 "error": "" if success else self.game_build_detail},
+                "whole-game generation published" if success
+                else "whole-game generation build failed",
+            )
             print(f"[DEV GAME] {'published' if success else 'failed'}: {self.game_build_detail}")
 
     def process_control_requests(self) -> None:
@@ -3102,6 +3113,17 @@ class DevLoop:
 
             self.build_worker = None
             self.save_state("build_succeeded" if success else "build_failed")
+            self.record_runtime_event(
+                "dev-loop.build.completed" if success
+                else "dev-loop.build.failed",
+                {"build": self.latest_build,
+                 "destination": result.get("destination") or "",
+                 "source_generation": generation,
+                 "duration_seconds": self.last_build_duration_seconds,
+                 "request_ids": request_ids,
+                 "error": "" if success else self.last_message},
+                "EXE build published" if success else "EXE build failed",
+            )
             if success:
                 print(f"[DEV] published build {self.latest_build}: {result['destination']}")
             else:
@@ -5649,6 +5671,20 @@ def ensure_running(profile: str, launch_mode, visibility: str,
         open_dashboard = False
     events: list[dict] = []
     clear_stop_intent()
+    existing_daemons = existing_dev_loop_pids()
+    if existing_daemons:
+        # A lock file can be missing or stale while an older/mixed-interpreter
+        # daemon is still alive. Never create a second stack just because the
+        # lock is absent; adopt the live daemon when its control socket works.
+        current = wait_for_daemon_ready(DAEMON_READY_TIMEOUT_SECONDS)
+        if current is not None:
+            return current, events
+        print(
+            "[DEV CONTROL] live dev-loop daemon(s) found without a responsive "
+            f"control endpoint: {existing_daemons}; refusing to start a duplicate",
+            file=sys.stderr,
+        )
+        return None, events
     wpid = watcher_pid()
     if not (wpid and pid_alive(wpid)):
         started = start_watchdog_detached(profile, launch_mode, visibility)

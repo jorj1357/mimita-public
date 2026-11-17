@@ -372,6 +372,28 @@ struct NetworkEventTimelineConfig
     bool logDelays = false;
 };
 
+struct NetworkObservabilityConfig
+{
+    bool enabled = true;
+    double snapshotDiagnosticsIntervalMs = 1000.0;
+    double metricsWindowMs = 1000.0;
+    uint32_t maxEventsPerSecond = 200;
+    bool logEveryReconnectAttempt = true;
+    bool logEveryRejection = true;
+    bool logQueueDepth = true;
+    bool logRtt = true;
+    uint32_t tokenFingerprintChars = 8;
+};
+
+struct NetworkHotSwapConfig
+{
+    bool suspendHealth = true;
+    bool rebaseAfterSwap = true;
+    bool requireFreshSnapshotAfterSwap = true;
+    double maintenanceIntervalMs = 1000.0;
+    double maxSuspendMs = 30000.0;
+};
+
 struct NetworkRuntimeRateConfig
 {
     double inputSendRateHz = 60.0;
@@ -492,6 +514,8 @@ struct NetworkingConfigData
     NetworkServerAuthoritativeHitsConfig serverAuthoritativeHits;
     NetworkDisagreementConfig disagreement;
     NetworkEventTimelineConfig eventTimeline;
+    NetworkObservabilityConfig observability;
+    NetworkHotSwapConfig hotSwap;
     NetworkRuntimeRateConfig runtimeRates;
     NetworkRetryConfig retries;
     ReliableGameplayEventConfig reliableEvents;

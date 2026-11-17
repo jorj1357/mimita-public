@@ -90,6 +90,7 @@ revision and timestamp. They remain available on demand.
 | `devscripts/scenario-analyze.py` | Canonical | Analyzes scenario recordings and produces assertions/reports. | scenario/run data | report output | Runtime evidence support |
 | `devscripts/scenario_export.py` | Canonical | Exports/serializes scenario recordings. | scenario data | exported scenario | Runtime evidence support |
 | `devscripts/scenario_replay_report.py` | Canonical | Replays/compares a scenario and reports results. | scenario data | report | Runtime evidence support |
+| `devscripts/network_trace.py` | Report-only | Builds the reconnect/health/event chain from journals and checks configured attempt spacing, grace, and slot evidence. | run `events.jsonl`, `networkingconfig.json` | stdout/JSON summary | Network diagnosis, not acceptance |
 | `devscripts/perf-watch.py` | Report-only | Samples performance evidence from journals. | `events.jsonl` | perf output | Measurement, not acceptance |
 | `devscripts/perf-evidence.py` | Report-only | Collects/summarizes performance evidence. | journals | perf reports | Measurement |
 | `devscripts/server_hotness_probe.py` | Diagnostic | Sends a bounded server probe and checks hotness/ping response. | server endpoint | probe result | Diagnostic |
