@@ -654,16 +654,17 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         if (!code.empty())
         {
             bool isLocal = code.find("LOCAL-") == 0;
-            char buf[96];
+            char buf[192];
             if (isLocal)
-                snprintf(buf, sizeof(buf), "Room: %s  (local)", code.c_str());
+                snprintf(buf, sizeof(buf),
+                         "Room: %s  LOCAL ONLY - others cannot join", code.c_str());
             else
                 snprintf(buf, sizeof(buf), "Room: %s", code.c_str());
             float cx = uiScreenW() * 0.5f;
-            float codeScale = 0.50f;
+            float codeScale = isLocal ? 0.38f : 0.50f;
             float codeW = uiMeasureText(buf, codeScale);
             glm::vec4 codeColor = isLocal
-                ? glm::vec4(0.6f, 1.0f, 0.6f, 1.0f)
+                ? glm::vec4(1.0f, 0.55f, 0.15f, 1.0f)
                 : glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
             const Gamemode& activeMode = GamemodeRegistry::instance().get(
                 MimitaNet::CommunityMatchClient::instance().mode());

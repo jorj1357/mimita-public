@@ -128,6 +128,20 @@ void handleGameInputEvent(const mimita::host::GameInputEventV1& event) {
         case mimita::host::GameInputKind::Scroll:
             handleGameInputScroll(event.scrollX, event.scrollY);
             break;
+        case mimita::host::GameInputKind::MouseButton:
+            if (event.action == GLFW_PRESS) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::General, StructuredLevel::Important,
+                    "input.host-mouse", "input",
+                    "resident mouse-button event reached game DLL", 0,
+                    nlohmann::json{{"button", event.key},
+                                   {"action", event.action},
+                                   {"mods", event.mods}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+            InputRouter::ingestMouseButton(event.key, event.action,
+                                           InputRouter::Source::Host);
+            break;
         case mimita::host::GameInputKind::Cursor:
             InputRouter::ingestCursor(event.cursorX, event.cursorY,
                                       InputRouter::Source::Host);

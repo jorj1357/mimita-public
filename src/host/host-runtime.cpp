@@ -1,11 +1,13 @@
 // 2026-11-12
-// Resident host runtime implementation. Hot by default; MIMITA_GAME_DISABLE=1
-// keeps the resident EXE path.
+// Resident host runtime implementation. Hot by default; resident gameplay is
+// not a fallback.
 
 #include "host/host-runtime.h"
 #include "renderer/renderer.h"
 #include "render/render-gl-mapping.h"
+#define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
 
 #include <algorithm>
 #include <chrono>
@@ -587,6 +589,17 @@ void* renderDeviceAcquire(void*, std::int32_t width, std::int32_t height,
     if (!gRenderDevice) {
         gRenderDevice = new Renderer(width, height, title ? title : "MiMITA");
         HostRuntime::instance().installInputCallbacks(gRenderDevice->window);
+        // The resident window is created by the host. Give it foreground once
+        // so the key/mouse callbacks are live before normal gameplay starts.
+        if (gRenderDevice->window) {
+            glfwShowWindow(gRenderDevice->window);
+            glfwFocusWindow(gRenderDevice->window);
+            if (HWND hwnd = glfwGetWin32Window(gRenderDevice->window)) {
+                ShowWindow(hwnd, SW_SHOW);
+                SetForegroundWindow(hwnd);
+                SetFocus(hwnd);
+            }
+        }
         // The thread that creates the context is the only thread allowed to
         // call GL. Workers must marshal uploads to the main thread.
         HostRuntime::instance().markGlThread();
@@ -666,7 +679,11 @@ std::int32_t windowFocus(void*) {
 
 std::int32_t windowGetCursorMode(void*) {
     if (!gRenderDevice || !gRenderDevice->window) return -1;
-    return glfwGetInputMode(gRenderDevice->window, GLFW_CURSOR);
+    switch (glfwGetInputMode(gRenderDevice->window, GLFW_CURSOR)) {
+        case GLFW_CURSOR_HIDDEN: return 1;
+        case GLFW_CURSOR_DISABLED: return 2;
+        default: return 0;
+    }
 }
 
 std::int32_t windowGetFocused(void*) {
@@ -681,7 +698,10 @@ std::int32_t windowGetIconified(void*) {
 
 std::int32_t windowSetCursorMode(void*, std::int32_t mode) {
     if (!gRenderDevice || !gRenderDevice->window || mode < 0 || mode > 2) return 0;
-    glfwSetInputMode(gRenderDevice->window, GLFW_CURSOR, mode);
+    const int glfwMode = mode == 2 ? GLFW_CURSOR_DISABLED
+                        : mode == 1 ? GLFW_CURSOR_HIDDEN
+                                    : GLFW_CURSOR_NORMAL;
+    glfwSetInputMode(gRenderDevice->window, GLFW_CURSOR, glfwMode);
     return 1;
 }
 
@@ -1708,12 +1728,7 @@ bool HostRuntime::startFromEnvironment() {
         return probeEnabled_.load(std::memory_order_acquire);
     }
 
-    // Hot by default: load the newest built generation. MIMITA_GAME_DISABLE=1
-    // keeps the resident EXE path for debugging or bisecting.
-    const char* disabled = std::getenv("MIMITA_GAME_DISABLE");
-    if (disabled && std::strcmp(disabled, "1") == 0) {
-        return false;
-    }
+    // Load the newest built generation. Resident gameplay is not a fallback.
 
     // The full-client path bootstraps the game generation before the legacy
     // gameInit runs. Initialize the resident logger first so the client writes
@@ -1902,6 +1917,7 @@ HostResult HostRuntime::driveRender(void* renderContext) {
 void HostRuntime::installInputCallbacks(GLFWwindow* window) {
     if (!window) return;
     glfwSetKeyCallback(window, &HostRuntime::inputKeyCallback);
+    glfwSetMouseButtonCallback(window, &HostRuntime::inputMouseButtonCallback);
     glfwSetCharCallback(window, &HostRuntime::inputCharCallback);
     glfwSetCursorPosCallback(window, &HostRuntime::inputCursorCallback);
     glfwSetScrollCallback(window, &HostRuntime::inputScrollCallback);
@@ -1957,6 +1973,18 @@ void HostRuntime::inputKeyCallback(GLFWwindow*, int key, int scancode,
     event.kind = GameInputKind::Key;
     event.key = key;
     event.scancode = scancode;
+    event.action = action;
+    event.mods = mods;
+    instance().enqueueInput(event);
+}
+
+void HostRuntime::inputMouseButtonCallback(GLFWwindow*, int button, int action,
+                                           int mods) {
+    GameInputEventV1 event{};
+    event.version = 2;
+    event.structSize = static_cast<std::uint32_t>(sizeof(event));
+    event.kind = GameInputKind::MouseButton;
+    event.key = button;
     event.action = action;
     event.mods = mods;
     instance().enqueueInput(event);

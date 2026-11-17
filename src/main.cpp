@@ -576,8 +576,7 @@ int main(int argc, char** argv)
     }
     const auto configureWholeGameHost = []() {
         if (std::getenv("MIMITA_GAME_PROBE") ||
-            std::getenv("MIMITA_GAME_OWN_FRAME") ||
-            std::getenv("MIMITA_GAME_DISABLE")) {
+            std::getenv("MIMITA_GAME_OWN_FRAME")) {
             return;
         }
         std::string dllPath;
@@ -729,6 +728,7 @@ int main(int argc, char** argv)
         startup.title = "mimita.exe";
         std::snprintf(startup.sessionToken, sizeof(startup.sessionToken), "%s",
                       launchOptions.sessionToken.c_str());
+        startup.unlockCursor = gUnlockCursorOnLaunch ? 1u : 0u;
         if (mimita::host::HostRuntime::instance().bootstrapGame(startup)) {
             while (!mimita::host::HostRuntime::instance().gameShouldClose()) {
                 mimita::host::HostRuntime::instance().driveFrame(1.0 / 60.0, nullptr);

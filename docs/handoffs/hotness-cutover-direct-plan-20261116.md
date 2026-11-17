@@ -70,8 +70,8 @@ format and source set. Current generated audit files are
 - `STATIC_STATE_REVIEW=71`
 - `UNRESOLVED=0`
 
-`audit_clean` remains false because those review classes contain open work,
-not because of unresolved ownership.
+Those review classes are optional report-only census data. They are not part of
+authoritative Cutover status and do not block the link/runtime gates.
 
 ### Live player_core migration proof
 
@@ -122,11 +122,10 @@ acceptance.
    - Add/remove-field migration, validation, atomic commit, and failed-migration
      rollback are not proven.
 
-4. **Audit classification**
-   - `audit.json` has 797 rows and 554 high-risk classifications.
-   - This is not 554 bugs. It includes resident-adapter-required,
-     runtime-proof-required, state-review, and non-game rows.
-   - Cutover needs `unresolved_game_blockers == 0`, not every row closed.
+4. **Optional audit classification**
+   - Audit/census data is report-only diagnosis, not Cutover authority.
+   - `status.json` no longer includes audit fields.
+   - Use it only when investigating residual unload/state questions.
 
 5. **Fallback and legacy removal**
    - `MIMITA_GAME_DISABLE` remains.

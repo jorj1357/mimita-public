@@ -206,6 +206,7 @@ enum class GameInputKind : std::uint32_t {
     Scroll = 3,
     Drop = 4,
     Cursor = 5,
+    MouseButton = 6,
 };
 
 struct GameInputEventV1 {
@@ -232,6 +233,7 @@ struct GameStartupV1 {
     std::int32_t height;
     const char* title;
     char sessionToken[256];
+    std::uint32_t unlockCursor = 0;
 };
 
 // Bootstrap -> DLL handoff for launcher auto-join. The resident EXE owns the

@@ -8,6 +8,7 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <exception>
 #include <string>
 
 #include "debug/structured-log.h"
@@ -30,7 +31,13 @@ void emitEvent(std::int32_t category, std::int32_t level, const char* eventName,
     if (!gLog || !gLog->event) {
         return;
     }
-    std::string fieldsJson = fields.dump();
+    std::string fieldsJson;
+    try {
+        fieldsJson = fields.dump(
+            -1, ' ', false, nlohmann::json::error_handler_t::replace);
+    } catch (const std::exception&) {
+        fieldsJson = "{}";
+    }
     if (fieldsJson.size() > mimita::host::kMaxLogPayloadBytes) {
         fieldsJson.resize(mimita::host::kMaxLogPayloadBytes);
     }

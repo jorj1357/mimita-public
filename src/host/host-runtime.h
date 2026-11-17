@@ -3,8 +3,7 @@
 //
 // Owns the loader, the generation barrier, and the host service table. Hot by
 // default: it loads the newest built generation from MIMITA_GAME_DLL or
-// build/game/current.json. Set MIMITA_GAME_DISABLE=1 to keep the resident EXE
-// path for debugging or bisecting.
+// build/game/current.json. Resident gameplay is no longer a fallback.
 //
 // This header is resident/bootstrap code. It must not move into game.dll.
 
@@ -342,6 +341,8 @@ private:
     static void inputCursorCallback(GLFWwindow* window, double x, double y);
     static void inputKeyCallback(GLFWwindow* window, int key, int scancode,
                                  int action, int mods);
+    static void inputMouseButtonCallback(GLFWwindow* window, int button,
+                                         int action, int mods);
     static void inputCharCallback(GLFWwindow* window, unsigned int codepoint);
     static void inputScrollCallback(GLFWwindow* window, double xOffset,
                                     double yOffset);

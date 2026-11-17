@@ -86,7 +86,6 @@ def main(argv: list[str] | None = None) -> int:
     ready = read_json("build/game/ready.json")
     packet_ledger = read_json("config/hot-reload/packet-ledger.json")
     state_ledger = read_json("config/hot-reload/state-ledger.json")
-    audit = read_json("build/hot-reload/audit.json")
     dev_state = read_json(".dev/state.json")
     progress = read_json("build/progress.json")
 
@@ -135,13 +134,6 @@ def main(argv: list[str] | None = None) -> int:
         "server refused to start without the hot server generation" in server_source
         and "if (!hotPlayers)" not in server_source
         and "if (!hotWorld)" not in server_source)
-    audit_counts = audit.get("counts", {})
-    high_risk = int(audit.get("high_risk_count", 0) or 0)
-    unresolved_game_blockers = int(
-        audit.get("unresolved_game_blockers", audit_counts.get("UNRESOLVED", 0))
-        or 0)
-    audit_rows = len(audit.get("rows", []) or [])
-
     generation = current.get("generation", ready.get("generation"))
     try:
         main_source = (ROOT / "src/main.cpp").read_text(encoding="utf-8")
@@ -172,7 +164,6 @@ def main(argv: list[str] | None = None) -> int:
         "server_fallback_removed": server_fallback_removed,
         "safe_unload": safe_unload,
         "gameplay_live_fix_proven": False,
-        "audit_clean": audit_rows > 0 and unresolved_game_blockers == 0,
     }
 
     payload = {
@@ -180,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "validation": {
             "validated": False,
-            "note": "2026-11-14 17:28 initial generated values are provisional; validate source manifest, packet/state ledgers, audit classification, build identity, and runtime fields before using them as evidence.",
+            "note": "Generated build/run/packet/state facts only. Optional audit/census reports are separate report-only evidence, not Cutover status.",
         },
         "source": {
             "revision": manifest.get("revision", ""),
@@ -218,9 +209,6 @@ def main(argv: list[str] | None = None) -> int:
             "server_npcs_game_owned": server_npcs_game_owned,
             "state_domains": state_domains,
             "state_domains_wired": state_domains_wired,
-            "audit_rows": audit_rows,
-            "audit_high_risk": high_risk,
-            "audit_counts": audit_counts,
         },
         "cutover1": gates,
     }

@@ -27,6 +27,8 @@
 #include "host/abi/game-server-abi.h"
 #include "host/abi/transport-capability.h"
 
+extern bool gUnlockCursorOnLaunch;
+
 namespace mimita::game {
 void initializeHostLog(const mimita::host::HostServicesV1* services);
 void initializeHostTransport(const mimita::host::HostServicesV1* services);
@@ -119,6 +121,7 @@ HostResult gameBootstrap(const GameStartupV1* startup) {
         return HostResult::InvalidArgument;
     }
     ensureStartupIdentity(startup->sessionToken);
+    gUnlockCursorOnLaunch = startup->unlockCursor != 0;
     return mimita::game::initializeWholeGameEntry(
                startup->width > 0 ? startup->width : 1024,
                startup->height > 0 ? startup->height : 768,

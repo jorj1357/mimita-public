@@ -486,7 +486,8 @@ void engineTickState(Engine& engine, float dt)
 
     static bool gravePrev = false;
     bool graveDown = InputRouter::keyDown(GLFW_KEY_GRAVE_ACCENT);
-    if (!PauseMenu::isOpen() && graveDown && !gravePrev) {
+    if (!InputRouter::hasHostKeys() && !PauseMenu::isOpen() &&
+        graveDown && !gravePrev) {
         Terminal::instance().toggle();
         // Local/offline duel only for DuelManager; also check DuelQueue for network duels.
         bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd ||

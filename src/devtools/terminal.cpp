@@ -510,6 +510,11 @@ void Terminal::toggle() {
     } else {
         printf("[TERMINAL] closed\n");
     }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        mOpen ? "terminal.opened" : "terminal.closed", "terminal",
+        mOpen ? "terminal opened by input owner" : "terminal closed by input owner",
+        0, nlohmann::json{{"open", mOpen}}, __FILE__, __LINE__, __FUNCTION__);
 }
 
 // Greedy word wrap to `columns` characters, breaking at spaces when possible and

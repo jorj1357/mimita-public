@@ -725,14 +725,11 @@ int runServer(const LaunchOptions& options)
     ::StructuredLogger::instance().init();
     mimita::host::HostRuntime::instance().startFromEnvironment();
     if (!mimita::host::HostRuntime::instance().serverApiAvailable()) {
-        const char* disabled = std::getenv("MIMITA_GAME_DISABLE");
         ::StructuredLogger::instance().writeEvent(
             StructuredCategory::Network, StructuredLevel::Errors,
             "game.server.hot-required", "server",
             "server refused to start without the hot server generation", 0,
-            {{"reason", (disabled && std::strcmp(disabled, "1") == 0)
-                            ? "disabled"
-                            : "no-generation"}},
+            {{"reason", "no-generation"}},
             __FILE__, __LINE__, __func__);
         return 1;
     }
@@ -1434,9 +1431,6 @@ int runServer(const LaunchOptions& options)
             const auto tickStart = std::chrono::steady_clock::now();
             const bool hotServer =
                 mimita::host::HostRuntime::instance().serverApiAvailable();
-            // TODO-DELETE(fallback): the resident else blocks are the
-            // MIMITA_GAME_DISABLE=1 escape hatch. Delete them once the same-PID
-            // hot-path swap is proven and the flag is removed.
             mimita::host::ServerFrameV1 serverFrame{};
             serverFrame.tick = tick;
             serverFrame.players = &players;
@@ -2263,9 +2257,6 @@ static void simulateOneServerTick(ListenServerState& state)
         mimita::host::HostRuntime::instance().poll();
         const bool hotServer =
             mimita::host::HostRuntime::instance().serverApiAvailable();
-        // TODO-DELETE(fallback): the resident else blocks are the
-        // MIMITA_GAME_DISABLE=1 escape hatch. Delete them once the same-PID
-        // hot-path swap is proven and the flag is removed.
         mimita::host::ServerFrameV1 serverFrame{};
         serverFrame.tick = state.tick;
         serverFrame.flags = mimita::host::kServerFrameHazardScratch;

@@ -4315,6 +4315,95 @@ during reproduction.
 `docs/specs/dev-loop/dev-loop.md` section 19.7 records the reported failure
 and runtime evidence needed when this command is sent through the AI/dev-loop
 path. Section 22 there documents the dev-loop's own command-line options.
+
+## Connectivity FAQ — can other people join?
+
+The project is client/server. “Local” is a transport scope, not a separate
+single-player architecture.
+
+### What does `127.0.0.1` mean?
+
+`127.0.0.1` is loopback: “this same computer.” A separate local server and client
+process can use it, but a player on another computer cannot.
+
+### Am I hosting something other people can join?
+
+- **Yes** when the server is registered with the coordinator and a public room
+  code exists.
+- **No** when the address is `127.0.0.1`, or when the room code starts with
+  `LOCAL-`, or when coordinator registration failed.
+- A local server must stay visibly marked **LOCAL ONLY / OFFLINE — remote
+  players cannot join**. Do not display only a normal room code.
+
+### How do I launch a public room-code server?
+
+Use the normal server/preset path, for example:
+
+```text
+mimita.exe --server --mode sandbox --gamemode sandbox --map funworld3
+```
+
+Or use the in-game server start button / preset command:
+
+```text
+server_start_preset sandbox_1
+ss
+```
+
+The server starts its local authoritative loop first; coordinator registration
+runs in the background. The room code appears after registration succeeds. The
+same room code must be shown in the room HUD and in the journal as
+`network.room.registered` with a public code.
+
+### How do I launch loopback-only dev mode?
+
+```text
+mimita.exe --server --bind 127.0.0.1:24632 --mode sandbox --gamemode sandbox
+mimita.exe --client --connect 127.0.0.1:24632
+```
+
+The dev loop also provides this as mode `1`:
+
+```text
+python devscripts/dev-loop.py --launch-mode 1
+```
+
+This is for development only. It must not be described as public/online, and it
+cannot be accepted as evidence that another computer can join.
+
+### How do I join a public room?
+
+```text
+mimita.exe --client --room <ROOM-CODE>
+```
+
+Or use the online menu/server browser. Joining uses the coordinator and ICE; the
+client must show the room code and current connection stage.
+
+### What happens if the coordinator is unreachable?
+
+- The local server may remain playable.
+- The room becomes **LOCAL ONLY / OFFLINE**.
+- Show a persistent, high-visibility in-game banner/tip and a terminal message.
+- Emit bounded events:
+  - `network.coordinator.offline`
+  - `network.room.registration_failed`
+  - `network.public-join-disabled`
+- Do not show a public room code or say that remote players can join.
+- Background retry may continue; a successful retry must emit
+  `network.room.registered` and return the room to public status.
+
+### What room am I in?
+
+The room HUD and terminal status must show:
+
+- current room code,
+- public / LOCAL ONLY / OFFLINE state,
+- current connection state,
+- whether the server is registered with the coordinator.
+
+Empty or stale room codes must not be presented as an active public room.
+
 ________________
 
 68. Map changes

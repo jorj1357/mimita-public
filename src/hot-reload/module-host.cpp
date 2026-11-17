@@ -1154,7 +1154,7 @@ void ModuleHost::shutdown()
 
 void ModuleHost::poll()
 {
-    if (!mStarted)
+    if (!mStarted || mLocalModules)
         return;
     const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();

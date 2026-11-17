@@ -71,6 +71,95 @@ Cutover-1 is complete when:
 Cutover-1 does not require normalized input, ECS expansion, agent command
 tooling, hot backends for every OS/device, or distributed storage.
 
+### Cutover-1 runtime acceptance
+
+The per-behavior owner matrix and live-edit proof format are in
+[hotness-matrix.md](hotness-matrix.md).
+
+Cutover-1 is not complete because the source tree links or because a self-test
+passes. Acceptance requires a real executable, the real dev-loop, the same PID
+across generation activation, the exact instance journal, and human review for
+visible behavior.
+
+Every accepted run records:
+
+- source revision and ownership manifest revision;
+- EXE artifact ID, SHA-256 build ID, and executable path;
+- game generation, DLL path, and code hash;
+- run ID, process role, PID, launch mode, map, gamemode, and instance;
+- exact `events.jsonl` path;
+- scenario start/end ticks or frames;
+- every assertion result and any bounded failure reason.
+
+The journal is the primary machine evidence. A unit/self-test may support
+diagnosis but cannot replace the real-EXE journal.
+
+| Cutover requirement | Required live journal evidence | Human review |
+|---|---|---|
+| Client/server use one game generation | `game.generation.activated`, `game.render.path` with `path=dll`, matching build/generation identity in client and server journals | same-PID visual check |
+| Ordinary behavior sources are hot | changed source resolves to `game`; new generation activates; no EXE rebuild; no `.exe` restart | behavior visibly changes |
+| Packet handlers are in the DLL | `packet.route` with `path=dll` for the exercised client/server packet; no resident fallback | send/receive action visible |
+| No silent fallback | failed hot activation reports rejection and keeps the prior generation; no resident path handles a migrated action | failure is visible and recoverable |
+| Join/reconnect/session | `network.room.registered`, `network.connect.stage`, `network.connection-state.changed` ending in `Connected` or a bounded final failure with reason | room can be joined and identified |
+| Public vs local-only hosting | registered room emits `room_code` and public status; coordinator failure emits `network.coordinator.offline` / local-only status; no false “online” claim | banner/terminal clearly says LOCAL ONLY / OFFLINE |
+| Render/UI policy hot | generated render path events, no cold renderer edit; changed game render policy activates in the same PID | visual result accepted |
+| Input/action mapping hot | normalized input/action event from the game path; changed binding/action activates without EXE rebuild | input feels correct |
+| State survives swap and migrates | state migration prepare/commit events; v1→v2 and v2→v3 field behavior; rejected migration preserves old state | values survive visibly |
+| Safe unload | repeated different-generation activation; no post-unload job/callback/resource access; old generation remains unloaded | no crash/freeze |
+| Real gameplay/network fix | before/after event contract for the exact bug, same PID/session, visible behavior change | human accepts fix |
+| Rollback | rejected or reverted generation reports rejection and the previous generation remains active with prior state | behavior returns to baseline |
+| Visibly playable | the target map/mode reaches normal frames, input, simulation, render, and a joined session | playable |
+
+#### Hotness proof procedure
+
+For each proposed hot fix:
+
+1. Run the cold-change guard or resolve the changed file in the source manifest.
+2. The changed file must be `game`-owned. A `resident`, `bootstrap`, or
+   `COLD_ABI` change is not a live fix.
+3. Save the change; the dev loop builds only the game DLL.
+4. Activate the generation in the same PID; record compile, link, activation,
+   and first-visible-result durations.
+5. Observe the owner event and `path=dll` in that instance journal.
+6. If the event is absent or the old path runs, the behavior is not hot.
+7. Record build evidence, runtime evidence, and human acceptance separately.
+
+A header-only change is hot only when all dependents are hot or the header is
+included in the game DLL. A changed host ABI header is always a cold change.
+
+#### Required feature contracts
+
+- **Melee:** `melee.contact.batch.received` followed by accepted or rejected
+  claims, authoritative damage/knockback, and exactly one result per
+  target/tick. Rejections state the reason.
+- **FPS:** `performance.fps` and frame-budget/resource-window events identify
+  measured frame time, budget, and the largest measured owners. Passing requires
+  target budget or an explicit owned exception; cosmetic claims alone are not
+  proof.
+- **Room joining:** room registration, room code, transport stage, connection
+  state, and map/load readiness are traceable in order. A join that is stuck
+  must report the current stage and bounded failure reason.
+- **Reconnect:** an established session loss emits its cause, attempt count,
+  and either `Connected` restoration or a final bounded failure. Initial loading
+  must not be mislabeled Reconnecting.
+- **NPC/collision:** `npc.collision.stuck`, `npc.pose.reset`,
+  `npc.pose.penetration`, speed-collapse, and progress-stall events must match
+  the accepted threshold for the scenario.
+- **Map editor:** selection, gizmo hover/axis, drag, save/reload, and map
+  round-trip events are present; human visual review confirms the gizmo.
+- **State migration:** prepare/commit/reject events include domain, old/new
+  schema or size, and the retained-old-state result.
+- **Outlines/render policy:** config change and render-policy activation are
+  observable; no matched renderer/device rebuild is required.
+
+#### Randomized stress testing
+
+Randomized testing is a later expansion, not a Cutover-1 prerequisite. When
+added, it must use deterministic seeds, bounded value ranges, saved failing
+seeds, and the same real-EXE `events.jsonl` contract. Random success or random
+failure must never replace an explicit scenario assertion.
+
+
 2026 11 15 1030 jorj - this means like
 ideal fps: 240, actual fps: 10-100
 we can add logging live, fix it live, change .cpp code live, look at events.jsonl changing live
@@ -402,7 +491,7 @@ These paths are architectural roles, not current status.
 |---|---|---|---|
 | `build/source-manifest.json` | Source ownership and revision | `devscripts/source_manifest.py` | No |
 | `build/link-inputs-<mode>.json` | Actual object/source list passed to the EXE linker | `build.py` | No |
-| `build/hot-reload/status.json` | Build/run/coverage/gap summary | `devscripts/hot_reload_status.py` | No |
+| `build/hot-reload/status.json` | Authoritative build/run/packet/state status; audit/census reports are separate report-only files | `devscripts/hot_reload_status.py` | No |
 | `build/hot-reload/audit.json` | Static unload-safety findings | `devscripts/audit_triage.py` | No |
 | `config/hot-reload/packet-ledger.json` | Packet client/server hot coverage | `devscripts/packet_registry_codegen.py` | No |
 | `config/hot-reload/state-ledger.json` | State-domain coverage | `devscripts/resident_state_codegen.py` | No |
