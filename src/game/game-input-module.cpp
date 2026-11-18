@@ -32,6 +32,13 @@ void requestSendChatMessage(const std::string& message);
 
 namespace mimita::game {
 
+namespace {
+// GLFW sends a character event after the grave key event. The key event may
+// open the terminal, so consume that same key's text event before it reaches
+// the newly focused command line.
+bool suppressConsoleToggleCharacter = false;
+}
+
 void handleGameInputKey(int key, int scancode, int action, int mods) {
     InputCommandSystem::instance().ingestHostKey(key, scancode, action, mods);
     {
@@ -56,6 +63,7 @@ void handleGameInputKey(int key, int scancode, int action, int mods) {
     if (action == GLFW_PRESS && key == GLFW_KEY_GRAVE_ACCENT) {
         if (!PauseMenu::isOpen()) {
             Terminal::instance().toggle();
+            suppressConsoleToggleCharacter = true;
             return;
         }
     }
@@ -75,6 +83,13 @@ void handleGameInputKey(int key, int scancode, int action, int mods) {
         }
     }
 
+    // An open terminal owns typing before editor shortcuts, matching the
+    // resident InputCommandSystem callback's established priority.
+    if (Terminal::instance().isOpen()) {
+        Terminal::instance().handleKey(key, mods);
+        return;
+    }
+
     authPopupHandleKey(key, action);
     signInMenuHandleKey(key, action);
     if (avatarEditorHandleKey(key, action, mods)) return;
@@ -86,11 +101,23 @@ void handleGameInputKey(int key, int scancode, int action, int mods) {
         gChatUiTickClock, chatMsg);
     if (!chatMsg.empty()) requestSendChatMessage(chatMsg);
     if (consumed) return;
+
+    // Route host-dispatched keyboard events through the same editor owners as
+    // the resident callback. A focused field gets text editing priority;
+    // otherwise the editor handles its map shortcuts.
+    if (MapEditor::instance().active()) {
+        if (MapEditor::instance().handleTextKey(key, mods, action)) return;
+        if (MapEditor::instance().handleKey(key, mods, action)) return;
+    }
+
     guiBindingsHandleKey(key, action, mods);
-    Terminal::instance().handleKey(key, mods);
 }
 
 void handleGameInputChar(unsigned int codepoint) {
+    if (suppressConsoleToggleCharacter) {
+        suppressConsoleToggleCharacter = false;
+        if (codepoint == '`' || codepoint == '~') return;
+    }
     authPopupHandleChar(codepoint);
     signInMenuHandleChar(codepoint);
     if (avatarEditorHandleChar(codepoint)) return;

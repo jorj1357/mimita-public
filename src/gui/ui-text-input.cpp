@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <utility>
 #include <GLFW/glfw3.h>
 
 namespace
@@ -38,6 +39,55 @@ static void clampCursor(UITextInputState& state)
     state.cursorPos = std::clamp(state.cursorPos, 0, len);
     if (state.selectionStart >= 0)
         state.selectionStart = std::clamp(state.selectionStart, 0, len);
+}
+
+static void syncEditHistory(UITextInputState& state)
+{
+    if (state.historyValue == state.value) return;
+    state.undoHistory.clear();
+    state.redoHistory.clear();
+    state.historyValue = state.value;
+}
+
+static void recordTextEdit(UITextInputState& state)
+{
+    syncEditHistory(state);
+    constexpr size_t kMaxTextUndo = 64;
+    if (state.undoHistory.size() >= kMaxTextUndo)
+        state.undoHistory.erase(state.undoHistory.begin());
+    state.undoHistory.push_back(
+        {state.value, state.cursorPos, state.selectionStart});
+    state.redoHistory.clear();
+}
+
+static void finishTextEdit(UITextInputState& state)
+{
+    state.historyValue = state.value;
+}
+
+static bool restoreTextEdit(UITextInputState& state,
+                            std::vector<UITextInputState::EditSnapshot>& from,
+                            std::vector<UITextInputState::EditSnapshot>& to)
+{
+    syncEditHistory(state);
+    if (from.empty()) return false;
+    to.push_back({state.value, state.cursorPos, state.selectionStart});
+    const UITextInputState::EditSnapshot snapshot = std::move(from.back());
+    from.pop_back();
+    state.value = snapshot.value;
+    state.cursorPos = snapshot.cursorPos;
+    state.selectionStart = snapshot.selectionStart;
+    clampCursor(state);
+    finishTextEdit(state);
+    state.lastActivityMs = (uint64_t)(glfwGetTime() * 1000.0);
+    return true;
+}
+
+void uiTextInputResetHistory(UITextInputState& state)
+{
+    state.undoHistory.clear();
+    state.redoHistory.clear();
+    state.historyValue = state.value;
 }
 
 // ── Selection helpers ────────────────────────────────────────────────
@@ -127,6 +177,7 @@ bool uiTextInputHandleChar(UITextInputState& state, unsigned int codepoint,
                            const UITextInputOptions& opts)
 {
     if (!state.focused) return false;
+    syncEditHistory(state);
     if (codepoint >= 32 && codepoint <= 126)
     {
         if (opts.characterFilter && !opts.characterFilter(codepoint))
@@ -140,7 +191,9 @@ bool uiTextInputHandleChar(UITextInputState& state, unsigned int codepoint,
             return true;
 
         std::string ch(1, (char)codepoint);
+        recordTextEdit(state);
         uiTextInputReplaceSelection(state, ch);
+        finishTextEdit(state);
         state.lastActivityMs = (uint64_t)(glfwGetTime() * 1000.0);
         return true;
     }
@@ -155,6 +208,7 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
 {
     if (!state.focused) return false;
     if (action != GLFW_PRESS && action != GLFW_REPEAT) return false;
+    syncEditHistory(state);
 
     const bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
     const bool shift = (mods & GLFW_MOD_SHIFT) != 0;
@@ -164,6 +218,15 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
     {
         switch (key)
         {
+        case GLFW_KEY_Z:
+            if (shift)
+                restoreTextEdit(state, state.redoHistory, state.undoHistory);
+            else
+                restoreTextEdit(state, state.undoHistory, state.redoHistory);
+            return true;
+        case GLFW_KEY_Y:
+            restoreTextEdit(state, state.redoHistory, state.undoHistory);
+            return true;
         case GLFW_KEY_V:
         {
             std::string text = mimita::game::hostClipboardGet();
@@ -189,8 +252,11 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
                         filtered += (char)c;
                     }
                 }
-                if (!filtered.empty())
+                if (!filtered.empty()) {
+                    recordTextEdit(state);
                     uiTextInputReplaceSelection(state, filtered);
+                    finishTextEdit(state);
+                }
             }
             state.lastActivityMs = (uint64_t)(glfwGetTime() * 1000.0);
             return true;
@@ -205,8 +271,10 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
         {
             if (uiTextInputHasSelection(state))
             {
+                recordTextEdit(state);
                 mimita::game::hostClipboardSet(uiTextInputSelectedText(state));
                 uiTextInputDeleteSelection(state);
+                finishTextEdit(state);
                 state.lastActivityMs = (uint64_t)(glfwGetTime() * 1000.0);
             }
             return true;
@@ -234,6 +302,8 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
         }
         case GLFW_KEY_BACKSPACE:
         {
+            const bool changed = uiTextInputHasSelection(state) || state.cursorPos > 0;
+            if (changed) recordTextEdit(state);
             if (uiTextInputHasSelection(state))
                 uiTextInputDeleteSelection(state);
             else if (state.cursorPos > 0)
@@ -242,11 +312,15 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
                 state.value.erase(wordStart, state.cursorPos - wordStart);
                 state.cursorPos = wordStart;
             }
+            if (changed) finishTextEdit(state);
             state.lastActivityMs = (uint64_t)(glfwGetTime() * 1000.0);
             return true;
         }
         case GLFW_KEY_DELETE:
         {
+            const bool changed = uiTextInputHasSelection(state) ||
+                                 state.cursorPos < (int)state.value.size();
+            if (changed) recordTextEdit(state);
             if (uiTextInputHasSelection(state))
                 uiTextInputDeleteSelection(state);
             else if (state.cursorPos < (int)state.value.size())
@@ -254,6 +328,7 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
                 int wordEnd = uiTextInputCursorWordRight(state, state.cursorPos);
                 state.value.erase(state.cursorPos, wordEnd - state.cursorPos);
             }
+            if (changed) finishTextEdit(state);
             state.lastActivityMs = (uint64_t)(glfwGetTime() * 1000.0);
             return true;
         }
@@ -278,6 +353,8 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
     // ── Backspace ──────────────────────────────────────────
     if (key == GLFW_KEY_BACKSPACE)
     {
+        const bool changed = uiTextInputHasSelection(state) || state.cursorPos > 0;
+        if (changed) recordTextEdit(state);
         if (uiTextInputHasSelection(state))
             uiTextInputDeleteSelection(state);
         else if (state.cursorPos > 0)
@@ -285,6 +362,7 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
             state.value.erase(state.cursorPos - 1, 1);
             --state.cursorPos;
         }
+        if (changed) finishTextEdit(state);
         state.lastActivityMs = (uint64_t)(glfwGetTime() * 1000.0);
         return true;
     }
@@ -292,10 +370,14 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
     // ── Delete ─────────────────────────────────────────────
     if (key == GLFW_KEY_DELETE)
     {
+        const bool changed = uiTextInputHasSelection(state) ||
+                             state.cursorPos < (int)state.value.size();
+        if (changed) recordTextEdit(state);
         if (uiTextInputHasSelection(state))
             uiTextInputDeleteSelection(state);
         else if (state.cursorPos < (int)state.value.size())
             state.value.erase(state.cursorPos, 1);
+        if (changed) finishTextEdit(state);
         state.lastActivityMs = (uint64_t)(glfwGetTime() * 1000.0);
         return true;
     }

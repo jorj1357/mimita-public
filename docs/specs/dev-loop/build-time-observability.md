@@ -55,6 +55,17 @@ updates must be flushed as they happen. The dev-loop status and dashboard read
 this file; they must not infer that a build is stuck on the last `[CXX]` line
 while the worker is linking or publishing.
 
+For each whole-game DLL attempt, append a `dev-loop.game-build.started` event
+to the dev-loop journal with the source generation, revision, a concise note
+that saved edits were captured, and bounded changed paths when available. As
+translation units finish, append one `dev-loop.game-build.file` event per unit
+with its path, `compiled`, `skipped`, or `failed` result, elapsed compile
+seconds, revision, generation, and UTC observation time. Emit these while the
+attempt is active, including cache skips. Keep the bounded recent file results
+in `build/game/progress.json` so the dashboard can show live CXX/SKIP timing
+without parsing journal history. Do not claim a natural-language agent prompt
+or author identity unless the build input explicitly supplies it.
+
 A cold build is identified by `compiled` substantially matching the full EXE
 translation-unit count and `skipped` being zero. For such an attempt, report the
 ccache direct-hit/miss counts and cache size. `player-animation.cpp` or any other

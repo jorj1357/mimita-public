@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -63,6 +64,23 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                    on_output=None) -> dict:
     """Snapshot, validate, build, and publish one whole-game generation."""
     root = Path(root)
+    attempt_id = f"game-dll-{uuid.uuid4().hex[:16]}"
+
+    def report_output(line: str) -> None:
+        if not on_output:
+            return
+        for prefix in ("[GAME_NOTE] ", "[GAME_FILE] "):
+            if line.startswith(prefix):
+                try:
+                    payload = json.loads(line[len(prefix):])
+                except json.JSONDecodeError:
+                    break
+                if isinstance(payload, dict):
+                    payload["build_attempt_id"] = attempt_id
+                    on_output(prefix + json.dumps(payload, separators=(",", ":")))
+                    return
+                break
+        on_output(line)
     manifest_path = root / "build" / "source-manifest.json"
     output_root = root / "build" / "game"
     change_report_path = root / "build" / "hot-reload" / "change-report.json"
@@ -72,7 +90,7 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
         result = _run_checked(
             root,
             [sys.executable, str(root / "devscripts" / script), "--check"],
-            on_output,
+            report_output,
         )
         if result != 0:
             return {
@@ -99,6 +117,16 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     if change_report:
         change_report["generated_utc"] = _utc_now()
         _write_json(change_report_path, change_report)
+    if on_output:
+        changed_paths = list(dict.fromkeys(
+            str(path) for key in ("changed", "added", "changed_headers")
+            for path in change_report.get(key, []) if isinstance(path, str)))
+        on_output("[GAME_NOTE] " + json.dumps({
+            "build_attempt_id": attempt_id,
+            "revision": revision,
+            "agent_note": "Saved compiler inputs captured for whole-game DLL build",
+            "changed_paths": changed_paths[:40],
+        }, separators=(",", ":")))
 
     command = [
         sys.executable,
@@ -117,7 +145,7 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
 
     if on_output:
         on_output(f"building whole-game revision {revision[:12]}")
-    return_code = _run_checked(root, command, on_output)
+    return_code = _run_checked(root, command, report_output)
     current = _read_json(output_root / "current.json")
     if return_code != 0 or str(current.get("status", "")) != "ok":
         return {

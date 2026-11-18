@@ -1231,13 +1231,21 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         globalGraphMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - globalGraphStart).count();
 
-        const auto localPlanStart = std::chrono::steady_clock::now();
-        if (!planned) {
+        const auto tryLocalFallback = [&]() {
+            if (planned)
+                return;
+            const auto localPlanStart = std::chrono::steady_clock::now();
             planned = planLocalPath(npc, dest, world, cfg, eff, policy,
                                     plan, planGaps, planCaps) && !plan.empty();
-        }
-        localPlanMs = std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - localPlanStart).count();
+            localPlanMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - localPlanStart).count();
+        };
+        // Recast is authoritative in this mode. Query it before doing the
+        // expensive custom fallback; the fallback is only needed when Recast
+        // cannot return a route. Compare/custom modes still build their custom
+        // route first so Recast remains observational in compare mode.
+        if (navBackend != RecastBackend::Recast)
+            tryLocalFallback();
 
         // Recast/Detour request. In compare mode the custom plan above stays
         // authoritative and Recast is observational evidence. In recast mode a
@@ -1301,6 +1309,9 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         }
         recastMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - recastStart).count();
+
+        if (navBackend == RecastBackend::Recast)
+            tryLocalFallback();
 
         if (planned) {
             path = std::move(plan);

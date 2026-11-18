@@ -380,3 +380,12 @@ were temporarily raised for capture and restored afterward. This journal is
 78,485,523 bytes with performance logging disabled for the capture. The
 earlier baseline journal exceeded 100 MB, so these diagnostic captures are
 bounded by temporarily disabling unrelated performance logging.
+
+## User clarification — 2026-11-18
+
+The user reports that ordinary actor-versus-world movement feels fine without
+the weapon snag, while walking uphill on slopes still catches. No exact slope
+route or contact journal was supplied with this clarification. Keep the slope
+issue separate from the 2026-11-18 rocket-launcher wall-embedding regression;
+the first blocking slope contact remains unidentified and this record stays
+unresolved.

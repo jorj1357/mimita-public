@@ -122,6 +122,6 @@ Entries: 16
 ## Entry 16 — Server policy startup request ABI defaults rejected Payload launch
 
 - Recorded: 2026-11-17T21:06:37Z
-- Status: FIX ATTEMPTED; fresh Payload runtime verification pending
+- Status: FIXED IN SOURCE; fresh Payload server/client runtime and visible-window evidence recorded
 - Summary: The hot server policy expected request ABI version 2 while the resident startup, world-load, and configure requests defaulted to version 1.
 - Detail: [server-policy-startup-abi-REG-2026-11-17.md](server-policy-startup-abi-REG-2026-11-17.md)

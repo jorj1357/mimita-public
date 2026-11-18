@@ -66,6 +66,8 @@ struct EffectPart
     bool beam = false;
     bool box = false;
     bool cameraLocked = false;
+    // Bit 0/1 mark the first successful shockwave draw and its first alpha-fade draw.
+    mutable std::uint8_t shockwaveRenderLogMask = 0;
     glm::vec3 cameraOffset{0.0f};
     // Config-driven debris chunk count for debris_batch effects (0 = use default).
     int debrisCount = 0;
@@ -153,7 +155,7 @@ public:
     EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {}, float sizeScale = 1.0f, const std::string& weaponId = {}, bool spawnVisual = true, bool spawnLighting = true);
     EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId = {}, float sizeScale = 1.0f, const std::string& weaponId = {});
     EffectPart* spawnBulletImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f, float lifetimeScale = 1.0f, float alphaScale = 1.0f);
-    void spawnExplosionMark(glm::vec3 position, glm::vec3 normal);
+    bool spawnExplosionMark(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f);
     void spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
                           const glm::vec3& direction = glm::vec3(0.0f),
                           float sizeScale = 1.0f, float lifetimeScale = 1.0f,

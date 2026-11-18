@@ -3,6 +3,7 @@
 #include <string>
 #include <functional>
 #include <cstdint>
+#include <vector>
 #include <glm/glm.hpp>
 
 struct GLFWwindow;
@@ -13,6 +14,12 @@ struct UIRect;
 
 struct UITextInputState
 {
+    struct EditSnapshot {
+        std::string value;
+        int cursorPos = 0;
+        int selectionStart = -1;
+    };
+
     std::string value;
     int cursorPos = 0;
     int selectionStart = -1;
@@ -24,6 +31,9 @@ struct UITextInputState
     // Mouse drag selection state
     bool mouseSelecting = false;
     int mouseSelectionAnchor = -1;
+    std::string historyValue;
+    std::vector<EditSnapshot> undoHistory;
+    std::vector<EditSnapshot> redoHistory;
 };
 
 // ── Text input options ───────────────────────────────────────────────
@@ -65,6 +75,7 @@ bool uiTextInputHandleChar(UITextInputState& state, unsigned int codepoint,
 bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
                           int key, int action, int mods,
                           const UITextInputOptions& opts);
+void uiTextInputResetHistory(UITextInputState& state);
 
 // ── Render ───────────────────────────────────────────────────────────
 

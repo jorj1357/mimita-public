@@ -9,6 +9,7 @@ import os
 import queue
 import threading
 import time
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -123,6 +124,74 @@ def _artifact_key(value: str) -> str:
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace(
         "+00:00", "Z")
+
+
+def _game_dll_progress(checkout: str) -> tuple[str, str]:
+    """Read the root dev-loop's live whole-game DLL progress and identity."""
+    if not checkout:
+        return "Game DLL: unavailable", "No checkout path in status"
+    root = Path(checkout)
+
+    def read_json(path: Path) -> dict:
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+            return value if isinstance(value, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    progress = read_json(root / "build" / "game" / "progress.json")
+    current = read_json(root / "build" / "game" / "current.json")
+    change_report = read_json(root / "build" / "hot-reload" / "change-report.json")
+    if not progress:
+        return "Game DLL: no active build progress", "Waiting for root dev-loop game build"
+
+    phase = str(progress.get("phase") or progress.get("status") or "unknown").upper()
+    elapsed = progress.get("elapsed_s", progress.get("total_s"))
+    elapsed_text = f"{float(elapsed):.1f}s elapsed" if isinstance(elapsed, (int, float)) else "elapsed unavailable"
+    revision = str(progress.get("revision") or "—")
+    current_revision = str(current.get("revision") or "")
+    source_count = int(progress.get("total") or 0)
+    completed = int(progress.get("completed") or 0)
+    if current_revision == revision and current.get("source_count") is not None:
+        source_count = int(current.get("source_count") or source_count)
+        completed = max(completed, source_count)
+    percent = min(100, round(completed * 100 / source_count)) if source_count > 0 else None
+    if str(progress.get("phase") or "").lower() == "compile" and percent is not None:
+        headline = f"Game DLL: COMPILE {completed}/{source_count} ({percent}%)  ·  {elapsed_text}"
+    else:
+        headline = f"Game DLL: {phase}  ·  {elapsed_text}"
+
+    details = [f"revision {revision[:12]}"]
+    active = progress.get("active_sources")
+    if isinstance(active, list) and active:
+        details.append("compiling: " + ", ".join(str(item) for item in active[:3]))
+    elif progress.get("current"):
+        details.append("current: " + str(progress["current"]))
+    if progress.get("compiled") is not None or progress.get("skipped") is not None:
+        details.append(f"CXX {int(progress.get('compiled') or 0)}  ·  SKIP {int(progress.get('skipped') or 0)}")
+    file_events = progress.get("file_events")
+    if isinstance(file_events, list) and file_events:
+        recent = []
+        for item in file_events[-4:]:
+            if not isinstance(item, dict):
+                continue
+            marker = "SKIP" if item.get("status") == "skipped" else "CXX"
+            seconds = float(item.get("seconds") or 0)
+            recent.append(f"{marker} {seconds:.2f}s {item.get('path', '')}")
+        if recent:
+            details.append("latest files: " + "  ·  ".join(recent))
+    details.append("agent note: saved edits are attached to this source generation")
+    if current_revision == revision and current.get("status") == "ok":
+        details.append(f"published generation {current.get('generation')}  ·  DLL SHA256 {str(current.get('code_hash') or '—')[:16]}")
+    if str(change_report.get("new_revision") or "") == revision:
+        changed = (change_report.get("changed") or []) + (change_report.get("added") or [])
+        changed += change_report.get("changed_headers") or []
+        if changed:
+            details.append("changed: " + ", ".join(str(path) for path in changed[:3]))
+            if len(changed) > 3:
+                details[-1] += f" (+{len(changed) - 3} more)"
+    details.append("CXX = compiled  ·  SKIP = cached object reused  ·  prompt explanation is not recorded")
+    return headline, "\n".join(details)
 def run(status_provider: Callable[[], dict],
         control: Callable[..., dict | bool],
         title: str,
@@ -188,6 +257,8 @@ def run(status_provider: Callable[[], dict],
         "active_mode": "",
         "latest_model": {},
         "processes": [],
+        "live_output": deque(maxlen=300),
+        "last_live_message": "",
         "process_rows": {},
         "rendered_processes": [],
         "selected_process_key": "",
@@ -199,6 +270,8 @@ def run(status_provider: Callable[[], dict],
         "process_scan_error": "",
         "checkout_rows": {},
         "dashboard_refresh_monotonic": 0.0,
+        "dashboard_refresh_utc": "",
+        "dashboard_refresh_count": 0,
     }
 
     def frame(parent, *, padx=0, pady=0, **kwargs):
@@ -475,6 +548,11 @@ def run(status_provider: Callable[[], dict],
     running_card, running_value, running_detail = make_card("Running build")
     latest_card, latest_value, latest_detail = make_card("Latest published")
     activity_card, phase_value, phase_detail = make_card("Build activity")
+    game_build_value = label(activity_card, "Game DLL: —", size=9, bold=True,
+                             wraplength=500)
+    game_build_value.grid(row=3, column=0, sticky="ew", pady=(4, 0))
+    game_build_detail = label(activity_card, "", size=8, wraplength=500)
+    game_build_detail.grid(row=4, column=0, sticky="ew")
     runtime_card, runtime_value, runtime_detail = make_card("Runtime and mode/map")
     scenario_card, scenario_value, scenario_detail = make_card("Scenario evidence")
 
@@ -543,8 +621,12 @@ def run(status_provider: Callable[[], dict],
     details = frame(content, padx=5, pady=3)
     details.grid(row=4, column=0, sticky="ew", pady=(3, 0))
     details.grid_columnconfigure(0, weight=1)
-    label(details, "LATEST BUILD AND LOOP ACTIVITY  ·  LAST 10 LINES",
+    label(details, "LIVE BUILD AND LOOP OUTPUT  ·  FOLLOWING LATEST",
           size=9, bold=True).pack(anchor="w", pady=(0, 2))
+    refresh_indicator = label(details, "", size=8, color=GREEN)
+    refresh_indicator.pack(anchor="w", pady=(0, 1))
+    source_summary = label(details, "", size=8, color=RED, wraplength=460)
+    source_summary.pack(anchor="w", pady=(0, 2))
     output_frame = tk.Frame(details, bg=BLACK)
     output_frame.pack(fill="both", expand=True)
     gutter = tk.Canvas(output_frame, width=28, bg=BLACK, highlightthickness=0,
@@ -1098,6 +1180,8 @@ def run(status_provider: Callable[[], dict],
                 apply_process_scan_result()
                 model = status_provider() or {}
                 state["dashboard_refresh_monotonic"] = time.monotonic()
+                state["dashboard_refresh_count"] += 1
+                state["dashboard_refresh_utc"] = _utc_now_iso()
                 state["latest_model"] = model
                 render_checkout_rows(model)
                 request_process_scan()
@@ -1258,6 +1342,11 @@ def run(status_provider: Callable[[], dict],
                     state["phase_color_mode"] = "rainbow"
                 phase_value.configure(text=phase_text, fg=phase_color)
 
+                game_headline, game_detail = _game_dll_progress(
+                    str(model.get("checkout") or ""))
+                game_build_value.configure(text=game_headline)
+                game_build_detail.configure(text=game_detail)
+
                 runtime_value.configure(text=model.get("runtime", "Not running"),
                                          fg=GREEN if same_build else rainbow_color())
                 instance_lines = []
@@ -1306,14 +1395,37 @@ def run(status_provider: Callable[[], dict],
                 process_problem = (f"  ·  {state['process_scan_error'][:100]}"
                                    if state.get("process_scan_error") else "")
                 process_summary.configure(
-                    text=f"Updated {refresh_age}s ago  ·  {process_count} running MiMITA process(es)"
+                    text=f"{process_count} running MiMITA process(es)"
                          + process_problem)
-                build_lines = [f"[BUILD] {line}" for line in (model.get("build_output") or [])[-10:]]
-                activity_lines = [f"[LOOP] {line}" for line in (model.get("recent") or [])[-10:]]
+                journal_path = str(model.get("journal") or "(no active run journal)")
+                checkout_path = str(model.get("checkout") or "")
+                if checkout_path and journal_path != "(no active run journal)":
+                    try:
+                        journal_path = Path(journal_path).resolve().relative_to(
+                            Path(checkout_path).resolve()).as_posix()
+                    except (OSError, ValueError):
+                        pass
+                refresh_indicator.configure(
+                    text=(f"Updated {refresh_age}s ago  ·  "
+                          f"{state['dashboard_refresh_utc']}  ·  "
+                          f"GUI refresh #{state['dashboard_refresh_count']:06d}"))
+                source_summary.configure(
+                    text=("Build input: main dev-loop status RPC "
+                          "(build_output_tail/message)\n"
+                          f"Loop input: {journal_path}  ·  "
+                          f"daemon status timestamp: {model.get('updated_at') or '—'}"))
+                build_output = [str(line) for line in (model.get("build_output") or [])]
+                build_lines = [f"[BUILD] {line}" for line in build_output]
+                message = str(model.get("message") or "")
+                if message and message != state["last_live_message"]:
+                    if message not in build_output:
+                        state["live_output"].append(f"[LIVE] {message}")
+                    state["last_live_message"] = message
+                activity_lines = [f"[LOOP] {line}" for line in (model.get("recent") or [])]
                 source_line = model.get("source_activity")
                 if source_line:
                     activity_lines.append(f"[SOURCE] {source_line}")
-                lines = (build_lines[-7:] + activity_lines[-3:])[-10:]
+                lines = build_lines + list(state["live_output"]) + activity_lines
                 if not lines:
                     lines = ["Waiting for build or contributor activity…"]
                 output.configure(state="normal")

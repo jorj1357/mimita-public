@@ -200,6 +200,15 @@ The loop may terminate a process only when all of the following are true:
 If ownership cannot be proven, the loop must stop and report
 `NEEDS_USER_ACTION`.
 
+An explicit press of the dashboard's **Launch latest stable MiMITA.exe** button
+is also a user-authorized replacement action for `mimita.exe` processes whose
+resolved executable path is inside this checkout. Before replacement, the
+loop must verify each PID's executable path and process start identity, record
+the targets and result, and confirm no same-checkout MiMITA process remains.
+This authorization does not include executables from another checkout or
+processes whose identity cannot be verified. A failed scan or incomplete
+cleanup stops the launch and reports the reason.
+
 ## 3.1 AI runtime reuse contract (2026-11-05)
 
 An AI agent must first discover and reuse the dev loop and game processes that
@@ -1795,14 +1804,17 @@ window opens restored at 500x500 and remains resizable. Use a custom black
 title bar with minimize, maximize/restore, and close controls, plus resize edges.
 Keep launch/build and server/client/stop/restart controls visible in a fixed
 footer while status panels scroll independently above them.
-At compact sizes, show a concise build/runtime summary and the latest ten lines
-of build or loop activity; reveal full hashes, scenario evidence, and journal
-details as the window grows. Keep launch/build controls visible. The activity
-area is bounded and may scroll independently; status refreshes never enter its
-scrollback. Provide a dashboard-only pause/freeze control so the user can
-select or copy a stable snapshot while the watchdog, daemon, game, and scenario
-continue running. Resuming refreshes from current state and marks when the view
-was refreshed; it must not present a frozen `RUNNING` value as current.
+At compact sizes, show a concise build/runtime summary and the newest build or
+loop activity lines that fit in the visible output pane; reveal full hashes,
+scenario evidence, and journal details as the window grows. Keep launch/build
+controls visible. The activity area keeps bounded scrollback so the newest
+output stays visible during live refresh and older output remains reachable by
+scrolling. Do not cap the visible feed to an arbitrary fixed number of lines;
+status refreshes alone never enter its scrollback. Provide a dashboard-only
+pause/freeze control so the user can select or copy a stable snapshot while the
+watchdog, daemon, game, and scenario continue running. Resuming refreshes from
+current state and marks when the view was refreshed; it must not present a
+frozen `RUNNING` value as current.
 
 The **More** menu contains a **Launch mode** picker populated from
 `dev-launch-modes.json`. The picker uses a scrollable list with a vertical
@@ -2964,6 +2976,17 @@ not `null`, so a timed wait can be diagnosed from the journal alone.
 
 ## Native dashboard and contributor activity feed — desired
 
+### Human UI and build-status preference (2026-11-18)
+
+The user wants to return to the older rainbow terminal UI as the primary
+visible dev-loop interface. The UI should make it easy to see whether a build
+is currently happening. A build is an event-driven operation when source
+changes or an explicit build action requires one; the interface should not
+suggest that the project needs to rebuild continuously while idle. Keep the
+build status readable without making an active build the normal resting state.
+This records the requested direction; restoring the older presentation still
+needs implementation and visual review.
+
 The default desktop entry point opens one standalone native Python coordinator
 window with MiMITA build/run status, recent activity, and clear build/launch
 controls. It reads the main checkout and registered agent lanes and sends
@@ -2973,10 +2996,12 @@ fallback. Each dev-loop remains the source of truth for its own build/run state;
 the coordinator window is a presentation/control client, not a competing
 build/run loop. See `dashboard.md` for process discovery and presentation.
 
-The activity feed shows the latest ten available build-output lines and recent
-loop/runtime events, with build and loop sources labeled separately. Include
-source-generation changes and hot-reload events when they are recorded. Show
-task/session identity and changed files only when an existing event provides
+The activity feed continuously follows live build-output and recent
+loop/runtime events, with build and loop sources labeled separately. Retain a
+bounded local history of distinct status messages observed across refreshes;
+the pane must show as many newest lines as fit and allow scrolling to older
+retained output. Include source-generation changes and hot-reload events when
+they are recorded. Show task/session identity and changed files only when an existing event provides
 them; do not infer an author or claim a file edit from a generation change.
 Keep build output and runtime events distinct so “a file was edited” cannot be
 mistaken for “the game behavior passed.” Do not present private reasoning or

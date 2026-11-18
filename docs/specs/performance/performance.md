@@ -245,3 +245,36 @@ The in-game performance report is specified in
 diagnostic only. Mode 3 is full detail sampled at 1000 ms and redrawn from
 cached lines. The report must expose its own `OVERLAY` cost and must emit a
 1 Hz `performance.report` journal event while enabled.
+
+## Payload live performance investigation start (2026-11-18)
+
+The current user report is Payload on Fun World 3: client frame rate needs to
+stay high while the authoritative server sustains 60 Hz with the active NPC
+workload. Treat 240 FPS as the measured client target, not a promise that every
+machine can reach it. Begin with a clean, identity-matched live run and record
+the executable/build identity, map and mode, client/server instance IDs,
+hardware, NPC count, sample duration, and journal paths.
+
+Investigation order:
+
+1. Establish a stable Payload baseline with the user's normal combat workload.
+   Capture per-frame client timing and the compact `performance.fps` event,
+   plus server `actual_hz`, fixed-tick durations, `performance.server-tick-stall`,
+   and NPC phase/sub-stage timings. Use the compact performance report mode
+   during sustained measurement; enable full detail only to inspect a named
+   outlier. The client target is the existing 99.99% at-or-under-4.167-ms
+   frame gate; the server target is 99.99% of ticks at-or-under 16.667 ms.
+2. Identify the first over-budget client frame scope or server tick stage from
+   that same run. Do not infer the cause from average FPS, total CPU use, an
+   idle client, or one subsystem's cost alone. Attribute work before changing
+   it, then compare an equivalent workload and retain the journal evidence.
+3. Once server ticks sustain 60 Hz, remeasure client performance in connected
+   Payload combat. Keep simulation correctness, collision, damage, and physics
+   on the fixed 60 Hz path while reducing measured costs. A client-only idle
+   result does not establish the target under gameplay.
+
+This baseline is the first step for OGI-035; no new performance result or cause
+is claimed by this plan. The related combat reports (NPC effectiveness and
+stuck geometry, apparent low direct-hit damage, and floating character impact
+marks) have separate behavior owners and should be diagnosed alongside the
+performance sample without conflating their pass/fail evidence.

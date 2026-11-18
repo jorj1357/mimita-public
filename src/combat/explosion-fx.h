@@ -12,7 +12,11 @@
 
 #include <glm/glm.hpp>
 
-void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
+bool spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
                       const std::string& attacker, float sizeScale = 1.0f,
                       bool playSound = true,
-                      const glm::vec3& surfaceNormal = glm::vec3(0.0f, 0.0f, 1.0f));
+                      const glm::vec3& surfaceNormal = glm::vec3(0.0f, 0.0f, 1.0f),
+                      float forceScale = 1.0f,
+                      const glm::vec3* markPosition = nullptr,
+                      const glm::vec3* markNormal = nullptr,
+                      bool spawnMark = true);

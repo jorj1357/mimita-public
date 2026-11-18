@@ -83,6 +83,7 @@
     },
        "9": {
       "name": "juggernaut",
+      "weapon_set": "auto",
       "server_args": [
         "--mode",
         "juggernaut",

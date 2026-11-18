@@ -88,12 +88,33 @@ launch path; discovery itself does not adopt or relabel an external process.
 - The process panel has a visible **Refresh** button. Pressing it starts a new
   process scan immediately, without restarting the dashboard or dev-loop
   daemon.
-- The panel also refreshes automatically. Keep one shared `Updated N seconds
-  ago` freshness indicator for the dashboard; do not show separate last-updated
-  timestamps for each checkout or process scan.
+- The panel also refreshes automatically. Keep one shared freshness indicator
+  for the dashboard with a UTC ISO 8601 last-read timestamp and a monotonically
+  increasing GUI refresh number. Increment the number after each successful
+  status-provider read so a user can see the view updating while idle. Do not
+  show separate last-updated timestamps for each checkout or process scan.
+- Label the build data source as the main dev-loop status response and identify
+  the run `events.jsonl` path used for loop activity. Keep build status data
+  distinct from journal events and do not imply that the refresh number counts
+  build lines.
 - Show the total unique live MiMITA process count beside the shared indicator.
   If a process scan fails, show the error and keep the last successful list
   marked stale until a scan succeeds.
+- Show root dev-loop whole-game DLL progress separately from the launcher/EXE
+  build. During compilation, show completed translation units over the worker's
+  source total, a percentage derived only from that denominator, elapsed time,
+  and currently compiling source paths. Show link, publication, and runtime
+  activation as named phases without inventing percentages for them.
+- Explain `[CXX]` as compiled and `[SKIP]` as a cache hit/reused object. Show
+  the source revision, changed paths when the matching change report exists,
+  and published generation plus DLL SHA-256 after publication. Do not imply
+  the dashboard knows the natural-language AI prompt unless it is stored with
+  the build input. Runtime activation is shown only when confirmed by the
+  instance journal.
+- For the whole-game DLL, show a concise saved-input note and the latest
+  completed source files with CXX/SKIP result and elapsed seconds. The dev-loop
+  journal records the build-start note and each per-file result as they occur;
+  the dashboard reads the bounded live progress file for its compact view.
 - The process list contains only processes confirmed alive by the current
   successful scan. Once a process exits, remove its row. Do not show an exited
   server as `stopped` in this live process list; keep final lifecycle history
@@ -139,7 +160,9 @@ launch path; discovery itself does not adopt or relabel an external process.
 ## Acceptance
 
 - The Refresh button starts a scan immediately. Automatic scans update the
-  same count and shared freshness display in place.
+  same process count and shared freshness display in place; while the dashboard
+  is open, the UTC timestamp and refresh number advance even when build state
+  is idle.
 - The main checkout and every registered lane remain visible with a clear
   live, stale, unavailable, or not-started state. Build phase and elapsed time
   update while a build runs.

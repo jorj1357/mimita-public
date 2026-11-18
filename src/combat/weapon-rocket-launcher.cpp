@@ -38,6 +38,7 @@
 #include "npc/npc.h"
 #include "world/world.h"
 #include "physics/physics-types.h"
+#include "physics/movement/physics-collision.h"
 #include "combat/projectile-render.h"
 
 namespace WeaponRocketLauncher {
@@ -48,6 +49,74 @@ static bool gDebugRockets = false;
 static float cp(const WeaponDefinition& def, const char* key, float fallback)
 {
     return def.customParams.count(key) ? def.customParams.at(key) : fallback;
+}
+
+static float rocketImpactForceScale(const WeaponDefinition& def, const glm::vec3& velocity)
+{
+    const float nominalSpeed = std::max(0.1f, cp(def, "rocketSpeed", def.projectileSpeed));
+    const float projectileMass = std::max(0.001f, def.projectileMass);
+    constexpr float referenceMass = 5.0f;
+    return std::clamp(projectileMass * glm::length(velocity) /
+                      (referenceMass * nominalSpeed), 0.25f, 3.0f);
+}
+
+static glm::vec3 closestPointOnTriangle(const glm::vec3& p,
+                                       const glm::vec3& a,
+                                       const glm::vec3& b,
+                                       const glm::vec3& c)
+{
+    const glm::vec3 ab = b - a, ac = c - a, ap = p - a;
+    const float d1 = glm::dot(ab, ap), d2 = glm::dot(ac, ap);
+    if (d1 <= 0.0f && d2 <= 0.0f) return a;
+    const glm::vec3 bp = p - b;
+    const float d3 = glm::dot(ab, bp), d4 = glm::dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3) return b;
+    const float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
+        return a + ab * (d1 / (d1 - d3));
+    const glm::vec3 cp = p - c;
+    const float d5 = glm::dot(ab, cp), d6 = glm::dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6) return c;
+    const float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
+        return a + ac * (d2 / (d2 - d6));
+    const float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && d4 - d3 >= 0.0f && d5 - d6 >= 0.0f)
+        return b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
+    const float denom = 1.0f / (va + vb + vc);
+    return a + ab * (vb * denom) + ac * (vc * denom);
+}
+
+static bool findNearestWorldSurface(const World& world, const glm::vec3& point,
+                                    glm::vec3& outPosition, glm::vec3& outNormal,
+                                    int& outTriangleIndex, float& outDistance)
+{
+    constexpr float maxDistance = 8.0f;
+    const glm::vec3 extent(maxDistance);
+    AABB bounds{point - extent, point + extent};
+    static thread_local std::vector<int> candidates;
+    candidates.clear();
+    appendChunkTrianglesForAABB(world, bounds, 0.01f, candidates, "rocketImpactMark");
+    float nearestSq = maxDistance * maxDistance;
+    outTriangleIndex = -1;
+    for (const int index : candidates) {
+        if (index < 0 || static_cast<size_t>(index) >= world.collisionMesh.triangles.size())
+            continue;
+        const auto& triangle = world.collisionMesh.triangles[static_cast<size_t>(index)];
+        const glm::vec3 candidate = closestPointOnTriangle(
+            point, triangle.a, triangle.b, triangle.c);
+        const float distanceSq = glm::dot(candidate - point, candidate - point);
+        if (distanceSq < nearestSq) {
+            nearestSq = distanceSq;
+            outPosition = candidate;
+            outNormal = triangle.normal;
+            outTriangleIndex = index;
+        }
+    }
+    if (outTriangleIndex < 0) return false;
+    outDistance = std::sqrt(nearestSq);
+    outPosition += outNormal * 0.01f;
+    return true;
 }
 
 void toggleDebug() { gDebugRockets = !gDebugRockets; }
@@ -64,7 +133,11 @@ static void doExplosion(
     bool directHitIsNpc,
     Player* victimPlayer,
     bool presentationOnly,
-    const glm::vec3& surfaceNormal = glm::vec3(0.0f, 0.0f, 1.0f))
+    const glm::vec3& surfaceNormal = glm::vec3(0.0f, 0.0f, 1.0f),
+    const World* world = nullptr,
+    bool actorImpact = false,
+    float forceScale = 1.0f,
+    int worldImpactTriangleIndex = -1)
 {
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(owner.sizeScale, 0.001f);
@@ -77,7 +150,45 @@ static void doExplosion(
     const float knockbackHorizontalMul = cp(def, "knockbackHorizontalMultiplier", 1.0f);
     const float knockbackVerticalMul = cp(def, "knockbackVerticalMultiplier", 1.0f);
 
-    spawnExplosionFx(position, "rocket_launcher", owner.username, owner.sizeScale, !presentationOnly, surfaceNormal);
+    glm::vec3 markPosition;
+    glm::vec3 markNormal;
+    int markTriangleIndex = -1;
+    float markDistance = -1.0f;
+    const bool foundActorMarkSurface = actorImpact && world &&
+        findNearestWorldSurface(*world, position, markPosition, markNormal,
+                                markTriangleIndex, markDistance);
+    const bool markAnchorFound = foundActorMarkSurface || worldImpactTriangleIndex >= 0;
+    const std::string impactSurface = actorImpact ? "actor"
+        : (worldImpactTriangleIndex >= 0 ? "world_triangle" : "lifetime_expiry");
+    const bool markApplied = spawnExplosionFx(position, "rocket_launcher", owner.username, owner.sizeScale,
+        !presentationOnly, surfaceNormal, forceScale,
+        foundActorMarkSurface ? &markPosition : nullptr,
+        foundActorMarkSurface ? &markNormal : nullptr,
+        markAnchorFound);
+    const glm::vec3 resolvedMarkPosition = foundActorMarkSurface ? markPosition : position;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Weapons, StructuredLevel::Important,
+        "rocket.impact-mark.resolved", owner.username,
+        "classified impact geometry and recorded the actual decal spawn result",
+        static_cast<uint32_t>(std::max(0.0f, state.gameTime * 60.0f)),
+        nlohmann::json{{"impact_surface", impactSurface},
+                       {"actor_geometry_ignored", actorImpact},
+                       {"target_kind", actorImpact ? (directHitIsNpc ? "npc" : "player") : "none"},
+                       {"target_entity_id", directHitEntityId},
+                       {"target_username", actorImpact && !directHitIsNpc && victimPlayer
+                            ? victimPlayer->username : ""},
+                       {"weapon_mark_texture", def.explosionMarkTexture},
+                       {"world_triangle_index", actorImpact ? markTriangleIndex : worldImpactTriangleIndex},
+                       {"nearest_world_surface_distance_m", markDistance},
+                       {"mark_surface", markAnchorFound ? "static_world_triangle" : "none_within_8m"},
+                       {"mark_applied", markApplied},
+                       {"impact_position", nlohmann::json::array({position.x, position.y, position.z})},
+                       {"mark_position", markApplied
+                            ? nlohmann::json::array({resolvedMarkPosition.x,
+                                                     resolvedMarkPosition.y,
+                                                     resolvedMarkPosition.z})
+                            : nlohmann::json(nullptr)},
+                       {"impact_force_scale", forceScale}});
 
     {
         float distToCam = glm::length(position - camera.pos);
@@ -398,7 +509,9 @@ void update(
 
         rocket.lifetime -= dt;
         if (rocket.lifetime <= 0.0f) {
-            doExplosion(state, def, runtime, owner, npcs, camera, rocket.position, 0, false, victimPlayer, presentationOnly);
+            doExplosion(state, def, runtime, owner, npcs, camera, rocket.position,
+                0, false, victimPlayer, presentationOnly, glm::vec3(0.0f, 0.0f, 1.0f),
+                &world, false, rocketImpactForceScale(def, rocket.velocity));
             rocket.exploded = true;
             it = state.activeRockets.erase(it);
             continue;
@@ -412,6 +525,7 @@ void update(
         // ── World collision ──
         {
             bool hitWorld = false;
+            int worldHitTriangleIndex = -1;
             glm::vec3 worldHitPos = newPos;
             glm::vec3 worldNormal{0.0f, 0.0f, 1.0f};
             glm::vec3 rayDir = glm::normalize(rocket.velocity);
@@ -419,13 +533,16 @@ void update(
 
             if (maxDist > 0.001f) {
                 float nearest = maxDist;
-                for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+                for (size_t triangleIndex = 0;
+                     triangleIndex < world.collisionMesh.triangles.size(); ++triangleIndex) {
+                    const CollisionTriangle& tri = world.collisionMesh.triangles[triangleIndex];
                     float t;
                     if (WeaponFire::rayTriangle(rocket.position, rayDir, tri, t) && t < nearest) {
                         nearest = t;
                         hitWorld = true;
                         worldHitPos = rocket.position + rayDir * t;
                         worldNormal = tri.normal;
+                        worldHitTriangleIndex = static_cast<int>(triangleIndex);
                     }
                 }
                 if (hitWorld) {
@@ -437,7 +554,9 @@ void update(
                     } else {
                         doExplosion(state, def, runtime, owner, npcs, camera,
                             worldHitPos, 0, false, victimPlayer, presentationOnly,
-                            worldNormal);
+                            worldNormal, &world, false,
+                            rocketImpactForceScale(def, rocket.velocity),
+                            worldHitTriangleIndex);
                         rocket.exploded = true;
                         it = state.activeRockets.erase(it);
                         continue;
@@ -497,7 +616,9 @@ void update(
                         }
                     } else {
                         doExplosion(state, def, runtime, owner, npcs, camera, checkPos,
-                            hitNpcId, true, victimPlayer, presentationOnly);
+                            hitNpcId, true, victimPlayer, presentationOnly,
+                            glm::vec3(0.0f, 0.0f, 1.0f), &world, true,
+                            rocketImpactForceScale(def, rocket.velocity));
                         rocket.exploded = true;
                         it = state.activeRockets.erase(it);
                         continue;
@@ -521,7 +642,9 @@ void update(
                                 checkPos, presentationOnly);
                         } else {
                             doExplosion(state, def, runtime, owner, npcs, camera, checkPos,
-                                0, false, victimPlayer, presentationOnly);
+                                0, false, victimPlayer, presentationOnly,
+                                glm::vec3(0.0f, 0.0f, 1.0f), &world, true,
+                                rocketImpactForceScale(def, rocket.velocity));
                             rocket.exploded = true;
                             it = state.activeRockets.erase(it);
                             continue;

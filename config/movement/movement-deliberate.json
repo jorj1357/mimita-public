@@ -1,0 +1,298 @@
+// 08 27 2026
+/* purpose
+* Human-scale walking and jumping using MiMITA's Source/GoldSrc movement kernel.
+*
+* Ground:
+*   Source / GoldSrc PM_Friction + PM_Accelerate behavior.
+*
+* Air:
+*   GoldSrc / Source PM_AirAccelerate:
+*   - projection-limited air acceleration
+*   - historical Valve behavior where uncapped wishspeed can be used in the
+*     acceleration term while capped wishspd is used for projection.
+*
+* IMPORTANT:
+* The movement equations remain Source/GoldSrc-family behavior, but the
+* ordinary movement values below use approximate human metric values.
+*
+* This file is parsed with JSON comments enabled.
+*/
+{
+    "name": "deliberate",
+
+    // Uses MiMITA's Source/GoldSrc-style movement kernel.
+    "movement_mode": "source",
+
+    // Scale/reference value.
+    // The movement values below are in MiMITA world units; for an intuitive
+    // human-scale comparison, read one world unit as roughly one metre.
+    // 1 MiMITA unit = 20 Source / GoldSrc units.
+    //
+    // Rates such as acceleration and friction are NOT divided by this.
+    // Distances and velocities are.
+    "source_units_per_mimita_unit": 20.0,
+    // "source_units_per_mimita_unit": 200.0,
+
+    // ── Ground speed and acceleration ─────────────────────────────────────
+
+    // Normal horizontal movement speed, in metres/second (assuming one world
+    // unit is about one metre).
+    //
+    // 1.0 m/s is a relaxed, slow human walking pace (about 3.6 km/h).
+    "max_speed": 1.0,
+
+    // Keep server-side ground movement validation at the same speed.
+    // Match the ordinary movement cap: 1.0 m/s, relaxed walking pace.
+    "ground_speed": 1.0,
+
+    // Ground acceleration parameter for a gentle walking start.
+    //
+    // Source acceleration scales with wish speed. At 1.0 m/s, this produces
+    // about 1.5 m/s^2, a gradual human walking start.
+    "ground_acceleration": 1.5,
+
+    // Source-style ground braking rate; deceleration scales with current speed.
+    //
+    // At 1.0 m/s this starts at about 1.0 m/s^2, taking roughly one second
+    // to stop from a slow walk without input.
+    "friction": 1.0,
+
+    // Source friction control speed, in metres/second.
+    //
+    // 1.0 keeps braking near 1 m/s^2 down to the final slow step, so a
+    // 1 m/s walk stops in about one second when input is released.
+    "stop_speed": 1.0,
+
+    // ── Air — Source / GoldSrc PM_AirAccelerate ───────────────────────────
+
+    // Scales how much speed can be gained from air strafing.
+    //
+    // 1 = normal Source air-control gain; higher values let strafing build
+    // speed much faster than a human could.
+    "air_speed_gain_multiplier": 1.0,
+
+    //  the experimental MiMITA directional/input blend.
+    //  9 5 2026 its not working super good its supposed t
+    // o let u press a movement key in the air with no mouse 
+    // = u move in that direction like default behavior but in the air
+    //
+    // false = use pure Source-style PM_AirAccelerate behavior.
+    "air_input_blending_enabled": false,
+
+    // Unused while air_input_blending_enabled is false.
+    //
+    // Kept here so the config remains compatible with the extended MiMITA
+    // movement configuration format.
+    "air_input_blending": 1.0,
+
+    // Unused while air input blending is disabled.
+    //
+    // A deliberately huge value is retained from the previous cs16 config so
+    // enabling blending accidentally does not immediately make tiny mouse
+    // movements count as full Source strafing.
+    "air_input_mouse_threshold_degrees": 0.0,
+
+    // Source-style air acceleration parameter, scaled by the 1.0 m/s wish
+    // speed to give about 1.5 m/s^2 of steering while airborne.
+    //
+    "air_acceleration": 1.5,
+
+    // Projection cap for Source-style air acceleration.
+    //
+    // This does NOT cap total horizontal air velocity to 1.0.
+    // It limits the portion of velocity projected onto the current wish
+    // direction, allowing repeated correctly-angled strafes to continue
+    // building total speed.
+    //
+    // Keep the projected air-control speed in the same human walking range.
+    "air_max_wishspeed": 1.0,
+
+    // Historical Valve-style AirAccelerate behavior.
+    //
+    // The capped wishspd is used for projection/addspeed while the uncapped
+    // wishspeed can be used in the acceleration calculation.
+    //
+    // Retain the standard Source air-acceleration formula.
+    "source_airaccelerate_bug_compatible": true,
+
+    // ── Gravity and jump ──────────────────────────────────────────────────
+
+    // Downward acceleration in world units/s^2.
+    //
+    // Earth's gravity: approximately 9.81 m/s^2 downward.
+    // "gravity": -40.0,
+    "gravity": -9.81,
+
+    // Upward velocity applied when jumping, in world units/s.
+    //
+    // 3.13 m/s with gravity -9.81 gives about 0.5 m of unobstructed rise,
+    // a typical standing human jump height (v^2 / 2g).
+    // "jump_velocity": 15.1,
+    "jump_velocity": 3.13,
+    // "jump_velocity": 20.1,
+    // "jump_velocity": 10.0,
+
+    // Add the jump impulse to the current vertical velocity. This preserves
+    // upward/downward momentum instead of replacing it with jump_velocity.
+    // To restore the old behavior, change this to: "jump_mode": "replace"
+    // "jump_mode": "additive",
+    "jump_mode": "replace",
+
+    // Maximum downward speed in metres/second. Around 55 m/s approximates
+    // human terminal speed in a stable skydive.
+    //
+    // Limit downward speed to a human free-fall range.
+    "max_fall_speed": 55.0,
+
+    // ── Jump behavior ─────────────────────────────────────────────────────
+
+    // Hold jump to automatically jump again immediately on landing.
+    //
+    // This is a MiMITA convenience extension rather than strict vanilla CS
+    // input behavior.
+    "auto_bhop_enabled": false,
+
+    // Remember jump input for this long before landing; this is a control
+    // convenience, not a physical movement value.
+    // "jump_buffer_time": 0.1,
+    "jump_buffer_time": 0.2,
+
+    // No coyote-time forgiveness.
+    //
+    // 0 keeps ledge behavior closer to old Source/GoldSrc movement.
+    "coyote_time": 0.0,
+
+    // Humans cannot jump again in mid-air.
+    "max_air_jumps": 0,
+
+    // ── Ground snap ───────────────────────────────────────────────────────
+
+    // Remove tiny downward numerical velocity while grounded to prevent
+    // visible ground jitter.
+    "ground_snap": true,
+
+    // Numerical cleanup threshold used by ground snap.
+    "velocity_clip_epsilon": 1.01,
+
+    // Normal surface friction multiplier.
+    "surface_friction": 1.0,
+
+    // Amount of overspeed friction applied around landing behavior.
+    //
+    // 1.0 = full configured landing bleed.
+    // 0.0 = preserve overspeed completely through landing.
+    //
+    // Apply normal ground friction to excess horizontal speed on landing.
+    "landing_overspeed_bleed": 1.0,
+
+    // ── MiMITA dash extensions ────────────────────────────────────────────
+    //
+    // These abilities are not human locomotion; disabled for this human-scale
+    // movement preset.
+    //
+    // They remain available in other arcade presets.
+
+    // Shift ground/air dash.
+    "dash_enabled": false,
+
+    // Q down-dash / slam.
+    "down_dash_enabled": false,
+
+    // MiMITA freeze ability.
+    "freeze_enabled": false,
+
+    // Time after a dash during which its boost is protected from ordinary
+    // ground friction.
+    //
+    // Not used while dash_enabled is false.
+    "dash_grace_seconds": 1.0,
+
+    // Ground-friction multiplier during dash grace.
+    //
+    // 0.0 = dash receives no ground friction during the grace period.
+    "dash_friction_multiplier": 0.0,
+
+    // Horizontal velocity impulse from a grounded dash, in world units/s.
+    //
+    // Dormant while dash_enabled is false; retained for arcade presets.
+    "ground_dash_impulse": 10.0,
+    // "ground_dash_impulse": 50.0,
+
+    // Horizontal velocity impulse from an airborne dash, in world units/s.
+    //
+    // Dormant while dash_enabled is false; retained for arcade presets.
+    "air_dash_impulse": 10.0,
+    // "air_dash_impulse": 50.0,
+
+    // Vertical velocity assigned by down-dash, in world units/s.
+    //
+    // Dormant while down_dash_enabled is false; retained for arcade presets.
+    "down_dash_speed": -50.0,
+    // "down_dash_speed": -250.0,
+
+    // ── External impulse / knockback ─────────────────────────────────────
+    //
+    // Knockback is a separate combat effect and can exceed walking speed.
+    //
+    // NOTE:
+    // MiMITA's current movement implementation may fold knockback into the
+    // player's real velocity as a single-tick impulse before this older
+    // external-velocity behavior becomes relevant.
+
+    // Exponential decay rate for the legacy separate external impulse path.
+    //
+    // This affects only the legacy separate external-impulse path.
+    "external_impulse_decay": 99.0,
+
+    // Maximum allowed horizontal external impulse speed.
+    //
+    // Limit the legacy separate impulse path to a fast human sprint speed.
+    "max_external_impulse_speed": 8.0,
+    // 2026 11 07 1140 just need a big rebalance for all weapons 
+    // bc rocket launcher needs to have that knockback for self for rocket jumping 
+    // but setting this to antthing above 1.0 means
+    // other knockbaskcs dont work
+    // sooo whatever 2026 11 07 1141
+    // "external_impulse_resistance_multiplier": 1.0,
+    "external_impulse_resistance_multipalier": 5.0,
+    // "external_impulse_resistance_multiplier": 10.0,
+    // "external_impulse_resistance_multiplier": 3.0,
+    // "external_impulse_resistance_multiplier": 99.0,
+
+    // "exponential" = external impulse uses the legacy decay behavior when
+    // that code path is active.
+    "impulse_friction_mode": "exponential",
+
+    // Fresh knockback remains untouched for this duration before its normal
+    // decay/friction behavior begins.
+    //
+    // Gives impacts a short, clearly visible pop.
+    "impulse_carry_seconds": 0.1,
+
+    // ── Misc ──────────────────────────────────────────────────────────────
+
+    // No Quake-style air strafing for this human-scale preset.
+    "air_strafing": false,
+
+    // Movement debug visualization.
+    "debug_draw_enabled": false,
+
+    // ── Global speed limit ────────────────────────────────────────────────
+    //
+    // Allow momentum and impulses up to a fast human sprint range.
+    "speed_limit_enabled": true,
+
+    // 8 m/s is a fast human sprint; this limit affects new acceleration and
+    // impulses, while existing overspeed can still bleed off through friction.
+    "speed_limit": 8.0,
+
+    // "fixed" = acceleration/impulses are prevented from exceeding the limit.
+    // "clamp" = final horizontal velocity is clamped after movement.
+    //
+    // Fixed mode prevents new acceleration/impulses from adding beyond the cap.
+    "speed_limit_mode": "fixed",
+
+    "tuning_notes": {
+        "comment": "Slow human-scale ordinary movement: relaxed walking speed 1.0 m/s, gradual ground acceleration about 1.5 m/s^2, braking about 1.0 m/s^2 from walking speed, Earth gravity -9.81 m/s^2, and about 0.5 m jump height. Auto-bhop, air jumps, dash, down-dash, freeze, and air strafing are disabled. Combat knockback remains a separate effect, capped at 8 m/s in configured impulse and speed-limit paths."
+    }
+}

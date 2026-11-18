@@ -1,4 +1,15 @@
-﻿### top issue as of 2026 11 09 1041 jorj
+﻿2026 11 17 1620 jorj issue
+press ` = console
+but it shows it in the tping thing
+not good
+
+and need ot figre out
+no more letting me go  without doing antthing coding ior plauing
+its i want to pla it 
+
+im a plauer in m heart bro 
+
+### top issue as of 2026 11 09 1041 jorj
 
 2026 11 08 2100
 repo-local workspace + module migration continuation recorded
@@ -455,6 +466,7 @@ retest them or make new runtime-acceptance claims.
 | OGI-032 | P2 | Dev-loop helper windows can appear repeatedly and interrupt work | The 2026-11-08 report describes command windows stealing focus; the visible-window regression remains only partially verified. Reproduce current dashboard/helper behavior and confirm one intended UI with no foreground console churn. [Visible game-window regression](../regressions/dev-loop/visible-game-window-REG-2026-11-08.md), [dev-loop](dev-loop/dev-loop.md). |
 | OGI-033 | P1 | Agent lanes open duplicate dashboard windows and status is hard to read | The main checkout owns one coordinator dashboard; ensuring or running a lane must not open a window. The dashboard lists the main checkout and registered lanes with build phase/elapsed time and runtime counts, plus one shared `Updated N seconds ago` indicator. Show discoverable MiMITA processes in a readable, scrollable table with lane, role, PID, state, and connection target when known. Keep build/run controls routed to the owning checkout. Validate multi-lane and multi-client/server visibility plus stale/unavailable lane handling. [Dashboard contract](dev-loop/dashboard.md), [multi-instance topology](dev-loop/multi-instance.md), [agent build authority](dev-loop/agent-lanes-build-authority.md). |
 | OGI-034 | P1 | Agent and AI work still relies on timer- or wait-based loops | Replace periodic AI/agent polling and bounded waits with event-driven work where practical: build completion, generation activation, command delivery, and scenario progress should emit events the AI consumes instead of sleeping, polling, or blocking on timers. Keep safety limits and timeouts, but a timeout is a failure reason, not the normal coordination mechanism. Track the remaining timer-based paths and document each removal. [Dev-loop](dev-loop/dev-loop.md), [debug logging](debug-logging/debug-logging.md), [performance](performance/performance.md) |
+| OGI-035 | P1 | Payload combat and performance need a live, measured improvement pass | Current live report (2026-11-18): in Payload on Fun World 3, NPCs do not feel aggressive/effective enough and can remain stuck in geometry, especially around the large cylinder. Direct shots at an enemy appear to deal too little damage (cause not established). Rocket PNG explosion/impact marks can float when applied to a character; place the mark on the closest sensible available surface. The intended combat is deliberate, lethal individual fighting, not indiscriminate explosives into a crowd, while Payload should remain performant. Focus first on server actual 60 Hz and client 240 FPS, then optimize NPC effectiveness and validate hit/damage and impact-mark placement in the same real scenario. This is a user report, not a diagnosis or confirmed regression. [NPC behavior](npc-behavior/npc-behavior.md), [collision](../architecture/collision/collision.md), [weapons](weapons/weapons.md), [effects](effects/effects.md), [performance](performance/performance.md), [performance overlay](performance/perf-report-overlay.md). |
 
 | ID | Priority | Issue | Owner / next step |
 |---|---:|---|---|

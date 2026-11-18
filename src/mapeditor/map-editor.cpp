@@ -1516,6 +1516,7 @@ bool MapEditor::setSelectedName(const std::string& name)
     }
     MapConfigRegistry::instance().markChanged();
     mPropertyName.value = name;
+    uiTextInputResetHistory(mPropertyName);
     mPropertyName.cursorPos = (int)mPropertyName.value.size();
     mPropertyName.selectionStart = -1;
     StructuredLogger::instance().writeEvent(
@@ -1537,6 +1538,7 @@ void MapEditor::beginRenameSelection()
     }
     const EditorObjectRef ref = mSelection.front();
     mPropertyName.value = objectName(ref);
+    uiTextInputResetHistory(mPropertyName);
     mPropertyName.cursorPos = (int)mPropertyName.value.size();
     mPropertyName.selectionStart = 0;
     mPropertyName.focused = true;
@@ -1906,8 +1908,12 @@ void MapEditor::syncChunkPropertyFields()
             !mPropertyOwnerValid || !(mPropertyOwner == ref);
         if (ownerChanged) {
             mPropertyMaterial.focused = false;
+            uiTextInputResetHistory(mPropertyMaterial);
             for (UITextInputState& field : mPropertyUvScale)
+            {
                 field.focused = false;
+                uiTextInputResetHistory(field);
+            }
         }
     }
     if (mSelection.empty() ||
@@ -1924,6 +1930,7 @@ void MapEditor::syncChunkPropertyFields()
     if (anyFocused) return;
     if (mPropertyMaterial.value != part->material) {
         mPropertyMaterial.value = part->material;
+        uiTextInputResetHistory(mPropertyMaterial);
         mPropertyMaterial.cursorPos = (int)mPropertyMaterial.value.size();
         mPropertyMaterial.selectionStart = -1;
     }
@@ -1931,12 +1938,14 @@ void MapEditor::syncChunkPropertyFields()
     std::snprintf(value, sizeof(value), "%.3f", part->uvScale.x);
     if (mPropertyUvScale[0].value != value) {
         mPropertyUvScale[0].value = value;
+        uiTextInputResetHistory(mPropertyUvScale[0]);
         mPropertyUvScale[0].cursorPos = (int)mPropertyUvScale[0].value.size();
         mPropertyUvScale[0].selectionStart = -1;
     }
     std::snprintf(value, sizeof(value), "%.3f", part->uvScale.y);
     if (mPropertyUvScale[1].value != value) {
         mPropertyUvScale[1].value = value;
+        uiTextInputResetHistory(mPropertyUvScale[1]);
         mPropertyUvScale[1].cursorPos = (int)mPropertyUvScale[1].value.size();
         mPropertyUvScale[1].selectionStart = -1;
     }
@@ -2293,6 +2302,8 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
 {
     if (!mActive) return false;
     const bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
+    // Saving remains an editor command even when a properties/search field has focus.
+    if (ctrl && key == GLFW_KEY_S) return false;
     if (mOutlinerSearchFocused) {
         if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
             mOutlinerSearchFocused = false;
@@ -2442,10 +2453,23 @@ void MapEditor::syncPropertyPositionFields()
         if (mPropertyOwnerValid) {
             mPropertyOwnerValid = false;
             mPropertyName.focused = false;
-            for (UITextInputState& field : mPropertyPosition) field.focused = false;
-            for (UITextInputState& field : mPropertySize) field.focused = false;
-            for (UITextInputState& field : mPropertyRotation) field.focused = false;
-            for (UITextInputState& field : mPropertyScale) field.focused = false;
+            uiTextInputResetHistory(mPropertyName);
+            for (UITextInputState& field : mPropertyPosition) {
+                field.focused = false;
+                uiTextInputResetHistory(field);
+            }
+            for (UITextInputState& field : mPropertySize) {
+                field.focused = false;
+                uiTextInputResetHistory(field);
+            }
+            for (UITextInputState& field : mPropertyRotation) {
+                field.focused = false;
+                uiTextInputResetHistory(field);
+            }
+            for (UITextInputState& field : mPropertyScale) {
+                field.focused = false;
+                uiTextInputResetHistory(field);
+            }
             mPropertyMaterial.focused = false;
             for (UITextInputState& field : mPropertyUvScale) field.focused = false;
         }
@@ -2457,10 +2481,23 @@ void MapEditor::syncPropertyPositionFields()
         mPropertyOwner = ref;
         mPropertyOwnerValid = true;
         mPropertyName.focused = false;
-        for (UITextInputState& field : mPropertyPosition) field.focused = false;
-        for (UITextInputState& field : mPropertySize) field.focused = false;
-        for (UITextInputState& field : mPropertyRotation) field.focused = false;
-        for (UITextInputState& field : mPropertyScale) field.focused = false;
+        uiTextInputResetHistory(mPropertyName);
+        for (UITextInputState& field : mPropertyPosition) {
+            field.focused = false;
+            uiTextInputResetHistory(field);
+        }
+        for (UITextInputState& field : mPropertySize) {
+            field.focused = false;
+            uiTextInputResetHistory(field);
+        }
+        for (UITextInputState& field : mPropertyRotation) {
+            field.focused = false;
+            uiTextInputResetHistory(field);
+        }
+        for (UITextInputState& field : mPropertyScale) {
+            field.focused = false;
+            uiTextInputResetHistory(field);
+        }
     }
     if (!ownerChanged) {
         bool anyFocused = false;
@@ -2476,6 +2513,7 @@ void MapEditor::syncPropertyPositionFields()
         std::snprintf(value, sizeof(value), "%.3f", position[i]);
         if (field.value != value) {
             field.value = value;
+            uiTextInputResetHistory(field);
             field.cursorPos = (int)field.value.size();
             field.selectionStart = -1;
         }
@@ -2541,6 +2579,7 @@ void MapEditor::syncPropertyTransformFields()
         const std::string name = objectName(ref);
         if (mPropertyName.value != name) {
             mPropertyName.value = name;
+            uiTextInputResetHistory(mPropertyName);
             mPropertyName.cursorPos = (int)name.size();
             mPropertyName.selectionStart = -1;
         }
@@ -2551,6 +2590,7 @@ void MapEditor::syncPropertyTransformFields()
             std::snprintf(value, sizeof(value), "%.2f", rotation[i]);
             if (haveRotation && mPropertyRotation[i].value != value) {
                 mPropertyRotation[i].value = value;
+                uiTextInputResetHistory(mPropertyRotation[i]);
                 mPropertyRotation[i].cursorPos = (int)mPropertyRotation[i].value.size();
                 mPropertyRotation[i].selectionStart = -1;
             }
@@ -2559,6 +2599,7 @@ void MapEditor::syncPropertyTransformFields()
             std::snprintf(value, sizeof(value), "%.3f", scale[i]);
             if (haveScale && mPropertyScale[i].value != value) {
                 mPropertyScale[i].value = value;
+                uiTextInputResetHistory(mPropertyScale[i]);
                 mPropertyScale[i].cursorPos = (int)mPropertyScale[i].value.size();
                 mPropertyScale[i].selectionStart = -1;
             }
@@ -2718,6 +2759,7 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
     if (!mActive) {
         if (mLooking) {
             mLooking = false;
+            InputRouter::setPointerLock(false);
             mimita::game::hostSetCursorMode(0);
         }
         return;
@@ -2727,6 +2769,7 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
     if (blocked) {
         if (mLooking) {
             mLooking = false;
+            InputRouter::setPointerLock(false);
             mimita::game::hostSetCursorMode(0);
             THE_CAMERA.firstMouse = true;
         }
@@ -2818,10 +2861,12 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
         }
         mContextMenuOpen = false;
         mLooking = true;
+        InputRouter::setPointerLock(true);
         mimita::game::hostSetCursorMode(2);
         THE_CAMERA.firstMouse = true;
     } else if (!right && mRightPrev) {
         mLooking = false;
+        InputRouter::setPointerLock(false);
         mimita::game::hostSetCursorMode(0);
         THE_CAMERA.firstMouse = true;
     }

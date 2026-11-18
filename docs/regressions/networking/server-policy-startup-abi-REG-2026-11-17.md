@@ -1,8 +1,8 @@
 # Server policy startup ABI defaults rejected every server launch
 
 - Recorded: 2026-11-17T21:06:37Z
-- Status: FIX ATTEMPTED; fresh Payload runtime verification pending
-- Changelog: pending this session's final record
+- Status: FIXED IN SOURCE; fresh Payload server/client runtime and visible-window evidence recorded
+- Changelog: [20261117_211612-payload-startup-abi-request-version-fix.md](../../changelog/2026-11-17/20261117_211612-payload-startup-abi-request-version-fix.md)
 
 ## Expected behavior
 
@@ -36,9 +36,20 @@ Changed those three request defaults to
 `kGameServerPolicyAbiVersion`. The root dev-loop observed source generation
 98 and published artifact
 `2026-11-17T21:12:47.128057Z` (SHA-256
-`c0f4b20b6d5fb4b5c2ca2f0b296d2a7da2184296ad5fb3c7f7e13663536edfac`). A
-fresh mode 57 launch was accepted by the dev-loop; its server journal must
-still be inspected before marking this fix runtime-confirmed.
+`c0f4b20b6d5fb4b5c2ca2f0b296d2a7da2184296ad5fb3c7f7e13663536edfac`). Fresh
+mode 57 run `20261117_211306` reached `server.startup.stage` complete for
+`configuration_load`, `world_load`, and `map_config_load`; emitted
+`payload.configured`; registered room `K2TTN85` with 19 startup NPCs; and
+remained running. The client with the same build connected and applied
+authoritative snapshots. The dev-loop recorded a successful managed-mode
+launch, and the visible `mimita.exe` window displayed the Payload HUD and
+intermission phase.
+
+Evidence journals:
+
+- `logs/2026-11-17/20261117_211306/server-01/events.jsonl`
+- `logs/2026-11-17/20261117_211306/client-01/events.jsonl`
+- `logs/2026-11-17/20261117_211306/dev-loop/events.jsonl`
 
 ## Specification
 
@@ -47,10 +58,7 @@ still be inspected before marking this fix runtime-confirmed.
 behavior to be demonstrated by the exact launched executable and its own
 `events.jsonl`; build publication alone is not runtime proof.
 
-## Remaining proof
+## Remaining review
 
-- Server stays alive and reaches completed configuration and world-load stages
-  for mode `payload` on `funworld3`.
-- Client launches and joins the matching Payload server; required Payload mode
-  start evidence appears in the run journals.
-- Human visual review confirms the game window opens and Payload is visible.
+- A person should review the visible scene's lighting and the open console
+  overlay; this session did not claim human play acceptance.

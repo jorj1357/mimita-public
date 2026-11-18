@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 26
+Entries: 28
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -200,3 +200,17 @@ correction in the detail file.
 - Status: FIXED (source/build) — no-change builds now skip all 575 sources; runtime proof is not applicable to this build-system fix.
 - Summary: The whole-game DLL worker treated `-MP` phony targets and Windows drive letters in `.d` files as missing dependencies, and its object cache was scoped to one generation. Every build recompiled all 575 sources. The parser now matches `build.py::source_changed`, the cache is persistent, and a no-change run prints 575 `[SKIP]` lines with zero compiles.
 - Detail: [incremental-recompile-REG-2026-11-12.md](incremental-recompile-REG-2026-11-12.md)
+
+## Entry 27 — Dev loop targeted an unowned GUI server during process cleanup
+
+- Recorded: 2026-11-17T21:23:13Z
+- Status: OPEN — cleanup target ownership is not verified.
+- Summary: The process-cap cleanup scans every same-checkout `mimita.exe` and calls `taskkill` without proving the process belongs to the active dev-loop run. The captured GUI server target returned `taskkill_rc=128`, so termination is unverified; dev-loop-owned server/client targets returned `0`.
+- Detail: [unowned-process-reaper-REG-2026-11-17.md](unowned-process-reaper-REG-2026-11-17.md)
+
+## Entry 28 — GUI Juggernaut launch inherited Captain Falcon weapons
+
+- Recorded: 2026-11-17T21:52:47Z
+- Status: FIXED — GUI launch mode 9 and Juggernaut NPC role loadouts verified in the live journal; separate in-game mode-switch command remains unverified.
+- Summary: A stale one-shot `--weapon-set 12` survived mode selection and forced Captain Falcon loadouts. Mode changes now clear it, and Auto GUI launches ignore stale weapon values. A fresh mode 9 launch omitted the override, resolved the gamemode default, and equipped Juggernaut NPCs with their configured Heavy Shotgun, Large Machine Gun, and Force Punch role loadout.
+- Detail: [juggernaut-gui-weapon-set-REG-2026-11-17.md](juggernaut-gui-weapon-set-REG-2026-11-17.md)

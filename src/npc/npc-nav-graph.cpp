@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
+#include <queue>
 
 #include "world/world.h"
 #include "map/map-loader-collision.h"
@@ -541,15 +543,27 @@ bool NpcNavGraph::findOneRoute(const World& world, const NpcNavGraphSettings& s,
     nodes[(size_t)startIdx].g = 0.0f;
     nodes[(size_t)startIdx].f = heuristic(startIdx);
 
-    std::vector<int> open;
-    open.push_back(startIdx);
+    struct OpenEntry {
+        float f = 0.0f;
+        std::uint64_t order = 0;
+        int nodeIndex = -1;
+    };
+    struct OpenEntryGreater {
+        bool operator()(const OpenEntry& a, const OpenEntry& b) const
+        {
+            if (a.f != b.f) return a.f > b.f;
+            return a.order > b.order;
+        }
+    };
+    std::priority_queue<OpenEntry, std::vector<OpenEntry>, OpenEntryGreater> open;
+    std::uint64_t nextOpenOrder = 0;
+    open.push({nodes[(size_t)startIdx].f, nextOpenOrder++, startIdx});
     while (!open.empty()) {
-        int bi = 0;
-        for (int i = 1; i < (int)open.size(); ++i)
-            if (nodes[(size_t)open[(size_t)i]].f < nodes[(size_t)open[(size_t)bi]].f) bi = i;
-        const int cur = open[(size_t)bi];
-        open.erase(open.begin() + bi);
-        if (nodes[(size_t)cur].closed) continue;
+        const OpenEntry entry = open.top();
+        open.pop();
+        const int cur = entry.nodeIndex;
+        if (nodes[(size_t)cur].closed || entry.f > nodes[(size_t)cur].f)
+            continue;
         nodes[(size_t)cur].closed = true;
         if (cur == goalIdx) break;
 
@@ -570,7 +584,7 @@ bool NpcNavGraph::findOneRoute(const World& world, const NpcNavGraphSettings& s,
                 nodes[(size_t)ni].g = ng;
                 nodes[(size_t)ni].f = ng + heuristic(ni);
                 nodes[(size_t)ni].parent = cur;
-                open.push_back(ni);
+                open.push({nodes[(size_t)ni].f, nextOpenOrder++, ni});
             }
         }
     }

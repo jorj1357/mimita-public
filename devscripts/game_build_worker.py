@@ -139,6 +139,7 @@ class Progress:
         self.path = out_root / "progress.json"
         self.log_path = out_root / "progress.log"
         self.started_monotonic = time.monotonic()
+        self.stop_heartbeat = threading.Event()
         self.data = {
             "status": "running",
             "phase": "start",
@@ -149,6 +150,9 @@ class Progress:
             "skipped": 0,
             "failed": 0,
             "current": "",
+            "last_completed": "",
+            "active_sources": [],
+            "file_events": [],
             "jobs": jobs,
             "priority": priority,
             "object_cache": str(cache_dir.relative_to(ROOT)) if cache_dir.is_relative_to(ROOT) else str(cache_dir),
@@ -165,10 +169,23 @@ class Progress:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.log_path.write_text("", encoding="utf-8")
         self._write_locked()
+        self.heartbeat = threading.Thread(
+            target=self._heartbeat_loop, name="game-build-progress", daemon=True)
+        self.heartbeat.start()
 
     def _write_locked(self) -> None:
+        if self.data.get("status") == "running":
+            self.data["elapsed_s"] = round(
+                time.monotonic() - self.started_monotonic, 1)
         self.data["updated_utc"] = utc_now()
         write_json_atomic(self.path, self.data)
+
+    def _heartbeat_loop(self) -> None:
+        while not self.stop_heartbeat.wait(0.5):
+            with self.lock:
+                if self.data.get("status") != "running":
+                    return
+                self._write_locked()
 
     def _append_locked(self, line: str) -> None:
         with open(self.log_path, "a", encoding="utf-8", buffering=1) as handle:
@@ -183,8 +200,21 @@ class Progress:
         with self.lock:
             self._append_locked(line)
 
+    def start_source(self, path: str) -> None:
+        with self.lock:
+            active = self.data["active_sources"]
+            if path not in active:
+                active.append(path)
+            self.data["current"] = path
+            self._write_locked()
+
     def record(self, status: str, path: str, ms: float, detail: str = "") -> None:
         with self.lock:
+            active = self.data["active_sources"]
+            if path in active:
+                active.remove(path)
+            self.data["last_completed"] = path
+            self.data["current"] = active[-1] if active else ""
             self.data["completed"] += 1
             if status == "compiled":
                 self.data["compiled"] += 1
@@ -192,8 +222,8 @@ class Progress:
                 self.data["skipped"] += 1
             elif status == "failed":
                 self.data["failed"] += 1
-            self.data["current"] = path
-            self.data["elapsed_s"] = round(time.monotonic() - self.started_monotonic, 1)
+            if self.data.get("phase") == "compile":
+                self.data["pending"] = max(0, int(self.data.get("pending", 0)) - 1)
             if status in ("compiled", "failed"):
                 entry = {"path": path, "seconds": round(ms / 1000.0, 3), "status": status}
                 slowest = self.data["slowest"]
@@ -202,6 +232,15 @@ class Progress:
                 del slowest[10:]
             if status == "failed" and detail:
                 self.data["errors"].append({"path": path, "output": detail[:4000]})
+            file_event = {
+                "sequence": self.data["completed"],
+                "path": path,
+                "status": status,
+                "seconds": round(ms / 1000.0, 3),
+                "wall_time": utc_now(),
+            }
+            self.data["file_events"].append(file_event)
+            del self.data["file_events"][:-100]
             if status == "skipped":
                 self._append_locked(f"[SKIP] {self.data['completed']}/{self.data['total']} {path}")
             else:
@@ -210,6 +249,7 @@ class Progress:
                     f"[CXX ] {self.data['completed']}/{self.data['total']} "
                     f"{ms / 1000.0:.2f}s {path}{suffix}")
             self._write_locked()
+            print("[GAME_FILE] " + json.dumps(file_event, separators=(",", ":")), flush=True)
 
     def finish(self, status: str, **kwargs) -> None:
         with self.lock:
@@ -217,6 +257,7 @@ class Progress:
             self.data["phase"] = "done" if status == "ok" else "failed"
             self.data["total_s"] = round(time.monotonic() - self.started_monotonic, 1)
             self.data.update(kwargs)
+            self.stop_heartbeat.set()
             self._write_locked()
 
 
@@ -394,6 +435,12 @@ def build(args: argparse.Namespace) -> int:
             print(f"[GAME BUILD] ERROR {error}", file=sys.stderr)
         return 2
 
+    # The probe module is a separate validation export. The whole-game DLL uses
+    # src/game/game-module.cpp as its GameModuleV1 entry point.
+    if not args.sources_file:
+        sources = [s for s in sources
+                   if s.get("path") != "src/game/probe/npc-target-probe-module.cpp"]
+
     try:
         cxx = compiler()
         os.environ["PATH"] = runtime_path(cxx) + os.pathsep + os.environ.get("PATH", "")
@@ -460,12 +507,6 @@ def build(args: argparse.Namespace) -> int:
           f"jobs={jobs} priority={args.priority} cache={object_dir.relative_to(ROOT)} "
           f"seeded={seeded}", flush=True)
 
-    # The probe module is a separate validation export. The whole-game DLL uses
-    # src/game/game-module.cpp as its GameModuleV1 entry point.
-    if not args.sources_file:
-        sources = [s for s in sources
-                   if s.get("path") != "src/game/probe/npc-target-probe-module.cpp"]
-
     entries: list[tuple[dict, Path, Path]] = []
     objects: list[Path] = []
     for item in sources:
@@ -515,6 +556,7 @@ def build(args: argparse.Namespace) -> int:
     def compile_one(item: dict, obj: Path, dep: Path) -> tuple[str, dict, float, str]:
         if stop_event.is_set():
             return ("skipped", item, 0.0, "")
+        progress.start_source(item["path"])
         source_path = str(item["path"]).replace("\\", "/")
         folded_module_symbols = {
             "src/mapeditor/map-editor-module.cpp":

@@ -59,8 +59,8 @@ Entries: 21
 ## Entry 7 — Physical Objects Collision and Settling
 
 - Recorded: 2026-10-01T17:37:13Z
-- Status: ATTEMPTED FIX (13)
-- Summary: Performance/queue baseline: human-confirmed GOOD at 2026-10-01T22:16:15Z (Attempt 10: sustained 2 fps gone; no noticeable dip from normal shooting). Attempt 11 regressed full-auto (interval-8 batch-of-24); reverted in Attempt 12.
+- Status: ATTEMPT 14 REVERTED; ROCKET LAUNCHER BOX RESTORED; LIVE RETEST PENDING
+- Summary: Attempt 14's capsule collider was followed by a human report that the rocket launcher stuck inside walls; its box collider was restored and made visible. Exact contact cause and live retest remain open. Earlier performance/queue baseline was human-confirmed GOOD at 2026-10-01T22:16:15Z; Attempt 11 full-auto regression was reverted in Attempt 12.
 - Detail: [physical-objects-collision-REG-2026-10-01.md](physical-objects-collision-REG-2026-10-01.md)
 
 ## Entry 8 — Block seam caused a forward speed collapse

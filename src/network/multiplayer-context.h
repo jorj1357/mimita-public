@@ -1149,6 +1149,10 @@ void mpSendVehicleInput(MultiplayerContext& ctx, uint32_t currentMs);
 void mpReleaseTimelineEvents(MultiplayerContext& ctx);
 void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const class World& world);
 void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera);
+// True when a live client grenade-smoke volume crosses the segment between two
+// world-space points. Used by world-space HUD presentation that should respect
+// smoke occlusion.
+bool mpClientSmokeBlocksSegment(const glm::vec3& from, const glm::vec3& to);
 
 // Called from mpTick (defined in multiplayer-chat.cpp)
 void mpProcessChatPacket(MultiplayerContext& ctx, const ChatPacket* chat);

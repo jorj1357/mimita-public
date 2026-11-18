@@ -99,12 +99,12 @@ RMB held         mouse look
 RMB released     free cursor
 LMB              select / drag
 Shift+LMB        add or remove from selection
-Ctrl+A           select all
-Ctrl+C/V/X       copy / paste / cut
+Ctrl+A           select all (text in a focused field; objects otherwise)
+Ctrl+C/V/X       copy / paste / cut (text in a focused field; objects otherwise)
 Ctrl+D           duplicate
 Delete or X      delete selection
-Ctrl+Z           undo
-Ctrl+Shift+Z/Y   redo
+Ctrl+Z           undo text edit in a focused field; otherwise undo map edit
+Ctrl+Shift+Z/Y   redo text edit in a focused field; otherwise redo map edit
 Ctrl+S           save active map JSON (writes a backup)
 autosave         debounced map JSON write after edits (no backup)
 V                toggle vertex snap
@@ -117,6 +117,11 @@ Ctrl+click row   add or remove that row from the selection
 Shift+click row  select the range from the anchor row
 Enter            apply the focused position field
 ```
+
+Focused text fields support typing, selection, clipboard copy/cut/paste, and
+local undo/redo. Their keyboard handling takes priority over map selection and
+transform shortcuts, so typing or editing a field cannot copy, cut, paste, undo,
+or redo map objects. Ctrl+S still saves the map while a field is focused.
 
 The bottom help strip is intentionally removed. The only persistent hint is:
 

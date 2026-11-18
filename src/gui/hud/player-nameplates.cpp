@@ -23,6 +23,7 @@
 #include "debug/debug-visuals.h"
 #include "entities/player.h"
 #include "gui/ui-system.h"
+#include "network/multiplayer-context.h"
 #include "physics/config.h"
 #include "debug/debug-log.h"
 #include "replay/replay-export.h"
@@ -206,6 +207,12 @@ HealthbarRenderResult drawPlayerHealthbar(
         "[HEALTHBAR] entity=%s distance=%.1f maxDistance=%.1f isLocal=%d\n",
         player.username.c_str(), result.distance, cfg.maxDistance,
         (int)isLocalPlayer);
+    if (isLiveWorld &&
+        MimitaNet::mpClientSmokeBlocksSegment(camera.pos, result.anchor))
+    {
+        result.cullReason = HealthbarCullReason::SmokeOccluded;
+        return result;
+    }
     if (result.distance > cfg.maxDistance)
     {
         Debug::log(Debug::Category::Gui,
@@ -390,6 +397,7 @@ const char* healthbarCullReasonName(HealthbarCullReason reason)
     case HealthbarCullReason::TooFar: return "too-far";
     case HealthbarCullReason::Offscreen: return "offscreen";
     case HealthbarCullReason::Disabled: return "disabled";
+    case HealthbarCullReason::SmokeOccluded: return "smoke-occluded";
     }
     return "unknown";
 }

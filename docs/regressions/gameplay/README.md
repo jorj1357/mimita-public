@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 41
+Entries: 44
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -319,3 +319,25 @@ Entries: 41
 - Recorded: 2026-11-15T17:30:00-05:00
 - Status: OPEN — both must be fixed hot
 - Detail: [npc-collision-stuck-REG-2026-11-15.md](npc-collision-stuck-REG-2026-11-15.md), [npc-authored-animation-REG-2026-11-15.md](npc-authored-animation-REG-2026-11-15.md)
+
+## Entry 42 — Duel NPC weapon cycle escaped its rocket-only loadout
+
+- Recorded: 2026-11-18T06:36:49Z
+- Status: SOURCE FIX SAVED — hot build observed in progress; runtime behavior pending
+- Summary: The elite NPC weapon cycle could choose profile-listed melee weapons even when the Duel host override resolved that NPC to Rocket Launcher plus `nothing`.
+- Detail: [duel-npc-weapon-cycle-REG-2026-11-18.md](duel-npc-weapon-cycle-REG-2026-11-18.md)
+
+## Entry 43 — Map editor keyboard and text-field shortcuts
+
+- Recorded: 2026-11-18 (user report; exact report time unavailable)
+- Status: SOURCE FIX SAVED — live input validation pending
+- Summary: The host-dispatched hot-client key path skipped the Map Editor key owners, and shared text fields had no local undo/redo history.
+- Detail: [map-editor-keyboard-routing-REG-2026-11-18.md](map-editor-keyboard-routing-REG-2026-11-18.md)
+
+## Entry 44 — Opening the terminal typed the grave key
+
+- Recorded: 2026-11-18 (user report; exact report time unavailable)
+- Status: SOURCE FIX SAVED — live input validation pending
+- Summary: The hot-client key callback toggled the terminal on grave, then GLFW's character callback delivered the same press as text after the terminal had opened.
+- Detail: [console-grave-toggle-REG-2026-11-18.md](console-grave-toggle-REG-2026-11-18.md)
+- Changelog: [Console grave toggle input](../../changelog/2026-11-18/20261118_093329-console-grave-toggle-input.md)

@@ -54,7 +54,7 @@
   "rocket_launcher": {
     "enabled": true,
     // "visible": true,
-    "visible": false,
+    "visible": true,
     "collision_skin": 0.05,
     "bounce_mode": "inherit_actor",
     "player_bounce": 0.99,

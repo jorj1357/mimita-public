@@ -614,6 +614,27 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt,
     npc.utilityContext = uctx;
     selectUtilityGoal(npc.utilityContext, npc.utility, dt, 0.6f, 0.08f,
                       npc.id, static_cast<std::uint32_t>(npc.sensors.time * 60.0f));
+    // FCS Terrorists keep their round's site as the movement goal until they
+    // arrive. A visible enemy may still be fought by the combat path, but its
+    // utility score must not redirect travel away from the plant. Preserve the
+    // designated bomb recoverer, hazard avoidance, and planting interaction.
+    const glm::vec2 toObjective(
+        npc.utilityContext.objectivePos.x - npc.body.pos.x,
+        npc.utilityContext.objectivePos.y - npc.body.pos.y);
+    const bool terroristObjectiveRush = npc.behavior.active &&
+        npc.behavior.objectiveRush && npc.body.matchTeam == 1 &&
+        npc.utilityContext.objectiveKnown && !npc.utilityContext.planted &&
+        !npc.utilityContext.isRecoverer && !npc.utilityContext.canPlant &&
+        !npc.utilityContext.hazardActive && glm::length(toObjective) > 4.0f;
+    if (terroristObjectiveRush &&
+        npc.utility.currentGoal != UtilityGoalKind::MoveToObjective) {
+        npc.utility.currentGoal = UtilityGoalKind::MoveToObjective;
+        npc.utility.currentScore = scoreUtilityGoal(
+            UtilityGoalKind::MoveToObjective, npc.utilityContext);
+        npc.utility.currentAction = actionForGoal(
+            UtilityGoalKind::MoveToObjective, npc.utilityContext);
+        npc.utility.goalTimer = 0.0f;
+    }
     const UtilityActionKind utilityAction = actionForGoal(
         npc.utility.currentGoal, npc.utilityContext);
     const int utilityGoal = static_cast<int>(npc.utility.currentGoal);
@@ -1704,18 +1725,41 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     } else ++npcSenseSkipped;
 
     if (npc.behavior.active && npc.behavior.objectiveRush &&
-        npc.utilityContext.objectiveKnown && !npc.sensors.hasTarget) {
+        npc.utilityContext.objectiveKnown) {
         const uint32_t rushTick = (uint32_t)(npc.sensors.time * 60.0f);
         if ((rushTick % 300u) == 0u) {
             const float dist = glm::length(
                 npc.utilityContext.objectivePos - npc.body.pos);
+            const int remainingPathNodes = std::max(
+                0, static_cast<int>(npc.navigator.path.size()) - npc.navigator.pathIndex);
+            const char* pathState = npc.navigator.path.empty() ? "no_path" :
+                remainingPathNodes == 0 ? "route_finished" : "following_route";
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::NpcMovement, StructuredLevel::Important,
                 "npc.rush", std::to_string(npc.id), "objective_route", rushTick,
                 nlohmann::json{{"actor", npc.id},
                                {"team", npc.body.matchTeam},
                                {"goal", utilityGoalName(npc.utility.currentGoal)},
+                               {"target_visible", npc.sensors.hasTarget},
+                               {"objective_priority",
+                                npc.behavior.active && npc.behavior.objectiveRush &&
+                                npc.body.matchTeam == 1 &&
+                                npc.utilityContext.objectiveKnown &&
+                                !npc.utilityContext.planted &&
+                                !npc.utilityContext.isRecoverer &&
+                                !npc.utilityContext.canPlant &&
+                                !npc.utilityContext.hazardActive &&
+                                glm::length(glm::vec2(
+                                    npc.utilityContext.objectivePos.x - npc.body.pos.x,
+                                    npc.utilityContext.objectivePos.y - npc.body.pos.y)) > 4.0f},
                                {"distance_m", dist},
+                               {"position", {npc.body.pos.x, npc.body.pos.y,
+                                              npc.body.pos.z}},
+                               {"path_state", pathState},
+                               {"path_nodes_remaining", remainingPathNodes},
+                               {"last_replan_reason",
+                                npc.staggeredNavResult.replanReason
+                                    ? npc.staggeredNavResult.replanReason : ""},
                                {"dash_available", npc.body.dash.dashAvailable},
                                {"objective", {npc.utilityContext.objectivePos.x,
                                               npc.utilityContext.objectivePos.y,
@@ -1824,7 +1868,13 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 __FILE__, __LINE__, __FUNCTION__);
         };
 
-        std::vector<std::string> order = npc.behavior.weaponCycle;
+        // The resolved actor loadout is authoritative. A shared behavior
+        // profile may list weapons for other modes, but it cannot grant those
+        // weapons to this actor.
+        std::vector<std::string> order;
+        for (const std::string& wid : npc.behavior.weaponCycle)
+            if (std::find(loadout.begin(), loadout.end(), wid) != loadout.end())
+                order.push_back(wid);
         for (const std::string& wid : loadout)
             if (std::find(order.begin(), order.end(), wid) == order.end())
                 order.push_back(wid);

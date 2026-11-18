@@ -7,7 +7,7 @@
   "allowed_maps_file": "config/gamemode-good-maps.json",
   "mode": "ssbm",
   "gamemode": "ssbm",
-  "weapon_set": 12,
+  "weapon_set": "auto",
   "npc_count": 1,
   "auto_map_rotation": false,
   "discord_notification": false,

@@ -19,10 +19,13 @@
 #include "render/dynamic-light-config.h"
 #include "render/dynamic-light.h"
 
-void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
+bool spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
                       const std::string& attacker, float sizeScale, bool playSound,
-                      const glm::vec3& surfaceNormal)
+                      const glm::vec3& surfaceNormal, float forceScale,
+                      const glm::vec3* markPosition, const glm::vec3* markNormal,
+                      bool spawnMark)
 {
+    forceScale = std::clamp(forceScale, 0.25f, 3.0f);
     if (weaponId == "projectile_rifle") {
         const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
         const auto param = [&](const char* key, float fallback) {
@@ -61,7 +64,7 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
         stage3.alpha = param("impactAlphaStage3", 0.12f);
         stage3.replayType = "projectile_rifle_impact_stage3";
         EffectPartSystem::instance().spawn(stage3);
-        return;
+        return false;
     }
     const auto& expCfg = WeaponHitFxConfig::instance().explosionBurstFor(weaponId);
 
@@ -153,13 +156,14 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
         shockwave.maxLifetime = std::max(0.02f, weaponDef->explosionShockwaveLifetime);
         shockwave.rotation.z = startRotation;
         shockwave.endRotation.z = endRotation;
-        shockwave.scale = weaponDef->explosionShockwaveStartScale;
-        shockwave.endScale = weaponDef->explosionShockwaveEndScale;
+        shockwave.scale = weaponDef->explosionShockwaveStartScale * forceScale;
+        shockwave.endScale = weaponDef->explosionShockwaveEndScale * forceScale;
         shockwave.alpha = weaponDef->explosionShockwaveStartAlpha;
         shockwave.endAlpha = weaponDef->explosionShockwaveEndAlpha;
         shockwave.color = glm::vec3(1.0f);
         shockwave.billboardText = false;
         shockwave.replayType = "explosion_shockwave";
+        shockwave.assetId = weaponId;
         shockwave.modelPath = weaponDef->explosionShockwaveModel;
         shockwave.texturePath = weaponDef->explosionShockwaveTexture;
         EffectPartSystem::instance().spawn(shockwave);
@@ -174,6 +178,7 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
                            {"end_rotation_deg", endRotation},
                            {"start_scale", shockwave.scale},
                            {"end_scale", shockwave.endScale},
+                           {"impact_force_scale", forceScale},
                            {"start_alpha", shockwave.alpha},
                            {"end_alpha", shockwave.endAlpha},
                            {"random_rotation_min_deg", randomMin},
@@ -182,9 +187,13 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
     }
 
     // Surface-aligned explosion mark decal.
-    if (weaponDef && !weaponDef->explosionMarkTexture.empty() &&
-        glm::length(surfaceNormal) > 0.001f) {
-        EffectPartSystem::instance().spawnExplosionMark(position, surfaceNormal);
+    const glm::vec3& decalPosition = markPosition ? *markPosition : position;
+    const glm::vec3& decalNormal = markNormal ? *markNormal : surfaceNormal;
+    bool markSpawned = false;
+    if (spawnMark && weaponDef && !weaponDef->explosionMarkTexture.empty() &&
+        glm::length(decalNormal) > 0.001f) {
+        markSpawned = EffectPartSystem::instance().spawnExplosionMark(
+            decalPosition, decalNormal, forceScale);
     }
 
     // Fireball sphere — expanding, clamped to a visible bright color
@@ -193,8 +202,8 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
         EffectPart sphere;
         sphere.position = position;
         sphere.maxLifetime = (float)expCfg.sphere.lifetimeTicks / 60.0f;
-        sphere.scale = expCfg.sphere.startRadius;
-        sphere.endScale = expCfg.sphere.endRadius;
+        sphere.scale = expCfg.sphere.startRadius * forceScale;
+        sphere.endScale = expCfg.sphere.endRadius * forceScale;
         sphere.color = glm::clamp(expCfg.sphere.startColor * expCfg.sphere.brightnessStart, 0.0f, 1.0f);
         sphere.alpha = expCfg.sphere.alphaStart;
         sphere.billboardText = false;
@@ -216,4 +225,5 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
         ev.weaponSource = weaponId;
         HitEffects::onHit(ev);
     }
+    return markSpawned;
 }

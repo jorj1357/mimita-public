@@ -282,6 +282,9 @@ Editor does not author reusable weapon model assets yet.
 - Smoke blocks NPC perception through the shared LOS query. A smoke volume
   between an NPC and a target is a blocker; do not add a second smoke query in
   combat code.
+- On clients, active grenade smoke also hides live-world actor healthbars,
+  names, and aim markers when the camera-to-healthbar-anchor segment intersects
+  the same smoke volume. Replay overlays are unaffected.
 
 ### Fire
 

@@ -897,3 +897,72 @@ Related changelog:
 Not yet. Status remains `ATTEMPTED FIX (13)` until human playtesting confirms
 the weapon no longer bounces/launches the player and the fall-through is gone.
 
+---
+
+## Regression Occurrence 10 (Attempt 14, 2026-11-18)
+
+### Observed
+
+After the 2026-11-18 change switched the rocket-launcher world collider from
+the configured box to a long capsule, the user reported that the launcher got
+stuck inside walls the player was trying to hit. The user separately clarified
+that ordinary actor-versus-world movement feels fine; uphill slope snagging
+remains a distinct issue recorded in
+`slope-edge-snag-REG-2026-09-29.md`.
+
+The report is human gameplay evidence. No exact route, wall identity, contact
+triangle, or post-change journal tick was supplied, so the first incorrect
+contact has not been isolated.
+
+### Expected Behavior
+
+The held weapon collider should keep the actor from entering a wall while the
+actor's own world collision continues to behave normally. The weapon collider
+must not let the player or launcher embed in the wall.
+
+### Actual Behavior
+
+The user reported the rocket launcher became stuck inside walls after the
+capsule change. The previous box collider was restored. Its config visibility
+is now enabled to make the configured box hitbox visible during inspection.
+
+### Change Associated With the Regression
+
+The prior session changed `config/weaponcollisions.json` for `rocket_launcher`
+from `source: "boxes"` with half-size `[0.2, 0.2, 1.6]` to a sampled capsule
+with radius `0.2` and endpoints `[0.15, 0, -1.2]` to `[0.15, 0, 1.6]`. It also
+increased capsule contact samples from 8 to 17 and added config polling in
+`recomputeWeaponCapsule`. The user's report followed this change.
+
+### Confirmed Cause
+
+Not confirmed. The capsule configuration is the change temporally associated
+with the report, but no post-change contact trace establishes whether shape
+coverage, transforms, sample response, server/client config parity, or another
+owner caused the embedding. Do not tune the actor/world solver based only on
+the symptom.
+
+### Revert
+
+- Restored the rocket-launcher `source: "boxes"` proxy and its previous box
+  center/half-size.
+- Restored the capsule sample count to 8 and removed the added poll from
+  `recomputeWeaponCapsule`.
+- Set the rocket-launcher collider's existing `visible` option to `true` so the
+  box hitbox can be inspected in game.
+
+These edits are source/config reversions. The live client/server retest and
+confirmation that the visible collider reloads remain pending.
+
+### Next Evidence Needed
+
+Record a live route that shows the player approaching the same wall with the
+rocket launcher. Capture actor position, weapon shape, contact point, world
+triangle, normal, penetration, and client/server config revision on the exact
+tick of embedding. Compare the visible weapon proxy to the authored weapon
+visual and to body-only actor/world movement.
+
+### Status
+
+`ATTEMPT 14 REVERTED; COLLIDER VISIBILITY ENABLED; LIVE RETEST PENDING`.
+

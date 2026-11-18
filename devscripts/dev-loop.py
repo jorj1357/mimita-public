@@ -1302,6 +1302,8 @@ class DevLoop:
         self.launch_id: str | None = None
         self.launch_executable: str | None = None
         self.client_instances: dict[str, dict] = {}
+        self.crash_dirs: dict[int, str] = {}
+        self.reported_exit_pids: set[int] = set()
         self.instances: list[dict] = []
         # Legacy alias: the dev-loop journal. Kept for control/status readers.
         self.events_path: str | None = None
@@ -1453,6 +1455,52 @@ class DevLoop:
                      for record in self.client_instances.values())
         return [path for path in dict.fromkeys(paths) if path]
 
+    def _crash_artifacts(self, pid: int) -> list[str]:
+        crash_dir = self.crash_dirs.get(pid)
+        directories = [Path(crash_dir)] if crash_dir else []
+        if not directories:
+            # The dashboard may have restarted after this process crashed. In
+            # that case recover its run-local dump by the PID embedded in the
+            # crash filename, without consulting LocalAppData.
+            directories = list((DEV_ROOT / "crashes").glob("*"))
+        artifacts = []
+        try:
+            for directory in directories:
+                if directory.is_symlink() or not directory.is_dir():
+                    continue
+                for path in directory.glob(f"crash-*-{pid}.*"):
+                    if (path.suffix.lower() not in {".dmp", ".txt"} or
+                            path.is_symlink() or not path.is_file()):
+                        continue
+                    artifacts.append(str(path.resolve().relative_to(ROOT.resolve())))
+        except (OSError, ValueError):
+            return []
+        return sorted(artifacts)
+
+    def _record_child_exit(self, pid: int, role: str, exit_code: int | None,
+                           reason: str) -> list[str]:
+        artifacts = self._crash_artifacts(pid)
+        if pid in self.reported_exit_pids:
+            return artifacts
+        self.reported_exit_pids.add(pid)
+        instance_id = next((str(item.get("instance_id", ""))
+                            for item in self.client_instances.values()
+                            if int(item.get("pid", 0) or 0) == pid),
+                           "server-01" if role == "server" else "")
+        self.record_runtime_event(
+            "dev-loop.instance.exited",
+            {"role": role, "instance_id": instance_id, "pid": pid,
+             "exit_code": exit_code, "crash_artifacts": artifacts},
+            reason)
+        if artifacts:
+            self.last_message = (
+                f"{role} pid={pid} exited (code={exit_code}); crash artifacts: "
+                + ", ".join(artifacts))
+        elif exit_code not in (None, 0):
+            self.last_message = (
+                f"{role} pid={pid} exited (code={exit_code}); no crash dump was written")
+        return artifacts
+
     @staticmethod
     def _tail_records(path: str | None, max_bytes: int = 1048576) -> list[dict]:
         if not path:
@@ -1562,6 +1610,7 @@ class DevLoop:
             "MIMITA_LAUNCH_ID": self.launch_id or "",
             "MIMITA_DEV_LOOP_SERVER": "1",
             "MIMITA_RUN_ID": self.run_id or "",
+            "MIMITA_CRASH_DIR": str(DEV_ROOT / "crashes" / (self.run_id or "unknown")),
             "MIMITA_EXPECTED_RUN_ID": self.run_id or "",
             "MIMITA_EXPECTED_BUILD_ID": self.run_metadata.get("build_id", ""),
             "MIMITA_BUILD_ID": self.run_metadata.get("build_id", ""),
@@ -1577,6 +1626,8 @@ class DevLoop:
         except OSError as error:
             self.last_message = f"could not start {iid}: {error}"
             return None
+        crash_dir = env["MIMITA_CRASH_DIR"]
+        self.crash_dirs[process.pid] = crash_dir
         self.processes.append(process)
         record = {
             "instance_id": iid,
@@ -1588,6 +1639,7 @@ class DevLoop:
             "badconn_preset": badconn_preset,
             "server_instance_id": "server-01",
             "started_ms": time.time() * 1000.0,
+            "crash_dir": crash_dir,
         }
         self.client_instances[iid] = record
         ready = self.wait_for_logger_started("client", process.pid, process=process)
@@ -2175,6 +2227,11 @@ class DevLoop:
         """Keep launch exceptions visible and the daemon available for retry."""
         request_id = str(request.get("request_id", ""))
         try:
+            # Launch mode and profile data can change while the persistent
+            # dashboard daemon is open. Resolve the current files for each new
+            # launch instead of reusing the daemon's startup snapshot.
+            self.profile = load_profile(self.profile.get("_path", "npc-navigation"))
+            self.launch_mode = load_launch_mode(self.launch_mode_id)
             return self.launch_latest(request_id=request_id)
         except Exception as error:
             details = traceback.format_exc(limit=12)
@@ -2448,6 +2505,24 @@ class DevLoop:
 
     def _record_game_build_output(self, line: str) -> None:
         detail = line.rstrip()[-240:]
+        event_payload = None
+        event_name = ""
+        reason = ""
+        for prefix, name, label in (
+            ("[GAME_NOTE] ", "dev-loop.game-build.started",
+             "saved compiler inputs captured for game DLL build"),
+            ("[GAME_FILE] ", "dev-loop.game-build.file",
+             "game DLL translation unit completed"),
+        ):
+            if line.startswith(prefix):
+                try:
+                    event_payload = json.loads(line[len(prefix):])
+                except (ValueError, json.JSONDecodeError):
+                    event_payload = None
+                event_name, reason = name, label
+                break
+        if isinstance(event_payload, dict) and event_name:
+            self.record_runtime_event(event_name, event_payload, reason)
         if not detail:
             return
         with self.lock:
@@ -2631,6 +2706,19 @@ class DevLoop:
                     self.last_message)
                 self.save_state("cold_link_trial")
             elif action == "build-or-launch":
+                # Dashboard launches do not carry scenario overrides. Clear any
+                # one-shot values left by a prior launch request so they cannot
+                # silently override the newly selected launch mode.
+                self.override_map = str(request.get("map", "") or "").strip()
+                requested_weapon_set = str(
+                    request.get("weapon_set", "") or "").strip()
+                mode_weapon_set = str(
+                    self.launch_mode.get("weapon_set", "") or "").strip().lower()
+                # The dashboard exposes launch-mode selection, not a separate
+                # weapon-set picker. For Auto modes, an old dashboard/profile
+                # weapon value is stale state, not an explicit host selection.
+                self.override_weapon_set = (
+                    "" if mode_weapon_set == "auto" else requested_weapon_set)
                 if self.latest_build is None or self.latest_stale:
                     self.launch_after_build = True
                     self._queue_build_if_needed()
@@ -2658,6 +2746,10 @@ class DevLoop:
                     continue
                 self.launch_mode_id = str(requested_mode)
                 self.launch_mode = selected
+                # A mode change starts a new mode-owned launch configuration;
+                # scenario-specific map/weapon overrides must not leak across it.
+                self.override_map = ""
+                self.override_weapon_set = ""
                 self.last_message = (
                     f"launch mode {self.launch_mode_id} selected: "
                     f"{selected.get('name', 'unnamed')}"
@@ -3385,6 +3477,11 @@ class DevLoop:
         )
 
         def finish(result: str) -> bool:
+            crash_artifacts = self._crash_artifacts(pid)
+            if result == "child_exited" and process is not None:
+                crash_artifacts = self._record_child_exit(
+                    pid, role, process.returncode,
+                    f"{role} pid={pid} exited before logger.started")
             last_event = None
             for journal_path in self._journal_read_paths():
                 for record in self._tail_records(journal_path):
@@ -3411,6 +3508,7 @@ class DevLoop:
                  "pid": pid, "timeout_seconds": timeout,
                  "duration_ms": round((time.monotonic() - wait_started) * 1000.0, 3),
                  "child_exit_code": process.returncode if process else None,
+                 "crash_artifacts": crash_artifacts,
                  "last_child_event": last_event_summary},
                 "logger readiness wait completed",
             )
@@ -3550,11 +3648,6 @@ class DevLoop:
     def launch_latest(self, request_id: str = "") -> bool:
         launch_started = time.monotonic()
         self.last_message = ""
-        self.reap_stray_mimita_processes()
-        # A new launch owns a fresh set of clients. Never leave an old
-        # client-02 writing into the previous run after the server is replaced.
-        self.stop_processes()
-        self.client_instances = {}
         # Every explicit launch starts a fresh run folder with one journal per
         # executable. Reusing a full/capped journal is what made logger.started
         # disappear and readiness time out while the replacement server stayed
@@ -3670,6 +3763,9 @@ class DevLoop:
             and self.client_args and self.client_args[0] == str(launch_exe)
             and any(process.poll() is None for process in self.processes)
             and self.client_ready and self.builds_match
+            and any(instance.get("instance_id") == "client-01" and
+                    instance.get("state") == "online"
+                    for instance in self._instance_records())
             and self.server_build_id == build_id
             and stable_launch_matches(exe)
             and self.server_health()
@@ -3709,7 +3805,19 @@ class DevLoop:
         # Capture one immutable published artifact. A worker may publish a newer
         # build concurrently, but this launch keeps one server/client identity.
         self.stop_processes()
-        stage("client_reconciliation", "completed", "previous dev-loop clients stopped")
+        self.client_instances = {}
+        cleanup_ok, stopped_pids = self.reap_stray_mimita_processes()
+        if not cleanup_ok:
+            shutil.rmtree(staged_launch, ignore_errors=True)
+            stage("client_reconciliation", "failed", self.last_message,
+                  stopped_pids=stopped_pids)
+            stage("complete", "failed", self.last_message,
+                  stopped_pids=stopped_pids)
+            self.save_state("process_reconciliation_failed")
+            return False
+        stage("client_reconciliation", "completed",
+              "same-checkout MiMITA processes exited before replacement",
+              stopped_pids=stopped_pids)
         self.client_ready = False
         self.builds_match = False
         running_map = self.server_map_name()
@@ -3870,6 +3978,7 @@ class DevLoop:
                 "MIMITA_INSTANCE_ID": "server-01",
                 "MIMITA_LAUNCH_ID": self.launch_id or "",
                 "MIMITA_RUN_ID": self.run_id,
+                "MIMITA_CRASH_DIR": str(DEV_ROOT / "crashes" / self.run_id),
                 "MIMITA_BUILD_ID": build_id,
                 "MIMITA_RUN_METADATA": json.dumps(metadata, separators=(",", ":")),
             }
@@ -3934,6 +4043,7 @@ class DevLoop:
                 return False
             self.server_process = server
             self.server_pid = server.pid
+            self.crash_dirs[server.pid] = common_env["MIMITA_CRASH_DIR"]
             self.server_exe = str(launch_exe)
             self.server_build_id = build_id
             self.server_args = list(server_args)
@@ -4099,6 +4209,8 @@ class DevLoop:
             "MIMITA_LAUNCH_ID": self.launch_id or "",
             "MIMITA_DEV_LOOP_SERVER": "1",
             "MIMITA_RUN_ID": self.run_id or Path(self.events_path).parent.name,
+            "MIMITA_CRASH_DIR": str(
+                DEV_ROOT / "crashes" / (self.run_id or Path(self.events_path).parent.name)),
             "MIMITA_EXPECTED_RUN_ID": self.run_id or Path(self.events_path).parent.name,
             "MIMITA_EXPECTED_BUILD_ID": build_id,
             "MIMITA_BUILD_ID": build_id,
@@ -4119,6 +4231,7 @@ class DevLoop:
                 "console_policy": "CREATE_NO_WINDOW",
                 "window_policy": self.launch_visibility,
                 "hot_client": self.hot_client,
+                "crash_dir": client_env["MIMITA_CRASH_DIR"],
                 "unlock_cursor_requested": "--unlock-cursor" in client_args,
             },
             "dev-loop launching client with hidden console and unlocked-cursor policy",
@@ -4138,6 +4251,7 @@ class DevLoop:
             self.save_state("client_process_start_failed")
             return False
         self.processes.append(client)
+        self.crash_dirs[client.pid] = client_env["MIMITA_CRASH_DIR"]
         self.client_instances["client-01"] = {
             "instance_id": "client-01",
             "name": primary_client_name,
@@ -4148,6 +4262,7 @@ class DevLoop:
             "badconn_preset": primary_badconn,
             "server_instance_id": "server-01",
             "started_ms": time.time() * 1000.0,
+            "crash_dir": client_env["MIMITA_CRASH_DIR"],
         }
         self.client_args = list(client_args)
         self.client_launch_ms = time.time() * 1000.0
@@ -4197,9 +4312,10 @@ class DevLoop:
             stage_started = time.monotonic()
             connected_event = self.wait_for_journal_event(
                 "network.connection-state.changed", {client.pid},
-                timeout=45.0, field_key="to", field_value="Connected")
+                timeout=45.0, field_key="to", field_value="Connected",
+                process=client)
             connection_ready = connected_event is not None
-            if not connection_ready:
+            if not connection_ready and client.poll() is None:
                 self.last_message = (
                     f"client pid={client.pid} did not reach Connected before the timeout")
             stage("client_connection", "ready" if connection_ready else "failed",
@@ -4215,9 +4331,10 @@ class DevLoop:
             stage_started = time.monotonic()
             mode_event = self.wait_for_journal_event(
                 "network.mode.start", {client.pid, self.server_pid},
-                timeout=45.0, field_key="stage", field_value="active")
+                timeout=45.0, field_key="stage", field_value="active",
+                process=client)
             mode_ready = mode_event is not None
-            if not mode_ready:
+            if not mode_ready and client.poll() is None:
                 self.last_message = "managed mode did not become active before the timeout"
             stage("mode_start", "ready" if mode_ready else "failed",
                   self.last_message if not mode_ready else "managed mode reached ACTIVE",
@@ -4231,9 +4348,10 @@ class DevLoop:
             stage_started = time.monotonic()
             wave_event = self.wait_for_journal_event(
                 "network.npcwaves.start", {client.pid, self.server_pid},
-                timeout=45.0, field_key="stage", field_value="begin")
+                timeout=45.0, field_key="stage", field_value="begin",
+                process=client)
             npcwaves_ready = wave_event is not None
-            if not npcwaves_ready:
+            if not npcwaves_ready and client.poll() is None:
                 self.last_message = "NPC Waves did not begin before the timeout"
             stage("npcwaves_start", "ready" if npcwaves_ready else "failed",
                   self.last_message if not npcwaves_ready else "NPC Waves wave 1 began",
@@ -4247,7 +4365,7 @@ class DevLoop:
                 connection_ready and self.client_journal_path):
             stage_started = time.monotonic()
             hot_gate_ready, gate_message = self.wait_for_hot_client_gate(
-                self.client_journal_path)
+                self.client_journal_path, process=client)
             if not hot_gate_ready:
                 self.last_message = (
                     f"hot-client acceptance gate failed: {gate_message}")
@@ -4317,12 +4435,19 @@ class DevLoop:
     def wait_for_journal_event(self, event_name: str, pids: set[int],
                                timeout: float = 45.0,
                                field_key: str = "",
-                               field_value: str = "") -> dict | None:
+                               field_value: str = "",
+                               process: subprocess.Popen | None = None) -> dict | None:
         """Wait for one matching event in any journal owned by this run."""
         if not self.events_path:
             return None
         deadline = time.time() + timeout
         while time.time() < deadline:
+            if process is not None and process.poll() is not None:
+                role = "server" if process.pid == self.server_pid else "client"
+                self._record_child_exit(
+                    process.pid, role, process.returncode,
+                    f"{role} pid={process.pid} exited while waiting for {event_name}")
+                return None
             for journal_path in self._journal_read_paths():
                 for segment in _journal_segment_paths(journal_path):
                     try:
@@ -4346,12 +4471,19 @@ class DevLoop:
         return None
 
     def wait_for_hot_client_gate(self, journal_path: str,
-                                 timeout: float = 45.0) -> tuple[bool, str]:
+                                 timeout: float = 45.0,
+                                 process: subprocess.Popen | None = None) -> tuple[bool, str]:
         """Poll the hot-client acceptance gate until the journal proves a hot frame."""
         deadline = time.time() + timeout
         result_path = Path(self.events_path).parent / "hot-client-gate.json"
         last_output = "hot-client gate did not run"
         while time.time() < deadline:
+            if process is not None and process.poll() is not None:
+                artifacts = self._record_child_exit(
+                    process.pid, "client", process.returncode,
+                    f"client pid={process.pid} exited during hot-client readiness")
+                detail = ", ".join(artifacts) if artifacts else "no crash dump was written"
+                return False, f"client exited (code={process.returncode}); {detail}"
             try:
                 result = run_hidden(
                     [sys.executable, str(ROOT / "devscripts" / "hot_client_gate.py"),
@@ -4462,42 +4594,93 @@ class DevLoop:
             self.last_message)
         return stopped
 
-    def reap_stray_mimita_processes(self) -> None:
-        """Enforce the profile's process cap for this checkout.
+    def reap_stray_mimita_processes(self) -> tuple[bool, list[int]]:
+        """Replace same-checkout MiMITA processes for an explicit launch."""
+        try:
+            processes = self._checkout_mimita_processes(strict=True)
+        except RuntimeError as error:
+            self.last_message = f"cannot verify existing MiMITA processes: {error}"
+            self.record_runtime_event(
+                "dev-loop.process.reconcile",
+                {"result": "failed", "reason": self.last_message, "killed": []},
+                self.last_message)
+            return False, []
 
-        With the default cap of 1 the launch is a clean replacement: every
-        previous mimita.exe for this checkout is terminated before the new
-        server/client pair starts. Raising the cap is reserved for explicit
-        multi-client testing.
-        """
-        if self.max_mimita_processes != 1:
-            return
-        processes = self._checkout_mimita_processes()
-        killed = []
-        for item in processes:
+        killed: list[dict] = []
+        stopped_pids: list[int] = []
+
+        def refuse(reason: str, target: dict | None = None) -> tuple[bool, list[int]]:
+            self.last_message = reason
+            self.record_runtime_event(
+                "dev-loop.process.reconcile",
+                {"result": "failed", "reason": reason, "target": target or {},
+                 "killed": killed, "stopped_pids": stopped_pids}, reason)
+            return False, stopped_pids
+
+        for observed in processes:
             try:
-                pid = int(item.get("pid", 0) or 0)
+                pid = int(observed.get("pid", 0) or 0)
             except (TypeError, ValueError):
                 continue
             if pid <= 0 or pid == os.getpid():
                 continue
-            result = run_hidden(
-                ["taskkill", "/PID", str(pid), "/T", "/F"],
-                capture_output=True, text=True, timeout=8, check=False,
+            expected_executable = str(observed.get("executable") or "")
+            expected_started = str(observed.get("process_started_utc") or "")
+            if not expected_executable or not expected_started:
+                return refuse(
+                    f"cannot verify MiMITA pid={pid}; launch stopped safely", observed)
+            try:
+                current = next((item for item in self._checkout_mimita_processes(strict=True)
+                                if int(item.get("pid", 0) or 0) == pid), None)
+            except (RuntimeError, ValueError, TypeError) as error:
+                return refuse(f"cannot recheck MiMITA pid={pid}: {error}", observed)
+            if current is None:
+                continue
+            same_process = (
+                str(current.get("process_started_utc") or "") == expected_started and
+                os.path.normcase(str(current.get("executable") or "")) ==
+                os.path.normcase(expected_executable)
             )
+            if not same_process:
+                return refuse(
+                    f"MiMITA pid={pid} changed identity during launch; retry required",
+                    {"observed": observed, "current": current})
+            crash_artifacts = self._crash_artifacts(pid)
+            try:
+                result = run_hidden(
+                    ["taskkill", "/PID", str(pid), "/F"],
+                    capture_output=True, text=True, timeout=8, check=False,
+                )
+            except (OSError, subprocess.SubprocessError) as error:
+                return refuse(f"could not stop same-checkout MiMITA pid={pid}: {error}",
+                              observed)
             _PROCESS_IDENTITY_CACHE.pop(pid, None)
-            killed.append({
-                "pid": pid,
-                "executable": item.get("executable", ""),
-                "command_line": item.get("command_line", ""),
-                "taskkill_rc": result.returncode,
-            })
+            killed.append({"pid": pid, "executable": expected_executable,
+                           "process_started_utc": expected_started,
+                           "crash_artifacts": crash_artifacts,
+                           "taskkill_rc": result.returncode})
+            stopped_pids.append(pid)
+
+        try:
+            remaining = self._checkout_mimita_processes(strict=True)
+        except RuntimeError as error:
+            return refuse(f"cannot verify MiMITA process exit: {error}")
+        remaining = [item for item in remaining
+                     if int(item.get("pid", 0) or 0) != os.getpid()]
+        if remaining:
+            pids = [int(item.get("pid", 0) or 0) for item in remaining]
+            self.last_message = f"MiMITA process(es) still alive after cleanup: {pids}"
+            self.record_runtime_event(
+                "dev-loop.process.reconcile",
+                {"result": "failed", "killed": killed, "remaining": remaining},
+                self.last_message)
+            return False, stopped_pids
         self.record_runtime_event(
-            "dev-loop.process.audit",
-            {"max_mimita_processes": self.max_mimita_processes,
-             "found": len(processes), "killed": killed},
-            "enforced max mimita.exe process count for this checkout",
+            "dev-loop.process.reconcile",
+            {"result": "completed", "killed": killed, "remaining": []},
+            "verified same-checkout MiMITA processes exited before explicit replacement",
         )
+        return True, stopped_pids
 
     def stop_processes(self) -> None:
         for process in self.processes:
@@ -4518,8 +4701,21 @@ class DevLoop:
     def maintain_process(self) -> None:
         had_clients = bool(self.processes)
         previous_client_pids = tuple(process.pid for process in self.processes)
+        for process in self.processes:
+            exit_code = process.poll()
+            if exit_code is not None:
+                self._record_child_exit(
+                    process.pid, "client", exit_code,
+                    f"managed client pid={process.pid} exited")
         live = [process for process in self.processes if process.poll() is None]
         self.processes = live
+        if self.server_process is not None:
+            server_exit_code = self.server_process.poll()
+            if server_exit_code is not None and self.server_pid:
+                self._record_child_exit(
+                    self.server_pid, "server", server_exit_code,
+                    f"managed server pid={self.server_pid} exited")
+                self.server_process = None
         if previous_client_pids != tuple(process.pid for process in live):
             if not live:
                 self.client_ready = False

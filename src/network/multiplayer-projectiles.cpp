@@ -576,6 +576,25 @@ bool acceptReliableEventOnce(MultiplayerContext& ctx, uint32_t eventId, uint32_t
 
 } // namespace
 
+bool mpClientSmokeBlocksSegment(const glm::vec3& from, const glm::vec3& to)
+{
+    const glm::vec3 segment = to - from;
+    const float segmentLengthSq = glm::dot(segment, segment);
+    for (const ClientSmokeVolume& smoke : gSmokeVolumes) {
+        if (smoke.remainingTicks <= 0 || smoke.radius <= 0.0f)
+            continue;
+        const float t = segmentLengthSq > 1.0e-8f
+            ? std::clamp(glm::dot(smoke.position - from, segment) /
+                         segmentLengthSq, 0.0f, 1.0f)
+            : 0.0f;
+        const glm::vec3 closest = from + segment * t;
+        const glm::vec3 offset = closest - smoke.position;
+        if (glm::dot(offset, offset) <= smoke.radius * smoke.radius)
+            return true;
+    }
+    return false;
+}
+
 bool mpAcceptReliableEventOnce(MultiplayerContext& ctx, uint32_t eventId, uint32_t eventSessionId)
 {
     return acceptReliableEventOnce(ctx, eventId, eventSessionId);

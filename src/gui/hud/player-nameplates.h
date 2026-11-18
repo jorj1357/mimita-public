@@ -12,7 +12,8 @@ enum class HealthbarCullReason : uint8_t
     Dead,
     TooFar,
     Offscreen,
-    Disabled
+    Disabled,
+    SmokeOccluded
 };
 
 struct HealthbarRenderResult

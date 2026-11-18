@@ -88,14 +88,14 @@ EffectModelMesh& effectModelFor(const std::string& path)
     return cached;
 }
 
-void drawEffectModel(const Camera& camera, const EffectPart& effect,
+bool drawEffectModel(const Camera& camera, const EffectPart& effect,
                      float scale, const glm::vec4& color)
 {
     if (effect.modelPath.empty() || !gRenderer || !r::worldShader().ensureLoaded())
-        return;
+        return false;
     EffectModelMesh& model = effectModelFor(effect.modelPath);
     if (!model.ready)
-        return;
+        return false;
     const glm::vec3 normal = glm::length(effect.normal) > 0.001f
         ? glm::normalize(effect.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
     glm::quat orientation(1.0f, 0.0f, 0.0f, 0.0f);
@@ -108,6 +108,12 @@ void drawEffectModel(const Camera& camera, const EffectPart& effect,
     glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), effect.position)
         * glm::mat4_cast(orientation)
         * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
+    r::pushState();
+    r::enable(r::Capability::DepthTest);
+    r::depthMask(false);
+    r::enable(r::Capability::Blend);
+    r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
+    r::disable(r::Capability::CullFace);
     auto& shader = r::worldShader();
     glm::mat4 view = camera.getView();
     glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
@@ -131,14 +137,39 @@ void drawEffectModel(const Camera& camera, const EffectPart& effect,
                       static_cast<std::int32_t>(batch.count));
     }
     r::bindVertexArray(0);
+    r::popState();
+    return true;
 }
 
-void drawTexturedHitParticles(const Camera& camera,
+void logShockwaveDraw(const EffectPart& effect, const char* renderPath,
+                      float alpha, float scale, float age01)
+{
+    const auto logPhase = [&](const char* phase) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Rendering, StructuredLevel::Important,
+            "explosion.shockwave.draw", effect.assetId, phase, 0,
+            nlohmann::json{{"phase", phase}, {"render_path", renderPath},
+                           {"texture", effect.texturePath}, {"model", effect.modelPath},
+                           {"alpha", alpha}, {"scale", scale}, {"age_fraction", age01},
+                           {"position", nlohmann::json::array({effect.position.x,
+                               effect.position.y, effect.position.z})}});
+    };
+    if ((effect.shockwaveRenderLogMask & 0x1u) == 0) {
+        logPhase("first_draw_submitted");
+        effect.shockwaveRenderLogMask |= 0x1u;
+    }
+    if (alpha <= 0.5f && (effect.shockwaveRenderLogMask & 0x2u) == 0) {
+        logPhase("alpha_fade_visible");
+        effect.shockwaveRenderLogMask |= 0x2u;
+    }
+}
+
+bool drawTexturedHitParticles(const Camera& camera,
                               const std::vector<TexturedParticleVertex>& vertices,
                               const std::string& texturePath)
 {
     if (vertices.empty() || texturePath.empty() || !gRenderer || !r::worldShader().ensureLoaded())
-        return;
+        return false;
 
     static std::uint32_t vao = 0;
     static std::uint32_t vbo = 0;
@@ -149,7 +180,7 @@ void drawTexturedHitParticles(const Camera& camera,
 
     const std::uint32_t texture = gTextures.getPath(texturePath);
     if (!texture)
-        return;
+        return false;
 
     auto& shader = r::worldShader();
     const glm::mat4 model(1.0f);
@@ -200,6 +231,7 @@ void drawTexturedHitParticles(const Camera& camera,
                   static_cast<std::int32_t>(vertices.size()));
 
     r::popState();
+    return true;
 }
 
 void appendTexturedHitParticle(std::vector<TexturedParticleVertex>& vertices,
@@ -587,10 +619,18 @@ void EffectPartSystem::render(const Camera& camera) const {
             const glm::vec3 up = -tangent * std::sin(angle) + bitangent * std::cos(angle);
             std::vector<TexturedParticleVertex> verts;
             appendTexturedQuad(verts, effect.position, right * drawScale, up * drawScale, drawColor);
-            drawTexturedHitParticles(camera, verts, effect.texturePath);
+            const bool texturedDrawn = drawTexturedHitParticles(camera, verts, effect.texturePath);
+            const bool modelFallbackDrawn = !texturedDrawn &&
+                drawEffectModel(camera, effect, drawScale, drawColor);
+            if (texturedDrawn || modelFallbackDrawn)
+                logShockwaveDraw(effect, texturedDrawn ? "textured_quad" : "model_fallback",
+                    alpha, drawScale,
+                    std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f));
         }
         else if (effect.replayType == "explosion_shockwave" && !effect.modelPath.empty()) {
-            drawEffectModel(camera, effect, drawScale, drawColor);
+            if (drawEffectModel(camera, effect, drawScale, drawColor))
+                logShockwaveDraw(effect, "model_mesh", alpha, drawScale,
+                    std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f));
         }
         else if (!effect.billboardText) {
             if (effect.cameraOverlayWorld || effect.cameraOverlayHud)

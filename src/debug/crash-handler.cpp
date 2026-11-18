@@ -351,6 +351,15 @@ bool verifyDirWritable(const char* dir)
 // Returns true if the directory exists and passes the probe check.
 bool buildCrashDir(char* buf, DWORD size, const char* exeDir)
 {
+    buf[0] = '\0';
+    const char* configured = std::getenv("MIMITA_CRASH_DIR");
+    if (configured && configured[0])
+    {
+        _snprintf(buf, size, "%s", configured);
+        buf[size - 1] = '\0';
+        return createDirectoryRecursive(buf) && verifyDirWritable(buf);
+    }
+
     if (SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, buf) == S_OK)
     {
         appendPath(buf, size, "\\MiMITA\\crashes");
@@ -478,12 +487,17 @@ void writeMinidump(const char* crashDir, const char* prefix, EXCEPTION_POINTERS*
     if (h == INVALID_HANDLE_VALUE) { out.record("CreateFileW (minidump tmp)", tmpPath, GetLastError()); return; }
 
     MINIDUMP_EXCEPTION_INFORMATION mei{};
-    mei.ThreadId = GetCurrentThreadId();
-    mei.ExceptionPointers = ex;
-    mei.ClientPointers = TRUE;
+    PMINIDUMP_EXCEPTION_INFORMATION exceptionInfo = nullptr;
+    if (ex)
+    {
+        mei.ThreadId = GetCurrentThreadId();
+        mei.ExceptionPointers = ex;
+        mei.ClientPointers = TRUE;
+        exceptionInfo = &mei;
+    }
 
     BOOL wrote = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(),
-                                   h, MiniDumpNormal, &mei, nullptr, nullptr);
+                                   h, MiniDumpNormal, exceptionInfo, nullptr, nullptr);
     if (!wrote) {
         DWORD err = GetLastError();
         FlushFileBuffers(h);
@@ -544,8 +558,9 @@ void emitCrashReport(const char* prefix, const char* report, const char* summary
     else
     {
         dirResult.record("crash dir (primary)", crashDir, GetLastError());
+        const bool runManaged = std::getenv("MIMITA_RUN_ID") != nullptr;
         char td[MAX_PATH];
-        if (GetTempPathA(MAX_PATH, td) && td[0])
+        if (!runManaged && GetTempPathA(MAX_PATH, td) && td[0])
         {
             _snprintf(tempCrashDir, sizeof(tempCrashDir), "%sMiMITA\\crashes", td);
             if (createDirectoryRecursive(tempCrashDir) && verifyDirWritable(tempCrashDir))
@@ -565,11 +580,8 @@ void emitCrashReport(const char* prefix, const char* report, const char* summary
         _snprintf(savedDir, sizeof(savedDir), "%s", usedDir);
         writeTextReport(usedDir, prefix, report, txtResult);
         txtOk = txtResult.ok;
-        if (ex)
-        {
-            writeMinidump(usedDir, prefix, ex, dumpResult);
-            dumpOk = dumpResult.ok;
-        }
+        writeMinidump(usedDir, prefix, ex, dumpResult);
+        dumpOk = dumpResult.ok;
     }
 
     char msg[4096];
@@ -589,16 +601,13 @@ void emitCrashReport(const char* prefix, const char* report, const char* summary
             txtResult.failOp ? txtResult.failOp : "unknown",
             txtResult.failError);
 
-    if (ex)
-    {
-        if (dumpOk)
-            snprintf(msg + msgLen, sizeof(msg) - msgLen, "Minidump: %s.dmp", prefix);
-        else
-            snprintf(msg + msgLen, sizeof(msg) - msgLen,
-                "Minidump: FAILED (%s, error=%lu)",
-                dumpResult.failOp ? dumpResult.failOp : "unknown",
-                dumpResult.failError);
-    }
+    if (dumpOk)
+        snprintf(msg + msgLen, sizeof(msg) - msgLen, "Minidump: %s.dmp", prefix);
+    else
+        snprintf(msg + msgLen, sizeof(msg) - msgLen,
+            "Minidump: FAILED (%s, error=%lu)",
+            dumpResult.failOp ? dumpResult.failOp : "unknown",
+            dumpResult.failError);
 
     OutputDebugStringA(msg);
     // Emergency final output channel that never depends on file paths.
@@ -802,22 +811,8 @@ void installCrashHandler()
         if (exeDir[i] == '\\' || exeDir[i] == '/') { exeDir[i] = '\0'; break; }
 
     char crashDir[MAX_PATH];
-    if (SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, crashDir) == S_OK)
-    {
-        char buf[MAX_PATH];
-        _snprintf(buf, sizeof(buf), "%s", crashDir);
-        appendPath(buf, sizeof(buf), "\\MiMITA\\crashes");
-        createDirectoryRecursive(buf);
-        verifyDirWritable(buf);
-    }
-    else
-    {
-        char buf[MAX_PATH];
-        _snprintf(buf, sizeof(buf), "%s", exeDir);
-        appendPath(buf, sizeof(buf), "\\crashes");
-        createDirectoryRecursive(buf);
-        verifyDirWritable(buf);
-    }
+    if (!buildCrashDir(crashDir, sizeof(crashDir), exeDir))
+        OutputDebugStringA("[CRASH] crash directory is unavailable; report and dump writes may fail\n");
 
     capturePreferredExeBase();
     SetUnhandledExceptionFilter(crashHandler);

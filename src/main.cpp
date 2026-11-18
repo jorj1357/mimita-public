@@ -561,7 +561,9 @@ int main(int argc, char** argv)
 
     MimitaNet::LaunchOptions launchOptions = MimitaNet::parseLaunchOptions(argc, argv);
     installCrashHandler();
-    if (launchOptions.server)
+    const char* runId = std::getenv("MIMITA_RUN_ID");
+    const char* instanceId = std::getenv("MIMITA_INSTANCE_ID");
+    if (launchOptions.server || (runId && runId[0] && instanceId && instanceId[0]))
         setCrashHandlerShowDialog(false);
     if (launchOptions.server && launchOptions.client)
     {

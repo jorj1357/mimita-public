@@ -1,6 +1,38 @@
 {
   "attachments": [],
-  "blocks": [],
+  "blocks": [
+    {
+      "enabled": true,
+      "faces": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "id": "block_1",
+      "material": "",
+      "name": "",
+      "position": [
+        180.37232971191406,
+        47.595218658447266,
+        316.0194091796875
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size": [
+        35.02870178222656,
+        22.268505096435547,
+        17.169757843017578
+      ],
+      "tags": []
+    }
+  ],
   "bomb": {
     "defuse_seconds": 5.0,
     "explosion_seconds": 40.0,
@@ -183,13 +215,56 @@
   ],
   "glb_objects": [
     {
+      "clone": false,
+      "collision": true,
+      "deleted": false,
       "id": "node:90",
+      "instance_id": "",
+      "material": "",
       "name": "Cube.056",
       "position": [
-        109.58899688720703,
-        -49.93899917602539,
-        304.60699462890625
-      ]
+        101.65983581542969,
+        -50.2515983581543,
+        293.6746520996094
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source": "",
+      "visible": true
+    },
+    {
+      "clone": false,
+      "collision": true,
+      "deleted": false,
+      "id": "node:104",
+      "instance_id": "",
+      "material": "",
+      "name": "Cube.063",
+      "position": [
+        203.75827026367188,
+        2.6826839447021484,
+        321.8976745605469
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source": "",
+      "visible": true
     }
   ],
   "interactions": [

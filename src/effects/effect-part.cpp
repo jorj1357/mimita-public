@@ -389,9 +389,9 @@ void EffectPartSystem::spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
     pushSurfaceDecal(decal, c.maxCount, "world_hit_crack");
 }
 
-void EffectPartSystem::spawnExplosionMark(glm::vec3 position, glm::vec3 normal) {
+bool EffectPartSystem::spawnExplosionMark(glm::vec3 position, glm::vec3 normal, float sizeScale) {
     const auto& cfg = ImpactDecalsConfig::instance().data();
-    if (!cfg.enabled || !cfg.explosionMarks.enabled) return;
+    if (!cfg.enabled || !cfg.explosionMarks.enabled || !mDecalsEnabled) return false;
     const auto& c = cfg.explosionMarks;
     const glm::vec3 n = glm::length(normal) > 0.001f
         ? glm::normalize(normal) : glm::vec3(0.0f, 0.0f, 1.0f);
@@ -411,13 +411,14 @@ void EffectPartSystem::spawnExplosionMark(glm::vec3 position, glm::vec3 normal) 
     decal.rotationRadians = rotation;
     decal.color = glm::vec3(1.0f);
     decal.kind = SurfaceDecalKind::ExplosionMark;
-    decal.radius = std::max(0.01f, c.radius);
+    decal.radius = std::max(0.01f, c.radius * std::clamp(sizeScale, 0.25f, 3.0f));
     decal.height = decal.radius * 2.0f;
     decal.lifetime = c.lifetime;
     decal.fadeTime = c.fadeTime;
     decal.alpha = c.alpha;
     decal.baseAlpha = decal.alpha;
     pushSurfaceDecal(decal, c.maxCount, "explosion_mark");
+    return true;
 }
 
 void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal& decal, int maxCount,

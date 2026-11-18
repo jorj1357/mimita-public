@@ -25,11 +25,9 @@
   // "max_distance": 999.0,
   // "max_distance": 50.0,
   "max_distance": 0.01,
-  // so u ahve ur own hp bar but no one elses
   // "max_distance": 6.0,
   "start_fade_distance": 1.0,
   // "end_fade_distance": 50.0,
-  // "end_fade_distance": 999.0,
   "end_fade_distance": 40.0,
   "green_r": 0.2,
   "green_g": 1.0,
