@@ -37,6 +37,9 @@ manual build to make and play a content project.
    It rejects an invalid or existing project ID without overwriting anything.
    A later **Create → New Map** menu calls this same command action and project
    service instead of implementing another creation path.
+   To customize an existing Infinite World, use
+   `mapeditor_clone <source-world-id> <project-id> [title]`; it forks that
+   world into an independent local project before opening the editor.
 3. Choose **Edit Map** to enter the existing Map Editor on that project's
    active map. Place and transform blocks, choose materials/textures from the
    installed asset library, place supported lights, and add player spawns,
@@ -47,8 +50,11 @@ manual build to make and play a content project.
    an existing supported model or start from an installed monster. Map its
    mesh nodes to body parts, preview collision, create locomotion clips, and
    author attacks with animation keyframes, active spheres, sound events, and
-   cooldowns. Save the monster into the project and make it available to map
-   placements and spawn-volume pools.
+   cooldowns. Edit body dimensions, named skeleton joints, damage layers, and
+   living world-collision capsules as separate views of the same rig. Save the
+   monster into the project and make it available to map placements and
+   spawn-volume pools. Bloodtest-specific damage, role movement, and projectile
+   replay behavior is owned by `docs/specs/gamemodes/bloodtest.md`.
 5. Choose **Create Mode** or **Play Test**. A mode wizard selects the project's
    map, roster, and flow. Play Test may use a default local survival mode so
    the creator can try the map before authoring a custom mode.
@@ -112,6 +118,16 @@ capturing the current map as a project; it does not replace creating and
 entering a new starter map. GUI controls are added after the same command path
 works in the terminal.
 
+`mapeditor_clone <source-world-id> <project-id> [title]` creates an independent
+project from a named world variant. For `infinite_xxity`, the clone includes
+the map JSON, generation-zone settings, worldgen profile, referenced chunk
+definitions, seed/version/dependency identity, and permitted asset references.
+The source remains unchanged. It keeps the shared `connected_world` lifecycle
+unless the creator explicitly creates a separate mode; world-specific
+streaming and fog overrides are stored with the cloned project rather than
+mutating the shared mode defaults. The clone operation reports source and
+destination revisions and each copied dependency hash.
+
 Map editor commands should also cover open/list/save/playtest/return-to-edit
 with stable arguments and structured results. Visual controls call these same
 operations.
@@ -122,6 +138,27 @@ Animation and hitbox editing applies to any supported actor or animated
 object, not only monsters. Select content by stable ID and target kind (actor,
 weapon, or supported object), then edit the referenced rig, animation clips,
 and action data.
+
+### Body rig and collision data
+
+The imported avatar rig remains the source of truth for mesh nodes, named
+parts, skeleton joints, and render dimensions. Store the authorable body block
+in that avatar's existing versioned definition; do not add a second body file
+that can drift from the rig. Each part has a stable ID, parent/joint binding,
+local transform, dimensions, and damage-layer binding. A separate collision
+profile references one whole-body capsule or several named-part capsules in
+avatar-local space. Collision profile data identifies `living_world`,
+`actor_damage`, or `ragdoll_world` purpose so the visible body, damage surface,
+and living movement proxy remain distinct. The editor shows all three layers
+with separate toggles and reports which profile is active for the selected
+role.
+
+The first editor version supports capsule dimensions and offsets for the
+living movement proxy; it does not infer physical limbs from render meshes.
+Damage continues to query the authored body parts. Ragdoll simulation continues
+to use the articulated physical-body definition owned by the ragdoll system.
+Bloodtest owns its role and acceptance behavior in
+`docs/specs/gamemodes/bloodtest.md`.
 
 - Clips store named-part poses at integer fixed simulation ticks. Locomotion
   such as walk loops; attacks are one-shots with windup, active, recovery, and
@@ -141,6 +178,98 @@ and action data.
 - Timeline scrub and one-tick stepping sample exactly the fixed-tick data the
   runtime consumes. Preview cannot change authoritative hit timing or apply
   damage.
+
+### Minimum attack-track JSON shape
+
+The implementation needs a concrete, versioned data shape before the editor
+is built. Keep attack timing and hit geometry together in a monster-owned
+`attacks.json` beside its avatar data; the runtime resolves the named
+animation clip from the avatar's existing animation registry.
+
+```json
+{
+  "version": 1,
+  "attacks": {
+    "claw_swipe": {
+      "animation_clip": "attack_swipe",
+      "windup_end_tick": 8,
+      "active_end_tick": 16,
+      "end_tick": 30,
+      "cooldown_ticks": 60,
+      "hitboxes": [
+        {
+          "id": "right_claw",
+          "shape": "sphere",
+          "space": { "part": "rightClaw" },
+          "samples": [
+            { "tick": 8, "active": true, "center": [0, 0, 0], "radius_m": 0.4 },
+            { "tick": 9, "active": true, "center": [0, 0, 0.4], "radius_m": 0.4 },
+            { "tick": 10, "active": true, "center": [0, 0, 0.8], "radius_m": 0.4 }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+`space.part` is an optional rig-part ID; absent means actor-root local space.
+Samples are dense across every active tick in the first version. Each attack
+validates finite centers, positive radii, unique IDs, ordered phase bounds,
+and a sample for every active tick. Damage/effect and target eligibility use
+the existing shared combat definition/owner, not a second damage formula in
+the editor. The editor can later offer sparse keys and interpolation, but it
+must bake/preview the same resolved per-tick samples the server consumes.
+
+## Runtime event evidence contract
+
+Canonical `events.jsonl` is the proof record. Use the existing event envelope
+(`run_id`, `instance_id`, `role`, `pid`, `build_id`, `tick`, and
+`wall_time`) and the event fields below. A success event is emitted only after
+the named operation has actually been applied, never when a button or command
+was merely requested. Rejections use a distinct `*.rejected` event with a
+reason and must not emit the success event.
+
+| Success event | Owner and required event-specific fields | What it proves |
+|---|---|---|
+| `map-editor.create.applied` | Project/map owner; `project_id`, `map_id`, `working_path`, `initial_version`, `editor_active:true`, `world_loaded:true`, `floor_id`, `spawn_id` | `mapeditor_create` created the starter project, loaded that project's map into a live world, and activated the editor. A project-file write alone is insufficient. |
+| `map-editor.autosaved` | Existing map-editor owner; retain `map`, `path`, `revision`, `saved_revision`, `dirty_after_save`, `entity_count`, `block_count`; add `project_id` and `project_revision` for projects | The edited revision was written and is no longer dirty. |
+| `map-editor.playtest.started` / `map-editor.returned` | `project_id`, `map_id`, `project_revision`, `mode_id`, `run_id`, `editor_active`, `gameplay_active`, `pid` | The local server-authoritative test began and returned to the same project in the same game process. |
+| `avatar.model.imported` | Avatar/import owner; `avatar_id`, `source_path`, `source_sha256`, `rig_revision`, `node_count`, `mapped_part_count`, `unmapped_nodes`, `result` | The model was parsed and the declared rig mapping was installed. |
+| `anim.set.reloaded` | Existing animation registry; `avatar`, `revision`, `activation_tick`, `clip_count`, `rig_parts`, `valid:true` | The new animation set loaded. For gameplay proof, pair it with `anim.preview.tick` or the runtime action/timeline events showing the selected clip advanced on the intended actor. |
+| `monster.attack.definition.loaded` | Attack registry; `actor_id`/`avatar_id`, `attack_id`, `revision`, `animation_clip`, `windup_end_tick`, `active_end_tick`, `end_tick`, `hitbox_count`, `valid:true` | The server installed the validated attack and its timeline. |
+| `monster.attack.hitbox.sample` | Authoritative server, bounded trace only; `actor_id`, `action_id`, `attack_revision`, `clip_tick`, `phase`, `hitbox_id`, `active`, `center_world`, `previous_center_world`, `radius_m`, `swept_query_result` | The server evaluated each expected sphere at the expected fixed tick and used it in the swept query. Emit once per sphere/tick only during a bounded editor test capture. |
+| `monster.attack.hit` | Authoritative server; `attacker_id`, `target_id`, `action_id`, `hitbox_id`, `tick`, `damage`, `target_health_before`, `target_health_after`, `contact_position`, `attack_revision` | The configured attack actually hit the target and changed authoritative health. |
+| `monster.sound.started` | Audio owner; `actor_id`, `event_name`, `asset_path`, `asset_revision`, `voice_id`, `result:"started"` | The requested sound asset reached the audio playback owner. Human listening is still required to prove it sounded correct. |
+
+High-frequency pose and sphere samples are disabled in normal play. The editor
+can enable a bounded capture for one named actor and one attack, with a fixed
+tick/record limit. The normal journal still records load, start, hit, finish,
+and rejection transitions. Do not log every actor's full pose or every
+non-active sphere every frame.
+
+### Live acceptance journal
+
+The in-game acceptance run must use the real executable and the canonical
+dev-loop. Its client and server journals are separate and must match the same
+`run_id`, `build_id`, project revision, mode, and actor IDs. The bounded test
+scenario passes only when it sees, in order:
+
+1. `map-editor.create.applied` with the project loaded and editor active;
+2. `map-editor.autosaved` for the block, spawn, and monster volume edits;
+3. `map-editor.playtest.started` with the same project revision;
+4. `avatar.model.imported`, `anim.set.reloaded`, and the intended per-tick
+   animation preview/runtime events;
+5. `monster.attack.definition.loaded`, one sample for every active sphere
+   tick, and `monster.attack.hit` against the deliberate test target with
+   health decreasing; and
+6. `map-editor.returned` for the same project, map, and process ID.
+
+Also require a terminal `scenario.finished` with `passed:true` and every
+assertion evaluated. Build success, JSON parsing, command receipt, client-only
+echoes, or a hitbox sample without an actual server hit do not prove the whole
+feature. Record the executable identity and exact client/server journal paths
+in the implementation changelog.
 
 ### Live content updates and restart boundary
 
@@ -411,3 +540,4 @@ evidence.
 - [Gamemodes](../gamemodes/gamemodes.md)
 - [Creation, sharing, and distribution](../distribution/distribution.md)
 - [World projects and live editing](../world-projects/world-projects.md)
+- [Procedural Infinite World and XXITY](../procedural-infinite-world/procedural-infinite-world.md)

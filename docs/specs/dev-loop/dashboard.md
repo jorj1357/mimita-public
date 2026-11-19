@@ -101,20 +101,28 @@ launch path; discovery itself does not adopt or relabel an external process.
   If a process scan fails, show the error and keep the last successful list
   marked stale until a scan succeeds.
 - Show root dev-loop whole-game DLL progress separately from the launcher/EXE
-  build. During compilation, show completed translation units over the worker's
-  source total, a percentage derived only from that denominator, elapsed time,
-  and currently compiling source paths. Show link, publication, and runtime
-  activation as named phases without inventing percentages for them.
-- Explain `[CXX]` as compiled and `[SKIP]` as a cache hit/reused object. Show
+  build in a large queue panel. Show the current generation, source generation,
+  attempt ID, revision, attempt start time, current phase, and an ISO 8601 `as of`
+  timestamp. The root worker builds one game DLL at a time; edits during an
+  active build coalesce into one next generation. Do not count coalesced
+  request IDs as separate DLLs.
+- During dependency scanning and compilation, show resolved source units over
+  the worker's source total, with a percentage derived only from that
+  denominator, elapsed time, and currently compiling source paths. Show link,
+  validation, publication, and runtime activation as named phases without
+  inventing percentages for them.
+- Explain `[CXX]` as compiled and `[SKIP]` as an existing dependency-clean
+  object reused. Do not describe an object skip as a `ccache` hit. Show
   the source revision, changed paths when the matching change report exists,
   and published generation plus DLL SHA-256 after publication. Do not imply
-  the dashboard knows the natural-language AI prompt unless it is stored with
-  the build input. Runtime activation is shown only when confirmed by the
-  instance journal.
-- For the whole-game DLL, show a concise saved-input note and the latest
-  completed source files with CXX/SKIP result and elapsed seconds. The dev-loop
-  journal records the build-start note and each per-file result as they occur;
-  the dashboard reads the bounded live progress file for its compact view.
+  the dashboard knows an agent's natural-language change description unless
+  it was explicitly written with `devscripts/build-note.py`. Show agent notes,
+  changed paths, latest per-file results, dependency-check time, compiler queue
+  wait, progress-write time, output-handler time, and the phase breakdown when
+  the corresponding data is available. The dashboard reads the bounded live
+  progress file; it does not parse the full per-attempt timing stream during
+  refresh. Runtime activation is shown only when confirmed by the instance
+  journal.
 - The process list contains only processes confirmed alive by the current
   successful scan. Once a process exits, remove its row. Do not show an exited
   server as `stopped` in this live process list; keep final lifecycle history

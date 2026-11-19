@@ -503,3 +503,110 @@ Regular grid worlds (including connector worlds whose authored chunks match the
 profile footprint) are generated around active player and NPC anchors. Mixed-
 size connector graphs are still client-owned; the server keeps the authored
 map footprint until that frontier is extracted.
+
+## Infinite XXITY clone and edit workflow — 2026-11-19
+
+The creator starts with the game terminal command:
+
+```text
+mapeditor_clone infinite_xxity <new-project-id> [title]
+```
+
+This creates a new local world project and opens it in Map Editor. The source
+XXITY map remains unchanged. Clone the map JSON, its `xxity_zone`, the
+worldgen profile, referenced city chunk JSON, seed/generator/dependency
+identity, and permitted asset references as one project revision. Keep the
+shared `connected_world` lifecycle; do not make a new C++ mode just to get
+different city geometry. Project-specific streaming and fog settings override
+the shared defaults only for the clone.
+
+### World and part properties
+
+The editor exposes two property groups with units and actual runtime meaning:
+
+- **Chunk part:** full `size_m[3]`, position, rotation, material/texture ID,
+  UV scale, and collision enabled. Numeric size edits update render geometry
+  and streamed collision together. The material dropdown uses valid IDs from
+  `config/materials.json`; `Apply to: Whole Part` is the default and sets the
+  material for all six faces. Existing per-face overrides remain available as
+  an advanced option.
+- **World streaming:** horizontal generation/connector radius in meters,
+  high-detail radius, collision radius, proxy/visual radius, lookahead seconds,
+  loaded/pending chunk budgets, and fog enabled/start/end/color. Display the
+  distinction between generated, collision-loaded, and visually represented
+  radii; they are not one interchangeable distance.
+
+The Infinite XXITY acceptance profile uses a 1,000 m horizontal world radius
+and a 1,000 m/s fast-travel stress segment with at least one live NPC. It must
+not attempt to keep every 10 m city chunk at full detail inside that entire
+radius: 10 m cells would create tens of thousands of detailed chunks. Use the
+existing near/mid/far representation and bounded chunk budgets, and aggregate
+far geometry so the configured radius is covered without an unbounded queue.
+The lookahead distance must be at least the measured p99.99 chunk-ready delay
+times travel speed plus a safety margin. Fog must obscure the nearest unloaded
+boundary before it can become visible; if generation falls behind, adjust the
+fog coverage or report a failed fast-travel assertion rather than showing
+missing geometry.
+
+Fog uses the mode/world's existing `fog`, `fog_start_m`, `fog_end_m`, and
+`fog_color` owner. Its end distance must remain before the farthest guaranteed
+ready/represented boundary. Do not add a second worldgen-only fog setting. The
+editor edits the cloned world's override and reloads it without changing the
+original or other `connected_world` variants.
+
+### Required edit and streaming events
+
+Use the canonical client/server `events.jsonl` journals. Existing events are
+retained and extended only where necessary; do not create a separate debug
+file. Success records are emitted after application, and rejected revisions
+must identify the reason while retaining the previous valid revision.
+
+| Event | Required fields | Proves |
+|---|---|---|
+| `world-project.infinite-world.forked` | `source_world`, `project_id`, `source_revision`, `project_revision`, `map_id`, `worldgen_profile`, `chunk_dependency_hashes`, `source_unchanged:true` | The selected world and its generation dependencies were cloned independently. |
+| `map-editor.chunk-part.size.apply` | `project_id`, `map_id`, `chunk_id`, `part_id`, `before_size_m`, `after_size_m`, `render_revision`, `collision_revision`, `result` | The saved size reached both rendered chunk geometry and the collision owner. |
+| `map-editor.chunk-part.material.apply` | `project_id`, `chunk_id`, `part_id`, `material_id`, `face_scope:"all"`, `before_revision`, `after_revision`, `result` | The dropdown selection applied to the whole part and saved. |
+| `world-stream.profile` | Existing profile and radius fields plus `project_id`, `project_revision`, `profile_revision`, `fog_enabled`, `fog_start_m`, `fog_end_m` | The cloned world loaded its selected radius/fog settings. |
+| `world-stream.update` | Existing player position, `radius_m`, loaded/pending/added/attempted counts plus `travel_speed_mps`, `lookahead_distance_m`, `project_revision` | Streaming kept up with the measured fast traversal and remained bounded. Emit on cell/queue state changes, not every render frame. |
+| `world-stream.chunk.applied` | Existing chunk/cell identity plus `project_revision`, `profile_revision`, `generation_ms`, `render_state`, `collision_state` | Each expected chunk was actually generated, rendered or represented, and collision-installed as required by its band. |
+| `world-stream.collision.sync` | Existing loaded/collided counts, triangle count, revision match plus `project_revision`, `npc_collision_ready` | Server/client collision revisions and required NPC collision coverage agree. |
+| `graphics.fog.applied` | `project_id`, `fog_enabled`, `fog_start_m`, `fog_end_m`, `fog_color`, `renderer_revision`, `stream_revision`, `nearest_unready_distance_m` | The renderer applied fog against the current stream boundary; it does not alone prove visual absence of holes. |
+| `infinite-world.performance.summary` | `scenario_id`, `build_id`, hardware/device, `duration_s`, `player_speed_peak_mps`, `stream_radius_m`, `loaded_radius_m`, `npcs_active_min`, `client_frame_count`, `client_over_budget_count`, `client_p99_99_frame_ms`, `server_tick_count`, `server_over_budget_count`, `server_p99_99_tick_ms`, `server_actual_hz_min`, `pending_max`, `unready_visible_count`, `passed` | The measured performance and coverage gates passed for the stated workload. |
+
+Detailed per-tick/chunk diagnostics are enabled only for the bounded stress
+scenario and are rate-limited outside it. `performance.fps` remains the normal
+one-second summary; it is not sufficient by itself for a p99.99 gate. The
+stress runner aggregates the full frame and tick sample windows into the final
+summary event.
+
+### Live acceptance scenario
+
+Run the cloned Infinite XXITY project in the real dev-loop executable with one
+human player and at least one server NPC. Keep the runtime build identity the
+same on server and client. The bounded scenario must:
+
+1. fork the source project, resize and recolor a city chunk part, save, reload,
+   and assert the source project's hash did not change;
+2. verify a 1,000 m horizontal world radius, required near/mid/far budgets,
+   and fog settings in the client's active `world-stream.profile` and
+   `graphics.fog.applied` records;
+3. traverse at approximately 1,000 m/s through repeated cell boundaries while
+   the NPC remains active; assert chunks stay bounded, collision remains in
+   sync, and `unready_visible_count` stays zero;
+4. record at least a ten-minute workload with at least one NPC, requiring at
+   least 99.99% of client frames at or below 4.167 ms and at least 99.99% of
+   server ticks at or below 16.667 ms, with server actual rate 59.9–60.1 Hz;
+   and
+5. emit one `infinite-world.performance.summary` with `passed:true` only if
+   every assertion passed. Also perform human visual review that fog hides
+   generation and edited materials/sizes appear as authored. Preserve a
+   screenshot or short video in the run's review artifacts showing the player
+   viewpoint, visible fog boundary, and absence of exposed/unready chunk gaps;
+   record its path and camera position alongside the run ID/build ID. The
+   `graphics.fog.applied` event and zero `unready_visible_count` are necessary
+   machine evidence, but neither substitutes for this visual artifact.
+
+The existing `infinite_xxity_load_v1`, `infinite_xxity_radius_live_v1`,
+`infinite_xxity_connectors_v1`, and `infinite_xxity_blocks_collision_v1`
+scenarios remain focused component paths. This new stress scenario covers the
+combined cloned-editor-playtest path and does not replace the focused cases.

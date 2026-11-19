@@ -149,7 +149,8 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
             pending_notes.append(note)
     if not progress:
         return ("Game DLL: no active build progress",
-                "Waiting for root dev-loop game build", {})
+                "Waiting for root dev-loop game build",
+                {"pending_notes": pending_notes})
 
     phase = str(progress.get("phase") or progress.get("status") or "unknown").upper()
     elapsed = progress.get("elapsed_s", progress.get("total_s"))
@@ -158,7 +159,8 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
     current_revision = str(current.get("revision") or "")
     source_count = int(progress.get("total") or 0)
     completed = int(progress.get("completed") or 0)
-    if current_revision == revision and current.get("source_count") is not None:
+    if (current_revision == revision and current.get("source_count") is not None
+            and str(progress.get("status") or "").lower() not in ("preparing", "running")):
         source_count = int(current.get("source_count") or source_count)
         completed = max(completed, source_count)
     percent = min(100, round(completed * 100 / source_count)) if source_count > 0 else None
@@ -626,6 +628,12 @@ def run(status_provider: Callable[[], dict],
         insertbackground=WHITE, relief="flat", bd=0, highlightthickness=0,
         font=(family, 9), state="disabled", padx=3, pady=2)
     game_queue_rows.grid(row=4, column=0, sticky="ew")
+    game_queue_scroll = tk.Scrollbar(
+        game_queue_card, orient="vertical", command=game_queue_rows.yview,
+        bg=BLACK, troughcolor=BLACK, activebackground=RED,
+        highlightbackground=RED, bd=1)
+    game_queue_scroll.grid(row=4, column=1, sticky="ns")
+    game_queue_rows.configure(yscrollcommand=game_queue_scroll.set)
     runtime_card, runtime_value, runtime_detail = make_card("Runtime and mode/map")
     scenario_card, scenario_value, scenario_detail = make_card("Scenario evidence")
 
@@ -1280,6 +1288,10 @@ def run(status_provider: Callable[[], dict],
         revision = str(progress.get("revision") or "")
         if revision:
             lines.append(f"source revision {revision}")
+        if progress.get("build_mode"):
+            lines.append(f"build mode {progress['build_mode']}")
+        if progress.get("started_utc"):
+            lines.append(f"attempt started {progress['started_utc']}")
         active_sources = progress.get("active_sources")
         if isinstance(active_sources, list) and active_sources:
             lines.append("currently compiling: " + ", ".join(str(path) for path in active_sources[:4]))
@@ -1346,6 +1358,13 @@ def run(status_provider: Callable[[], dict],
             lines.append(f"dependency checks sum: {float(progress['dependency_check_ms']):.1f} ms")
         if progress.get("cache_record_overhead_ms") is not None:
             lines.append(f"cache-result reporting sum: {float(progress['cache_record_overhead_ms']):.1f} ms")
+        if progress.get("dev_loop_output_handler_ms") is not None:
+            lines.append(f"dev-loop output handling sum: {float(progress['dev_loop_output_handler_ms']):.1f} ms")
+        phase_durations = progress.get("phase_durations_ms")
+        if isinstance(phase_durations, dict) and phase_durations:
+            lines.append("phase durations:")
+            lines.extend(f"  {str(name).replace('_', ' ')}: {float(duration):.0f} ms"
+                         for name, duration in list(phase_durations.items())[-8:])
 
         if not lines:
             lines.extend(["No active game DLL build.",

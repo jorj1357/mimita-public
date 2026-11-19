@@ -41,6 +41,7 @@ changelog is history, not current status.
 |---|---|---|---|---|---|
 | `build.py` | Canonical | Builds the EXE from the cold source set, handles PCH/ccache/incremental objects, links, and publishes. | source manifest, build toolchain | `build/obj-*`, `build/link-*`, EXE artifacts | whenever a cold source changes |
 | `devscripts/game_build_worker.py` | Canonical | Builds an immutable whole-game candidate DLL from a coherent manifest snapshot. | `build/source-manifest.json` | `build/game/generation-*` | on every eligible game source change |
+| `devscripts/build-note.py` | Canonical | Queues an agent-written change summary and optional paths for the next whole-game DLL build. | CLI arguments | `.dev/build-notes/pending/` | before a related game source build |
 | `devscripts/build_authority.py` | Canonical | Guards EXE/module builders so compilation goes through the dev-loop authority. | environment/locks | none | imported by builders |
 | `devscripts/build_scheduler.py` | Canonical | Enforces machine-wide EXE/module build slots. | scheduler state | scheduler state | imported by builders |
 | `devscripts/build_exclusive.py` | Canonical | Checkout-level build mutex. | lock file | lock file | imported by `build.py` |

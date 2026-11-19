@@ -89,6 +89,7 @@ systems first. Use this default order:
 | Fun Counter Strike, respawning bomb rounds, grenades, Deathball | `docs/specs/gamemodes/funcounterstrike.md`, `docs/specs/gamemodes/counterstrike.md`, `docs/specs/weapons/weapons.md`, `docs/specs/weapons/deathball.md`, `docs/specs/entity-editor/entity-editor.md` |
 | Objective/round HUD for any mode | `docs/specs/gamemodes/objective-hud.md`, `docs/specs/gui/guiv2.md`, `docs/specs/gamemodes/gamemodes.md` |
 | Zombie Tower phases, encounters, checkpoints, or monster roles | `docs/specs/gamemodes/zombie-tower/zombie-tower.md`, `docs/specs/actor-presets/actor-presets.md`, `docs/specs/npc-behavior/npc-behavior.md` |
+| Bloodtest body layers, capsule locomotion, blood/destruction test bench | `docs/specs/gamemodes/bloodtest.md`, `docs/specs/ragdoll-retrograd/ragdoll-retrograd.md`, `docs/specs/movement/movement.md`, `docs/architecture/collision/collision.md`, `docs/specs/creators/monster-authoring.md` |
 | Animation, rigs, monster/NPC clips, arbitrary body parts, flying/crawling actors | `docs/specs/animations/animations.md`, `docs/specs/avatar/avatar-editor.md`, `docs/skills/spec-behavior-review-v1.md` |
 | Multiplayer or server behavior | `docs/specs/networking/networking.md`, `docs/specs/gamemodes/gamemodes.md` |
 | Logging or diagnostics | `docs/specs/debug-logging/debug-logging.md`, `docs/skills/logging-checker-v1.md` |

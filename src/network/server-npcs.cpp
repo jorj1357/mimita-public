@@ -1075,6 +1075,7 @@ static void broadcastNpcFiring(SOCKET sock,
             blast.targetCount = 0;
 
             int pelletsToSend = std::min(n.pelletResultCount, (int)MAX_NETWORK_PELLETS);
+            int entityImpactPellets = 0;
             for (int p = 0; p < pelletsToSend; ++p)
             {
                 NetworkPelletResult& pr = blast.pellets[p];
@@ -1084,9 +1085,48 @@ static void broadcastNpcFiring(SOCKET sock,
                 pr.normalX = n.pelletResults[p].hitNormal.x;
                 pr.normalY = n.pelletResults[p].hitNormal.y;
                 pr.normalZ = n.pelletResults[p].hitNormal.z;
+                pr.targetPlayerId = n.cachedServerTargetIsNpc
+                    ? 0u : n.serverTargetId;
                 pr.impactType = n.pelletResults[p].hitEntity ? PELLET_IMPACT_PLAYER :
                     (n.pelletResults[p].hitWorld ? PELLET_IMPACT_WORLD : PELLET_IMPACT_NONE);
                 pr.pelletIndex = (uint8_t)p;
+                if (pr.impactType == PELLET_IMPACT_PLAYER)
+                    ++entityImpactPellets;
+            }
+            if (entityImpactPellets > 0) {
+                int targetHealthAfter = -1;
+                if (n.cachedServerTargetIsNpc) {
+                    auto state = npcs.find(n.serverTargetId);
+                    if (state != npcs.end())
+                        targetHealthAfter = state->second.health;
+                    else {
+                        for (const Npc& target : npcSystem.all()) {
+                            if (target.id == n.serverTargetId) {
+                                targetHealthAfter = target.body.currentHp;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    auto target = players.find(n.serverTargetId);
+                    if (target != players.end())
+                        targetHealthAfter = target->second.health;
+                }
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcCombat, StructuredLevel::Important,
+                    "server.npc.pellet-entity-impact", std::to_string(n.id),
+                    "NPC shotgun packet marks entity impacts before client blood presentation",
+                    tick,
+                    nlohmann::json{
+                        {"shooter_id", n.id},
+                        {"shot_serial", blast.shotSerial},
+                        {"target_actor_id", n.serverTargetId},
+                        {"target_actor_type", n.cachedServerTargetIsNpc ? "npc" : "player"},
+                        {"weapon", wdef->id},
+                        {"pellet_count", pelletsToSend},
+                        {"entity_impact_pellets", entityImpactPellets},
+                        {"target_health_after_tick", targetHealthAfter}},
+                    __FILE__, __LINE__, __FUNCTION__);
             }
 
             for (const auto& pe : players)
@@ -2312,7 +2352,19 @@ void simulateSharedNpcs(SOCKET sock,
             mirrorPlayer.pos = n.cachedServerTargetPos;
             mirrorPlayer.vel = n.cachedServerTargetVel;
             mirrorPlayer.yaw = n.cachedServerTargetYaw;
-            mirrorPlayer.currentHp = n.cachedServerTargetHp;
+            // Keep combat's mirror health aligned with the authoritative actor
+            // every cached-target tick. The cached scan pose may be reused, but
+            // reusing its old HP makes later shot deltas include damage already
+            // applied by this or another attacker.
+            if (n.cachedServerTargetIsNpc) {
+                auto cachedNpc = npcs.find(n.serverTargetId);
+                mirrorPlayer.currentHp = cachedNpc != npcs.end()
+                    ? cachedNpc->second.health : n.cachedServerTargetHp;
+            } else {
+                auto cachedPlayer = players.find(n.serverTargetId);
+                mirrorPlayer.currentHp = cachedPlayer != players.end()
+                    ? cachedPlayer->second.health : n.cachedServerTargetHp;
+            }
             mirrorPlayer.dead = false;
             mirrorPlayer.username = n.cachedServerTargetName;
             mirrorPlayer.matchTeam = n.cachedServerTargetTeam;
@@ -2395,9 +2447,56 @@ void simulateSharedNpcs(SOCKET sock,
             }
         }
 
-        if ((nearestPlayer || nearestNpc) && hpBefore > mirrorPlayer.currentHp)
+        // Cached target scans still run combat against this mirror; resolve the
+        // authoritative actor from the cached id so a hit on the other three
+        // ticks is not lost merely because nearestPlayer/nearestNpc is null.
+        if (hpBefore > mirrorPlayer.currentHp)
         {
             const int damage = hpBefore - mirrorPlayer.currentHp;
+            ServerPlayer* damagePlayer = nearestPlayer;
+            Npc* damageNpc = nearestNpc;
+            if (!damagePlayer && !damageNpc && cachedTargetValid &&
+                n.serverTargetId != 0)
+            {
+                if (n.cachedServerTargetIsNpc) {
+                    for (Npc& candidate : npcSystem.all()) {
+                        if (candidate.id == n.serverTargetId &&
+                            !candidate.body.dead && candidate.body.currentHp > 0) {
+                            damageNpc = &candidate;
+                            break;
+                        }
+                    }
+                } else {
+                    auto cachedPlayer = players.find(n.serverTargetId);
+                    if (cachedPlayer != players.end() &&
+                        !cachedPlayer->second.dead && !cachedPlayer->second.downed &&
+                        !cachedPlayer->second.connectionStale)
+                        damagePlayer = &cachedPlayer->second;
+                }
+            }
+
+            const char* targetResolution =
+                (nearestPlayer || nearestNpc) ? "fresh_scan" : "cached_server_target";
+            if (!damagePlayer && !damageNpc) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcCombat, StructuredLevel::Important,
+                    "npc.damage-sync-skipped", std::to_string(n.id),
+                    "NPC shot reduced mirror health but no live target actor resolved",
+                    tick,
+                    nlohmann::json{
+                        {"actor", n.id},
+                        {"target_actor_id", n.serverTargetId},
+                        {"cached_target_valid", cachedTargetValid},
+                        {"cached_target_is_npc", n.cachedServerTargetIsNpc},
+                        {"target_scan_due", thinkingDue},
+                        {"target_resolution", targetResolution},
+                        {"mirror_health_before", hpBefore},
+                        {"mirror_health_after", mirrorPlayer.currentHp},
+                        {"mirror_damage", damage},
+                        {"weapon", n.body.equippedWeaponId},
+                        {"reason", "target_actor_not_resolved"}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
             // Forward the exact knockback processPlayerHit applied to the mirror
             // so NPC shots push the victim like a player's shot (also fixes the
             // client HP bar, which only applies confirmed HP when knockback exists).
@@ -2413,13 +2512,13 @@ void simulateSharedNpcs(SOCKET sock,
             if (const WeaponDefinition* wd = WeaponRegistry::instance().get(wId))
                 if (!wd->displayName.empty()) wDisp = wd->displayName;
 
-            if (nearestPlayer)
+            if (damagePlayer)
             {
                 ServerActorDamageRequest damageRequest;
                 damageRequest.attacker = {
                     n.id, ServerActorKind::Npc, nullptr, nullptr};
                 damageRequest.victim = {
-                    nearestPlayer->id, ServerActorKind::Player, nullptr, nullptr};
+                    damagePlayer->id, ServerActorKind::Player, nullptr, nullptr};
                 damageRequest.damage = damage;
                 damageRequest.knockback = knockback;
                 damageRequest.source = ServerDamageSource::Hitscan;
@@ -2429,10 +2528,12 @@ void simulateSharedNpcs(SOCKET sock,
                 // Track NPC damage for kill attribution: if this NPC's damage
                 // brings the player to 0 HP on the next tick (or the player dies
                 // from self-damage shortly after), attribute the kill to this NPC.
-                nearestPlayer->lastNpcDamageSourceId = n.id;
-                nearestPlayer->lastNpcDamageTick = tick;
+                if (result.applied) {
+                    damagePlayer->lastNpcDamageSourceId = n.id;
+                    damagePlayer->lastNpcDamageTick = tick;
+                }
                 queueServerDamageConfirmedEvent(
-                    sock, players, tick, totalPacketsOut, 0, *nearestPlayer, damage, result,
+                    sock, players, tick, totalPacketsOut, 0, *damagePlayer, damage, result,
                     realHit, realNormal, knockback,
                     ServerDamageSource::Hitscan, hitWeapon, 0, 0, n.id,
                     n.body.equippedWeaponId);
@@ -2444,12 +2545,20 @@ void simulateSharedNpcs(SOCKET sock,
                         {"actor", n.id},
                         {"team", n.body.matchTeam},
                         {"profile", n.behaviorProfileId},
-                        {"victim_actor", nearestPlayer->id},
+                        {"victim_actor", damagePlayer->id},
+                        {"victim_actor_type", "player"},
+                        {"target_resolution", targetResolution},
+                        {"target_scan_due", thinkingDue},
                         {"weapon", n.body.equippedWeaponId},
+                        {"mirror_health_before", hpBefore},
+                        {"mirror_health_after", mirrorPlayer.currentHp},
+                        {"mirror_damage", damage},
                         {"damage", damage},
+                        {"authoritative_damage_applied", result.applied ? damage : 0},
                         {"health_before", result.healthBefore},
                         {"health_after", result.healthAfter},
                         {"accepted", result.applied},
+                        {"rejection_reason", result.rejectionReason},
                         {"knockback", {knockback.x, knockback.y, knockback.z}}},
                     __FILE__, __LINE__, __FUNCTION__);
                 const ServerGamemodeState& gms = serverGamemodeState();
@@ -2460,7 +2569,7 @@ void simulateSharedNpcs(SOCKET sock,
                     "serverTick=%u serverCode=\"%s\" gamemode=\"%s\" matchMode=\"%s\" "
                     "phase=%d mapOnly=%d enabled=%d",
                     n.id, n.body.username.c_str(),
-                    nearestPlayer->id, nearestPlayer->name.c_str(),
+                    damagePlayer->id, damagePlayer->name.c_str(),
                     wId, wDisp.c_str(),
                     damage, result.healthBefore, result.healthAfter,
                     (int)result.killed, (int)result.applied,
@@ -2468,36 +2577,36 @@ void simulateSharedNpcs(SOCKET sock,
                     gms.communityMode.c_str(), gms.matchMode.c_str(),
                     (int)gms.phase, (int)gms.mapOnly, (int)gms.enabled);
             }
-            else if (nearestNpc)
+            else if (damageNpc)
             {
-                auto victimIt = npcs.find(nearestNpc->id);
+                auto victimIt = npcs.find(damageNpc->id);
                 if (victimIt != npcs.end() && victimIt->second.health > 0)
                 {
                     ServerNpc& victim = victimIt->second;
                     victim.health = std::max(0, victim.health - damage);
                     victim.knockbackImpulse += knockback;
-                    nearestNpc->body.currentHp = victim.health;
-                    nearestNpc->body.killedByWeapon = wId;
-                    nearestNpc->body.lastDamagedBy = n.body.username;
+                    damageNpc->body.currentHp = victim.health;
+                    damageNpc->body.killedByWeapon = wId;
+                    damageNpc->body.lastDamagedBy = n.body.username;
                     const bool killed = victim.health <= 0;
                     if (killed)
                     {
                         victim.health = 0;
-                        nearestNpc->body.currentHp = 0;
-                        nearestNpc->body.dead = true;
-                        nearestNpc->body.respawnTimer = serverActorRespawnsEnabled(nearestNpc->id)
-                            ? serverActorRespawnSeconds(nearestNpc->id) : -1.0f;
+                        damageNpc->body.currentHp = 0;
+                        damageNpc->body.dead = true;
+                        damageNpc->body.respawnTimer = serverActorRespawnsEnabled(damageNpc->id)
+                            ? serverActorRespawnSeconds(damageNpc->id) : -1.0f;
                         serverGamemodeRecordKill(sock, players, &npcs,
-                            n.id, ENTITY_NPC, nearestNpc->id, ENTITY_NPC,
+                            n.id, ENTITY_NPC, damageNpc->id, ENTITY_NPC,
                             wId, wDisp, tick,
-                            n.body.pos, nearestNpc->body.pos, tick, totalPacketsOut);
+                            n.body.pos, damageNpc->body.pos, tick, totalPacketsOut);
                     }
                     DBG(Network,
                         "SERVER_NPC_KILLS_NPC proc=server npcId=%u npcName=\"%s\" "
                         "victimNpcId=%u victimName=\"%s\" weaponId=\"%s\" weaponDisplay=\"%s\" "
                         "damage=%d victimHealth=%d killed=%d serverTick=%u",
                         n.id, n.body.username.c_str(),
-                        nearestNpc->id, nearestNpc->body.username.c_str(),
+                        damageNpc->id, damageNpc->body.username.c_str(),
                         wId, wDisp.c_str(), damage, victim.health,
                         (int)killed, tick);
                 }

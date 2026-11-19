@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <utility>
 #include <glm/glm.hpp>
 
 namespace MimitaNet {
@@ -719,6 +720,51 @@ void applyPelletBlastEventPacket(MultiplayerContext& ctx,
     const glm::vec3 origin(event->originX, event->originY, event->originZ);
     const glm::vec3 baseDir(event->baseDirX, event->baseDirY, event->baseDirZ);
     const char* weaponName = networkWeaponTypeName(event->weapon);
+
+    if (!isLocalShooter)
+    {
+        uint8_t entityImpactPellets = 0;
+        uint8_t localTargetPellets = 0;
+        nlohmann::json pelletImpacts = nlohmann::json::array();
+        for (uint8_t i = 0; i < event->pelletCount && i < MAX_NETWORK_PELLETS; ++i)
+        {
+            const NetworkPelletResult& pellet = event->pellets[i];
+            if (pellet.impactType != PELLET_IMPACT_PLAYER)
+                continue;
+            ++entityImpactPellets;
+            if (pellet.targetPlayerId == ctx.localPlayerId)
+                ++localTargetPellets;
+            pelletImpacts.push_back({
+                {"pellet_index", pellet.pelletIndex},
+                {"target_actor_id", pellet.targetPlayerId},
+                {"impact_position", {pellet.hitX, pellet.hitY, pellet.hitZ}}});
+        }
+        if (entityImpactPellets > 0)
+        {
+            const bool shooterIsNpc =
+                ctx.remoteNpcs.find(event->shooterPlayerId) != ctx.remoteNpcs.end();
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "client.pellet-entity-impact-presented",
+                std::to_string(event->shooterPlayerId) + "_" +
+                    std::to_string(event->shotSerial),
+                "remote pellet impacts call entity hit effects without damage values",
+                event->header.tick,
+                nlohmann::json{
+                    {"shooter_id", event->shooterPlayerId},
+                    {"shooter_is_npc", shooterIsNpc},
+                    {"shot_serial", event->shotSerial},
+                    {"event_id", event->eventId},
+                    {"event_session_id", event->eventSessionId},
+                    {"weapon", weaponName},
+                    {"local_player_id", ctx.localPlayerId},
+                    {"entity_impact_pellets", entityImpactPellets},
+                    {"local_target_pellets", localTargetPellets},
+                    {"hit_effect_damage_value", 0},
+                    {"pellet_impacts", std::move(pelletImpacts)}} ,
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 
     // Re-base visuals onto the shooter's rendered replica body so the blast
     // visibly originates from where the body is drawn, not the ghost position.

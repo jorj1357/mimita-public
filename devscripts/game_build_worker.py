@@ -144,13 +144,15 @@ class Progress:
         self.started_monotonic = float(context.get(
             "attempt_started_monotonic", time.monotonic()))
         self.phase_started_monotonic = time.monotonic()
-        self.timing_path = Path(context.get("timing_path") or "")
+        timing_value = context.get("timing_path")
+        self.timing_path = Path(timing_value) if timing_value else None
         self.stop_heartbeat = threading.Event()
         self.data = {
             "status": "running",
             "phase": "toolchain_setup",
             "build_attempt_id": str(context.get("build_attempt_id") or ""),
             "source_generation": context.get("source_generation"),
+            "build_mode": context.get("build_mode", "debug"),
             "generation": None,
             "revision": revision,
             "total": total,
@@ -187,7 +189,7 @@ class Progress:
         self.heartbeat.start()
 
     def _timing_locked(self, event: dict) -> None:
-        if not str(self.timing_path):
+        if self.timing_path is None:
             return
         try:
             self.timing_path.parent.mkdir(parents=True, exist_ok=True)
@@ -226,7 +228,8 @@ class Progress:
         with self.lock:
             self._append_locked(line)
 
-    def start_source(self, path: str, *, queue_wait_ms: float = 0.0) -> tuple[str, float]:
+    def start_source(self, path: str, *, queue_wait_ms: float = 0.0,
+                     submitted_utc: str = "") -> tuple[str, float]:
         with self.lock:
             started = time.monotonic()
             started_utc = utc_now()
@@ -238,11 +241,14 @@ class Progress:
                 "started_utc": started_utc,
                 "elapsed_ms": round((started - self.started_monotonic) * 1000, 3),
                 "queue_wait_ms": round(queue_wait_ms, 3),
+                "submitted_utc": submitted_utc,
             }
             self._timing_locked({
                 "event": "translation_unit.started", "path": path,
                 "time_utc": started_utc,
                 "elapsed_ms": round((started - self.started_monotonic) * 1000, 3),
+                "queue_wait_ms": round(queue_wait_ms, 3),
+                "submitted_utc": submitted_utc,
                 "build_attempt_id": self.data.get("build_attempt_id"),
                 "revision": self.data.get("revision"),
             })
@@ -288,11 +294,16 @@ class Progress:
                 "dependency_check_ms": round(check_elapsed_ms, 3),
                 "queue_wait_ms": round(queue_wait_ms, 3),
                 "check_started_utc": check_started_utc,
+                "submitted_utc": active_started.get("submitted_utc", ""),
                 "started_utc": started_utc or active_started.get("started_utc", ""),
                 "started_elapsed_ms": round(started_elapsed_ms or
                     float(active_started.get("elapsed_ms", 0.0)), 3),
                 "wall_time": ended_utc,
                 "elapsed_ms": round((time.monotonic() - self.started_monotonic) * 1000, 3),
+                "build_attempt_id": self.data.get("build_attempt_id"),
+                "source_generation": self.data.get("source_generation"),
+                "generation": self.data.get("generation"),
+                "revision": self.data.get("revision"),
             }
             self.data["file_events"].append(file_event)
             del self.data["file_events"][:-100]
@@ -492,6 +503,51 @@ def build(args: argparse.Namespace) -> int:
             attempt_context = read_json(Path(args.attempt_context))
         except (OSError, json.JSONDecodeError):
             attempt_context = {}
+    out_root = (ROOT / args.out).resolve() if not Path(args.out).is_absolute() else Path(args.out)
+    progress_path = out_root / "progress.json"
+    timing_value = attempt_context.get("timing_path")
+    timing_path = Path(timing_value) if timing_value else None
+    attempt_started = float(attempt_context.get(
+        "attempt_started_monotonic", time.monotonic()))
+    early_progress = read_json(progress_path) if progress_path.is_file() else {}
+
+    def early_phase(name: str, started: float | None = None, *, completed: bool = False,
+                    **fields) -> float:
+        now = time.monotonic()
+        utc = utc_now()
+        if not completed:
+            started = now
+            phase_event = {"event": "phase.started", "phase": name, "time_utc": utc,
+                           "elapsed_ms": round((now - attempt_started) * 1000, 3)}
+        else:
+            duration_ms = round((now - (started or now)) * 1000, 3)
+            phase_event = {"event": "phase.completed", "phase": name,
+                           "time_utc": utc, "duration_ms": duration_ms}
+            fields["phase_duration_ms"] = duration_ms
+        phase_event.update(fields)
+        early_progress.update({
+            "status": "running", "phase": name,
+            "phase_started_utc": utc if not completed else early_progress.get("phase_started_utc", utc),
+            "updated_utc": utc,
+            "elapsed_s": round(now - attempt_started, 3),
+        })
+        early_progress.setdefault("timeline", []).append(phase_event)
+        early_progress["timeline"] = early_progress["timeline"][-128:]
+        write_json_atomic(progress_path, early_progress)
+        if timing_path is not None:
+            try:
+                timing_path.parent.mkdir(parents=True, exist_ok=True)
+                with timing_path.open("a", encoding="utf-8", newline="\n") as handle:
+                    handle.write(json.dumps({**phase_event,
+                        "build_attempt_id": attempt_context.get("build_attempt_id"),
+                        "revision": attempt_context.get("revision")},
+                        separators=(",", ":")) + "\n")
+                    handle.flush()
+            except OSError:
+                pass
+        return started if started is not None else now
+
+    input_phase = early_phase("worker_input_validation")
 
     if args.sources_file:
         sources_path = Path(args.sources_file)
@@ -524,6 +580,9 @@ def build(args: argparse.Namespace) -> int:
         print(f"[GAME BUILD] revision mismatch: {revision} != {args.revision}", file=sys.stderr)
         return 3
 
+    early_phase("worker_input_validation", input_phase, completed=True,
+                source_count=len(sources), revision=str(revision or ""))
+
     change_report = None
     if args.change_report:
         report_path = Path(args.change_report)
@@ -547,7 +606,10 @@ def build(args: argparse.Namespace) -> int:
             print(f"  {item['path']}")
         return 0
 
+    coherence_started = early_phase("initial_source_coherence")
     initial_errors = verify_coherent(ROOT, sources)
+    early_phase("initial_source_coherence", coherence_started, completed=True,
+                checked_sources=len(sources), error_count=len(initial_errors))
     if initial_errors:
         for error in initial_errors:
             print(f"[GAME BUILD] ERROR {error}", file=sys.stderr)
@@ -559,7 +621,8 @@ def build(args: argparse.Namespace) -> int:
         sources = [s for s in sources
                    if s.get("path") != "src/game/probe/npc-target-probe-module.cpp"]
 
-    toolchain_started = time.monotonic()
+    toolchain_started = early_phase("toolchain_setup")
+    toolchain_started_utc = str(early_progress.get("phase_started_utc") or utc_now())
     try:
         cxx = compiler()
         os.environ["PATH"] = runtime_path(cxx) + os.pathsep + os.environ.get("PATH", "")
@@ -573,7 +636,7 @@ def build(args: argparse.Namespace) -> int:
 
     set_process_priority(args.priority)
 
-    out_root = (ROOT / args.out).resolve() if not Path(args.out).is_absolute() else Path(args.out)
+    setup_started = time.monotonic()
     generation = args.generation
     if generation <= 0:
         existing = [int(path.name.split("-")[-1]) for path in out_root.glob("generation-*")
@@ -619,8 +682,14 @@ def build(args: argparse.Namespace) -> int:
     seeded = 0 if args.no_seed else seed_object_cache(out_root, object_dir)
 
     jobs = args.jobs if args.jobs > 0 else (os.cpu_count() or 1)
+    early_phase("generation_and_cache_setup", setup_started, completed=True,
+                generation=generation, object_cache=str(object_dir.relative_to(ROOT)),
+                seeded_objects=seeded, jobs=jobs)
     progress = Progress(out_root, manifest.get("revision", ""), len(sources), jobs,
                         args.priority, object_dir, seeded, attempt_context)
+    progress.data["phase"] = "toolchain_setup"
+    progress.phase_started_monotonic = toolchain_started
+    progress.data["phase_started_utc"] = toolchain_started_utc
     progress.set_phase("identity_and_cache", generation=generation,
                        compiler=str(cxx), flags_identity=flags_hash,
                        object_cache=str(object_dir.relative_to(ROOT)),
@@ -642,7 +711,7 @@ def build(args: argparse.Namespace) -> int:
 
     ccache_prefix = [cache] if cache and os.path.isfile(cache) else []
     stop_event = threading.Event()
-    work: list[tuple[dict, Path, Path, float]] = []
+    work: list[tuple[dict, Path, Path]] = []
     dependency_scan_started = time.monotonic()
     dependency_check_ms = 0.0
     cache_record_overhead_ms = 0.0
@@ -662,7 +731,7 @@ def build(args: argparse.Namespace) -> int:
                             started_elapsed_ms=(check_started - progress.started_monotonic) * 1000.0)
             cache_record_overhead_ms += (time.perf_counter() - record_started) * 1000.0
             continue
-        work.append((item, obj, dep, time.monotonic()))
+        work.append((item, obj, dep))
 
     dependency_scan_seconds = round(time.monotonic() - dependency_scan_started, 3)
     progress.set_phase("vendor_compile", dependency_scan_seconds=dependency_scan_seconds,
@@ -700,13 +769,15 @@ def build(args: argparse.Namespace) -> int:
     progress.set_phase("compile", vendor_compile_seconds=vendor_compile_seconds,
                        pending=len(work))
 
-    def compile_one(item: dict, obj: Path, dep: Path, submitted: float
+    def compile_one(item: dict, obj: Path, dep: Path, submitted: float,
+                    submitted_utc: str
                     ) -> tuple[str, dict, float, str, float, str, float]:
         if stop_event.is_set():
             return ("skipped", item, 0.0, "", 0.0, "", 0.0)
         queue_wait_ms = (time.monotonic() - submitted) * 1000.0
         started_utc, started_elapsed_ms = progress.start_source(
-            item["path"], queue_wait_ms=queue_wait_ms)
+            item["path"], queue_wait_ms=queue_wait_ms,
+            submitted_utc=submitted_utc)
         source_path = str(item["path"]).replace("\\", "/")
         folded_module_symbols = {
             "src/mapeditor/map-editor-module.cpp":
@@ -768,8 +839,12 @@ def build(args: argparse.Namespace) -> int:
     compile_start = time.monotonic()
     if work:
         with ThreadPoolExecutor(max_workers=jobs) as executor:
-            futures = [executor.submit(compile_one, item, obj, dep, submitted)
-                       for item, obj, dep, submitted in work]
+            futures = []
+            for item, obj, dep in work:
+                submitted = time.monotonic()
+                submitted_utc = utc_now()
+                futures.append(executor.submit(compile_one, item, obj, dep,
+                                               submitted, submitted_utc))
             for future in as_completed(futures):
                 (status, item, elapsed_ms, output, queue_wait_ms,
                  started_utc, started_elapsed_ms) = future.result()

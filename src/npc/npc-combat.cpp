@@ -117,7 +117,9 @@ static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
                          const glm::vec3& idealDir,
                          const glm::vec3& finalDir,
                          float maxErrorDeg, float actualErrorDeg,
-                         bool accepted)
+                         bool accepted, bool hitEntity, bool hitWorld,
+                         float damage, int targetHpBefore, int targetHpAfter,
+                         const glm::vec3& shotOrigin, const glm::vec3& shotEnd)
 {
     float angleDiff = glm::degrees(std::acos(std::clamp(glm::dot(idealDir, finalDir), -1.0f, 1.0f)));
     // Gun-vs-bullet mismatch: degrees between the model's planar facing and the
@@ -139,6 +141,16 @@ static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
             {"skill_tier", npc.behavior.skillTier},
             {"weapon", def.id},
             {"accepted", accepted},
+            {"fired", accepted},
+            {"hit_trace_available", def.behaviorType == WeaponBehaviorType::Hitscan ||
+                                    def.behaviorType == WeaponBehaviorType::Melee},
+            {"hit_entity", hitEntity},
+            {"hit_world", hitWorld},
+            {"damage_on_target_mirror", damage},
+            {"target_health_before", targetHpBefore},
+            {"target_health_after", targetHpAfter},
+            {"shot_origin", {shotOrigin.x, shotOrigin.y, shotOrigin.z}},
+            {"shot_end", {shotEnd.x, shotEnd.y, shotEnd.z}},
             {"target_id", npc.serverTargetId},
             {"target_distance", npc.sensors.targetDistance},
             {"max_error_deg", maxErrorDeg},
@@ -571,7 +583,9 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         rt.currentAmmo = std::max(0, rt.currentAmmo - 1);
 
     bool fired = false;
+    bool shotHitEntity = false;
     bool shotHitWorld = false;
+    float shotDamage = 0.0f;
     // Actual endpoint (the damage trace). The server broadcast reads this so
     // the remote tracer goes exactly where the damage ray went (look == shoot == hit).
     glm::vec3 shotEnd = npcPos + aimDir * 100.0f;
@@ -621,6 +635,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
                 }
             }
             fired = true;
+            shotHitEntity = anyHit;
+            shotDamage = totalDamage;
             shotEnd = lastEnd;
             shotHitWorld = anyHitWorld && !anyHit;
             Debug::log(Debug::Category::NpcCombat,
@@ -635,7 +651,13 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
                 *def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul,
                 beamOverride, false);
             fired = shot.fired;
-            if (fired) { shotEnd = shot.end; shotNormal = shot.hitNormal; shotHitWorld = shot.hitWorld; }
+            if (fired) {
+                shotEnd = shot.end;
+                shotNormal = shot.hitNormal;
+                shotHitEntity = shot.hitEntity;
+                shotHitWorld = shot.hitWorld;
+                shotDamage = shot.damage;
+            }
             Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s hitscan hit=%d damage=%.0f\n",
                        npc.id, def->id.c_str(), (int)shot.hitEntity, shot.damage);
         }
@@ -664,7 +686,13 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         // Melee: use hitscan at close range for now (future: full melee AI)
         RevolverShotResult shot = WeaponFire::tryFireHitscanDir(*def, rt, npc.body, world, npcPos, aimDir, &player, dmgMul, beamOverride);
         fired = shot.fired;
-        if (fired) { shotEnd = shot.end; shotNormal = shot.hitNormal; }
+        if (fired) {
+            shotEnd = shot.end;
+            shotNormal = shot.hitNormal;
+            shotHitEntity = shot.hitEntity;
+            shotHitWorld = shot.hitWorld;
+            shotDamage = shot.damage;
+        }
         Debug::log(Debug::Category::NpcCombat, "[NPC SHOT] id=%u weapon=%s melee(approx) hit=%d\n",
                    npc.id, def->id.c_str(), (int)shot.hitEntity);
         break;
@@ -694,7 +722,9 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     }
     }
 
-    logAimDebug(npc, *def, idealDir, aimDir, errorDeg, angleDiff, fired);
+    logAimDebug(npc, *def, idealDir, aimDir, errorDeg, angleDiff, fired,
+                shotHitEntity, shotHitWorld, shotDamage, hpBeforeShot,
+                player.currentHp, npcPos, shotEnd);
 
     if (player.currentHp < hpBeforeShot)
     {

@@ -165,3 +165,39 @@ yet identified. The new NPC target/attack/dash policy is not the measured cost.
 
 Ideal fix: instrument navigator sub-stages, cache/reuse the expensive operation,
 bound per-tick work to the 60 Hz budget, and re-run the same 19-NPC scene.
+
+## Occurrence 2026-11-19 — Juggernaut 67-NPC physics and navigation overload
+
+Status: CONFIRMED RUNTIME OVERLOAD; responsible sub-stage narrowed, fix not
+validated.
+
+- Scene: Juggernaut on `dust2cyberiav4`, one player, 67 server NPCs.
+- Run: `logs/2026-11-19/20261119_012255/`, server journal under
+  `server-01/events.jsonl`; runtime server PID 20664, NPC module generation 345.
+- The dev-loop status launch label said `npcs=0`, but server tick/window and
+  NPC phase events consistently report `npcs=67`. Use the server journal as the
+  workload evidence.
+- 229 `performance.server-loop-window` records were captured; 183 were below
+  59.9 Hz. Median measured `actual_hz` was 45.25; worst was 0.42 Hz. There are
+  sustained near-60 Hz intervals, but not a stable 60 Hz result.
+- `performance.server-tick-stall` reached 2,489 ms total with 2,187 ms in the
+  NPC phase. One-second tick windows reached 2,489 ms maximum total and
+  2,188 ms maximum NPC phase, far beyond the 16.667 ms fixed-tick budget.
+- NPC phase windows record physics totals up to 632 ms and collision totals up
+  to 428 ms. Individual `npc.slow-update` samples attribute 20–82 ms to
+  physics/collision. Navigation is a second, intermittent source: samples
+  reached 75.8 ms in `navigator_ms`, and phase windows reached 281.5 ms in
+  `navigator_ms` and 216.9 ms in path work.
+- Movement is occurring: sampled `npc.movement-decision` rows report nonzero
+  distances moved. However, the journal also contains repeated stuck/recovery
+  episodes, so movement quality still needs review after performance work.
+
+The measured first optimization target is the expensive movement physics /
+collision work in `NpcSystem::updateOneNpc()`, followed by the measured
+navigation/path spikes. Do not reduce authoritative movement, collision,
+damage, or physics below 60 Hz. Bound and optimize the expensive operations so
+all 67 NPCs can continue advancing each fixed tick. The current live run does
+not establish the exact inner operation responsible for the physics/collision
+spikes; add sub-stage attribution or inspect the called collision routines
+before changing them. Revalidate the identical mode, map, roster, and journal
+metrics after any fix.

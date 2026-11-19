@@ -243,7 +243,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 582,
+      "client_line": 583,
       "client_owner": "game",
       "client_source": "src/network/multiplayer-shots.cpp",
       "id": 14,
@@ -549,7 +549,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 644,
+      "client_line": 645,
       "client_owner": "game",
       "client_source": "src/network/multiplayer-shots.cpp",
       "id": 34,
@@ -1346,5 +1346,5 @@
   ],
   "protocol_version": 52,
   "schema_version": 1,
-  "source_sha256": "4d6c4ec8f4ae2ae8400e6a6d56bff1a340bcae250465e626dad92eb2ce32da54"
+  "source_sha256": "2f7ef99704766c7f158165e513caa6bb9473affe0fd4b040b2a2d097e2c7b456"
 }

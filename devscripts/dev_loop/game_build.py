@@ -105,12 +105,18 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     attempt_started_utc = _utc_now()
     timing_path = root / ".dev" / "build-timings" / f"{attempt_id}.jsonl"
     summary_path = root / ".dev" / "build-timings" / f"{attempt_id}.json"
+    for path in (timing_path, summary_path):
+        try:
+            path.resolve().relative_to(root.resolve())
+        except ValueError as error:
+            raise RuntimeError("build timing path resolves outside the repository") from error
     notes = _consume_build_notes(root, attempt_id)
     progress_path = root / "build" / "game" / "progress.json"
     progress = {
         "status": "preparing", "phase": "codegen_check",
         "build_attempt_id": attempt_id,
         "source_generation": source_generation,
+        "build_mode": str(mode).lower(),
         "started_utc": attempt_started_utc, "updated_utc": attempt_started_utc,
         "elapsed_s": 0.0, "notes": notes, "total": 0, "completed": 0,
         "compiled": 0, "skipped": 0, "failed": 0, "file_events": [],
@@ -187,7 +193,19 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                     break
                 if isinstance(payload, dict):
                     payload["build_attempt_id"] = attempt_id
-                    on_output(prefix + json.dumps(payload, separators=(",", ":")))
+                    normalized = prefix + json.dumps(payload, separators=(",", ":"))
+                    handler_started = time.perf_counter()
+                    on_output(normalized)
+                    handler_ms = round((time.perf_counter() - handler_started) * 1000, 3)
+                    if prefix == "[GAME_FILE] ":
+                        _append_timing(timing_path, {
+                            "event": "dev_loop.file_output_handled",
+                            "time_utc": _utc_now(), "path": payload.get("path", ""),
+                            "status": payload.get("status", ""),
+                            "duration_ms": handler_ms,
+                            "build_attempt_id": attempt_id,
+                            "revision": payload.get("revision", ""),
+                        })
                     return
                 break
         on_output(line)
@@ -236,9 +254,14 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                             if item.get("owner") == "game")
     _write_json(progress_path, progress)
     context_path = root / ".dev" / "build-timings" / f"{attempt_id}.context.json"
+    try:
+        context_path.resolve().relative_to(root.resolve())
+    except ValueError as error:
+        raise RuntimeError("build context path resolves outside the repository") from error
     _write_json(context_path, {
         "build_attempt_id": attempt_id,
         "source_generation": source_generation,
+        "build_mode": str(mode).lower(),
         "started_utc": attempt_started_utc,
         "attempt_started_monotonic": attempt_started,
         "timing_path": str(timing_path),
@@ -269,7 +292,6 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
         "--jobs", "0",
         "--priority", "high",
         "--attempt-context", str(context_path),
-        "--attempt-context", str(context_path),
     ]
     if change_report:
         command.extend(["--change-report", str(change_report_path)])
@@ -283,8 +305,22 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     _write_json(progress_path, progress)
     return_code = _run_checked(root, command, report_output)
     current = _read_json(output_root / "current.json")
-    success = return_code == 0 and str(current.get("status", "")) == "ok"
+    success = (return_code == 0 and str(current.get("status", "")) == "ok"
+               and str(current.get("revision", "")) == revision)
     elapsed = round(time.monotonic() - attempt_started, 3)
+    driver_file_events = []
+    try:
+        for line in timing_path.read_text(encoding="utf-8").splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if event.get("event") == "dev_loop.file_output_handled":
+                driver_file_events.append(event)
+    except OSError:
+        pass
+    driver_handler_ms = round(sum(
+        float(event.get("duration_ms") or 0) for event in driver_file_events), 3)
     _append_timing(timing_path, {
         "event": "build.completed" if success else "build.failed",
         "time_utc": _utc_now(), "elapsed_ms": round(elapsed * 1000, 3),
@@ -299,6 +335,7 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     summary = {
         "schema_version": 1, "build_attempt_id": attempt_id,
         "source_generation": source_generation, "revision": revision,
+        "build_mode": str(mode).lower(),
         "request_ids": request_ids, "notes": notes,
         "changed_paths": progress["changed_paths"],
         "started_utc": attempt_started_utc, "completed_utc": _utc_now(),
@@ -312,6 +349,13 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                             "cache_record_overhead_ms", "compile_seconds",
                             "link_seconds", "publish_seconds", "total_seconds",
                             "slowest_compiles")},
+        "toolchain": worker_progress.get("compiler", ""),
+        "flags_identity": worker_progress.get("flags_identity", ""),
+        "object_cache": current.get("object_cache", ""),
+        "dev_loop_output_handler_ms": driver_handler_ms,
+        "slowest_dev_loop_output_handlers": sorted(
+            driver_file_events, key=lambda item: float(item.get("duration_ms") or 0),
+            reverse=True)[:10],
     }
     _write_json(summary_path, summary)
     progress["status"] = "published" if success else "failed"
@@ -321,6 +365,7 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     progress["build_attempt_id"] = attempt_id
     progress["source_generation"] = source_generation
     progress["generation"] = current.get("generation")
+    progress["dev_loop_output_handler_ms"] = driver_handler_ms
     _write_json(progress_path, progress)
     try:
         context_path.unlink()

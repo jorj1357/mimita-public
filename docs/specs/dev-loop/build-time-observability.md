@@ -1,6 +1,6 @@
 // 2026-11-08
 /* purpose
-* specify how EXE builds expose progress and account for elapsed time
+* specify how EXE and whole-game DLL builds expose progress and account for elapsed time
 * identify whether time is spent waiting, compiling, linking, or publishing
 * turn repeated build measurements into evidence for focused improvements
 * this file DOES NOT change build authority, scheduling limits, or build inputs
@@ -12,7 +12,7 @@
 
 ## Audience and authority
 
-This specification is for the dev-loop, its canonical EXE build worker, the
+This specification is for the dev-loop, its canonical EXE and whole-game DLL build workers, the
 dashboard/status readers, and people diagnosing slow builds. It supplements
 the build lifecycle in [`dev-loop.md`](dev-loop.md) and the build ownership in
 [`agent-lanes-build-authority.md`](agent-lanes-build-authority.md). The
@@ -154,33 +154,33 @@ the artifact being run, or interrupt a running game.
 
 ## Persisted timing record
 
-Write one machine-readable timing record owned by the build system for every
-attempt, including failed attempts, at
-`.dev/build-timings/<attempt-id>.json` in that checkout. An active attempt may
-update its own record; once terminal, its record is immutable. Dev-loop
-status/history must link to it by attempt ID. A successful artifact's identity
-must also link to the attempt ID. Keep at least the newest 30 attempt records
-per checkout so timing comparisons survive the shorter published-EXE
-retention. Do not create an unmanaged debug file or put unbounded per-file
-detail into the shared status file.
+Write an append-only event stream and a final summary owned by the build
+system for every attempt, including failed attempts, at
+`.dev/build-timings/<attempt-id>.jsonl` and
+`.dev/build-timings/<attempt-id>.json` in that checkout. The stream holds full
+per-file and phase timing; the JSON holds the bounded attempt summary and links
+to the stream. Keep the active stream append-only and the final summary
+immutable. Dev-loop status/history links to both by attempt ID. A successful
+artifact's identity also links to the attempt ID. Do not put unbounded
+per-file detail into the shared status file.
 
-The record contains:
+The summary contains:
 
 - schema version, attempt ID, lane/checkout, build mode, source generation,
   source identity, compiler/toolchain identity, job limit, and cache location
   identity (not credentials or private environment values);
 - canonical UTC timestamps and monotonic elapsed durations for lifecycle and
   phase boundaries;
-- per-translation-unit path, queue/start/end duration, result, and cache
-  outcome when known;
+- summary counts for compiled/skipped units, slowest sources, and phase totals;
 - phase results, exit code/error, compiled/skipped counts, link output size,
   publish validation/hash result, and final artifact ID/hash when successful;
 - source-change/follow-up facts and whether the output belongs to the latest
   source generation.
 
-The record is append/finalized once per attempt; an active attempt may expose
-its live partial form. Do not overwrite prior attempt records when a retry
-starts. Retention follows the existing managed artifact policy.
+The JSONL stream contains one start and one completion row per applicable
+phase and translation unit, including queue delay and cache result when known.
+Do not overwrite prior attempt records when a retry starts. Retention follows
+the existing managed artifact policy.
 
 ## Diagnosis and use of results
 
@@ -249,9 +249,81 @@ Rules:
 - A header edit may rebuild its dependents; record the fan-out before treating
   the build as unexpectedly slow.
 - Do not infer a hang from one slow translation unit; use live phase progress.
-- Store persisted timing per `.dev/build-timings/<attempt-id>.json` as already
-  specified. Aggregate history must not be committed to git.
+- Store persisted timing in the per-attempt `.jsonl` stream and `.json`
+  summary specified above. Aggregate history must not be committed to git.
 - The goal is not "one header changes one file". The goal is one header with
   one owner and a measured, shrinking dependent set.
 
 See `docs/architecture/live-development/incremental-build-and-header-fanout.md`.
+
+## Whole-game DLL generation trace
+
+The root dev-loop builds one immutable whole-game generation at a time. Saved
+source notifications that arrive during a build coalesce into the next
+generation; they are not one DLL per save or per request ID. The queue view
+shows one active generation and at most one next coalesced generation, with
+request counts shown as triggers rather than DLL counts.
+
+The trace begins when the dev-loop accepts a game-DLL build request and covers
+code-generation checks, source-manifest snapshot and validation, source
+coherence hashing, toolchain resolution, generation identity and object-cache
+setup, dependency freshness checks for every source, compiler queue wait and
+compile per source, optional GLAD compile, link, final coherence check, hash,
+and publication. Each phase has UTC start/end times plus monotonic elapsed
+milliseconds. A build attempt has one stable attempt ID, source generation,
+manifest revision, and output generation.
+
+For each translation unit, record dependency-check start/end and duration,
+whether a fresh object was reused or compilation was needed, executor queue
+wait, compiler start/end, compiler duration, per-event progress-file write
+time, and dev-loop output-handler time. Keep all per-source rows in the
+attempt's JSONL timing stream; keep only a bounded tail in the live
+`progress.json`. The status/dashboard may refresh from the bounded progress
+file but must not parse the full timing stream on every refresh.
+
+`total_seconds` measures the entire attempt from accepted build request to
+publication. It is not the sum of compile and link alone. Display compile,
+link, cache scan, validation, and publication separately. A percentage may
+describe source units resolved during the dependency scan or compilation,
+using the source count as its denominator. Link, validation, and publication
+show elapsed time without a percentage.
+
+Agents may attach a short explanation to the next whole-game DLL generation
+with:
+
+```text
+python devscripts/build-note.py --changes "NPC behavior fix" --files src/npc/npc-behavior.cpp
+```
+
+The script writes a bounded note in the repository's ignored `.dev` state.
+The next build consumes pending notes and attaches them to that build's source
+generation and revision. The note is explanatory metadata, not proof of which
+source files compiled. Changed paths come from the source-manifest diff.
+Include an author label only when it is explicitly supplied to the script.
+
+### Observed generation 346 trace (2026-11-19)
+
+The live journal for run `20261119_012255` shows generation 346 resolving 642
+game translation units: 628 dependency-clean object reuses, 13 compiled
+objects, and one failed compile. The worker had reached roughly 194 seconds of
+attempt elapsed time before the last cached-unit checks completed; its
+compile phase then ended at 231.6 seconds. Summed compiler time is not wall
+time because source compilation runs concurrently. The failure occurred in
+`src/network/server-npcs.cpp`; the captured GCC output reports an
+`rtmintrin.h` include failure and `stdout: Bad file descriptor`. The cause is
+not established; do not treat this as a Juggernaut runtime failure.
+
+In the 244 per-file rows still present in the run journal, the median delay
+between the worker's file-completion timestamp and the dev-loop's journal
+timestamp was 14 ms, but the maximum reached 25,057 ms. This tail indicates
+that output handling or process scheduling also stalled during the scan; it is
+not yet attributable to one owner. Progress-file writes were usually in the
+tens of milliseconds, with some spikes, and do not alone explain the long
+cache-scan phase. The exact contribution of dependency checks, progress
+writes, dev-loop journal handling, and machine contention is unavailable
+because this daemon did not write the attempt timing stream. The next trace
+should compare `dependency_check_ms`, progress-write duration, and
+`dev_loop.file_output_handled` duration per source. If handler time dominates,
+batch status persistence while keeping journal events live; if dependency
+checks dominate, reduce depfile filesystem work. Do not tune compiler jobs
+from the overlapping per-file durations.
