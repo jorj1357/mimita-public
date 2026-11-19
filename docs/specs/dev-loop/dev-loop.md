@@ -201,13 +201,20 @@ If ownership cannot be proven, the loop must stop and report
 `NEEDS_USER_ACTION`.
 
 An explicit press of the dashboard's **Launch latest stable MiMITA.exe** button
-is also a user-authorized replacement action for `mimita.exe` processes whose
-resolved executable path is inside this checkout. Before replacement, the
-loop must verify each PID's executable path and process start identity, record
-the targets and result, and confirm no same-checkout MiMITA process remains.
-This authorization does not include executables from another checkout or
-processes whose identity cannot be verified. A failed scan or incomplete
-cleanup stops the launch and reports the reason.
+is a user-authorized replacement action for client processes whose resolved
+`mimita.exe` path is inside this checkout. The button closes the existing
+clients and immediately starts one fresh client from the latest valid
+published build, without waiting for a new build; **Build** is the separate
+build action. It cancels any deferred launch-after-build request. The button
+retains a healthy server that matches the selected build and launch
+configuration; the normal server replacement rules apply when it does not
+match. Before stopping a client, the loop verifies its PID, executable path,
+process start identity, and that it is not a server; it records the target and
+result, then confirms no same-checkout client remains. This authorization does
+not include executables from another checkout or processes whose identity
+cannot be verified. A failed scan or incomplete cleanup stops the launch and
+reports the reason. **Start client** remains the control for adding clients to
+a running server.
 
 ## 3.1 AI runtime reuse contract (2026-11-05)
 

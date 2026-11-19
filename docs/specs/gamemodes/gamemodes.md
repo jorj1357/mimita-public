@@ -62,6 +62,7 @@ only when the mode omits a value.
 - [Cops vs. Robbers / Police Chase](vehicles/police-chase.md)
 - [SWAT](swat.md) and [Bodycam](bodycam.md)
 - [Zombie Tower](zombie-tower/zombie-tower.md)
+- [Zombie Attack](zombie-attack.md)
 - [Versus Jason](vs-jason.md) (internal; not player-facing)
 
 ## General gamemode runtime — authoritative as of 2026-09-09

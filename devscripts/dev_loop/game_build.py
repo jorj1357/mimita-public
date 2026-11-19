@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +32,41 @@ def _write_json(path: Path, payload: dict) -> None:
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n",
                           encoding="utf-8")
     temporary.replace(path)
+
+
+def _append_timing(path: Path, event: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="\n") as output:
+        output.write(json.dumps(event, separators=(",", ":")) + "\n")
+        output.flush()
+
+
+def _consume_build_notes(root: Path, attempt_id: str) -> list[dict]:
+    pending = (root / ".dev" / "build-notes" / "pending").resolve()
+    archive = (root / ".dev" / "build-notes" / "consumed" / attempt_id).resolve()
+    for path in (pending, archive):
+        try:
+            path.relative_to(root.resolve())
+        except ValueError as error:
+            raise RuntimeError("build note path resolves outside the repository") from error
+    if not pending.is_dir():
+        return []
+    notes: list[dict] = []
+    for source in sorted(pending.glob("*.json")):
+        try:
+            payload = _read_json(source)
+        except OSError:
+            continue
+        if not payload or not isinstance(payload.get("changes"), str):
+            continue
+        archive.mkdir(parents=True, exist_ok=True)
+        destination = archive / source.name
+        try:
+            source.replace(destination)
+        except OSError:
+            continue
+        notes.append(payload)
+    return notes
 
 
 def _run_checked(root: Path, command: list[str], on_output) -> int:
@@ -61,15 +97,89 @@ def _run_checked(root: Path, command: list[str], on_output) -> int:
 
 
 def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
-                   on_output=None) -> dict:
+                   source_generation: int = 0, on_output=None) -> dict:
     """Snapshot, validate, build, and publish one whole-game generation."""
     root = Path(root)
     attempt_id = f"game-dll-{uuid.uuid4().hex[:16]}"
+    attempt_started = time.monotonic()
+    attempt_started_utc = _utc_now()
+    timing_path = root / ".dev" / "build-timings" / f"{attempt_id}.jsonl"
+    summary_path = root / ".dev" / "build-timings" / f"{attempt_id}.json"
+    notes = _consume_build_notes(root, attempt_id)
+    progress_path = root / "build" / "game" / "progress.json"
+    progress = {
+        "status": "preparing", "phase": "codegen_check",
+        "build_attempt_id": attempt_id,
+        "source_generation": source_generation,
+        "started_utc": attempt_started_utc, "updated_utc": attempt_started_utc,
+        "elapsed_s": 0.0, "notes": notes, "total": 0, "completed": 0,
+        "compiled": 0, "skipped": 0, "failed": 0, "file_events": [],
+        "timeline": [],
+    }
+    _write_json(progress_path, progress)
+    _append_timing(timing_path, {
+        "event": "build.started", "time_utc": attempt_started_utc,
+        "elapsed_ms": 0, "build_attempt_id": attempt_id,
+        "source_generation": source_generation, "request_ids": request_ids,
+        "notes": notes,
+    })
+
+    def set_stage(name: str, state: str, **fields) -> None:
+        now = time.monotonic()
+        utc = _utc_now()
+        entry = {"stage": name, "state": state, "time_utc": utc,
+                 "elapsed_ms": round((now - attempt_started) * 1000, 3)}
+        entry.update(fields)
+        progress["phase"] = name
+        progress["status"] = "preparing" if state == "started" else progress["status"]
+        progress["updated_utc"] = utc
+        progress["elapsed_s"] = round(now - attempt_started, 3)
+        progress["timeline"].append(entry)
+        progress["timeline"] = progress["timeline"][-64:]
+        _write_json(progress_path, progress)
+        _append_timing(timing_path, {"event": f"stage.{state}", **entry,
+                                     "build_attempt_id": attempt_id})
+        if on_output:
+            on_output("[GAME_STAGE] " + json.dumps(
+                {**entry, "build_attempt_id": attempt_id}, separators=(",", ":")))
+
+    def run_stage(name: str, command: list[str]) -> int:
+        started = time.monotonic()
+        set_stage(name, "started")
+        result = _run_checked(root, command, report_output)
+        set_stage(name, "completed" if result == 0 else "failed",
+                  duration_ms=round((time.monotonic() - started) * 1000, 3),
+                  exit_code=result)
+        return result
+
+    def fail_attempt(error: str, **fields) -> dict:
+        completed_utc = _utc_now()
+        elapsed = round(time.monotonic() - attempt_started, 3)
+        progress.update({"status": "failed", "phase": "failed",
+                         "error": error, "updated_utc": completed_utc,
+                         "elapsed_s": elapsed})
+        _write_json(progress_path, progress)
+        _append_timing(timing_path, {
+            "event": "build.failed", "time_utc": completed_utc,
+            "elapsed_ms": round(elapsed * 1000, 3),
+            "build_attempt_id": attempt_id,
+            "source_generation": source_generation, "error": error, **fields,
+        })
+        _write_json(summary_path, {
+            "schema_version": 1, "build_attempt_id": attempt_id,
+            "source_generation": source_generation,
+            "started_utc": attempt_started_utc, "completed_utc": completed_utc,
+            "total_seconds": elapsed, "success": False, "notes": notes,
+            "timeline_jsonl": str(timing_path.relative_to(root)),
+            "error": error, **fields,
+        })
+        return {"success": False, "error": error, "request_ids": request_ids,
+                **fields}
 
     def report_output(line: str) -> None:
         if not on_output:
             return
-        for prefix in ("[GAME_NOTE] ", "[GAME_FILE] "):
+        for prefix in ("[GAME_NOTE] ", "[GAME_FILE] ", "[GAME_STAGE] "):
             if line.startswith(prefix):
                 try:
                     payload = json.loads(line[len(prefix):])
@@ -87,44 +197,65 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     ready_path = output_root / "ready.json"
 
     for script in ("resident_state_codegen.py", "packet_registry_codegen.py"):
-        result = _run_checked(
-            root,
-            [sys.executable, str(root / "devscripts" / script), "--check"],
-            report_output,
-        )
+        result = run_stage(f"codegen:{script}",
+                           [sys.executable, str(root / "devscripts" / script), "--check"])
         if result != 0:
-            return {
-                "success": False,
-                "error": f"codegen check failed: {script}",
-                "request_ids": request_ids,
-            }
+            return fail_attempt(f"codegen check failed: {script}", exit_code=result)
 
+    set_stage("manifest_snapshot", "started")
+    manifest_started = time.monotonic()
     old_manifest = _read_json(manifest_path)
     manifest = build_manifest(root)
+    snapshot_duration_ms = round((time.monotonic() - manifest_started) * 1000, 3)
+    set_stage("manifest_snapshot", "completed", duration_ms=snapshot_duration_ms,
+              source_count=len(manifest.get("sources", [])))
+    set_stage("manifest_validation", "started")
+    validation_started = time.monotonic()
     errors, warnings = validate(manifest)
     if errors:
-        return {
-            "success": False,
-            "error": "source manifest validation failed",
-            "errors": errors,
-            "warnings": warnings,
-            "request_ids": request_ids,
-        }
+        set_stage("manifest_validation", "failed",
+                  duration_ms=round((time.monotonic() - validation_started) * 1000, 3),
+                  errors=errors[:20])
+        return fail_attempt("source manifest validation failed",
+                            errors=errors[:20], warnings=warnings[:20])
 
     _write_json(manifest_path, manifest)
+    set_stage("manifest_validation", "completed",
+              duration_ms=round((time.monotonic() - validation_started) * 1000, 3),
+              source_count=len(manifest.get("sources", [])))
     revision = str(manifest.get("revision", ""))
     change_report = diff_manifests(old_manifest, manifest) if old_manifest else {}
     if change_report:
         change_report["generated_utc"] = _utc_now()
         _write_json(change_report_path, change_report)
+    progress["revision"] = revision
+    progress["changed_paths"] = list(dict.fromkeys(
+        str(path) for key in ("changed", "added", "changed_headers")
+        for path in change_report.get(key, []) if isinstance(path, str)))[:40]
+    progress["total"] = sum(1 for item in manifest.get("sources", [])
+                            if item.get("owner") == "game")
+    _write_json(progress_path, progress)
+    context_path = root / ".dev" / "build-timings" / f"{attempt_id}.context.json"
+    _write_json(context_path, {
+        "build_attempt_id": attempt_id,
+        "source_generation": source_generation,
+        "started_utc": attempt_started_utc,
+        "attempt_started_monotonic": attempt_started,
+        "timing_path": str(timing_path),
+        "summary_path": str(summary_path),
+        "notes": notes,
+        "changed_paths": progress["changed_paths"],
+        "revision": revision,
+    })
     if on_output:
         changed_paths = list(dict.fromkeys(
             str(path) for key in ("changed", "added", "changed_headers")
             for path in change_report.get(key, []) if isinstance(path, str)))
         on_output("[GAME_NOTE] " + json.dumps({
             "build_attempt_id": attempt_id,
+            "source_generation": source_generation,
             "revision": revision,
-            "agent_note": "Saved compiler inputs captured for whole-game DLL build",
+            "notes": notes,
             "changed_paths": changed_paths[:40],
         }, separators=(",", ":")))
 
@@ -137,6 +268,8 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
         "--revision", revision,
         "--jobs", "0",
         "--priority", "high",
+        "--attempt-context", str(context_path),
+        "--attempt-context", str(context_path),
     ]
     if change_report:
         command.extend(["--change-report", str(change_report_path)])
@@ -145,9 +278,55 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
 
     if on_output:
         on_output(f"building whole-game revision {revision[:12]}")
+    progress["phase"] = "worker_start"
+    progress["updated_utc"] = _utc_now()
+    _write_json(progress_path, progress)
     return_code = _run_checked(root, command, report_output)
     current = _read_json(output_root / "current.json")
-    if return_code != 0 or str(current.get("status", "")) != "ok":
+    success = return_code == 0 and str(current.get("status", "")) == "ok"
+    elapsed = round(time.monotonic() - attempt_started, 3)
+    _append_timing(timing_path, {
+        "event": "build.completed" if success else "build.failed",
+        "time_utc": _utc_now(), "elapsed_ms": round(elapsed * 1000, 3),
+        "build_attempt_id": attempt_id, "source_generation": source_generation,
+        "revision": revision, "exit_code": return_code,
+        "generation": current.get("generation"), "dll": current.get("dll"),
+        "error": "" if success else (current.get("error") or f"game build failed with exit code {return_code}"),
+    })
+    worker_progress = _read_json(progress_path)
+    if worker_progress.get("build_attempt_id") == attempt_id:
+        progress.update(worker_progress)
+    summary = {
+        "schema_version": 1, "build_attempt_id": attempt_id,
+        "source_generation": source_generation, "revision": revision,
+        "request_ids": request_ids, "notes": notes,
+        "changed_paths": progress["changed_paths"],
+        "started_utc": attempt_started_utc, "completed_utc": _utc_now(),
+        "total_seconds": elapsed, "success": success,
+        "generation": current.get("generation"), "dll": current.get("dll"),
+        "code_hash": current.get("code_hash"),
+        "timeline_jsonl": str(timing_path.relative_to(root)),
+        "worker_metrics": {key: current.get(key) for key in
+                           ("source_count", "compiled", "skipped", "jobs",
+                            "object_scan_seconds", "dependency_check_ms",
+                            "cache_record_overhead_ms", "compile_seconds",
+                            "link_seconds", "publish_seconds", "total_seconds",
+                            "slowest_compiles")},
+    }
+    _write_json(summary_path, summary)
+    progress["status"] = "published" if success else "failed"
+    progress["phase"] = "published" if success else "failed"
+    progress["updated_utc"] = _utc_now()
+    progress["elapsed_s"] = elapsed
+    progress["build_attempt_id"] = attempt_id
+    progress["source_generation"] = source_generation
+    progress["generation"] = current.get("generation")
+    _write_json(progress_path, progress)
+    try:
+        context_path.unlink()
+    except OSError:
+        pass
+    if not success:
         return {
             "success": False,
             "error": current.get("error") or f"game build failed with exit code {return_code}",

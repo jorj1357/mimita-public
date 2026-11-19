@@ -126,10 +126,10 @@ def _utc_now_iso() -> str:
         "+00:00", "Z")
 
 
-def _game_dll_progress(checkout: str) -> tuple[str, str]:
+def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
     """Read the root dev-loop's live whole-game DLL progress and identity."""
     if not checkout:
-        return "Game DLL: unavailable", "No checkout path in status"
+        return "Game DLL: unavailable", "No checkout path in status", {}
     root = Path(checkout)
 
     def read_json(path: Path) -> dict:
@@ -142,8 +142,14 @@ def _game_dll_progress(checkout: str) -> tuple[str, str]:
     progress = read_json(root / "build" / "game" / "progress.json")
     current = read_json(root / "build" / "game" / "current.json")
     change_report = read_json(root / "build" / "hot-reload" / "change-report.json")
+    pending_notes = []
+    for path in sorted((root / ".dev" / "build-notes" / "pending").glob("*.json"))[-8:]:
+        note = read_json(path)
+        if note:
+            pending_notes.append(note)
     if not progress:
-        return "Game DLL: no active build progress", "Waiting for root dev-loop game build"
+        return ("Game DLL: no active build progress",
+                "Waiting for root dev-loop game build", {})
 
     phase = str(progress.get("phase") or progress.get("status") or "unknown").upper()
     elapsed = progress.get("elapsed_s", progress.get("total_s"))
@@ -180,7 +186,12 @@ def _game_dll_progress(checkout: str) -> tuple[str, str]:
             recent.append(f"{marker} {seconds:.2f}s {item.get('path', '')}")
         if recent:
             details.append("latest files: " + "  ·  ".join(recent))
-    details.append("agent note: saved edits are attached to this source generation")
+    notes = progress.get("notes") if isinstance(progress.get("notes"), list) else []
+    if notes:
+        details.extend("change note: " + str(item.get("changes", ""))
+                       for item in notes[:4] if isinstance(item, dict))
+    else:
+        details.append("change note: none; use devscripts/build-note.py --changes \"...\"")
     if current_revision == revision and current.get("status") == "ok":
         details.append(f"published generation {current.get('generation')}  ·  DLL SHA256 {str(current.get('code_hash') or '—')[:16]}")
     if str(change_report.get("new_revision") or "") == revision:
@@ -190,8 +201,50 @@ def _game_dll_progress(checkout: str) -> tuple[str, str]:
             details.append("changed: " + ", ".join(str(path) for path in changed[:3]))
             if len(changed) > 3:
                 details[-1] += f" (+{len(changed) - 3} more)"
-    details.append("CXX = compiled  ·  SKIP = cached object reused  ·  prompt explanation is not recorded")
-    return headline, "\n".join(details)
+    details.append("CXX = compiled  ·  SKIP = existing dependency-clean object reused")
+    progress["latest_change_report"] = change_report
+    progress["published_generation"] = current.get("generation")
+    progress["pending_notes"] = pending_notes
+    return headline, "\n".join(details), progress
+
+
+def _game_dll_queue_view(model: dict, progress: dict) -> tuple[str, str, str, float | None]:
+    game_build = model.get("game_build") if isinstance(model.get("game_build"), dict) else {}
+    requests = game_build.get("requests") if isinstance(game_build.get("requests"), dict) else {}
+    queued = 1 if any(value == "queued" for value in requests.values()) else 0
+    progress_status = str(progress.get("status") or "").lower()
+    daemon_status = str(game_build.get("status") or "").lower()
+    active = 1 if daemon_status == "building" or progress_status in (
+        "preparing", "running") else 0
+    queue_summary = f"{active} active DLL build  ·  {queued} queued generation"
+    generation = progress.get("generation") or game_build.get("generation")
+    if active:
+        job_title = f"BUILDING game-g{generation}.dll" if generation else "BUILDING game DLL · selecting generation"
+    elif queued:
+        job_title = "QUEUED · edits coalesce into the next game DLL generation"
+    elif daemon_status == "failed" or progress_status == "failed":
+        job_title = "LAST GAME DLL BUILD FAILED"
+    elif generation:
+        job_title = f"IDLE · last published game-g{generation}.dll"
+    else:
+        job_title = "IDLE · no game DLL build queued"
+
+    phase = str(progress.get("phase") or daemon_status or "idle").replace("_", " ").upper()
+    elapsed = progress.get("elapsed_s")
+    elapsed_text = f"{float(elapsed):.1f}s elapsed" if isinstance(elapsed, (int, float)) else "elapsed unavailable"
+    updated = str(progress.get("updated_utc") or model.get("updated_at") or "unknown")
+    stamp = f"as of {updated}  ·  phase {phase}  ·  {elapsed_text}"
+    total = int(progress.get("total") or 0)
+    completed = int(progress.get("completed") or 0)
+    ratio = None
+    if active and total > 0 and phase in ("OBJECT CACHE SCAN", "COMPILE"):
+        ratio = min(1.0, max(0.0, completed / total))
+        text = f"{phase}  ·  {completed}/{total} source units  ·  {round(ratio * 100)}%"
+    elif active:
+        text = f"{phase}  ·  elapsed {elapsed_text}  ·  no completion percentage for this phase"
+    else:
+        text = job_title
+    return queue_summary, job_title, stamp + "\n" + text, ratio
 def run(status_provider: Callable[[], dict],
         control: Callable[..., dict | bool],
         title: str,
@@ -223,7 +276,7 @@ def run(status_provider: Callable[[], dict],
     root.overrideredirect(True)
     root.resizable(True, True)
     root.minsize(MIN_WIDTH, MIN_HEIGHT)
-    root.geometry("500x500")
+    root.geometry("880x760")
     root.configure(background=BLACK)
 
     state = {
@@ -553,11 +606,31 @@ def run(status_provider: Callable[[], dict],
     game_build_value.grid(row=3, column=0, sticky="ew", pady=(4, 0))
     game_build_detail = label(activity_card, "", size=8, wraplength=500)
     game_build_detail.grid(row=4, column=0, sticky="ew")
+
+    game_queue_card = frame(body, padx=7, pady=5)
+    game_queue_card.grid(row=1, column=0, sticky="ew", pady=(3, 0))
+    game_queue_card.grid_columnconfigure(0, weight=1)
+    game_queue_title = label(game_queue_card,
+                             "WHOLE-GAME DLL BUILD QUEUE", size=10, bold=True)
+    game_queue_title.grid(row=0, column=0, sticky="w")
+    game_queue_summary = label(game_queue_card, "Checking build queue…",
+                               size=11, bold=True)
+    game_queue_summary.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+    game_queue_time = label(game_queue_card, "", size=8)
+    game_queue_time.grid(row=2, column=0, sticky="ew")
+    game_queue_bar = tk.Canvas(game_queue_card, height=18, background="#180000",
+                               highlightthickness=1, highlightbackground=RED, bd=0)
+    game_queue_bar.grid(row=3, column=0, sticky="ew", pady=(4, 3))
+    game_queue_rows = tk.Text(
+        game_queue_card, height=12, wrap="word", bg=BLACK, fg=WHITE,
+        insertbackground=WHITE, relief="flat", bd=0, highlightthickness=0,
+        font=(family, 9), state="disabled", padx=3, pady=2)
+    game_queue_rows.grid(row=4, column=0, sticky="ew")
     runtime_card, runtime_value, runtime_detail = make_card("Runtime and mode/map")
     scenario_card, scenario_value, scenario_detail = make_card("Scenario evidence")
 
     checkout_card = frame(body, padx=5, pady=3)
-    checkout_card.grid(row=1, column=0, sticky="ew", pady=(3, 0))
+    checkout_card.grid(row=2, column=0, sticky="ew", pady=(3, 0))
     checkout_card.grid_columnconfigure(0, weight=1)
     label(checkout_card, "CHECKOUTS AND AGENT LANES", size=9, bold=True).grid(
         row=0, column=0, sticky="w")
@@ -581,7 +654,7 @@ def run(status_provider: Callable[[], dict],
             checkout_rows_window, width=event.width))
 
     process_card = frame(body, padx=5, pady=3)
-    process_card.grid(row=2, column=0, sticky="ew", pady=(3, 0))
+    process_card.grid(row=3, column=0, sticky="ew", pady=(3, 0))
     process_card.grid_columnconfigure(0, weight=1)
     process_card.grid_columnconfigure(1, weight=0)
     label(process_card, "MIMITA PROCESSES", size=9, bold=True).grid(
@@ -1174,6 +1247,115 @@ def run(status_provider: Callable[[], dict],
         elif state.get("process_empty_label"):
             state["process_empty_label"].grid_forget()
 
+    def update_game_queue_panel(model: dict) -> None:
+        game_headline, game_detail, progress = _game_dll_progress(
+            str(model.get("checkout") or ""))
+        game_build_value.configure(text=game_headline)
+        game_build_detail.configure(text=game_detail)
+        summary, job_title, stamp, ratio = _game_dll_queue_view(model, progress)
+        game_queue_summary.configure(text=summary)
+        job_color = RED if "FAILED" in job_title else (GREEN if "IDLE" in job_title else WHITE)
+        game_queue_title.configure(text=job_title, fg=job_color)
+        game_queue_time.configure(text=stamp)
+
+        width = max(1, game_queue_bar.winfo_width())
+        height = max(18, game_queue_bar.winfo_height())
+        game_queue_bar.delete("all")
+        game_queue_bar.create_rectangle(1, 1, width - 1, height - 1,
+                                        fill="#180000", outline=RED)
+        if ratio is not None:
+            game_queue_bar.create_rectangle(2, 2, max(2, int((width - 2) * ratio)),
+                                            height - 2, fill=RED, outline="")
+        phase_text = stamp.split("\n")[-1]
+        game_queue_bar.create_text(width // 2, height // 2, text=phase_text,
+                                   fill=WHITE, font=(family, 8, "bold"))
+
+        lines = []
+        attempt = str(progress.get("build_attempt_id") or "")
+        if attempt:
+            lines.append(f"attempt {attempt}")
+        source_generation = progress.get("source_generation")
+        if source_generation is not None:
+            lines.append(f"source generation {source_generation}")
+        revision = str(progress.get("revision") or "")
+        if revision:
+            lines.append(f"source revision {revision}")
+        active_sources = progress.get("active_sources")
+        if isinstance(active_sources, list) and active_sources:
+            lines.append("currently compiling: " + ", ".join(str(path) for path in active_sources[:4]))
+            active_started = progress.get("active_source_started") or {}
+            for path in active_sources[:4]:
+                started = active_started.get(path, {}) if isinstance(active_started, dict) else {}
+                lines.append(f"  {path}  queued {float(started.get('queue_wait_ms') or 0):.0f} ms")
+
+        notes = progress.get("notes") if isinstance(progress.get("notes"), list) else []
+        if notes:
+            lines.append("CHANGES:")
+            for note in notes[:8]:
+                if isinstance(note, dict):
+                    lines.append("  " + str(note.get("changes") or "(empty note)"))
+                    if note.get("files"):
+                        lines.append("    files: " + ", ".join(map(str, note["files"][:8])))
+        elif progress.get("status") in ("preparing", "running"):
+            lines.append("CHANGES: no agent note attached; run python devscripts/build-note.py --changes \"...\"")
+        pending_notes = progress.get("pending_notes")
+        if isinstance(pending_notes, list) and pending_notes:
+            lines.append("NEXT BUILD NOTES:")
+            lines.extend("  " + str(note.get("changes", "")) for note in pending_notes[:4]
+                         if isinstance(note, dict))
+
+        paths = progress.get("changed_paths")
+        if isinstance(paths, list) and paths:
+            lines.append("changed inputs: " + ", ".join(map(str, paths[:12])))
+
+        timeline = progress.get("timeline")
+        if isinstance(timeline, list) and timeline:
+            phase_durations = [item for item in timeline
+                               if isinstance(item, dict) and item.get("state") == "completed"]
+            if phase_durations:
+                lines.append("phase timeline:")
+                lines.extend(
+                    f"  {item.get('stage')}: {float(item.get('duration_ms') or 0):.0f} ms"
+                    for item in phase_durations[-6:])
+
+        recent = progress.get("file_events")
+        if isinstance(recent, list) and recent:
+            lines.append("LATEST SOURCE RESULTS:")
+            for item in recent[-10:]:
+                if not isinstance(item, dict):
+                    continue
+                result = {"compiled": "CXX", "skipped": "SKIP", "failed": "FAIL"}.get(
+                    str(item.get("status")), str(item.get("status", "?")).upper())
+                detail = (f"{float(item.get('compile_ms') or 0):.0f} ms compile"
+                          if result == "CXX" else
+                          f"{float(item.get('dependency_check_ms') or 0):.1f} ms dep check")
+                queue_wait = float(item.get("queue_wait_ms") or 0)
+                if queue_wait:
+                    detail += f"  ·  {queue_wait:.0f} ms queued"
+                lines.append(f"  {result}  {item.get('path', '')}  ·  {detail}")
+
+        for key, label_text in (("object_scan_s", "object/dependency scan"),
+                                ("compile_s", "compile wall time"),
+                                ("link_s", "link"),
+                                ("publish_s", "publish"),
+                                ("total_s", "whole attempt")):
+            value = progress.get(key)
+            if isinstance(value, (int, float)):
+                lines.append(f"{label_text}: {float(value):.3f}s")
+        if progress.get("dependency_check_ms") is not None:
+            lines.append(f"dependency checks sum: {float(progress['dependency_check_ms']):.1f} ms")
+        if progress.get("cache_record_overhead_ms") is not None:
+            lines.append(f"cache-result reporting sum: {float(progress['cache_record_overhead_ms']):.1f} ms")
+
+        if not lines:
+            lines.extend(["No active game DLL build.",
+                          "Agents can annotate the next build with:",
+                          "python devscripts/build-note.py --changes \"short explanation\""])
+        game_queue_rows.configure(state="normal")
+        game_queue_rows.delete("1.0", "end")
+        game_queue_rows.insert("1.0", "\n".join(lines))
+        game_queue_rows.configure(state="disabled")
+
     def refresh() -> None:
         if not state["frozen"]:
             try:
@@ -1342,10 +1524,7 @@ def run(status_provider: Callable[[], dict],
                     state["phase_color_mode"] = "rainbow"
                 phase_value.configure(text=phase_text, fg=phase_color)
 
-                game_headline, game_detail = _game_dll_progress(
-                    str(model.get("checkout") or ""))
-                game_build_value.configure(text=game_headline)
-                game_build_detail.configure(text=game_detail)
+                update_game_queue_panel(model)
 
                 runtime_value.configure(text=model.get("runtime", "Not running"),
                                          fg=GREEN if same_build else rainbow_color())

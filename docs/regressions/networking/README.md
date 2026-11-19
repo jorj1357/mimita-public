@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 16
+Entries: 17
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -125,3 +125,10 @@ Entries: 16
 - Status: FIXED IN SOURCE; fresh Payload server/client runtime and visible-window evidence recorded
 - Summary: The hot server policy expected request ABI version 2 while the resident startup, world-load, and configure requests defaulted to version 1.
 - Detail: [server-policy-startup-abi-REG-2026-11-17.md](server-policy-startup-abi-REG-2026-11-17.md)
+
+## Entry 17 — GUI room startup forced gameplay before the client joined
+
+- Recorded: 2026-11-19T00:48:20Z
+- Status: CLIENT WHITE-SCREEN MITIGATION IN SOURCE; SERVER EXIT CAUSE UNRESOLVED; LIVE VERIFICATION PENDING
+- Summary: GUI local room creation set `GAME_STATE` to gameplay before server acceptance/map readiness; an earlier analogous run had no accepted player/map and its hosted server exited before logger initialization.
+- Detail: [gui-room-startup-white-screen-REG-2026-11-18.md](gui-room-startup-white-screen-REG-2026-11-18.md)

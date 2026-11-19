@@ -81,6 +81,7 @@ systems first. Use this default order:
 | Destructible world, map cuts, physical fragments, map reset | `docs/specs/destructible-world/destructible-world.md`, `docs/specs/gamemodes/gamemodes.md`, `docs/specs/entity-editor/entity-editor.md`, `docs/specs/networking/networking.md` |
 | Movement, physics, collision | `docs/specs/movement/movement.md`, `docs/architecture/collision/collision.md` |
 | NPC behavior, combat profiles, or authored NPC movement | `docs/specs/npc-behavior/npc-behavior.md`, `docs/architecture/player-npc-systems/npc-movement.md` |
+| Creating monster avatars, limb collision, attacks, sounds, or shareable game-content packages | `docs/specs/creators/monster-authoring.md`, `docs/specs/animations/animations.md`, `docs/specs/avatar/avatar-editor.md`, `docs/specs/npc-behavior/npc-behavior.md`, `docs/specs/entity-editor/entity-editor.md`, `docs/specs/actor-presets/actor-presets.md`, `docs/specs/distribution/distribution.md` |
 | Actor presets, `roles.json`, actor loadouts, or mode team rosters | `docs/specs/actor-presets/actor-presets.md`, `docs/specs/gamemodes/gamemodes.md` |
 | Creator world projects, project versions/forks, distributed content, world-scoped saves | `docs/specs/world-projects/world-projects.md`, `docs/specs/entity-editor/entity-editor.md`, `docs/specs/networking/networking.md` |
 | Infinite RPG world authoring or connected procedural chunks | `docs/specs/gamemodes/rpg.md`, `docs/specs/entity-editor/entity-editor.md`, `docs/specs/procedural-infinite-world/procedural-infinite-world.md`, `docs/specs/networking/networking.md` |

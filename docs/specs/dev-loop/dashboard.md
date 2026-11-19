@@ -138,6 +138,13 @@ launch path; discovery itself does not adopt or relabel an external process.
   prevent attempts on the remaining checked targets.
 - Keep **Start server** and **Start client** as type-specific launch actions.
   The running-process checkboxes do not start already-running processes.
+- **Launch latest stable MiMITA.exe** is the quick-entry action: close existing
+  same-checkout clients, then immediately open exactly one fresh client from
+  the latest valid published build, even if newer source edits are waiting to
+  build. Do not queue or wait for a build from this button; use **Build** for
+  that. Retain a healthy matching server; replace it only when normal
+  build/configuration checks require it. Use **Start client** to add another
+  client without replacing the current clients.
 - Stopping an external process targets that MiMITA process only. It does not
   close or terminate the terminal, shell, or unrelated parent application that
   launched it. External processes are not restartable through the active run

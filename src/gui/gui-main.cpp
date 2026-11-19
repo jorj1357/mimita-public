@@ -557,7 +557,6 @@ bool launchServerPresetAndJoin(const MimitaNet::ServerLaunchSettings& settings)
             ? AuthSystem::instance().displayName()
             : launchSettings.hostPlayerName;
         THE_PLAYER.reset();
-        GAME_STATE = GAME_PLAYING;
         const std::string directAddress = gPendingConnect.directAddress;
         const bool directConnectStarted = MimitaNet::mpInit(
             MP_CONTEXT, directAddress, THE_PLAYER.username);

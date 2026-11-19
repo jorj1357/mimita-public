@@ -1280,6 +1280,7 @@ class DevLoop:
         self.game_build_detail = ""
         self.game_build_started_utc: str | None = None
         self.game_build_generation: int | None = None
+        self.game_build_source_generation: int | None = None
         self.last_game_build_result = ""
         self.last_game_build_duration_seconds: float | None = None
         self.launch_after_build = False
@@ -1879,6 +1880,7 @@ class DevLoop:
                 "game_build_detail": self.game_build_detail,
                 "game_build_started_utc": self.game_build_started_utc,
                 "game_build_generation": self.game_build_generation,
+                "game_build_source_generation": self.game_build_source_generation,
                 "game_build_requests": dict(self.game_build_requests),
                 "last_game_build_result": self.last_game_build_result,
                 "last_game_build_duration_seconds": self.last_game_build_duration_seconds,
@@ -1973,6 +1975,7 @@ class DevLoop:
                 "detail": build_snapshot["game_build_detail"],
                 "started_utc": build_snapshot["game_build_started_utc"],
                 "generation": build_snapshot["game_build_generation"],
+                "source_generation": build_snapshot["game_build_source_generation"],
                 "requests": build_snapshot["game_build_requests"],
                 "last_result": build_snapshot["last_game_build_result"],
                 "last_duration_seconds": build_snapshot["last_game_build_duration_seconds"],
@@ -2511,6 +2514,8 @@ class DevLoop:
         for prefix, name, label in (
             ("[GAME_NOTE] ", "dev-loop.game-build.started",
              "saved compiler inputs captured for game DLL build"),
+            ("[GAME_STAGE] ", "dev-loop.game-build.stage",
+             "whole-game DLL build phase changed"),
             ("[GAME_FILE] ", "dev-loop.game-build.file",
              "game DLL translation unit completed"),
         ):
@@ -2528,7 +2533,8 @@ class DevLoop:
         with self.lock:
             self.game_build_detail = detail
             self.last_message = detail
-        self.save_state("game_building")
+        if event_name != "dev-loop.game-build.file":
+            self.save_state("game_building")
 
     def start_game_build_worker(self) -> None:
         with self.lock:
@@ -2541,6 +2547,7 @@ class DevLoop:
             self.active_game_build_request_ids = request_ids
             self.game_build_status = "building"
             self.game_build_started_utc = utc_now()
+            self.game_build_source_generation = self.generation
             self.game_build_detail = "starting whole-game build"
             self.last_message = "building whole-game DLL generation"
             for request_id in request_ids:
@@ -2548,17 +2555,18 @@ class DevLoop:
         self.save_state("game_building")
         self.game_build_worker = threading.Thread(
             target=self._run_game_build_worker,
-            args=(request_ids,),
+            args=(request_ids, self.game_build_source_generation or 0),
             name="dev-loop-game-build",
             daemon=False,
         )
         self.game_build_worker.start()
 
-    def _run_game_build_worker(self, request_ids: list[str]) -> None:
+    def _run_game_build_worker(self, request_ids: list[str],
+                               source_generation: int) -> None:
         started = time.monotonic()
         try:
             result = run_game_build_worker(
-                ROOT, request_ids, self.pending_build_mode,
+                ROOT, request_ids, self.pending_build_mode, source_generation,
                 on_output=self._record_game_build_output)
         except Exception as error:  # noqa: BLE001 - report through dev-loop state
             result = {"success": False, "error": str(error), "request_ids": request_ids}
@@ -2719,22 +2727,24 @@ class DevLoop:
                 # weapon value is stale state, not an explicit host selection.
                 self.override_weapon_set = (
                     "" if mode_weapon_set == "auto" else requested_weapon_set)
-                if self.latest_build is None or self.latest_stale:
-                    self.launch_after_build = True
-                    self._queue_build_if_needed()
-                    self.last_message = "dashboard launch waiting for source validation/build"
-                    self.record_control_event(request, "accepted", self.last_message)
-                    self.save_state("launch_waiting_for_build")
-                else:
-                    launched = self.launch_for_control_request(request)
-                    if not launched:
-                        self.last_message = self.last_message or (
-                            f"dashboard launch failed for build {self.latest_build}"
-                        )
-                    self.record_control_event(
-                        request, "completed" if launched else "failed", self.last_message
+                # This button is the fast path into the latest valid published
+                # executable. Building is an explicit separate dashboard action.
+                if self.launch_after_build:
+                    self.launch_after_build = False
+                    self.record_runtime_event(
+                        "dev-loop.launch.after-build.cancelled",
+                        {"request_id": str(request.get("request_id", ""))},
+                        "immediate dashboard launch superseded a deferred launch",
                     )
-                    self.save_state("launch_latest" if launched else "launch_failed")
+                launched = self.launch_for_control_request(request)
+                if not launched:
+                    self.last_message = self.last_message or (
+                        f"dashboard launch failed for build {self.latest_build or '(none)'}"
+                    )
+                self.record_control_event(
+                    request, "completed" if launched else "failed", self.last_message
+                )
+                self.save_state("launch_latest" if launched else "launch_failed")
             elif action == "set-launch-mode":
                 requested_mode = request.get("launch_mode")
                 try:
@@ -3758,28 +3768,6 @@ class DevLoop:
         self.override_map = ""
         stage("launch_configuration", "resolved", "launch mode and map resolved",
               mode_name=self.launch_mode.get("name", "unnamed"))
-        if (
-            not map_override and not weapon_override
-            and self.client_args and self.client_args[0] == str(launch_exe)
-            and any(process.poll() is None for process in self.processes)
-            and self.client_ready and self.builds_match
-            and any(instance.get("instance_id") == "client-01" and
-                    instance.get("state") == "online"
-                    for instance in self._instance_records())
-            and self.server_build_id == build_id
-            and stable_launch_matches(exe)
-            and self.server_health()
-            and self.server_matches_launch_configuration(launch_exe, map_name, build_id)
-        ):
-            self.last_message = f"last successful build {selected_build} is already running"
-            stage("process_reuse", "reused", self.last_message,
-                  server_pid=self.server_pid,
-                  client_pids=[p.pid for p in self.processes if p.poll() is None])
-            stage("complete", "succeeded", self.last_message)
-            self.save_state("launch_reused")
-            self.print_status()
-            return True
-
         print(f"[DEV] selected allowed map: {map_name}")
         stage_started = time.monotonic()
         if not self.validate_firewall_policy():
@@ -3816,7 +3804,7 @@ class DevLoop:
             self.save_state("process_reconciliation_failed")
             return False
         stage("client_reconciliation", "completed",
-              "same-checkout MiMITA processes exited before replacement",
+              "previous clients exited; healthy servers retained",
               stopped_pids=stopped_pids)
         self.client_ready = False
         self.builds_match = False
@@ -4282,16 +4270,8 @@ class DevLoop:
               self.last_message if not self.client_ready else "client logger.started observed",
               stage_started, client_pid=client.pid, exit_code=client.returncode,
               timeout_seconds=20, journal_path=self.events_path)
-        # Start extra configured clients after the primary logger is ready but
-        # before connection/mode readiness waits. The server/room is known by
-        # then, and both humans can still join before the round roster locks.
-        if len(configured_clients) > 1:
-            for index, client_cfg in enumerate(configured_clients[1:], start=2):
-                extra_name = str(client_cfg.get("name") or f"Client {index}")
-                extra_preset = str(client_cfg.get("badconn_preset", "") or "")
-                started = self.start_client_instance(extra_name, extra_preset)
-                if started is None:
-                    print(f"[DEV] additional client {extra_name} failed: {self.last_message}")
+        # Launch latest stable is the quick-entry path: it always starts one
+        # fresh client. Additional clients are an explicit Start client action.
         self.builds_match = bool(self.server_ready and self.client_ready and
                                  self.server_exe == str(launch_exe) and
                                  identity.get("valid") and
@@ -4595,7 +4575,7 @@ class DevLoop:
         return stopped
 
     def reap_stray_mimita_processes(self) -> tuple[bool, list[int]]:
-        """Replace same-checkout MiMITA processes for an explicit launch."""
+        """Replace same-checkout clients while retaining server processes."""
         try:
             processes = self._checkout_mimita_processes(strict=True)
         except RuntimeError as error:
@@ -4606,6 +4586,15 @@ class DevLoop:
                 self.last_message)
             return False, []
 
+        def process_role(item: dict) -> str:
+            command_line = str(item.get("command_line") or "").strip()
+            if int(item.get("pid", 0) or 0) == self.server_pid or \
+                    "--server" in command_line.lower().split():
+                return "server"
+            return "client" if command_line else "unknown"
+
+        clients = [item for item in processes if process_role(item) == "client"]
+        unknown = [item for item in processes if process_role(item) == "unknown"]
         killed: list[dict] = []
         stopped_pids: list[int] = []
 
@@ -4617,7 +4606,11 @@ class DevLoop:
                  "killed": killed, "stopped_pids": stopped_pids}, reason)
             return False, stopped_pids
 
-        for observed in processes:
+        if unknown:
+            return refuse("cannot determine client/server role for same-checkout MiMITA process",
+                          {"unclassified": unknown})
+
+        for observed in clients:
             try:
                 pid = int(observed.get("pid", 0) or 0)
             except (TypeError, ValueError):
@@ -4639,7 +4632,8 @@ class DevLoop:
             same_process = (
                 str(current.get("process_started_utc") or "") == expected_started and
                 os.path.normcase(str(current.get("executable") or "")) ==
-                os.path.normcase(expected_executable)
+                os.path.normcase(expected_executable) and
+                process_role(current) == "client"
             )
             if not same_process:
                 return refuse(
@@ -4667,18 +4661,28 @@ class DevLoop:
             return refuse(f"cannot verify MiMITA process exit: {error}")
         remaining = [item for item in remaining
                      if int(item.get("pid", 0) or 0) != os.getpid()]
-        if remaining:
-            pids = [int(item.get("pid", 0) or 0) for item in remaining]
+        remaining_clients = [item for item in remaining if process_role(item) == "client"]
+        retained_servers = [item for item in remaining if process_role(item) == "server"]
+        remaining_unknown = [item for item in remaining if process_role(item) == "unknown"]
+        if remaining_clients or remaining_unknown:
+            pids = [int(item.get("pid", 0) or 0)
+                    for item in remaining_clients + remaining_unknown]
             self.last_message = f"MiMITA process(es) still alive after cleanup: {pids}"
             self.record_runtime_event(
                 "dev-loop.process.reconcile",
-                {"result": "failed", "killed": killed, "remaining": remaining},
+                {"result": "failed", "killed": killed,
+                 "remaining_clients": remaining_clients,
+                 "remaining_unclassified": remaining_unknown,
+                 "retained_server_pids": [int(item.get("pid", 0) or 0)
+                                          for item in retained_servers]},
                 self.last_message)
             return False, stopped_pids
         self.record_runtime_event(
             "dev-loop.process.reconcile",
-            {"result": "completed", "killed": killed, "remaining": []},
-            "verified same-checkout MiMITA processes exited before explicit replacement",
+            {"result": "completed", "killed": killed, "remaining_clients": [],
+             "retained_server_pids": [int(item.get("pid", 0) or 0)
+                                      for item in retained_servers]},
+            "verified same-checkout clients exited while retaining servers",
         )
         return True, stopped_pids
 
@@ -6504,6 +6508,7 @@ def run_dashboard(args: argparse.Namespace) -> int:
                                   f"published generation {latest.get('latest_successful_source_generation')}"
                                   if latest.get("latest_build_stale") else "")
                         ),
+                        "game_build": latest.get("game_build") or {},
                     }
 
                 def gui_processes():
