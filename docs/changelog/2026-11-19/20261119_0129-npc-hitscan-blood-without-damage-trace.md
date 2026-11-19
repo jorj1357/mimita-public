@@ -24,19 +24,31 @@
   with a compiler subprocess error, `fatal error: stdout: Bad file descriptor`;
   it was not a C++ diagnostic. An automatic retry then stopped because the
   derived packet ledger was stale. The ledger/header were regenerated.
-- The root dev-loop accepted automatic game DLL generation `auto-14` after the
-  packet files were regenerated. At the last allowed status observation it was
-  still `building`; no successful DLL build or activation is claimed.
-- The active run `20261119_012255` is Juggernaut with zero NPCs and runs EXE
-  build `2026-11-19T00:53:35.016823Z`. Starting a second server was rejected
-  because the dev-loop supports only one active server in this run. That run
-  cannot reproduce incoming NPC hitscan and was left running.
+- Automatic generation `auto-14` failed because the diagnostic referenced an
+  unavailable NPC map in `broadcastNpcFiring`; that lookup was corrected to
+  use its owned `NpcSystem`. The dev-loop then accepted automatic generation
+  `auto-15`; its last status was `building`, so no successful DLL build or
+  activation is claimed.
+- At the user's request, launched mode 32, “duel npc elite,” as run
+  `20261119_013346` on `xxity2` with one NPC. The root loop replaced the prior
+  Juggernaut test run. Server PID 35412 and client PIDs 33704 (`NPC Dev`) and
+  14368 (`NPC Hitscan Blood Trace`) connected to port 51326. All ran EXE build
+  `2026-11-19T00:53:35.016823Z`; the new DLL diagnostics were not in that
+  module.
+- Baseline journal snapshot: server `npc.shot`=137, including 12 revolver, 4
+  shotgun, 28 hitscan-rifle, and 22 big-shotgun shots. It recorded 11
+  `server.damage.applied` hitscan events and 6 rocket-explosion damage events.
+  Client `NPC Dev` recorded 15 `client.npc.damage-visible` and 15
+  `presentation.local_victim_damage` events. This proves hitscan damage was
+  applied in this run, but does not prove the reported blood-without-server-hit
+  case absent or reproduced: the pre-fix client had no pellet-presentation
+  trace. The named client's journal also recorded confirmed damage events.
 
 ## Runtime status
 
-No after-fix runtime evidence is available yet. To complete validation, the
-root dev-loop must publish and activate the new module, then launch a fresh
-NPC-bearing Duel run/client with a distinct test name. Compare server and client
-events by shot serial and tick: `npc.shot`, `server.npc.pellet-entity-impact`,
+No after-fix runtime evidence is available yet. The currently running Duel
+clients use the old module while automatic generation `auto-15` is building.
+After a successful publish and activation, compare server and client events by
+shot serial and tick: `npc.shot`, `server.npc.pellet-entity-impact`,
 `client.pellet-entity-impact-presented`, `npc.damage`, and the authoritative
 damage confirmation/health change.

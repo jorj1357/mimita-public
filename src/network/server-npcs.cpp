@@ -1096,15 +1096,10 @@ static void broadcastNpcFiring(SOCKET sock,
             if (entityImpactPellets > 0) {
                 int targetHealthAfter = -1;
                 if (n.cachedServerTargetIsNpc) {
-                    auto state = npcs.find(n.serverTargetId);
-                    if (state != npcs.end())
-                        targetHealthAfter = state->second.health;
-                    else {
-                        for (const Npc& target : npcSystem.all()) {
-                            if (target.id == n.serverTargetId) {
-                                targetHealthAfter = target.body.currentHp;
-                                break;
-                            }
+                    for (const Npc& target : npcSystem.all()) {
+                        if (target.id == n.serverTargetId) {
+                            targetHealthAfter = target.body.currentHp;
+                            break;
                         }
                     }
                 } else {

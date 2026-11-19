@@ -273,6 +273,27 @@ and publication. Each phase has UTC start/end times plus monotonic elapsed
 milliseconds. A build attempt has one stable attempt ID, source generation,
 manifest revision, and output generation.
 
+The current worker selects manifest sources with owner `game`, then excludes
+`src/game/probe/npc-target-probe-module.cpp` from the whole-game artifact. It
+generates `build/game/identity/module-identity.h`; module wrapper translation
+units include it and receive the module-entry symbol mapping. Debug builds use
+`-Og -g1`, release builds use `-O2 -g`, both use C++17, project/vendor include
+paths, the game-DLL defines, dependency-file output, and optional forced PCH.
+Every stale source becomes an object in the persistent flags-keyed object
+cache. The linker response file includes all selected object paths, the
+optional diagnostic `src/glad.c` object, `libmanifold.a`, GLFW search path,
+and the Windows/system libraries in `game_build_worker.py`. The resulting
+staging DLL is source-coherence checked, renamed to `game-g<N>.dll`, hashed,
+and published via `current.json`.
+
+The generation number and source revision are written into
+`module-identity.h`. Since that generated header is an included dependency of
+the module wrappers, changing it can invalidate those wrapper objects on each
+generation even when their own C++ files are unchanged. Treat the repeated
+wrappers as a concrete fan-out candidate; moving generation identity out of
+compile-time inputs could reduce rebuilds, but only after verifying the module
+identity/ABI contract.
+
 For each translation unit, record dependency-check start/end and duration,
 whether a fresh object was reused or compilation was needed, executor queue
 wait, compiler start/end, compiler duration, per-event progress-file write
@@ -312,6 +333,22 @@ time because source compilation runs concurrently. The failure occurred in
 `src/network/server-npcs.cpp`; the captured GCC output reports an
 `rtmintrin.h` include failure and `stdout: Bad file descriptor`. The cause is
 not established; do not treat this as a Juggernaut runtime failure.
+
+The 13 compile inputs were the 11 module wrappers
+`src/navigation/navigation-policy-module.cpp`,
+`src/network/network-policy-module.cpp`,
+`src/render/world-rendering-module.cpp`,
+`src/npc/npc-perception-module.cpp`, `src/map/map-geometry-module.cpp`,
+`src/mapeditor/map-editor-module.cpp`,
+`src/physics/movement/actor-contact-policy-module.cpp`,
+`src/world/chunk-collision-module.cpp`, `src/npc/npc-behavior-module.cpp`,
+`src/render/actor-rendering-module.cpp`, `src/worldgen/infinite-worldgen-module.cpp`,
+plus `src/npc/npc-combat.cpp` and `src/network/multiplayer-shots.cpp` (the
+change report listed the latter as changed). `src/network/server-npcs.cpp` was
+the other changed source and its compile failed. The reason
+`src/npc/npc-combat.cpp` was rebuilt is not established by the retained
+change report. Thus, 11 of 13 successful object compiles were wrapper fan-out
+from the generated identity header, not direct edits to those wrapper files.
 
 In the 244 per-file rows still present in the run journal, the median delay
 between the worker's file-completion timestamp and the dev-loop's journal

@@ -30,24 +30,20 @@ The target path starts from the normal MiMITA executable. A creator should not
 need a terminal, an external JSON editor, a separate game executable, or a
 manual build to make and play a content project.
 
-1. Open MiMITA and use the game terminal to run
-   `mapeditor_create <project-id> [title]`.
-2. The command creates a native project with a starter floor and player spawn,
-   opens its working map, loads it into the game, and enters Map Editor mode.
-   It rejects an invalid or existing project ID without overwriting anything.
-   A later **Create → New Map** menu calls this same command action and project
-   service instead of implementing another creation path.
-   To customize an existing Infinite World, use
-   `mapeditor_clone <source-world-id> <project-id> [title]`; it forks that
-   world into an independent local project before opening the editor.
-3. Choose **Edit Map** to enter the existing Map Editor on that project's
+1. Open MiMITA and choose **Create → New Map**. Name the project and choose
+   **Blank Map** or **Clone World**. Blank Map creates a starter floor and
+   player spawn, loads the new working map, and enters Map Editor. Clone World
+   shows eligible installed worlds and creates an independent local fork
+   before opening it. Invalid or existing project IDs are rejected without
+   overwriting anything.
+2. Choose **Edit Map** to enter the existing Map Editor on that project's
    active map. Place and transform blocks, choose materials/textures from the
    installed asset library, place supported lights, and add player spawns,
    individual monster placements, and monster spawn volumes. Outliner search,
    property editing, undo/redo, validation, and save operate on this same
    project's JSON and referenced assets.
-4. Choose **Create Monster** or open a monster already in the project. Import
-   an existing supported model or start from an installed monster. Map its
+3. Choose **Create Monster** or open a monster already in the project. Start
+   from an editable primitive rig or import an existing supported model. Map its
    mesh nodes to body parts, preview collision, create locomotion clips, and
    author attacks with animation keyframes, active spheres, sound events, and
    cooldowns. Edit body dimensions, named skeleton joints, damage layers, and
@@ -55,13 +51,18 @@ manual build to make and play a content project.
    monster into the project and make it available to map placements and
    spawn-volume pools. Bloodtest-specific damage, role movement, and projectile
    replay behavior is owned by `docs/specs/gamemodes/bloodtest.md`.
-5. Choose **Create Mode** or **Play Test**. A mode wizard selects the project's
+4. Choose **Create Mode** or **Play Test**. A mode wizard selects the project's
    map, roster, and flow. Play Test may use a default local survival mode so
    the creator can try the map before authoring a custom mode.
-6. Play the real server-authoritative simulation using the current saved
+5. Play the real server-authoritative simulation using the current saved
    project revision. The creator can stop/pause the test and return to the same
    editor selection and camera state, change map/monster/mode data, save, and
    play again without closing or relaunching MiMITA.
+
+The terminal command remains available as a power-user and first-slice route:
+`mapeditor_create <project-id> [title]` and
+`mapeditor_clone <source-world-id> <project-id> [title]` call the same project
+service and actions as the Create screen. They are not separate workflows.
 
 The editor and local play test use one running application and the same
 project root. **Edit Mode** suspends gameplay simulation; **Play Test** hides
@@ -70,6 +71,30 @@ rendering, previews, and asset browsers must not run during Play Test unless
 shown, and authoring tools must not add work to fixed-tick gameplay loops.
 Returning from Play Test restores the editable project, not the test's
 temporary actor/map state.
+
+## Delivery slices
+
+Implement this as vertical slices that each leave a usable path in the normal
+executable:
+
+1. **Map loop:** Create screen, blank project creation, block add/select/
+   move/rotate/scale, player spawn, save/reopen, Play Test, and return-to-edit.
+2. **Monster placement:** monster spawn volumes, individual spawn/reset,
+   primitive six-part monster, per-part material selection, and role/health
+   setup. Prove a volume can spawn the selected monster in local Play Test.
+3. **Monster authoring:** supported GLB import, rig/body/collision views,
+   `idle`/`walk`/`attack_1`/`hurt` clips, attack sphere timeline, sound
+   references, and optional weapon attachment.
+4. **Live tune and launch:** safe live data revisions, My Creations list,
+   Play Local launch, and the Community screen's separate Servers and Content
+   lists. Keep local launch independent of publishing/network availability.
+5. **Sharing and discovery:** portable package export/import first, then remote
+   catalog, dependency fetch, signing, and moderation under the Distribution
+   specification.
+
+Each slice must pass its own `events.jsonl` acceptance scenario before the
+next one is treated as complete. Later slices may not be claimed from earlier
+map-only evidence.
 
 ## Native project format for the first version
 
@@ -94,12 +119,12 @@ project already has a manifest, version identity, and asset references. Export
 can bundle or reference permitted assets without changing the in-game editing
 format.
 
-## Console-first creation command
+## Create action and terminal command
 
-`mapeditor_create <project-id> [title]` is the first implementation slice of
-the Create flow. It belongs to the map-editor/project command module and uses
-the existing `WorldProjectStore` and `MapConfigRegistry`. The GUI Create button
-will call the same operation later.
+`mapeditor_create <project-id> [title]` is the terminal entry to the shared
+Create action. The normal in-game entry is Create → New Map. Both use the
+map-editor/project command module, existing `WorldProjectStore`, and
+`MapConfigRegistry`; the GUI must not create a separate project path.
 
 On success it:
 
@@ -108,15 +133,17 @@ On success it:
 3. writes the native project manifest, working JSON, and initial immutable
    version under the per-user world-project root;
 4. loads the new working map and enters Map Editor on that map; and
-5. reports the project ID and working-file path and emits a structured
-   `world-project.created` result.
+5. reports the project ID and working-file path; emits
+   `world-project.created` after the initial documents are safely written and
+   `map-editor.create.applied` after the new map is loaded and the editor is
+   active.
 
 If local world or editor activation fails, the command reports the failed step
 and leaves the project recoverable. It must not silently leave the editor on a
 different map. `worldproject create` remains the lower-level action for
 capturing the current map as a project; it does not replace creating and
-entering a new starter map. GUI controls are added after the same command path
-works in the terminal.
+entering a new starter map. The GUI and terminal call the same validated
+operation and return the same structured result.
 
 `mapeditor_clone <source-world-id> <project-id> [title]` creates an independent
 project from a named world variant. For `infinite_xxity`, the clone includes
@@ -159,6 +186,14 @@ Damage continues to query the authored body parts. Ragdoll simulation continues
 to use the articulated physical-body definition owned by the ragdoll system.
 Bloodtest owns its role and acceptance behavior in
 `docs/specs/gamemodes/bloodtest.md`.
+
+**New Monster** creates a blockout avatar with editable head, torso, two arms,
+and two legs joined to named pivots. Each part can be resized, moved, rotated,
+assigned a material/texture from the installed asset library, or replaced with
+a node from an imported supported model. The blockout must be animatable and
+spawnable before the creator adds custom meshes. Per-part texture selection
+and the model's UVs are supported; texture painting is not required for the
+first editor version.
 
 - Clips store named-part poses at integer fixed simulation ticks. Locomotion
   such as walk loops; attacks are one-shots with windup, active, recovery, and
@@ -232,7 +267,12 @@ reason and must not emit the success event.
 
 | Success event | Owner and required event-specific fields | What it proves |
 |---|---|---|
+| `world-project.created` | Project store; `project_id`, `working_path`, `initial_version`, `manifest_hash`, `map_id`, `result` | The initial native project documents were persisted successfully. It does not alone prove the game loaded the map. |
 | `map-editor.create.applied` | Project/map owner; `project_id`, `map_id`, `working_path`, `initial_version`, `editor_active:true`, `world_loaded:true`, `floor_id`, `spawn_id` | `mapeditor_create` created the starter project, loaded that project's map into a live world, and activated the editor. A project-file write alone is insufficient. |
+| `map-editor.entity.transform.applied` | `project_id`, `map_id`, `entity_id`, `before_position`, `after_position`, `before_rotation`, `after_rotation`, `before_scale`, `after_scale`, `render_revision`, `collision_revision`, `result` | Move/rotate/scale edits reached both the live viewport and collision world. |
+| `map-editor.spawn-volume.applied` | `project_id`, `map_id`, `volume_id`, `monster_ids`, `max_alive`, `spawn_interval_ticks`, `activation_policy`, `revision`, `result` | The saved volume resolves the selected monster pool and spawn limits. |
+| `monster.spawn.applied` | `actor_id`, `monster_id`, `source_volume_id`, `project_revision`, `rig_revision`, `mode_id`, `tick` | The runtime created the selected monster from the authored volume. |
+| `creator.project.action.applied` | `project_id`, `project_revision`, `action` (`edit` or `play_local`), `map_id`, `mode_id`, `run_id`, `pid`, `result` | The selected saved creation opened in the editor or launched into its local game session. |
 | `map-editor.autosaved` | Existing map-editor owner; retain `map`, `path`, `revision`, `saved_revision`, `dirty_after_save`, `entity_count`, `block_count`; add `project_id` and `project_revision` for projects | The edited revision was written and is no longer dirty. |
 | `map-editor.playtest.started` / `map-editor.returned` | `project_id`, `map_id`, `project_revision`, `mode_id`, `run_id`, `editor_active`, `gameplay_active`, `pid` | The local server-authoritative test began and returned to the same project in the same game process. |
 | `avatar.model.imported` | Avatar/import owner; `avatar_id`, `source_path`, `source_sha256`, `rig_revision`, `node_count`, `mapped_part_count`, `unmapped_nodes`, `result` | The model was parsed and the declared rig mapping was installed. |
@@ -240,6 +280,7 @@ reason and must not emit the success event.
 | `monster.attack.definition.loaded` | Attack registry; `actor_id`/`avatar_id`, `attack_id`, `revision`, `animation_clip`, `windup_end_tick`, `active_end_tick`, `end_tick`, `hitbox_count`, `valid:true` | The server installed the validated attack and its timeline. |
 | `monster.attack.hitbox.sample` | Authoritative server, bounded trace only; `actor_id`, `action_id`, `attack_revision`, `clip_tick`, `phase`, `hitbox_id`, `active`, `center_world`, `previous_center_world`, `radius_m`, `swept_query_result` | The server evaluated each expected sphere at the expected fixed tick and used it in the swept query. Emit once per sphere/tick only during a bounded editor test capture. |
 | `monster.attack.hit` | Authoritative server; `attacker_id`, `target_id`, `action_id`, `hitbox_id`, `tick`, `damage`, `target_health_before`, `target_health_after`, `contact_position`, `attack_revision` | The configured attack actually hit the target and changed authoritative health. |
+| `monster.tuning.applied` | Authoritative server; `actor_id`, `project_id`, `project_revision`, `previous_revision`, `active_revision`, `changed_fields`, `activation_tick`, `result` | A validated local live-tuning revision was installed on the selected actor at the fixed-tick boundary. |
 | `monster.sound.started` | Audio owner; `actor_id`, `event_name`, `asset_path`, `asset_revision`, `voice_id`, `result:"started"` | The requested sound asset reached the audio playback owner. Human listening is still required to prove it sounded correct. |
 
 High-frequency pose and sphere samples are disabled in normal play. The editor
@@ -255,15 +296,20 @@ dev-loop. Its client and server journals are separate and must match the same
 `run_id`, `build_id`, project revision, mode, and actor IDs. The bounded test
 scenario passes only when it sees, in order:
 
-1. `map-editor.create.applied` with the project loaded and editor active;
-2. `map-editor.autosaved` for the block, spawn, and monster volume edits;
+1. `world-project.created` followed by `map-editor.create.applied` with the
+   project persisted, loaded, and the editor active;
+2. `map-editor.entity.transform.applied` for block move/rotate/scale and
+   `map-editor.autosaved` for the block, player spawn, and monster volume;
 3. `map-editor.playtest.started` with the same project revision;
 4. `avatar.model.imported`, `anim.set.reloaded`, and the intended per-tick
-   animation preview/runtime events;
+   animation preview/runtime events, followed by `monster.spawn.applied` for
+   an actor created by the authored spawn volume;
 5. `monster.attack.definition.loaded`, one sample for every active sphere
    tick, and `monster.attack.hit` against the deliberate test target with
-   health decreasing; and
-6. `map-editor.returned` for the same project, map, and process ID.
+   health decreasing;
+6. `monster.tuning.applied` after a live damage/hitbox edit, followed by a
+   later attack using the new revision; and
+7. `map-editor.returned` for the same project, map, and process ID.
 
 Also require a terminal `scenario.finished` with `passed:true` and every
 assertion evaluated. Build success, JSON parsing, command receipt, client-only
@@ -387,6 +433,11 @@ runtime. Each tab edits the same validated data consumed by the game.
 - Save clips through the existing per-avatar `animations.json` / shared clip
   library format. Saving a valid clip reloads the active avatar at a fixed-tick
   boundary; malformed edits retain the last valid set.
+- A new blockout monster starts with editable `idle`, `walk`, `attack_1`, and
+  `hurt` clips. It can add `attack_2`, `death`, `run`, and movement-specific
+  clips such as `fly`, `crawl`, or `roll`. Missing optional clips use an
+  explicit fallback and are shown as missing in the clip list; they are never
+  reported as authored or loaded.
 
 ### Attack and active-sphere timeline
 
@@ -425,6 +476,26 @@ runtime. Each tab edits the same validated data consumed by the game.
   with controls to pause/resume its AI, request a named attack, and reset it.
   Show movement/attack state and current asset revisions. It must not add a
   permanent map spawn or affect a public match.
+- A monster may reference an optional weapon model and a named hand/socket
+  attachment. The weapon follows that attachment in preview and Play Test;
+  collision and attack behavior still come from the selected shared weapon or
+  authored attack definition. A missing weapon asset is a visible validation
+  issue, not a reason to fail the monster's other clips.
+
+### Live test tuning
+
+During local Play Test, the creator can select a spawned monster and edit its
+validated health, direct damage values, attack cooldowns, movement tuning, and
+attack hitbox tracks. The editor submits a new project revision to the local
+authoritative runtime. The server validates it and applies it at a safe fixed
+tick boundary; a rejected revision leaves both the running monster and last
+valid saved revision intact. Existing actors receive role/health/movement
+changes only when the creator chooses **Apply to selected monster**; future
+spawn-volume instances use the new saved revision. A running attack keeps its
+captured attack revision through recovery, and later attacks use the new one.
+The UI shows active and pending revisions, and undo restores a new validated
+revision rather than mutating the past. This tuning action is local to Play
+Test and never writes into a public session.
 
 The new panels should call host-owned services for document edits, validation,
 undo/redo, save, preview spawning, and reload. The UI owns presentation and
@@ -460,6 +531,37 @@ specified waves. The mode composes the existing match lifecycle and monster
 systems rather than creating its own movement, damage, or actor registry.
 Creators can launch a local test session from the project and inspect which
 map, mode, monster, and assets resolved.
+
+## Create, My Creations, and Community launch surface
+
+The executable exposes three direct destinations from its home/play surface:
+**Create**, **My Creations**, and **Community**. The in-game Community screen
+keeps two clearly separate lists under one navigation surface:
+
+- **Servers** lists joinable live servers and retains the existing server
+  browser's player count, ping, tags, and Join action.
+- **Content** lists locally saved projects and installed world/mode packages.
+  A local project card provides **Edit** and
+  **Play Local** actions. A published/installed content card provides
+  **Inspect**, **Install/Update** when needed, and **Play** when its entry mode
+  and dependencies are available.
+
+Selecting **Play Local** starts a local authoritative session using the
+project's saved map and entry mode, then launches directly into that session;
+it does not require publication, a community listing, or an Internet
+connection. Selecting **Join** on a server remains a network join and is never
+silently redirected to local content. If a server requires a content package,
+the existing distribution rules verify its manifest and hashes, show required
+downloads, and only then permit joining. The content browser does not replace
+the server browser's query, refresh, or join semantics.
+
+This design makes newly made things launchable without making a creator
+publish first. Remote public discovery, moderation, package signing, and
+automatic fetch policy continue to follow
+`docs/specs/distribution/distribution.md` and are a later stage than local My
+Creations launch. GUI presentation remains
+data-defined under `docs/specs/gui/guiv2.md`; Create, Edit, Play Local, Inspect,
+and Join call shared named actions rather than separate hard-coded screens.
 
 ## Data validation, save, and recovery
 
@@ -523,6 +625,18 @@ not implied by local package support.
 9. Export and re-import a data-only package; missing files, invalid hashes,
    traversal paths, unsupported schemas, and executable content are rejected
    without damaging the existing project.
+10. From the executable's Create screen, make a blank map without using the
+    terminal; place, rotate, and scale blocks, create player spawns and a
+    monster spawn volume, save, and reopen the project with the same transforms.
+11. Create a monster from the primitive rig, assign per-part textures, author
+    `idle`, `walk`, `attack_1`, `attack_2`, and `hurt` clips and hitboxes, then
+    spawn it from the map's volume in local Play Test.
+12. Change the selected monster's damage and attack hitbox during Play Test;
+    confirm the server applies the validated revision at a fixed tick and the
+    next attack/next spawn uses it without restarting MiMITA.
+13. Open My Creations from the Community/Play surface and use **Play Local**;
+    verify it launches the saved project directly. Confirm **Join** on a server
+    remains a separate network action.
 
 Compilation, editor preview, and JSON validation are separate from live
 server behavior and human acceptance. Each must be reported as its own

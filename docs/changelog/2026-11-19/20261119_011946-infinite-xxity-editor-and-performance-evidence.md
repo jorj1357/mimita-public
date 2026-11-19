@@ -71,3 +71,38 @@
   `docs/specs/gamemodes/zombie-tower/zombie-tower.md:5861`
   (`2026 10 06 1603 jorj todo - explain zombie tower`; suggest a concise
   summary of the co-op survival premise, floor progression, and mode contract).
+
+## In-game creator entry and launch flow
+
+- Reordered the end-user workflow so Create → New Map is the primary entry;
+  terminal `mapeditor_create`/`mapeditor_clone` remain aliases to the same
+  project action for the first implementation slice and power users.
+- Added New Monster blockout creation with editable head/torso/arms/legs,
+  named pivots, part transforms, per-part material/texture assignment, and
+  later replacement with imported model nodes. Required starter clips are
+  idle, walk, attack_1, and hurt; attack_2 and other clips can be authored.
+- Added optional weapon model/socket attachment, explicit local Play Test
+  controls for applying validated damage/health/movement/hitbox revisions,
+  and fixed-tick activation semantics for existing and future spawned actors.
+- Specified a Create / My Creations / Community launch surface. The Community
+  screen keeps server Join separate from local Play Local, and local projects
+  remain playable offline without publishing. Remote package discovery,
+  signing, and automatic network fetch remain governed by Distribution and
+  are later than local project launch.
+- Added acceptance scenarios for UI map creation, block transforms, primitive
+  monster authoring, live tuning, spawn-volume use, and My Creations launch.
+  Updated Router routes and linked the shared GUI specification for
+  creator-launch UI ownership. Reconciled the old console-first wording so
+  Create UI and terminal call one project action.
+- Added five delivery slices separating the map loop, monster placement,
+  monster authoring, local live-tune/launch, and remote sharing/discovery.
+- Extended the event chain to distinguish durable project creation from a
+  loaded editor, prove transform/spawn-volume application and monster spawn,
+  and show a live server-side tuning revision taking effect on a later attack.
+- Scope assessment: specifications are sufficient to begin a staged local
+  implementation. The complete feature is too broad for one implementation
+  slice; exact movement/blood tuning, model/animation authoring, map editing,
+  content launch, and remote distribution should land and be validated in
+  separate slices. No additional product decision blocks the first UI-to-map
+  creation slice. The source changes are documentation only; no build or
+  gameplay runtime validation was performed for this spec update.

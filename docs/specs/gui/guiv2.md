@@ -448,6 +448,12 @@ ScrollContainer
 
 The layout system should handle child positioning rather than requiring hundreds of manually calculated coordinates.
 
+The creator's **Create**, **My Creations**, and Community/Server navigation
+uses these shared JSON-defined UI primitives. Its actions and distinction
+between local project launch and network server join are specified in
+`docs/specs/creators/monster-authoring.md`; this GUI document owns presentation
+and reusable layout behavior, not project or server-launch semantics.
+
 ## **Text Overflow**
 
 Default text overflow behavior:
