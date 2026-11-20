@@ -124,7 +124,7 @@ systems first. Use this default order:
 | Isolated test runtimes, runtime health, warm runtimes, DLL pinning, or proof links | `docs/specs/dev-loop/agent-runtime-registry.md`, `docs/specs/dev-loop/agent-build-queue.md`, `docs/specs/dev-loop/agent-coordination.md`, `docs/workflows/runtime-scenario-validation.md` |
 | Parent/subagents, cohorts, delegation, shared cohort pointers, or budgets | `docs/specs/dev-loop/agent-subagents.md`, `docs/specs/dev-loop/agent-coordination.md`, `docs/specs/dev-loop/agent-build-queue.md` |
 | Waking an idle agent, `wake-check`, wake adapters, or wake safety | `docs/specs/dev-loop/agent-wake.md`, `docs/specs/dev-loop/agent-coordination.md`, `docs/specs/dev-loop/agent-self-improvement.md` |
-| Universal issue context, handoff completeness, or claiming unowned work | `docs/specs/dev-loop/agent-context-contract.md`, `docs/specs/dev-loop/agent-coordination.md` |
+| Universal issue context, automatic user-message broadcast, context routing repair, handoff completeness, or claiming unowned work | `docs/specs/dev-loop/agent-context-contract.md`, `docs/specs/dev-loop/agent-coordination.md` |
 | Stale dev-loop daemon, wedged control path, owned process restart, or source-change pickup | `docs/skills/dev-loop-restart-v1.md`, `docs/specs/dev-loop/dev-loop.md` |
 | Launch timers, one-button launch, launch failure codes, reports, or launch doctor | `docs/specs/dev-loop/launch-feedback.md`, `docs/specs/dev-loop/dev-loop.md`, `docs/specs/dev-loop/dashboard.md`, `docs/workflows/runtime-scenario-validation.md` |
 | Agent self-improvement, autonomy classes, retro, improvement scanner, or capability proposals | `docs/specs/dev-loop/agent-self-improvement.md`, `docs/specs/dev-loop/agent-coordination.md`, `docs/workflows/issue-intake-and-triage.md` |
@@ -175,3 +175,4 @@ Exact ownership and generated matrix output come from
 `build/source-manifest.json` and `config/source-owners.json`, never from a
 hand-maintained path list. Generated views are not edited by hand. Do not add
 claims JSON, lock files, or a second status document.
+

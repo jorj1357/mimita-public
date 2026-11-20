@@ -58,4 +58,28 @@ agent files the missing context as a blocker with evidence and stops.
 Focused tests prove deterministic ordering, bounded output, stale-proof
 visibility, missing-field reporting, and that reading the context does not
 mutate message or claim state.
+## User-context bus
+
+Every user utterance is one immutable `user_context` record. It stores the exact
+quote, content hash, source agent/session, stable source reference, priority,
+tags, creation time, one primary issue, and any related issue links. Quotes are
+never rewritten or deleted.
+
+The router:
+
+- `agent-coord context add` records and broadcasts the exact quote.
+- The OpenCode `prompt` plugin records every user prompt automatically; other
+  runtimes must call the same command at activation or through a relay.
+- `sync` returns unread and latest user context; `brain_check` includes both.
+- `issue brief` shows all linked user context.
+- `context move` records a routing correction with from/to issues, agent, and
+  reason. The old link is deactivated, not deleted.
+- `context lint` reports unlinked context, multiple primary issues, and stale
+  canonical links.
+- A disputed or ambiguous route creates a `context-routing` issue and notifies
+  the affected owners.
+
+Normal context is delivered at the next activation. High-priority context also
+queues wake requests for active agents. The user's exact words are the durable
+source of truth; summaries and interpretations are separate fields.
 

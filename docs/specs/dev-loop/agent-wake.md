@@ -112,6 +112,13 @@ It must not self-approve a critical Class C change; see
 `next` answers “what should be done.” Wake answers “start a turn to do it.”
 `next` is safe to call manually; wake is the automated delivery path.
 
+A woken agent is a bounded activation of an existing or dedicated agent
+identity. It is not a new human, and it does not inherit build, merge, or
+policy authority. Before ending, it checks `proof status`; if the issue has
+missing context it uses `issue readiness`/`issue context`, and if it is waiting
+it uses `next --mode waiting` to repair missing fields, missing evidence, or
+stale proof. Build success alone is never behavior proof.
+
 ## Message-triggered brain checks and issue contributions
 
 `sync`, `send`, `ask`, and `reply` return a bounded `brain_check` containing

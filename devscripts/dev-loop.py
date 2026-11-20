@@ -1225,6 +1225,10 @@ class DevLoop:
         self.server_pid: int | None = None
         self.server_exe: str | None = None
         self.server_build_id = ""
+        # Identity and journal ownership belong to the server process. A later
+        # GUI launch can create a new client run while retaining this server.
+        self.server_run_metadata: dict = {}
+        self._launch_journal_cursors: dict[str, _JournalCursor] = {}
         self.server_local_port = 0
         self.server_args: list[str] = []
         self.server_adopted = False
@@ -1379,6 +1383,14 @@ class DevLoop:
         persisted_metadata = marker.get("run_metadata")
         if isinstance(persisted_metadata, dict):
             self.run_metadata = dict(persisted_metadata)
+        server_metadata = marker.get("server_run_metadata")
+        self.server_run_metadata = (dict(server_metadata)
+                                    if isinstance(server_metadata, dict)
+                                    else dict(persisted_metadata or {}))
+        self.server_run_metadata.setdefault("run_id", str(marker.get("run_id", "")))
+        self.server_run_metadata.setdefault("launch_id", str(marker.get("launch_id", "")))
+        self.server_run_metadata.setdefault(
+            "server_journal_path", str(marker.get("server_journal_path", "")))
         self.server_adopted = True
         self.server_ready = bool(marker.get("server_ready", False))
         self.server_launch_ms = float(marker.get("launch_ms", 0.0) or 0.0)
@@ -1414,25 +1426,29 @@ class DevLoop:
         )
 
     def write_server_marker(self) -> None:
+        server_metadata = self.server_run_metadata or self.run_metadata
+        server_run_id = str(server_metadata.get("run_id") or self.run_id or "")
+        server_run_dir = str(server_metadata.get("run_dir") or "")
         write_json(SERVER_MARKER_PATH, {
             "root": str(ROOT),
             "pid": self.server_pid,
             "executable": self.server_exe,
             "args": list(self.server_args),
-            "build_id": self.run_metadata.get("build_id", ""),
-            "build_identity": self.run_metadata.get("build_identity", {}),
-            "build_number": self.run_metadata.get("build_number"),
-            "source_generation": self.run_metadata.get("source_generation"),
-            "run_metadata": dict(self.run_metadata),
+            "build_id": server_metadata.get("build_id", ""),
+            "build_identity": server_metadata.get("build_identity", {}),
+            "build_number": server_metadata.get("build_number"),
+            "source_generation": server_metadata.get("source_generation"),
+            "run_metadata": dict(server_metadata),
+            "server_run_metadata": dict(server_metadata),
             "local_port": self.server_local_port,
             "room_code": self.room_code or "",
-            "run_id": self.run_id,
-            "events_path": self.events_path,
-            "run_dir": str(self.run_layout.run_dir) if self.run_layout else "",
-            "manifest_path": self.manifest_path,
-            "server_journal_path": self.server_journal_path,
-            "client_journal_path": self.client_journal_path,
-            "launch_id": self.launch_id,
+            "run_id": server_run_id,
+            "events_path": server_metadata.get("events_path", self.events_path),
+            "run_dir": server_run_dir or (str(self.run_layout.run_dir) if self.run_layout else ""),
+            "manifest_path": server_metadata.get("manifest_path", self.manifest_path),
+            "server_journal_path": server_metadata.get("server_journal_path", self.server_journal_path),
+            "client_journal_path": server_metadata.get("client_journal_path", self.client_journal_path),
+            "launch_id": server_metadata.get("launch_id", self.launch_id),
             "server_ready": self.server_ready,
             "launch_ms": self.server_launch_ms,
             "updated_utc": utc_now(),
@@ -1627,7 +1643,8 @@ class DevLoop:
             "MIMITA_DEV_LOOP_SERVER": "1",
             "MIMITA_RUN_ID": self.run_id or "",
             "MIMITA_CRASH_DIR": str(DEV_ROOT / "crashes" / (self.run_id or "unknown")),
-            "MIMITA_EXPECTED_RUN_ID": self.run_id or "",
+            "MIMITA_EXPECTED_RUN_ID": (
+                self.server_run_metadata.get("run_id") or self.run_id or ""),
             "MIMITA_EXPECTED_BUILD_ID": self.run_metadata.get("build_id", ""),
             "MIMITA_BUILD_ID": self.run_metadata.get("build_id", ""),
             "MIMITA_RUN_METADATA": json.dumps(self.run_metadata, separators=(",", ":")),
@@ -1781,7 +1798,9 @@ class DevLoop:
             "pid": self.server_pid,
             "executable": self.server_exe,
             "build_id": self.server_build_id or self.run_metadata.get("server_build_id"),
-            "launch_id": self.launch_id,
+            "launch_id": (self.server_run_metadata.get("launch_id")
+                          or self.launch_id),
+            "runtime_run_id": self.server_run_metadata.get("run_id") or self.run_id,
             "state": server_state,
             "bind": (f"127.0.0.1:{self.server_local_port}"
                      if self.server_local_port else ""),
@@ -2287,6 +2306,54 @@ class DevLoop:
         except Exception as error:
             details = traceback.format_exc(limit=12)
             self.last_message = f"launch failed with {type(error).__name__}: {error}"
+            launch_id = str(self.launch_id or "")
+            try:
+                summary = launch_report.load_report(ROOT, launch_id) if launch_id else {}
+                if (summary.get("request_id") != request_id or
+                        summary.get("result") != "running"):
+                    launch_id = utc_now()
+                    self.launch_id = launch_id
+                    launch_report.start_launch(
+                        ROOT, launch_id, request_id=request_id, generation=0)
+                prior_stages = launch_report.stages(ROOT, launch_id)
+                successful_results = {
+                    "succeeded", "ready", "started", "accepted", "selected",
+                    "resolved", "passed", "matched", "reused", "completed",
+                }
+                last_completed_stage = next((
+                    str(row.get("stage") or "")
+                    for row in reversed(prior_stages)
+                    if row.get("result") in successful_results
+                ), "")
+                failure = {
+                    "stage": "launch_exception",
+                    "result": "failed",
+                    "request_id": request_id,
+                    "run_id": str(self.run_id or ""),
+                    "reason": self.last_message,
+                    "exception_type": type(error).__name__,
+                    "exception_message": str(error),
+                    "last_completed_stage": last_completed_stage,
+                }
+                launch_report.append_stage(ROOT, launch_id, failure)
+                launch_report.finish_launch(
+                    ROOT, launch_id, "launch_exception", "failed",
+                    self.last_message, create_issue=True,
+                    exception_type=type(error).__name__,
+                    last_completed_stage=last_completed_stage)
+                self.record_runtime_event(
+                    "dev-loop.launch.stage", failure, self.last_message)
+            except Exception as report_error:
+                self.record_runtime_event(
+                    "dev-loop.launch.report-exception",
+                    {
+                        "request_id": request_id,
+                        "launch_id": launch_id,
+                        "exception_type": type(report_error).__name__,
+                        "exception_message": str(report_error),
+                    },
+                    "failed to finalize launch report after launch exception",
+                )
             self.record_runtime_event(
                 "dev-loop.launch.exception",
                 {
@@ -3983,6 +4050,7 @@ class DevLoop:
                       dashboard_press_epoch: float | None = None) -> bool:
         launch_started = time.monotonic()
         self.last_message = ""
+        self._launch_journal_cursors = {}
         # Every explicit launch starts a fresh run folder with one journal per
         # executable. Reusing a full/capped journal is what made logger.started
         # disappear and readiness time out while the replacement server stayed
@@ -4229,6 +4297,12 @@ class DevLoop:
                     stage("stable_launch_activation", "succeeded", "stable launch path activated")
         if self.server_health() and (bool(self.room_code) or self.server_local_port):
             shutil.rmtree(staged_launch, ignore_errors=True)
+            # The server stays attached to the run/journal identity it was
+            # started with, even though this launch gets a fresh client journal.
+            if self.server_run_metadata:
+                self.server_journal_path = str(
+                    self.server_run_metadata.get("server_journal_path")
+                    or self.server_journal_path or "") or None
             room_code = self.room_code
             local_server_port = self.server_local_port
             stage("server_reuse", "reused", "owned server already matches launch configuration",
@@ -4248,6 +4322,7 @@ class DevLoop:
             self.server_pid = None
             self.server_exe = None
             self.server_build_id = ""
+            self.server_run_metadata = {}
             self.server_local_port = 0
             self.server_args = []
             self.server_adopted = False
@@ -4305,8 +4380,10 @@ class DevLoop:
                 "executable": str(launch_exe),
                 "artifact_executable": str(exe),
                 "started_utc": self.run_started_utc,
+                "launch_id": self.launch_id,
             }
             self.run_metadata = metadata
+            self.server_run_metadata = dict(metadata)
             common_env = {
                 **os.environ,
                 "MIMITA_EVENTS_FILE": self.server_journal_path or self.events_path,
@@ -4471,13 +4548,29 @@ class DevLoop:
                 stop_server_for_launch()
                 return False
 
+        # A fresh client run owns a fresh command queue even when its server
+        # is retained. Never make a new manifest point back at an old client.
+        self.command_queue_path = str(
+            DEV_ROOT / f"agent-command-{self.run_id}.jsonl")
+        Path(self.command_queue_path).write_text("", encoding="utf-8")
         client_args = [str(launch_exe)]
-        if room_code:
-            client_args.extend(["--room", room_code])
-        else:
+        if local_server_port:
+            # This client and server share the checkout and machine. Prefer
+            # the verified loopback socket to coordinator/ICE room setup.
             client_args.extend(["--connect", f"127.0.0.1:{local_server_port}"])
             if self.room_file_path is not None:
                 client_args.extend(["--room-code-file", str(self.room_file_path)])
+            client_connect_path = "loopback"
+        elif room_code:
+            client_args.extend(["--room", room_code])
+            client_connect_path = "room_code"
+        else:
+            self.last_message = "server has neither a loopback port nor a room code"
+            stage("client_configuration", "failed", self.last_message,
+                  server_pid=self.server_pid)
+            stage("complete", "failed", self.last_message,
+                  server_pid=self.server_pid)
+            return False
         configured_clients = list(self.launch_mode.get("clients") or [])
         primary_client_cfg = configured_clients[0] if configured_clients else {}
         primary_client_name = str(
@@ -4526,10 +4619,6 @@ class DevLoop:
             self.run_metadata["build_identity"] = identity
             self.run_metadata["executable"] = str(launch_exe)
             self.run_metadata["artifact_executable"] = str(exe)
-        if not self.command_queue_path:
-            run_key = self.run_id or Path(self.events_path).parent.name
-            self.command_queue_path = str(DEV_ROOT / f"agent-command-{run_key}.jsonl")
-            Path(self.command_queue_path).write_text("", encoding="utf-8")
         if not self.client_journal_path:
             self.client_journal_path = str(
                 Path(self.events_path).parent / "client-01" / "events.jsonl")
@@ -4546,7 +4635,9 @@ class DevLoop:
             "MIMITA_RUN_ID": self.run_id or Path(self.events_path).parent.name,
             "MIMITA_CRASH_DIR": str(
                 DEV_ROOT / "crashes" / (self.run_id or Path(self.events_path).parent.name)),
-            "MIMITA_EXPECTED_RUN_ID": self.run_id or Path(self.events_path).parent.name,
+            "MIMITA_EXPECTED_RUN_ID": (
+                self.server_run_metadata.get("run_id")
+                or self.run_id or Path(self.events_path).parent.name),
             "MIMITA_EXPECTED_BUILD_ID": build_id,
             "MIMITA_BUILD_ID": build_id,
             "MIMITA_RUN_METADATA": json.dumps(self.run_metadata, separators=(",", ":")),
@@ -4563,6 +4654,7 @@ class DevLoop:
                 "executable": str(launch_exe),
                 "artifact_executable": str(exe),
                 "args": list(client_args),
+                    "connect_path": client_connect_path,
                 "console_policy": "CREATE_NO_WINDOW",
                 "window_policy": self.launch_visibility,
                 "hot_client": self.hot_client,
@@ -4704,12 +4796,29 @@ class DevLoop:
                   else "path=dll, Connected, frames, activation, and no post-bootstrap stalls proven",
                   stage_started, client_pid=client.pid, timeout_seconds=45)
 
+        post_ready_timings = {}
+        post_ready_started = time.monotonic()
         self.observe_launch_windows("client_ready" if self.client_ready else "client_logger_missing")
+        post_ready_timings["initial_window_observation_ms"] = round(
+            (time.monotonic() - post_ready_started) * 1000.0, 1)
         if self.client_ready:
+            visibility_started = time.monotonic()
             self.apply_launch_visibility()
             if self.launch_visibility != "visible":
                 self.restore_prelaunch_foreground(prelaunch_windows)
-            self.monitor_launch_windows()
+            post_ready_timings["visibility_ms"] = round(
+                (time.monotonic() - visibility_started) * 1000.0, 1)
+            monitor_started = time.monotonic()
+            if self.firewall_result == "LOOPBACK_ONLY":
+                # The preflight proved this launch can only reach loopback, so
+                # a five-second external firewall-prompt watch cannot change
+                # its outcome. Keep one post-start observation, without the
+                # fixed monitor delay on every local launch.
+                self.observe_launch_windows("post_client_monitor_loopback")
+            else:
+                self.monitor_launch_windows()
+            post_ready_timings["firewall_monitor_ms"] = round(
+                (time.monotonic() - monitor_started) * 1000.0, 1)
         launch_succeeded = bool(self.client_ready and self.builds_match and
                                 connection_ready and mode_ready and
                                 npcwaves_ready and hot_gate_ready)
@@ -4719,9 +4828,29 @@ class DevLoop:
                 if fell_back else
                 f"launched build {artifact_id} (SHA-256 {identity.get('sha256', '')})"
             )
+        state_started = time.monotonic()
         self.save_state("running" if launch_succeeded else
                         ("client_ready" if self.client_ready else "client_logger_missing"))
+        post_ready_timings["save_state_ms"] = round(
+            (time.monotonic() - state_started) * 1000.0, 1)
+        status_started = time.monotonic()
         self.print_status()
+        post_ready_timings["print_status_ms"] = round(
+            (time.monotonic() - status_started) * 1000.0, 1)
+        self.record_runtime_event(
+            "dev-loop.launch.post-ready-timing",
+            {
+                "request_id": request_id,
+                "run_id": launch_run_id,
+                "launch_id": self.launch_id,
+                "firewall_result": self.firewall_result,
+                "launch_succeeded": launch_succeeded,
+                **post_ready_timings,
+            },
+            "timed launch visibility, firewall observation, and final status persistence",
+            events_path=launch_journal_path,
+            run_id=launch_run_id,
+        )
         stage("build_identity_match", "matched" if self.builds_match else "mismatch",
               self.build_mismatch_reason or "server and client use the selected build",
               server_pid=self.server_pid, client_pid=client.pid,
@@ -4767,9 +4896,21 @@ class DevLoop:
                                field_key: str = "",
                                field_value: str = "",
                                process: subprocess.Popen | None = None) -> dict | None:
-        """Wait for one matching event in any journal owned by this run."""
+        """Wait incrementally in journals that can contain this run's event."""
         if not self.events_path:
             return None
+        journal_paths = [self.client_journal_path, self.events_path]
+        server_run_id = str(self.server_run_metadata.get("run_id") or "")
+        if (self.server_pid in pids and server_run_id and
+                server_run_id == str(self.run_id or "")):
+            journal_paths.insert(0, self.server_journal_path)
+        cursors = []
+        for journal_path in dict.fromkeys(path for path in journal_paths if path):
+            cursor = self._launch_journal_cursors.get(journal_path)
+            if cursor is None:
+                cursor = _JournalCursor(journal_path)
+                self._launch_journal_cursors[journal_path] = cursor
+            cursors.append(cursor)
         deadline = time.time() + timeout
         while time.time() < deadline:
             if process is not None and process.poll() is not None:
@@ -4778,25 +4919,16 @@ class DevLoop:
                     process.pid, role, process.returncode,
                     f"{role} pid={process.pid} exited while waiting for {event_name}")
                 return None
-            for journal_path in self._journal_read_paths():
-                for segment in _journal_segment_paths(journal_path):
-                    try:
-                        with open(segment, "r", encoding="utf-8", errors="replace") as journal:
-                            for line in journal:
-                                try:
-                                    event = json.loads(line)
-                                except json.JSONDecodeError:
-                                    continue
-                                if event.get("event") != event_name:
-                                    continue
-                                if pids and event.get("pid") not in pids:
-                                    continue
-                                fields = event.get("fields", {})
-                                if field_key and fields.get(field_key) != field_value:
-                                    continue
-                                return event
-                    except OSError:
-                        pass
+            for cursor in cursors:
+                for event in cursor.read():
+                    if event.get("event") != event_name:
+                        continue
+                    if pids and event.get("pid") not in pids:
+                        continue
+                    fields = event.get("fields", {})
+                    if field_key and fields.get(field_key) != field_value:
+                        continue
+                    return event
             time.sleep(0.1)
         return None
 

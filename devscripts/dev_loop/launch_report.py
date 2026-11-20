@@ -33,6 +33,8 @@ def failure_code(stage: str, result: str, reason: str = "") -> str:
         return ""
     name = str(stage or "")
     text = (str(reason or "") + " " + name).lower()
+    if "launch_exception" in name:
+        return "launch_exception"
     if "artifact_selection" in name:
         return "no_artifact"
     if "artifact_validation" in name:
@@ -142,7 +144,9 @@ def _create_launch_issue(summary: dict) -> dict:
             else:
                 result = store.issue_add(
                     "launch-doctor", title,
-                    quote=str(summary.get("failure_detail") or ""),
+                    quote=str(summary.get("failure_detail") or
+                              f"Launch failed at "
+                              f"{summary.get('failure_stage') or 'unknown'}"),
                     summary="Launch failure automatically reported by dev-loop",
                     kind="launch-friction", source="dev-loop",
                     via_agent="launch-doctor", priority="high", evidence=evidence,

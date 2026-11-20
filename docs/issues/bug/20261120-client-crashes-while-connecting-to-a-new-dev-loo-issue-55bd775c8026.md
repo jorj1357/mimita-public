@@ -59,3 +59,34 @@ Closer read of client-01 journal in run 20261120_063800_01: at 06:38:43 it reque
 
 Fresh run 20261120_074813, launch request 2026-11-20T07:48:13.803Z-7921096c, mode 57/Payload funworld3, build 2026-11-20T07:47:09.981634Z:9e4a62885adb255cc2b666abbee4e233f628bb9d5b56518cc6f5a7b47005c071. Server logger was ready in 2.59s and gameplay port ready at 29.50s; client logger ready at 30.09s. Client began direct UDP connect after requested-map load (11.48s), sent hello, and server accepted it at 07:49:02.517Z, but client journal still had 0 snapshots and 
 etwork.join.map-required-missing; dev-loop failed client_connection at 75.25s while PID 33960 remained alive. This reproduces a connect/readiness failure, not a process crash. The process scanner checkout_mimita_processes(strict=True) returned exactly server PID 33832 and client PID 33960 with their full command lines/start times. Correlate server hello/snapshot send with client receive and reconcile the 75s timeout; link the existing snapshot/reconnect investigation.
+
+## Agent suggestion
+
+### 2026-11-20T08:00:26.741Z — review-connect-crash-autonomy
+
+New matching GUI run 20261120_074813 / build 2026-11-20T07:47:09.981634Z rules out an actual process crash and narrows the first missing transition. Client loaded requested funworld3 and opened UDP to 127.0.0.1:54013. At 07:49:02.503 it sent PACKET_HELLO; server inbound packet.route ID 1 at 07:49:02.515 and client-hello-accepted at 07:49:02.517 (player 1, same run/build/map). Across both rotated client journal files there is no packet.route at all, no network.client.join.accepted/network.map-required, and zero snapshots. Thus client never processed PACKET_WELCOME (or any server packet); client PID remained alive and stayed in join/connect until launch gate timed out. Likely next owner is server UDP reply -> client receive/dispatch, before map sync: handleHello in src/network/server-packets.cpp emits the acceptance event BEFORE calling sendToSourceOrPlayer(PACKET_WELCOME); that helper's send result/byte count/destination is not journaled, so 'accepted ... and sent authoritative welcome' does not prove a successful welcome send. Trace the first divergence by adding bounded owner-level evidence for server WELCOME sendto return, bytes, local/remote endpoint, then client raw recvfrom source/bytes/type and validated packet.route/dispatch outcome. If send succeeds but client has no inbound packet, inspect host firewall/socket binding/routing; if received, inspect client packet validation/dispatch. 
+etwork.join.map-required-missing at multiplayer-packets.cpp:2455 is a downstream join-state symptom, not proof a welcome was received. Avoid treating timeout as crash.
+
+## Agent suggestion
+
+### 2026-11-20T08:21:46.439Z — launch-latest-stable-fix
+
+New GUI button-invoked reproduction run 20261120_081941_01 on build 2026-11-20T07:47:09.981634Z: server ready at 25.148s; client logger ready at 25.438s; client PID 9044 remained alive but never Connected; client_connection timed out after 45.263s (total 70.703s). Exact report .dev/launch-reports/2026-11-20T08-19-41.839Z and per-process journals logs/2026-11-20/20261120_081941_01/{server-01,client-01}/events.jsonl. Automatic duplicate-signature issue issue-5873d2c2d033 appended recurrence seq 1069; do not create another issue.
+
+## Agent suggestion
+
+### 2026-11-20T08:34:58.369Z — launch-latest-stable-fix
+
+Correction from full rotated journals for the same GUI-invoked run 20261120_081941_01: server-01/events-0001.jsonl contains network.server.client-hello-accepted at 2026-11-20T08:20:17.982Z for player 1. Thus the server did receive and accept this client's Hello; the first missing transition is after server acceptance and before client join acceptance. The previous note called this only a prior-run observation; that was incorrect. Client journal still has no network.client.join.accepted; its later network.metrics.window reports packets_received_total=0 (telemetry is not conclusive for UdpTransport). The old server event text claimed Welcome was sent before the send result; the pending instrumentation now records the actual result and first client datagram.
+
+## Agent suggestion
+
+### 2026-11-20T08:40:30.235Z — launch-latest-stable-fix
+
+Live reproduction 20261120_083807, request dashboard-96a2e1ea, using published EXE 2026-11-20T07:47:09.981634Z (source generation 3, marked stale) plus published game DLL generation 399. The Tk Launch latest stable button callback was invoked via GUI hook and request acceptance took 25.5 ms. Server gameplay readiness took 27.587 s; client logger readiness took 28.000 s; launch failed at client_connection after 45.480 s (total 78.944 s). Paired journals: server PID 34032 emitted network.server.client-hello-accepted, then network.server.client-hello-welcome-send with send_succeeded=true, bytes=352, transport=ice, remote=127.0.0.1:56261. Client PID 27716 never emitted network.client.first-packet.received or join.accepted and had snapshots_received=0/map-required-missing before disconnect. Failure is reproducible; current trace narrows to after server ICE send success and before client packet handler receive. Does not yet prove network delivery. GUI scan visual rows unverified.
+
+## Agent suggestion
+
+### 2026-11-20T09:05:19.301Z — launch-latest-stable-fix
+
+Run 20261120_085207 connects to retained server PID 12748 on matching mode/map/build but rejects its JoinAccept due server runtime run ID 20261120_084810 versus client expected 20261120_085207. Evidence: client packet route ID 21 and server identity mismatch event. Launch timed out after 45.032 s. This is a dev-loop retained-server identity/association defect, not a crash.

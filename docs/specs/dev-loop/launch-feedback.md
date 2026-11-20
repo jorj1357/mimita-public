@@ -86,9 +86,14 @@ stale_lock
 resource_exhausted
 timeout
 unknown
+launch_exception
 ```
 
 Reports include the first failed stage, exact reason, and next safe probes.
+An uncaught exception during launch is finalized as `launch_exception`, with
+its exception type/message, last completed stage, terminal failed report, and
+the normal automatic issue link. It must never leave that attempt looking
+`running` after control has returned with failure.
 
 ## One-button launch
 

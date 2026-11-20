@@ -41,9 +41,11 @@ logged; only a configured fingerprint prefix.
 | `network.client.join.request_sent` | client | join policy | attempt, bytes, token present | server join.received |
 | `network.client.join.accepted` | client | join policy | assigned player, map, build, spawn | map.sync.start |
 | `network.client.join.rejected` | client | join policy | reason code, server, map | terminal/retry |
+| `network.client.first-packet.received` | client | packet dispatch | connection attempt, server address, bytes, header present, packet type, magic/version validity | packet dispatch or rejected before route |
 | `network.server.join.received` | server | server join policy | source, bytes, transport | join.validated |
 | `network.server.join.validated` | server | server join policy | name, map, password, identity | join.accepted/rejected |
 | `network.server.join.accepted` | server | server join policy | player ID, slot, map | player.registered |
+| `network.server.client-hello-welcome-send` | server | server join policy | player ID, bytes, send result, transport, remote endpoint | client.first-packet.received or retry/terminal |
 | `network.server.join.rejected` | server | server join policy | reason code, slot state | none/retry |
 | `network.server.player.registered` | server | session policy | player ID, slot, name, map, team | spawn.assigned |
 | `network.client.map.sync.start` | client | map sync policy | map, revision | map.loaded |

@@ -1442,6 +1442,10 @@ def run(status_provider: Callable[[], dict],
     controls.grid_columnconfigure(2, weight=1)
 
     def send(action: str, **fields) -> None:
+        if action == "build-or-launch" and state["launch_timing_status"] == "pending":
+            action_status.configure(
+                text="Launch already in progress · duplicate request ignored")
+            return
         state["pending_checkout_id"] = str(fields.get("checkout_id") or "main")
         launch_start = time.monotonic() if action == "build-or-launch" else None
         press_epoch = time.time()
@@ -1921,8 +1925,12 @@ def run(status_provider: Callable[[], dict],
             widget.grid(row=index, column=0, sticky="ew")
             process_rows_frame.grid_columnconfigure(0, weight=1)
         if not rows:
-            empty_text = ("Process scan unavailable" if state.get("process_scan_error")
-                          else "0 running MiMITA processes found")
+            if state.get("process_scan_error"):
+                empty_text = "Process scan unavailable"
+            elif state.get("process_scan_in_flight"):
+                empty_text = "Scanning running MiMITA processes…"
+            else:
+                empty_text = "0 running MiMITA processes found"
             if not state.get("process_empty_label"):
                 state["process_empty_label"] = label(process_rows_frame, empty_text, size=10)
             else:

@@ -155,6 +155,12 @@ def record_wait_incident(agent: str, wait: dict) -> dict:
                   f"{kind} wait at {stage} exceeded the wait budget")
     store = CoordStore()
     try:
+        try:
+            store.require_agent(agent)
+        except CoordError:
+            # The root dev-loop is not usually an interactive agent. Register
+            # its dedicated wait identity so automatic issues remain valid.
+            store.begin(agent, "automatic wait issue")
         existing = _wait_issue(store, wait_id)
         if existing is not None:
             store.issue_occurrence(agent, str(existing["id"]), summary,
@@ -187,6 +193,8 @@ def record_wait_incident(agent: str, wait: dict) -> dict:
             proof_expectation=(
                 "Dev-loop wait event plus the issue record and reviewer wake "
                 "record."),
+            dependencies=[],
+            risk="A noisy wait policy could create duplicate friction issues.",
         )
         return {"created": True, "issue_id": str(issue["id"]),
                 "wait_id": wait_id}
@@ -251,13 +259,25 @@ def record(findings: list[dict], agent: str, task: str) -> int:
         for finding in findings:
             if _existing(store, str(finding["title"])):
                 continue
+            paths = finding.get("paths") or ["devscripts/build_friction.py"]
             store.issue_add(
                 agent, str(finding["title"]),
                 quote=str(finding["summary"]),
                 summary=str(finding["summary"]),
                 kind="build-friction", source="build", via_agent=agent,
                 severity="normal", priority="normal",
-                evidence=finding.get("evidence") or {})
+                evidence=finding.get("evidence") or {},
+                reproduction=str(finding.get("summary") or finding["title"]),
+                expected_behavior=("The repeated build or workflow wait is "
+                                   "measured and reduced."),
+                acceptance=("A measured before/after wait result is recorded "
+                            "with the issue."),
+                paths=(list(paths) if isinstance(paths, list) else [str(paths)]),
+                dependencies=[],
+                risk=("Measurement may be noisy; do not claim improvement "
+                      "without a baseline."),
+                proof_expectation=("Before/after timing evidence from the same "
+                                   "workload."))
             created += 1
     finally:
         store.close()

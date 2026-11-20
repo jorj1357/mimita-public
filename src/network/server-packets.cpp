@@ -1285,7 +1285,7 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Network, StructuredLevel::Important,
             "network.server.client-hello-accepted", std::to_string(id),
-            "accepted a new client hello and sent authoritative welcome", tick,
+            "accepted a new client hello; preparing authoritative welcome", tick,
             {{"player_id", id}, {"player_name", p.name},
              {"map", getServerMapId()},
              {"run_id", runtimeRunId ? runtimeRunId : ""},
@@ -1338,8 +1338,32 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
         std::strncpy(welcome.runtimeRunId, runtimeRunId, sizeof(welcome.runtimeRunId) - 1);
     if (runtimeBuildId)
         std::strncpy(welcome.runtimeBuildId, runtimeBuildId, sizeof(welcome.runtimeBuildId) - 1);
-    if (sendToSourceOrPlayer(sock, from, &p, nullptr, &welcome, sizeof(welcome)))
+    const bool welcomeSent = sendToSourceOrPlayer(
+        sock, from, &p, nullptr, &welcome, sizeof(welcome));
+    if (welcomeSent)
         ++totalPacketsOut;
+    if (!existingId)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network,
+            welcomeSent ? StructuredLevel::Important : StructuredLevel::Errors,
+            "network.server.client-hello-welcome-send", std::to_string(id),
+            welcomeSent ? "authoritative welcome send succeeded"
+                        : "authoritative welcome send failed",
+            tick,
+            {{"player_id", id}, {"bytes", sizeof(welcome)},
+             {"send_succeeded", welcomeSent},
+             // UDP players also receive a synthetic connection ID, so that
+             // flag does not identify the transport used by this send.
+             {"transport", p.transportHandle != kNoServerTransport
+                 ? "ice_or_udp_fallback" : "udp"},
+             {"remote_ipv4", ntohl(from.sin_addr.s_addr)},
+             {"remote_port", ntohs(from.sin_port)},
+             {"next_expected_event", welcomeSent
+                 ? "network.client.first-packet.received"
+                 : "retry or terminal"}},
+            __FILE__, __LINE__, __func__);
+    }
     sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
 
     // Broadcast join message for new players

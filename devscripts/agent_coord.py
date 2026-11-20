@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -1834,6 +1835,8 @@ class CoordStore:
                        quote_hash=digest, source=source, priority=priority,
                        session=session, issue=issue_id, tags=tags or [])
             self._broadcast_user_context(agent, context_id, quote, priority)
+            if priority == "high":
+                self._queue_high_context_wake(agent, context_id, quote)
         context_id = str(existing["context_id"])
         if issue_id:
             self.user_context_link(agent, context_id, issue_id,
@@ -1841,6 +1844,31 @@ class CoordStore:
         result = self._context_view(self._context_row(context_id))
         result["created"] = created
         return result
+
+    def _queue_high_context_wake(self, source_agent: str, context_id: str,
+                                 quote: str) -> None:
+        if self.root.resolve() != (ROOT / ".dev" / "agent-coord").resolve():
+            return
+        script = ROOT / "devscripts" / "agent-wake.py"
+        if not script.is_file():
+            return
+        agents = [str(row["agent"]) for row in self.conn.execute(
+            "SELECT agent FROM agents WHERE status='active' AND agent<>?",
+            (source_agent,))]
+        for target in agents[:8]:
+            prompt = (f"New high-priority user context {context_id}.\n\n"
+                      f"{quote}\n\nRun `agent-coord context list --high "
+                      f"--agent {target}` and review its linked issue. "
+                      "Acknowledge it after routing or repairing ownership.")
+            adapter = "opencode" if shutil.which("opencode") else "codex"
+            command = [sys.executable, str(script), "add", "--agent", target,
+                       "--when", "manual", "--adapter", adapter,
+                       "--prompt", prompt]
+            try:
+                subprocess.run(command, cwd=ROOT, timeout=8,
+                               capture_output=True, check=False)
+            except (OSError, subprocess.SubprocessError):
+                continue
 
     def _broadcast_user_context(self, agent: str, context_id: str, quote: str,
                                 priority: str) -> None:
@@ -2026,6 +2054,86 @@ class CoordStore:
             "next_step": next_step,
             "blocked": blocked,
         }
+
+    def waiting_work(self, agent: str) -> dict:
+        """Return missing-context, missing-evidence, or stale-proof work.
+
+        This is deliberately read-only: a waiting agent chooses whether to
+        claim the work after reviewing it.
+        """
+        candidates: list[dict] = []
+        priority_rank = {"high": 0, "normal": 1, "low": 2}
+        for issue in self.issue_list(limit=500):
+            if issue.get("state") in {"done", "cancelled",
+                                      "needs_clarification", "deferred"}:
+                continue
+            readiness = self.issue_readiness(str(issue["id"]))
+            rank = priority_rank.get(str(issue.get("priority") or "normal"), 1)
+            if not readiness.get("ready"):
+                missing = ", ".join(readiness.get("missing") or [])
+                candidates.append({
+                    "kind": "missing_context",
+                    "rank": (0, rank, str(issue.get("updated_utc") or "")),
+                    "issue": issue,
+                    "task": None,
+                    "next_step": f"Fill missing issue fields: {missing}",
+                })
+                continue
+            tasks = [dict(row) for row in self.conn.execute(
+                "SELECT t.* FROM issue_tasks it JOIN tasks t ON t.id=it.task_id "
+                "WHERE it.issue_id=? AND t.state NOT IN ('done','cancelled') "
+                "ORDER BY it.step_order, t.id", (issue["id"],))]
+            for task in tasks:
+                proof = self.conn.execute(
+                    "SELECT result, reason, verified_utc FROM task_proofs "
+                    "WHERE task_id=? ORDER BY id DESC LIMIT 1",
+                    (task["id"],)).fetchone()
+                result = str(proof["result"] or "") if proof else ""
+                if result not in {"proven", "exempt"}:
+                    stale = result == "stale"
+                    candidates.append({
+                        "kind": "stale_proof" if stale else "missing_evidence",
+                        "rank": (1 if stale else 2, rank,
+                                 str(issue.get("updated_utc") or "")),
+                        "issue": issue,
+                        "task": task,
+                        "next_step": (
+                            "Re-verify stale proof and append the new evidence."
+                            if stale else
+                            "Produce the missing proof/evidence or a reasoned "
+                            "exemption; do not claim completion without it."),
+                    })
+                    break
+        for row in self.conn.execute(
+                "SELECT p.*, t.issue_id, t.title, t.owner, t.state AS task_state "
+                "FROM task_proofs p JOIN tasks t ON t.id=p.task_id "
+                "WHERE p.result='stale' AND t.state NOT IN ('done','cancelled') "
+                "ORDER BY p.id DESC LIMIT 50"):
+            item = dict(row)
+            issue_id = str(item.get("issue_id") or "")
+            if not issue_id or any(c["issue"].get("id") == issue_id
+                                   for c in candidates):
+                continue
+            issue_row = self._issue_row(issue_id)
+            candidates.append({
+                "kind": "stale_proof",
+                "rank": (1, priority_rank.get(
+                    str(issue_row["priority"] or "normal"), 1),
+                    str(issue_row["updated_utc"] or "")),
+                "issue": dict(issue_row),
+                "task": item,
+                "next_step": "Re-verify stale task proof and append new evidence.",
+            })
+        if not candidates:
+            return {"agent": agent, "mode": "waiting", "issue": None,
+                    "task": None, "next_step": "",
+                    "reason": "no missing-context or missing-evidence work"}
+        chosen = min(candidates, key=lambda item: item["rank"])
+        return {"agent": agent, "mode": "waiting",
+                "work_kind": chosen["kind"],
+                "issue": chosen["issue"], "task": chosen["task"],
+                "next_step": chosen["next_step"],
+                "reason": chosen["kind"]}
 
     def wake_check(self, agent: str) -> dict:
         high_context = self.user_context_list(
@@ -2295,6 +2403,21 @@ class CoordStore:
             agent, issue_id, "Context",
             "\n".join(f"{key}: {value}" for key, value in fields.items()))
 
+    def issue_lint(self, limit: int = 200) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id,title,state,owner FROM issues "
+            "ORDER BY updated_utc DESC LIMIT ?", (max(1, int(limit)),)).fetchall()
+        result = []
+        for row in rows:
+            readiness = self.issue_readiness(str(row["id"]))
+            if not readiness["ready"]:
+                result.append({
+                    "id": row["id"], "title": row["title"],
+                    "state": row["state"], "owner": row["owner"],
+                    "missing": readiness["missing"],
+                })
+        return result
+
     def issue_readiness(self, issue_id: str) -> dict:
         row = self._issue_row(issue_id)
         quotes = self.conn.execute(
@@ -2312,6 +2435,8 @@ class CoordStore:
             "acceptance": bool(str(row["acceptance"] or "").strip()),
             "paths": bool(paths),
             "evidence": bool(evidence) or bool(row["related_build"]) or bool(row["related_run"]),
+            "proof_expectation": bool(str(row["proof_expectation"] or "").strip()),
+            "risk": bool(str(row["risk"] or "").strip()),
         }
         missing = [name for name, present in required.items() if not present]
         return {
@@ -2830,6 +2955,7 @@ class CoordStore:
             "build_owner": self.build_owner(),
             "runtimes": self.runtime_list(),
             "work": self.work_list(active_only=True),
+            "user_context": self.user_context_list(limit=10),
             "unread": unread,
         }
 
@@ -3419,6 +3545,7 @@ class CoordStore:
             "build_owner": self.build_owner(),
             "runtimes": self.runtime_list(),
             "work": self.work_list(active_only=True),
+            "user_context": self.user_context_list(limit=10),
             "unread": unread,
         }
 
@@ -3473,7 +3600,9 @@ def format_brief(brief: dict) -> str:
     proofs = proof.get("proofs") or []
     unproven = sum(1 for row in proofs
                    if row.get("result") not in {"proven", "exempt"})
+    contexts = brief.get("user_context") or []
     line = (f"[COORD] unread={brief.get('unread', 0)} "
+            f"contexts={len(contexts)} "
             f"conflicts={len(conflicts)} leases={len(leases)} "
             f"agents={len(agents)} open_issues={len(issues)} "
             f"unproven={unproven} stale={proof.get('stale', 0)} "
@@ -3496,6 +3625,11 @@ def format_brief(brief: dict) -> str:
         if act.get("wait_reason"):
             parts.append(f"wait={act['wait_reason']}")
         lines.append("[BOARD] " + " ".join(parts))
+    for context in contexts[:2]:
+        lines.append(f"[USER] {context.get('context_id')} "
+                     f"priority={context.get('priority')} "
+                     f"issue={context.get('canonical_issue_id') or '-'} "
+                     f"{context.get('quote', '')[:140]}")
     for issue in issues[:5]:
         lines.append(f"[ISSUE] {issue.get('id')} {issue.get('state')} "
                      f"kind={issue.get('kind')} owner={issue.get('owner') or '-'} "
@@ -3739,6 +3873,8 @@ def create_parser() -> argparse.ArgumentParser:
     i.add_argument("--risk", default=None)
     i.add_argument("--proof-expectation", default=None)
     i.add_argument("--user-context", default=None)
+    i = isub.add_parser("lint")
+    i.add_argument("--limit", type=int, default=200)
     i = isub.add_parser("readiness")
     i.add_argument("issue_id")
     i = isub.add_parser("needs-info")
@@ -3829,6 +3965,8 @@ def create_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("board")
     p = sub.add_parser("next")
     p.add_argument("--claim", action="store_true")
+    p.add_argument("--mode", choices=("work", "waiting"), default="work",
+                   help="waiting returns proof/context repair work")
     p = sub.add_parser("observe")
     p.add_argument("issue_id")
     p = sub.add_parser("wake-check")
@@ -3994,7 +4132,7 @@ def run(args: argparse.Namespace) -> object:
     if args.command == "proof" and args.proof_command in {"list", "status"}:
         needs_agent = False
     if args.command == "issue" and args.issue_command in {
-            "list", "show", "readiness", "needs-info", "brief"}:
+            "list", "show", "readiness", "needs-info", "brief", "lint"}:
         needs_agent = False
     if args.command == "context" and args.context_command in {"list", "lint"}:
         needs_agent = False
@@ -4163,6 +4301,8 @@ def run(args: argparse.Namespace) -> object:
                     evidence=(json.loads(args.evidence)
                               if args.evidence and args.evidence.lstrip().startswith(("{", "["))
                               else ({"text": args.evidence} if args.evidence else None)))
+            if args.issue_command == "lint":
+                return store.issue_lint(args.limit)
             if args.issue_command == "readiness":
                 return store.issue_readiness(args.issue_id)
             if args.issue_command == "needs-info":
@@ -4234,6 +4374,8 @@ def run(args: argparse.Namespace) -> object:
         if command == "board":
             return store.board(agent=agent)
         if command == "next":
+            if args.mode == "waiting":
+                return store.waiting_work(agent)
             return store.next_work(agent, claim=args.claim)
         if command == "observe":
             return store.observe_issue(args.issue_id, agent)
@@ -4379,6 +4521,9 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
 
 
 

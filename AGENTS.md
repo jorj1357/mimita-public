@@ -60,6 +60,16 @@ Read these gates before doing anything else:
    Do not create duplicate issues or append unrelated status chatter. Seeing an
    unowned issue does not assign it; choose it with `agent-coord next --claim`.
 
+   USER CONTEXT IS SHARED: Every user message must enter the brain exactly once
+   with its verbatim text and a stable source reference. The OpenCode prompt
+   plugin does this automatically; other runtimes must call
+   `agent-coord context add --source user --session ... --source-ref ...`.
+   Review `user_context`/`brain_check` on every sync. If a context is linked to
+   the wrong issue, use `context move` with a reason and notify the affected
+   owners; if ownership is ambiguous, open a context-routing issue. Never
+   delete or rewrite the original quote. High-priority context wakes active
+   agents; normal context is delivered at the next activation.
+
    PLAN-MODE COORDINATION: Plan mode remains read-only for repository files,
    builds, tests, and runtime processes. Reading coordination state and, when
    the host permits, sending/replying to coordination messages or appending
@@ -68,8 +78,11 @@ Read these gates before doing anything else:
    builds in plan mode.
 
 0c. ISSUES AND SELF-IMPROVEMENT: Preserve user reports verbatim in an
-   append-only issue record. Use
-   `agent-coord.py issue add --quote ...`; triage into owned tasks and steps;
+   append-only issue record. Every new issue must include title, exact quote or
+   observation, summary, reproduction, expected behavior, acceptance, paths,
+   evidence, risk, proof expectation, and any relevant context. Use
+   `devscripts/agent-issue.py` or the equivalent full `issue add` fields;
+   incomplete creation is rejected. Triage into owned tasks and steps;
    use `issue assign`, `task dep`, `issue defer`, and `issue clarify`. Do not
    edit a spec or TODO to resolve a report without user clarification.
    When a build or test waits, record why; a wait above the measured budget or
@@ -85,6 +98,10 @@ Read these gates before doing anything else:
    `docs/specs/dev-loop/change-to-evidence-latency.md`,
    `docs/specs/dev-loop/agent-self-improvement.md`, and
    `docs/workflows/issue-intake-and-triage.md`.
+   While waiting, run `agent-coord next --mode waiting`; repair missing issue
+   fields, missing evidence, and stale proofs instead of idling. A woken agent
+   must inspect proof state and may not claim behavior completion without
+   verified evidence or a reasoned exemption.
 
 0d. GENERIC OWNERS AND TECH DEBT: Before editing networking, combat, contact,
    damage, build, launch, test, or coordination code, review whether the change

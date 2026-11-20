@@ -117,12 +117,17 @@ Rules:
   exists, append the new quote/evidence and continue its existing open tasks;
   do not create a duplicate issue or repeat completed work. Create a separate
   issue only for a distinct cause or independently actionable work.
-- Auto-created issues begin in `needs_triage`, not `done`. They contain the
-  exact build/run IDs and timing references.
-- `python devscripts/build_friction.py --create --agent <name>` performs the
-  initial detection and duplicate check. The root dev-loop or an agent test
-  should invoke it with the requesting agent identity after a build/test result;
-  until that hook is wired, agents run it when they observe friction.
+- Auto-created issues begin in `new` and are claimable; they are never
+  auto-completed. They contain the exact build/run IDs and timing references.
+- The root dev-loop now invokes the wait-issue path automatically. Any active
+  EXE build, queued EXE build, or game-DLL build that remains over budget for
+  60 seconds records one `build-friction` issue for that exact wait occurrence,
+  appends later observations, and queues one reviewer wake. The wait ID is the
+  deduplication key, so a long wait does not create an issue every minute and a
+  new wait does create a new issue.
+- `python devscripts/build_friction.py --create --agent <name>` remains the
+  manual detection fallback for an observed friction that the dev-loop did not
+  capture. It must use the requesting agent identity.
 - Any agent may triage, reproduce, review, or propose a solution. A human makes
   the final decision on a resolved build-friction issue.
 - The issue doc is append-only; the original observation is preserved.

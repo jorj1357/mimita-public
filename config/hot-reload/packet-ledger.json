@@ -30,7 +30,7 @@
       "server": "dll",
       "server_handler": "find",
       "server_inbound": true,
-      "server_line": 2608,
+      "server_line": 2632,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -56,7 +56,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 3099,
+      "client_line": 3143,
       "client_owner": "game",
       "client_source": "src/network/multiplayer-tick.cpp",
       "id": 3,
@@ -64,7 +64,7 @@
       "server": "dll",
       "server_handler": "handleInputPacket",
       "server_inbound": true,
-      "server_line": 2665,
+      "server_line": 2689,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -98,7 +98,7 @@
       "server": "dll",
       "server_handler": "handleDisconnect",
       "server_inbound": true,
-      "server_line": 2684,
+      "server_line": 2708,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -115,7 +115,7 @@
       "server": "dll",
       "server_handler": "handlePing",
       "server_inbound": true,
-      "server_line": 2739,
+      "server_line": 2763,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -200,7 +200,7 @@
       "server": "dll",
       "server_handler": "handleSpawnNpcRequest",
       "server_inbound": true,
-      "server_line": 2690,
+      "server_line": 2714,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -217,7 +217,7 @@
       "server": "dll",
       "server_handler": "handleTeleportRequest",
       "server_inbound": true,
-      "server_line": 2695,
+      "server_line": 2719,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -234,7 +234,7 @@
       "server": "dll",
       "server_handler": "handleExplodeRequest",
       "server_inbound": true,
-      "server_line": 2700,
+      "server_line": 2724,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -251,7 +251,7 @@
       "server": "dll",
       "server_handler": "handleShotRequest",
       "server_inbound": true,
-      "server_line": 2705,
+      "server_line": 2729,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -285,7 +285,7 @@
       "server": "dll",
       "server_handler": "handleChatMessage",
       "server_inbound": true,
-      "server_line": 2724,
+      "server_line": 2748,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -302,7 +302,7 @@
       "server": "dll",
       "server_handler": "warn",
       "server_inbound": true,
-      "server_line": 2593,
+      "server_line": 2617,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -336,7 +336,7 @@
       "server": "dll",
       "server_handler": "handleServerCommand",
       "server_inbound": true,
-      "server_line": 2810,
+      "server_line": 2834,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -353,7 +353,7 @@
       "server": "dll",
       "server_handler": "handleJoinRequest",
       "server_inbound": true,
-      "server_line": 2631,
+      "server_line": 2655,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -404,7 +404,7 @@
       "server": "dll",
       "server_handler": "handleReconnectRequest",
       "server_inbound": true,
-      "server_line": 2639,
+      "server_line": 2663,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -455,7 +455,7 @@
       "server": "dll",
       "server_handler": "serverTimestamp",
       "server_inbound": true,
-      "server_line": 2835,
+      "server_line": 2859,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -557,7 +557,7 @@
       "server": "dll",
       "server_handler": "handlePelletBlastRequest",
       "server_inbound": true,
-      "server_line": 2711,
+      "server_line": 2735,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -591,7 +591,7 @@
       "server": "dll",
       "server_handler": "handleGodballState",
       "server_inbound": true,
-      "server_line": 2750,
+      "server_line": 2774,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -625,7 +625,7 @@
       "server": "dll",
       "server_handler": "handleAttackRequest",
       "server_inbound": true,
-      "server_line": 2717,
+      "server_line": 2741,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -651,7 +651,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 3470,
+      "client_line": 3514,
       "client_owner": "game",
       "client_source": "src/network/multiplayer-tick.cpp",
       "id": 40,
@@ -659,7 +659,7 @@
       "server": "dll",
       "server_handler": "handleReloadRequest",
       "server_inbound": true,
-      "server_line": 2744,
+      "server_line": 2768,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -727,7 +727,7 @@
       "server": "dll",
       "server_handler": "handleSpawnAck",
       "server_inbound": true,
-      "server_line": 2822,
+      "server_line": 2846,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -761,7 +761,7 @@
       "server": "dll",
       "server_handler": "handleReliableEventAck",
       "server_inbound": true,
-      "server_line": 2828,
+      "server_line": 2852,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -795,7 +795,7 @@
       "server": "dll",
       "server_handler": "handleChatRequestV2",
       "server_inbound": true,
-      "server_line": 2729,
+      "server_line": 2753,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -829,7 +829,7 @@
       "server": "dll",
       "server_handler": "handleChatTypingStateRequest",
       "server_inbound": true,
-      "server_line": 2734,
+      "server_line": 2758,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -948,7 +948,7 @@
       "server": "dll",
       "server_handler": "serverGamemodeRematchNow",
       "server_inbound": true,
-      "server_line": 2816,
+      "server_line": 2840,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -974,7 +974,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 2583,
+      "client_line": 2607,
       "client_owner": "game",
       "client_source": "src/network/server-packets.cpp",
       "id": 59,
@@ -982,7 +982,7 @@
       "server": "dll",
       "server_handler": "warn",
       "server_inbound": true,
-      "server_line": 2594,
+      "server_line": 2618,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -999,7 +999,7 @@
       "server": "dll",
       "server_handler": "warn",
       "server_inbound": true,
-      "server_line": 2760,
+      "server_line": 2784,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -1033,7 +1033,7 @@
       "server": "dll",
       "server_handler": "handleAvatarManifestPacket",
       "server_inbound": true,
-      "server_line": 2647,
+      "server_line": 2671,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -1050,7 +1050,7 @@
       "server": "dll",
       "server_handler": "handleAvatarAssetRequestPacket",
       "server_inbound": true,
-      "server_line": 2653,
+      "server_line": 2677,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -1067,7 +1067,7 @@
       "server": "dll",
       "server_handler": "handleAvatarAssetChunkPacket",
       "server_inbound": true,
-      "server_line": 2659,
+      "server_line": 2683,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -1152,7 +1152,7 @@
       "server": "dll",
       "server_handler": "handleRagdollState",
       "server_inbound": true,
-      "server_line": 2755,
+      "server_line": 2779,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -1254,7 +1254,7 @@
       "server": "dll",
       "server_handler": "handleVehicleInputPacket",
       "server_inbound": true,
-      "server_line": 2672,
+      "server_line": 2696,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -1271,7 +1271,7 @@
       "server": "dll",
       "server_handler": "handleVehicleSeatRequest",
       "server_inbound": true,
-      "server_line": 2678,
+      "server_line": 2702,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -1346,5 +1346,5 @@
   ],
   "protocol_version": 52,
   "schema_version": 1,
-  "source_sha256": "b9a371bc8e62423618d3feba5f6a6e23984814429da115fad2ef8f544c063eb3"
+  "source_sha256": "241cd49e52238edf2d7e9014e5a1b8a4d8486cf2c9b03427743b9368e2197aaf"
 }

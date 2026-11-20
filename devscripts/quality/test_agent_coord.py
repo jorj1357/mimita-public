@@ -527,6 +527,9 @@ class AgentCoordTests(unittest.TestCase):
         issue = self.add_issue(
             "context-agent", "Screenshot is missing", quote="take a screenshot",
             kind="bug", source="user", evidence={"text": "no PNG"})
+        with self.store.conn:
+            self.store.conn.execute(
+                "UPDATE issues SET reproduction='' WHERE id=?", (issue["id"],))
         initial = self.store.issue_readiness(issue["id"])
         self.assertFalse(initial["ready"])
         self.assertIn("reproduction", initial["missing"])
@@ -542,6 +545,48 @@ class AgentCoordTests(unittest.TestCase):
         self.assertEqual(ready["score"], ready["possible"])
         self.assertEqual(self.store.issue_show(issue["id"])["acceptance"],
                          "sidecar tick equals 120")
+
+    def test_user_context_is_deduplicated_broadcast_and_acknowledged(self) -> None:
+        self.begin("agent-a")
+        self.begin("agent-b")
+        first = self.store.user_context_add(
+            "agent-a", "Keep this exact sentence.", session="s1",
+            source_ref="s1:1", priority="high")
+        second = self.store.user_context_add(
+            "agent-a", "Keep this exact sentence.", session="s1",
+            source_ref="s1:1", priority="high")
+        self.assertEqual(first["context_id"], second["context_id"])
+        self.assertFalse(second["created"])
+        sync = self.store.sync("agent-b")
+        self.assertEqual(sync["user_context"][0]["quote"],
+                         "Keep this exact sentence.")
+        self.assertTrue(any(message["kind"] == "user-context"
+                            for message in sync["messages"]))
+        self.store.user_context_ack("agent-b", first["context_id"])
+        self.assertEqual(self.store.user_context_list(
+            "agent-b", unread_only=True), [])
+
+    def test_user_context_link_move_and_lint(self) -> None:
+        self.begin("owner")
+        context = self.store.user_context_add(
+            "owner", "This belongs to another issue.", priority="high")
+        first = self.add_issue("owner", "First owner")
+        second = self.add_issue("owner", "Better owner")
+        self.store.user_context_link(
+            "owner", context["context_id"], first["id"], reason="initial")
+        moved = self.store.user_context_move(
+            "owner", context["context_id"], second["id"], "routing correction")
+        self.assertEqual(moved["canonical_issue_id"], second["id"])
+        self.assertTrue(any(link["issue_id"] == second["id"] and link["active"]
+                            for link in moved["links"]))
+        self.assertIn("stale_canonical", self.store.user_context_lint())
+
+    def test_issue_add_rejects_missing_required_fields(self) -> None:
+        self.begin("owner")
+        with self.assertRaises(CoordError) as raised:
+            self.store.issue_add("owner", "incomplete", quote="q")
+        self.assertIn("summary", str(raised.exception))
+        self.assertIn("paths", str(raised.exception))
 
     def test_begin_opens_and_end_closes_work_session(self) -> None:
         self.begin("auto-agent")
@@ -594,5 +639,6 @@ class AgentCoordTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

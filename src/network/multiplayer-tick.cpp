@@ -2879,6 +2879,50 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     size_t processedPackets = 0;
     auto processReceived = [&](const ReceivedPacket& rp)
     {
+        static thread_local uint32_t firstReceiveProbeAttemptId = 0;
+        if (ctx.connectionAttemptId != 0 &&
+            ctx.connectionState != ConnectionState::Connected &&
+            firstReceiveProbeAttemptId != ctx.connectionAttemptId)
+        {
+            firstReceiveProbeAttemptId = ctx.connectionAttemptId;
+            const bool headerPresent = rp.bytes.size() >= sizeof(PacketHeader);
+            const PacketHeader* receivedHeader = headerPresent
+                ? reinterpret_cast<const PacketHeader*>(rp.bytes.data())
+                : nullptr;
+            const bool magicValid = receivedHeader &&
+                receivedHeader->magic == PROTOCOL_MAGIC;
+            const bool versionValid = receivedHeader &&
+                receivedHeader->version == PROTOCOL_VERSION;
+            const bool headerValid = magicValid && versionValid;
+            const bool completeWelcome = headerValid &&
+                receivedHeader->type == PACKET_WELCOME &&
+                rp.bytes.size() >= sizeof(WelcomePacket);
+            const char* nextExpected = !headerValid
+                ? "packet_rejected_before_packet_route"
+                : receivedHeader->type == PACKET_WELCOME && !completeWelcome
+                    ? "welcome_size_validation"
+                    : completeWelcome
+                        ? "network.client.join.accepted"
+                        : "packet_dispatch";
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.client.first-packet.received",
+                std::to_string(ctx.connectionAttemptId),
+                "first server datagram observed before packet validation",
+                ctx.tick,
+                {{"connection_attempt_id", ctx.connectionAttemptId},
+                 {"connection_state", connectionStateName(ctx.connectionState)},
+                 {"server_address", ctx.serverAddress},
+                 {"bytes", rp.bytes.size()},
+                 {"header_present", headerPresent},
+                 {"packet_type", receivedHeader
+                     ? static_cast<int>(receivedHeader->type) : -1},
+                 {"header_tick", receivedHeader ? receivedHeader->tick : 0},
+                 {"magic_valid", magicValid},
+                 {"version_valid", versionValid},
+                 {"next_expected_event", nextExpected}},
+                __FILE__, __LINE__, __func__);
+        }
         if (rp.bytes.size() < (int)sizeof(PacketHeader))
             return;
         if (rp.bytes.size() > sizeof(buffer))

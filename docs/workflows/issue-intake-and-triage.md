@@ -8,7 +8,9 @@ document contains a TODO that needs clarification.
 - Preserve the human report verbatim. Do not paraphrase it in place of the
   original.
 - The shared brain is the live state. `docs/issues/` is the append-only durable
-  record.
+  record. Every new issue must include all required fields; incomplete creation
+  is rejected. User messages are also recorded once by the automatic
+  user-context relay and linked to the primary issue.
 - Do not edit a spec or TODO to resolve an issue until the user has clarified
   the intended behavior.
 - Every issue has a state, owner, and next action, or it is explicitly
@@ -127,3 +129,4 @@ document contains a TODO that needs clarification.
 Run `python devscripts/agent-coord.py board` to see every agent's current
 phase, task, issue, paths, build, game generation, run, blocker, and next step.
 Use `--json` for tooling.
+

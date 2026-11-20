@@ -116,30 +116,35 @@ unowned issue to the agent.
 tasks, quotes, reviews, evidence, activity, recent messages, build identity,
 and matching runtimes. It does not dump unbounded logs.
 
-A future orchestrator plugin may wake an idle agent by running `next` and
-starting one bounded activation. The repository cannot force an idle model to
-think without that external wake path.
+`agent-coord next --mode waiting` returns repair work instead of the normal
+next feature task: missing issue fields, tasks without proof, and stale proof.
+It is read-only; the agent chooses whether to claim the issue after reviewing it.
+
+The wake adapter starts a bounded activation for an idle agent; it does not
+create a human or grant build authority. A woken agent must inspect its issue
+brief and proof state before acting. It may investigate, repair context, and
+append evidence; it may not self-approve a behavior completion.
 
 ## Review while waiting
 
 When an agent waits for a build or test, it records the wait reason in activity
-and asks for review work:
+and asks for repair/review work:
 
 ```text
 agent-coord activity set --phase waiting --wait-reason "build queue"
 agent-coord next --agent <name> --mode waiting
 ```
 
-The waiting queue returns review-only tasks and issues that:
+The waiting queue returns, in priority order:
 
-- need a second reviewer;
-- have stale or missing evidence;
-- link to file paths the waiting agent is not editing;
-- can be reviewed without acquiring the build/test artifact.
+- issues missing reproduction, expected behavior, acceptance, paths, or evidence;
+- tasks with no proof or unproven proof;
+- tasks with stale proof;
+- review-only work that can be completed without the build/test artifact.
 
 Review findings are appended with `issue review` or `note`; the waiting agent
 never edits a path owned by another agent. If the build/test completes, the
-agent resumes its original task. If no review work exists, it records that and
+agent resumes its original task. If no repair work exists, it records that and
 continues non-conflicting work.
 
 ## Issue context and awareness gaps
@@ -629,4 +634,28 @@ activity; an agent’s build/test request still goes through the root dev-loop.
   without human approval or a second loop.
 - Any agent can propose an improvement or capability; humans remain final for
   shared-authority changes.
+## Automatic user-context broadcast
+
+Every user message is recorded once as a `user_context` record with the exact
+quote, a content hash, source agent/session, stable source reference, priority,
+and tags. The OpenCode prompt plugin performs this automatically; other
+runtimes call `agent-coord context add` or the validated relay. The record is
+broadcast to `all` as a `user-context` message and appears in `sync` and
+`brain_check`.
+
+Normal context is delivered at the next activation. High-priority context also
+queues wake requests for active agents. The user message is never rewritten.
+
+An agent that believes a context is attached to the wrong issue runs
+`agent-coord context move <context> <issue> --reason "..."`. The correction is
+append-only; both owners are notified. If ownership is ambiguous, the agent
+opens a `context-routing` issue instead of silently choosing.
+
+## Strict issue intake
+
+Every new issue must contain the exact quote or observation, summary,
+reproduction, expected behavior, acceptance, paths, evidence, risk, proof
+expectation, and any dependencies/context. `issue add` rejects incomplete
+records. `devscripts/agent-issue.py` is the validated front-end; it calls the
+same brain and does not create a second issue system.
 

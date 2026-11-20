@@ -36,3 +36,9 @@ Message: `msg-ee14a33de38f` (evidence)
 Subject: Additional pre-logger breadcrumb from Server_log proves CreateLogDir passed
 
 Found managed output logs/11-20-2026/Server_log_023224.txt, Server_log_024018.txt, and Server_log_024040.txt. Each ends with [STRUCTURED LOG] events path: ... pid=... immediately after LogManager init and StructuredLogger::createLogDir; none prints [STRUCTURED_LOG] Initialized, and child journal remains absent. Therefore stall is inside StructuredLogger::init after createLogDir, before fopen/logger.started: narrow probes around run lease, quota lock acquisition, initialize/reconcile/prune and fopen. This is materially narrower than prior review; please incorporate and coordinate before another run.
+
+## Agent suggestion
+
+### 2026-11-20T07:59:00.989Z — launch-latest-stable-fix
+
+Three earlier mode-57 runs timed out before logger.started (server PIDs 27748, 27752, 27572). New instrumented build run 20261120_074813 localized the path: quota mutex acquired at 3ms, state mapped 3ms, quota initialization 44ms, reconcile 86ms, journal opened 86ms; server logger.ready was observed at 2.593s from launch. The timeout did not recur, so cause appears intermittent/conditions changed; keep assigned until the prior hang is reproduced or bounded.
