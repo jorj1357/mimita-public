@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -127,6 +128,122 @@ def _existing(store: CoordStore, title: str) -> bool:
                if row.get("state") not in {"done", "cancelled"})
 
 
+def _wait_issue(store: CoordStore, wait_id: str) -> dict | None:
+    """Find an existing issue for one exact wait occurrence."""
+    for row in store.issue_list(kind="build-friction", limit=500):
+        try:
+            evidence = json.loads(row.get("evidence") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(evidence, dict) and evidence.get("wait_id") == wait_id:
+            return row
+    return None
+
+
+def record_wait_incident(agent: str, wait: dict) -> dict:
+    """Create or append one build-friction issue for a concrete wait.
+
+    The wait ID is the uniqueness key. A long wait gets one issue; a new wait
+    gets another issue even when its stage and reason are identical.
+    """
+    wait_id = str(wait.get("wait_id") or "").strip()
+    if not wait_id:
+        raise ValueError("wait_id is required")
+    kind = str(wait.get("kind") or "wait")
+    stage = str(wait.get("stage") or "unknown")
+    summary = str(wait.get("summary") or
+                  f"{kind} wait at {stage} exceeded the wait budget")
+    store = CoordStore()
+    try:
+        existing = _wait_issue(store, wait_id)
+        if existing is not None:
+            store.issue_occurrence(agent, str(existing["id"]), summary,
+                                   evidence=wait)
+            return {"created": False, "issue_id": str(existing["id"]),
+                    "wait_id": wait_id}
+        issue = store.issue_add(
+            agent,
+            f"Wait over budget: {kind} at {stage}",
+            quote=summary,
+            summary=summary,
+            kind="build-friction",
+            source="dev-loop",
+            via_agent=agent,
+            severity="normal",
+            priority="high",
+            evidence=wait,
+            reproduction=(
+                f"Observe dev-loop {kind} wait {wait_id} at stage {stage}; "
+                f"elapsed={wait.get('elapsed_seconds')}s."),
+            expected_behavior=(
+                "A build/test wait over one minute creates one visible "
+                "build-friction issue and wakes one reviewer automatically."),
+            acceptance=(
+                "The issue carries wait_id, stage, reason, elapsed, build/run "
+                "IDs, and evidence; a reviewer wake is queued exactly once for "
+                "this wait occurrence."),
+            paths=["devscripts/dev-loop.py", "devscripts/build_friction.py",
+                   "devscripts/agent-wake.py"],
+            proof_expectation=(
+                "Dev-loop wait event plus the issue record and reviewer wake "
+                "record."),
+        )
+        return {"created": True, "issue_id": str(issue["id"]),
+                "wait_id": wait_id}
+    finally:
+        store.close()
+
+
+def wake_reviewer(issue_id: str, wait: dict) -> dict:
+    """Queue one bounded reviewer activation for an over-budget wait."""
+    script = ROOT / "devscripts" / "agent-wake.py"
+    adapters = [name for name in ("codex", "opencode")
+                if shutil.which(name)]
+    if not adapters:
+        return {"queued": False, "reason": "no wake adapter available"}
+    primary = adapters[0]
+    fallbacks: list[str] = []
+    for adapter in ("opencode", "codex"):
+        if adapter != primary and shutil.which(adapter):
+            fallbacks.append(adapter)
+    prompt = (
+        f"Review build/test wait issue {issue_id}. The wait is {wait.get('kind')} "
+        f"at stage {wait.get('stage')}, elapsed {wait.get('elapsed_seconds')}s, "
+        f"wait_id {wait.get('wait_id')}.\n\n"
+        "Do not edit source or claim files owned by another agent. Inspect the "
+        "issue and dev-loop journal, complete any missing reproduction, "
+        "expected behavior, acceptance, paths, or proof expectation, and append "
+        "the review and evidence to the issue. If the wait recurs, add the "
+        "occurrence instead of creating a duplicate issue. If a code fix is "
+        "needed, report it with evidence and claim it separately.")
+    command = [
+        sys.executable, str(script), "add",
+        "--agent", "build-wait-reviewer",
+        "--issue", issue_id,
+        "--when", "manual",
+        "--adapter", primary,
+        "--prompt", prompt,
+    ]
+    for adapter in fallbacks:
+        command.extend(["--fallback-adapter", adapter])
+    queued = subprocess.run(command, cwd=ROOT, text=True,
+                            capture_output=True, check=False)
+    if queued.returncode != 0:
+        return {"queued": False, "reason": queued.stderr.strip() or
+                queued.stdout.strip() or "wake add failed"}
+    # Launch immediately if no daemon is already active. The wake queue is
+    # idempotent for a claimed request, so a concurrent daemon is safe.
+    launched = subprocess.run(
+        [sys.executable, str(script), "run", "--once"], cwd=ROOT,
+        text=True, capture_output=True, check=False, timeout=30)
+    return {
+        "queued": True,
+        "adapter": primary,
+        "launch_result": launched.stdout.strip()[-2000:],
+        "launch_error": launched.stderr.strip()[-1000:],
+    }
+
+
 def record(findings: list[dict], agent: str, task: str) -> int:
     store = CoordStore()
     created = 0
@@ -183,3 +300,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+

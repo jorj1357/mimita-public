@@ -438,15 +438,8 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
     const HeadlessWorld* world)
 {
     actors.clear();
-    // Arcade modes use capsule collisions and client contact claims; skip the
-    // server-side per-actor animated pose and weapon-shape pass. Local client
-    // prediction (INVALID_SOCKET) still runs so it can send its own claims.
-    if (sock != INVALID_SOCKET && CollisionConfig::instance().arcadeCollision()) {
-        for (auto& pair : runtimes)
-            flushPending(sock, players, npcs, pair.first, pair.second, tick, packets);
-        runtimes.clear();
-        return;
-    }
+    const bool arcade = sock != INVALID_SOCKET &&
+        CollisionConfig::instance().arcadeCollision();
     auto configured = [](const std::string& id) {
         const auto* def = WeaponRegistry::instance().get(id);
         return def && def->id != "nothing";
@@ -497,6 +490,9 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
     }
     std::sort(actors.begin(), actors.end(), [](const auto& a, const auto& b) { return a.key < b.key; });
     for (const auto& attacker : actors) {
+        // Arcade player melee is resolved from client claims; keep the server
+        // animated-contact pass for NPC attackers so NPCs still damage actors.
+        if (arcade && attacker.ref.player) continue;
         if ((attacker.ref.player && attacker.ref.player->dead) ||
             (attacker.ref.npc && attacker.ref.npc->health <= 0)) continue;
         auto& state = *attacker.runtime;
@@ -559,7 +555,7 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
             attacker.ref.player->lastPhysicalWeaponShape = shape;
             attacker.ref.player->hasLastPhysicalWeaponShape = true;
         }
-        if (damaging && world)
+        if (damaging && world && !arcade)
         {
             const glm::vec3 travel = shape.currentB - shape.previousB;
             const float distance = glm::length(travel);
@@ -613,6 +609,9 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
         const glm::vec3 high = glm::max(glm::max(shape.previousA, shape.previousB),
             glm::max(shape.currentA, shape.currentB)) + glm::vec3(shape.radius);
         for (const auto& target : actors) {
+            // Arcade disables physical weapon clashes, while NPC damaging
+            // contacts continue through the common authoritative resolver.
+            if (arcade && !damaging) continue;
             if (target.key == attacker.key) continue;
             auto episodeIt = state.episodes.find(target.key);
             const int attackerTeam = attacker.ref.player ? attacker.ref.player->matchTeam : attacker.ref.npc->matchTeam;
@@ -664,9 +663,10 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                     int actionPhaseTick = 0, actionPhaseTicks = 0;
                     const WeaponData::MeleeAction* contactAction = currentAction(
                         attacker, tick, &actionPhase, &actionPhaseTick, &actionPhaseTicks);
-                    const bool actionActive = !def->meleeContact.enabled &&
-                        contactAction && actionPhase &&
-                        std::string(actionPhase) == "active";
+                    const bool actionActive = contactAction && actionPhase &&
+                        std::string(actionPhase) == "active" &&
+                        (!def->meleeContact.enabled ||
+                         contactAction->contactDamageMultiplier > 1.0f);
                     const float force = glm::clamp(speed / std::max(0.001f,
                         actionActive && contactAction &&
                             contactAction->contactMaxForceSpeed >= 0.0f
@@ -711,7 +711,7 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                             def->meleeContact.forceScale);
 
                     float blockDistance = 0.0f;
-                    if (blocksMeleeContact(target, tick, relative, hit,
+                    if (!arcade && blocksMeleeContact(target, tick, relative, hit,
                             clashSettings.distanceToleranceM, &blockDistance)) {
                         const WeaponClashResult clash = claimWeaponClash(
                             state, attacker.key, *target.runtime, target.key,

@@ -52,3 +52,10 @@ Peer review narrowed nearest evidence: dashboard request dashboard-b2da2248, lau
 ### 2026-11-20T06:55:14.323Z — juggernaut-npc-stuck-shooting
 
 Closer read of client-01 journal in run 20261120_063800_01: at 06:38:43 it requested/connect-preflighted to new server 127.0.0.1:55589 on funworld3; launch report later marked client_connect_timeout. At 06:40:47 the same PID requested a new connection to 127.0.0.1:1357 on badhouse, and at 06:40:52 applied a complete snapshot/spawn, with snapshots continuing. This is a delayed/replaced connection and readiness failure, not evidence of client process crash. Exact old→new GUI flow remains unverified; inspect request/run stage chronology and user-visible window identity before assigning root cause.
+
+## Agent suggestion
+
+### 2026-11-20T07:55:10.096Z — launch-latest-stable-fix
+
+Fresh run 20261120_074813, launch request 2026-11-20T07:48:13.803Z-7921096c, mode 57/Payload funworld3, build 2026-11-20T07:47:09.981634Z:9e4a62885adb255cc2b666abbee4e233f628bb9d5b56518cc6f5a7b47005c071. Server logger was ready in 2.59s and gameplay port ready at 29.50s; client logger ready at 30.09s. Client began direct UDP connect after requested-map load (11.48s), sent hello, and server accepted it at 07:49:02.517Z, but client journal still had 0 snapshots and 
+etwork.join.map-required-missing; dev-loop failed client_connection at 75.25s while PID 33960 remained alive. This reproduces a connect/readiness failure, not a process crash. The process scanner checkout_mimita_processes(strict=True) returned exactly server PID 33832 and client PID 33960 with their full command lines/start times. Correlate server hello/snapshot send with client receive and reconcile the 75s timeout; link the existing snapshot/reconnect investigation.

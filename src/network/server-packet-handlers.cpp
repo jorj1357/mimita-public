@@ -1379,9 +1379,10 @@ static bool handleGenericMeleeContactBatch(
             action = set && !claimActionId.empty()
                 ? set->find(claimActionId) : nullptr;
         }
-        const bool actionActive = !def.meleeContact.enabled && action &&
+        const bool actionActive = action &&
             elapsed >= action->windup.ticks &&
-            elapsed < action->windup.ticks + action->active.ticks;
+            elapsed < action->windup.ticks + action->active.ticks &&
+            (!def.meleeContact.enabled || action->contactDamageMultiplier > 1.0f);
         const float force = glm::clamp(pkt.impactSpeed /
             std::max(1.0f, action && action->contactMaxForceSpeed >= 0.0f
                 ? action->contactMaxForceSpeed

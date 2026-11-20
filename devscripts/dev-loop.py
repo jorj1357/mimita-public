@@ -100,6 +100,10 @@ DAEMON_READY_TIMEOUT_SECONDS = 60.0
 DAEMON_READY_STATUS_TIMEOUT_SECONDS = 8.0
 DASHBOARD_FRAME_SECONDS = 0.05
 DASHBOARD_STATUS_REFRESH_SECONDS = 1.0
+# Any build/test wait above this budget becomes a concrete issue and wakes one
+# reviewer automatically. Override only for a deliberate test.
+WAIT_ISSUE_SECONDS = max(
+    10.0, float(os.environ.get("MIMITA_WAIT_ISSUE_SECONDS", "60") or 60))
 ROLE_NAMES = {
     "watchdog": "MiMITA Dev Loop Watchdog",
     "daemon": "MiMITA Dev Loop Daemon",
@@ -1266,6 +1270,10 @@ class DevLoop:
         self.active_build_progress: dict = {}
         self.build_output_tail: deque[str] = deque(maxlen=10)
         self.build_last_progress_save = 0.0
+        self.pending_build_since_monotonic = (
+            time.monotonic() if self.build_pending else None)
+        self.reported_wait_ids: set[str] = set()
+        self.last_wait_check_monotonic = 0.0
         self.build_worker: threading.Thread | None = None
         self.build_completions: Queue[dict] = Queue()
         self.pending_build_request_ids: list[str] = []
@@ -2529,6 +2537,8 @@ class DevLoop:
                 self.build_pending = True
                 if self.active_build_generation is None:
                     self.build_status = "pending"
+                    if self.pending_build_since_monotonic is None:
+                        self.pending_build_since_monotonic = time.monotonic()
             self.build_requests = dict(list(self.build_requests.items())[-32:])
         return True
 
@@ -2539,6 +2549,8 @@ class DevLoop:
                 self.build_pending = True
                 if self.active_build_generation is None:
                     self.build_status = "pending"
+                    if self.pending_build_since_monotonic is None:
+                        self.pending_build_since_monotonic = time.monotonic()
 
     def queue_game_dll_request(self, request_id: str,
                                metadata: dict | None = None) -> bool:
@@ -3166,6 +3178,110 @@ class DevLoop:
         self.change_event.set()
         self.save_state("source_changed")
 
+    @staticmethod
+    def _utc_age_seconds(value: str | None) -> float:
+        if not value:
+            return 0.0
+        try:
+            started = datetime.datetime.fromisoformat(
+                str(value).replace("Z", "+00:00")).timestamp()
+            return max(0.0, time.time() - started)
+        except ValueError:
+            return 0.0
+
+    def check_wait_budget(self) -> None:
+        """Turn an over-budget wait into one issue and one reviewer wake."""
+        now = time.monotonic()
+        if now - self.last_wait_check_monotonic < 1.0:
+            return
+        self.last_wait_check_monotonic = now
+        waits: list[dict] = []
+        with self.lock:
+            if (self.active_build_generation is not None and
+                    self.active_build_started_monotonic is not None):
+                elapsed = now - self.active_build_started_monotonic
+                if elapsed >= WAIT_ISSUE_SECONDS:
+                    waits.append({
+                        "wait_id": (
+                            f"exe-build:{self.active_build_generation}:"
+                            f"{self.active_build_started_utc}"),
+                        "kind": "exe-build",
+                        "stage": self.active_build_phase or "building",
+                        "reason": self.active_build_detail or self.last_message,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "budget_seconds": WAIT_ISSUE_SECONDS,
+                        "started_utc": self.active_build_started_utc,
+                        "build_id": self.latest_build or "",
+                        "generation": self.active_build_generation,
+                        "source_generation": self.generation,
+                        "request_ids": list(self.active_build_request_ids),
+                    })
+            elif (self.build_pending and
+                  self.pending_build_since_monotonic is not None):
+                elapsed = now - self.pending_build_since_monotonic
+                if elapsed >= WAIT_ISSUE_SECONDS:
+                    waits.append({
+                        "wait_id": (
+                            f"exe-build-queue:{self.pending_build_since_monotonic:.3f}"),
+                        "kind": "exe-build-queue",
+                        "stage": "build_pending",
+                        "reason": self.active_build_detail or self.last_message,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "budget_seconds": WAIT_ISSUE_SECONDS,
+                        "started_utc": self.active_build_started_utc or "",
+                        "build_id": self.latest_build or "",
+                        "generation": self.generation,
+                        "source_generation": self.generation,
+                        "request_ids": list(self.pending_build_request_ids),
+                    })
+            if (self.game_build_status == "building" and
+                    self.game_build_started_utc):
+                elapsed = self._utc_age_seconds(self.game_build_started_utc)
+                if elapsed >= WAIT_ISSUE_SECONDS:
+                    waits.append({
+                        "wait_id": f"game-dll-build:{self.game_build_started_utc}",
+                        "kind": "game-dll-build",
+                        "stage": "game_build",
+                        "reason": self.game_build_detail or self.last_message,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "budget_seconds": WAIT_ISSUE_SECONDS,
+                        "started_utc": self.game_build_started_utc,
+                        "build_id": self.latest_build or "",
+                        "generation": self.game_build_generation,
+                        "source_generation": self.game_build_source_generation,
+                        "request_ids": list(self.active_game_build_request_ids),
+                    })
+        for wait in waits:
+            wait_id = str(wait.get("wait_id") or "")
+            if not wait_id or wait_id in self.reported_wait_ids:
+                continue
+            try:
+                from devscripts import build_friction
+                result = build_friction.record_wait_incident(
+                    "dev-loop-wait", wait)
+                self.reported_wait_ids.add(wait_id)
+                while len(self.reported_wait_ids) > 128:
+                    self.reported_wait_ids.pop()
+                if result.get("created"):
+                    wake = build_friction.wake_reviewer(
+                        str(result.get("issue_id") or ""), wait)
+                    self.record_runtime_event(
+                        "dev-loop.wait.reviewer-wake",
+                        {"wait_id": wait_id,
+                         "issue": result.get("issue_id"),
+                         "wake": wake},
+                        "automatic reviewer wake for over-budget wait")
+                self.record_runtime_event(
+                    "dev-loop.wait.over_budget",
+                    {"wait": wait, "issue": result.get("issue_id"),
+                     "created": bool(result.get("created"))},
+                    "over-budget wait recorded as build-friction issue")
+            except Exception as error:  # noqa: BLE001 - never break the loop
+                self.record_runtime_event(
+                    "dev-loop.wait.issue-failed",
+                    {"wait_id": wait_id, "error": str(error)},
+                    "could not record over-budget wait")
+
     def watch(self) -> None:
         notifications = DirectoryChangeNotifications(WATCH_DIRECTORIES)
         notifications.start()
@@ -3239,6 +3355,7 @@ class DevLoop:
             self.active_build_progress = {}
             self.build_output_tail.clear()
             self.build_pending = False
+            self.pending_build_since_monotonic = None
             self.build_status = "building"
             self.last_message = f"building source generation {requested_generation}"
             for request_id in request_ids:
@@ -3400,6 +3517,11 @@ class DevLoop:
 
                 self.build_requests = dict(list(self.build_requests.items())[-32:])
                 self.build_pending = self.build_pending or bool(self.pending_build_request_ids)
+                if self.build_pending and self.active_build_generation is None:
+                    if self.pending_build_since_monotonic is None:
+                        self.pending_build_since_monotonic = time.monotonic()
+                else:
+                    self.pending_build_since_monotonic = None
                 pending_launch = success and self.launch_after_build and not self.shutting_down
                 live_process = any(process.poll() is None for process in self.processes)
                 if success and not pending_launch and live_process and not self.latest_stale:
@@ -4510,7 +4632,10 @@ class DevLoop:
             )
             self.last_message = self.build_mismatch_reason
 
-        connection_ready = True
+        # Connection, mode, and NPC-wave readiness depend on a client which has
+        # already reached logger.started. Do not wait on downstream milestones
+        # after client startup failed; that only adds misleading timeout time.
+        connection_ready = self.client_ready
         if self.client_ready and bool(
                 self.profile.get("require_client_connection", False) or
                 self.launch_mode.get("require_client_connection", False)):
@@ -4529,7 +4654,7 @@ class DevLoop:
         if connection_ready:
             self.apply_configured_client_teams(configured_clients)
 
-        mode_ready = True
+        mode_ready = self.client_ready and connection_ready
         if connection_ready and bool(
                 self.profile.get("require_mode_start", False) or
                 self.launch_mode.get("require_mode_start", False)):
@@ -4546,7 +4671,7 @@ class DevLoop:
                   stage_started, server_pid=self.server_pid, client_pid=client.pid,
                   timeout_seconds=45)
 
-        npcwaves_ready = True
+        npcwaves_ready = mode_ready
         if mode_ready and bool(
                 self.profile.get("require_npcwaves_start", False) or
                 self.launch_mode.get("require_npcwaves_start", False)):
@@ -5129,6 +5254,7 @@ class DevLoop:
                 self.drain_game_build_completions()
                 self.maintain_process()
                 self.start_game_build_worker()
+                self.check_wait_budget()
                 if self.build_pending and self.active_build_generation is None:
                     self.change_event.clear()
                     time.sleep(DEBOUNCE_SECONDS)
@@ -7156,6 +7282,38 @@ def _control_action(args: argparse.Namespace) -> str:
     return args.request or "status"
 
 
+def _work_wait(agent: str, phase: str, *, reason: str, build_id: str = "") -> None:
+    """Record a wait through the shared brain without depending on the model."""
+    if not agent:
+        return
+    try:
+        from devscripts.agent_coord import CoordStore
+        store = CoordStore(publish_docs=False)
+        try:
+            store.work_wait(
+                agent, phase, wait_reason=reason, build_id=build_id,
+                notes="automatic dev-loop wait")
+        finally:
+            store.close()
+    except Exception:
+        # Coordination must never break a build request.
+        pass
+
+
+def _work_resume(agent: str) -> None:
+    if not agent:
+        return
+    try:
+        from devscripts.agent_coord import CoordStore
+        store = CoordStore(publish_docs=False)
+        try:
+            store.work_resume(agent, notes="automatic dev-loop wait complete")
+        finally:
+            store.close()
+    except Exception:
+        pass
+
+
 def wait_for_build_request(request_id: str, timeout: float) -> int:
     deadline = time.monotonic() + max(1.0, timeout)
     while time.monotonic() < deadline:
@@ -7448,9 +7606,16 @@ def run_control_client(args: argparse.Namespace) -> int:
         return 0 if result["completed"] else 1
 
     if action in ("build", "game-dll") and response.get("accepted") and args.wait_for_build:
-        return wait_for_build_request(
-            request["request_id"], timeout=float(args.build_timeout)
-        )
+        agent = str(request.get("agent") or request.get("requested_by") or "ai")
+        _work_wait(agent, "build_wait",
+                   reason=f"{action} {request['request_id']}",
+                   build_id=request["request_id"])
+        try:
+            return wait_for_build_request(
+                request["request_id"], timeout=float(args.build_timeout)
+            )
+        finally:
+            _work_resume(agent)
 
     return 0 if response.get("accepted") else 1
 

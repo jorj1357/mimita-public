@@ -193,7 +193,12 @@ while the weapon is equipped, whether or not an attack action is active. Input
 may animate or pose the weapon; it does not open or close a damage window.
 Damage and knockback are resolved from the swept physical contact, relative
 speed/directness, and the weapon's configured contact profile. An action's
-windup/active/recovery values do not gate or scale Mode 1 contact damage.
+windup/active/recovery values do not gate Mode 1 contact detection or cadence.
+An action only changes Mode 1 contact damage when its configuration explicitly
+sets `contact_damage_multiplier` above `1.0`; that configured multiplier and
+the action's configured damage range apply only during its active pose. Mace
+uses a `10.0` multiplier for this active-pose damage while retaining per-tick
+Mode 1 contact outside the active pose.
 
 The attacking client immediately predicts the contacted replica's health
 presentation and sends the contact claim on the same fixed-tick cadence. The

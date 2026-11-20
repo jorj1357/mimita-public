@@ -141,10 +141,25 @@ def _create_launch_issue(summary: dict) -> dict:
                 action = "appended"
             else:
                 result = store.issue_add(
-                    "launch-doctor", title, quote=str(summary.get("failure_detail") or ""),
+                    "launch-doctor", title,
+                    quote=str(summary.get("failure_detail") or ""),
                     summary="Launch failure automatically reported by dev-loop",
                     kind="launch-friction", source="dev-loop",
-                    via_agent="launch-doctor", priority="high", evidence=evidence)
+                    via_agent="launch-doctor", priority="high", evidence=evidence,
+                    reproduction=(f"Launch {summary.get('launch_id')} failed at "
+                                  f"{summary.get('failure_stage')}."),
+                    expected_behavior=("The requested launch reaches a live "
+                                       "server/client pair without a readiness "
+                                       "or mode-start failure."),
+                    acceptance=("The launch report identifies the first failed "
+                                "stage, and the corrected build passes the same "
+                                "launch path."),
+                    paths=["devscripts/dev-loop.py",
+                           "devscripts/dev_loop/launch_report.py"],
+                    dependencies=[],
+                    risk="Launch recovery may mask a reproducible build or mode defect.",
+                    proof_expectation=("A successful launch report plus the exact "
+                                       "server/client events.jsonl journals."))
                 issue_id = str((result or {}).get("id") or "")
                 action = "created"
             return {"status": action, "issue_id": issue_id}
@@ -160,22 +175,25 @@ def finish_launch(root: Path, launch_id: str, stage: str, result: str,
     summary = _read_json(directory / "launch.json")
     rows = stages(root, launch_id)
     failed_stage = ""
+    failed_reason = ""
     if result != "succeeded":
         for row in rows:
             if row.get("result") not in (
                     "succeeded", "ready", "started", "accepted", "selected",
                     "resolved", "passed", "matched", "reused", "completed"):
                 failed_stage = str(row.get("stage") or "")
+                failed_reason = str(row.get("reason") or "")
                 break
         if not failed_stage:
             failed_stage = stage
-    code = failure_code(failed_stage or stage, result, reason)
+    failure_detail = failed_reason or reason
+    code = failure_code(failed_stage or stage, result, failure_detail)
     summary.update({
         "finished_utc": utc_now(),
         "result": "succeeded" if result == "succeeded" else "failed",
         "failure_code": code,
         "failure_stage": failed_stage,
-        "failure_detail": "" if result == "succeeded" else reason,
+        "failure_detail": "" if result == "succeeded" else failure_detail,
         "stage": stage,
         "stage_result": result,
         "reason": reason,
@@ -273,6 +291,7 @@ def probe_report(root: Path | None = None, launch_id: str = "") -> dict:
             else "inspect the failed stage journal and child process identity"
         ),
     }
+
 
 
 

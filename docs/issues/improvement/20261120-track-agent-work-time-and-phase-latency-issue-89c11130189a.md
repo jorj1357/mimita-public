@@ -58,3 +58,10 @@ evidence: {'spec': 'docs/specs/dev-loop/agent-coordination.md', 'tests': 'python
 ### 2026-11-20T06:54:56.860Z — work-metrics
 
 evidence: {'session': 'work-43d0ab1571e2', 'total_ms': 2236437, 'phases_ms': {'received': 160851, 'planning': 1020224, 'editing': 758590, 'review': 296772}, 'tests': '35 passed', 'changelog': 'docs/changelog/2026-11-20/20261120_064900-work-time-issue-context-ai-los.md'}
+
+## Context
+
+### 2026-11-20T07:08:16.978Z — work-metrics
+
+acceptance: Begin opens one work session, end closes it, and dev-loop --wait-for-build records build_wait then resumes the prior phase for any agent identity; 37 tests pass.
+evidence: {'session': 'work-e79b62dcfb55', 'tests': '37 passed', 'automatic': 'begin/end and dev-loop --wait-for-build', 'changelog': 'docs/changelog/2026-11-20/20261120_064900-work-time-issue-context-ai-los.md'}

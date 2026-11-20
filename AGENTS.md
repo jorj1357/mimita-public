@@ -60,6 +60,13 @@ Read these gates before doing anything else:
    Do not create duplicate issues or append unrelated status chatter. Seeing an
    unowned issue does not assign it; choose it with `agent-coord next --claim`.
 
+   PLAN-MODE COORDINATION: Plan mode remains read-only for repository files,
+   builds, tests, and runtime processes. Reading coordination state and, when
+   the host permits, sending/replying to coordination messages or appending
+   issue suggestions are allowed and encouraged as part of planning. Use them
+   to resolve ownership or design questions; do not edit code or start/stop
+   builds in plan mode.
+
 0c. ISSUES AND SELF-IMPROVEMENT: Preserve user reports verbatim in an
    append-only issue record. Use
    `agent-coord.py issue add --quote ...`; triage into owned tasks and steps;
@@ -123,7 +130,12 @@ Read these gates before doing anything else:
    substitute `build_agent.py` for live runtime evidence. If a cold build is
    genuinely required by the change, record why, preserve unrelated running
    processes, and still validate the resulting behavior through the dev-loop
-   runtime journal.
+   runtime journal. Agents are authorized and encouraged to restart the
+   checkout-owned daemon and dev-loop dashboard GUI when a source edit, stale
+   process, wedged control path, or live proof requires it. Follow the routed
+   restart skill, preserve unrelated processes and healthy game pairs unless
+   the scenario requires replacement, then verify the GUI/daemon and exact
+   runtime journal before claiming proof.
 
 6. DLL CHANGE NOTES: Before the first edit to any whole-game DLL compiler
    input, queue a note with `python devscripts/build-note.py --changes

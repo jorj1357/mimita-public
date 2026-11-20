@@ -89,15 +89,13 @@ extern bool gMainmenuDebug;
 
 static bool runVersionInfoCli()
 {
-    StructuredLogger::instance().init();
-
     char exePath[MAX_PATH]{};
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);
     char cwd[MAX_PATH]{};
     GetCurrentDirectoryA(MAX_PATH, cwd);
 
-    const std::string eventsPath = StructuredLogger::instance().eventsPath();
-    const std::string runId = StructuredLogger::instance().runId();
+    const char* eventsPath = std::getenv("MIMITA_EVENTS_FILE");
+    const char* runId = std::getenv("MIMITA_RUN_ID");
     const char* commandLine = GetCommandLineA();
     const char* explicitRole = std::getenv("MIMITA_PROCESS_ROLE");
     const bool serverCommandLine = commandLine &&
@@ -109,39 +107,28 @@ static bool runVersionInfoCli()
         {"executable", exePath},
         {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
         {"working_directory", cwd},
-        {"events_jsonl", eventsPath},
-        {"run_id", runId},
+        {"events_jsonl", eventsPath ? eventsPath : ""},
+        {"run_id", runId ? runId : ""},
         {"process_role", processRole},
         {"build_date", __DATE__},
         {"build_time", __TIME__},
         {"arguments", "--versioninfo"}
     };
 
-    StructuredLogger::instance().writeEvent(
-        StructuredCategory::General,
-        StructuredLevel::Important,
-        "versioninfo.executed",
-        "",
-        "bounded command-line identity probe completed",
-        0,
-        info,
-        __FILE__,
-        __LINE__,
-        __FUNCTION__);
-
-    // Deliberately obvious keys let an agent capture stdout and open the exact
-    // journal without guessing the newest log folder.
+    // This preflight runs for every launch. Keep it independent from logger
+    // initialization: the logger reconciles and prunes the entire journal tree
+    // during startup, which can take longer than the launcher's readiness
+    // budget on a large workspace. The dev-loop records this result itself.
     printf("VERSIONINFO_BEGIN\n");
     printf("EXECUTABLE_PATH=%s\n", exePath);
     printf("PID=%lu\n", static_cast<unsigned long>(GetCurrentProcessId()));
     printf("PROCESS_ROLE=%s\n", processRole.c_str());
     printf("WORKING_DIRECTORY=%s\n", cwd);
-    printf("EVENTS_JSONL_PATH=%s\n", eventsPath.c_str());
-    printf("RUN_ID=%s\n", runId.c_str());
+    printf("EVENTS_JSONL_PATH=%s\n", eventsPath ? eventsPath : "");
+    printf("RUN_ID=%s\n", runId ? runId : "");
     printf("VERSIONINFO_JSON=%s\n", info.dump().c_str());
     printf("VERSIONINFO_END\n");
 
-    StructuredLogger::instance().shutdown();
     return true;
 }
 

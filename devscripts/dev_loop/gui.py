@@ -1554,9 +1554,8 @@ def run(status_provider: Callable[[], dict],
         send("stop-selected", targets=targets)
 
     def start_client() -> None:
-        clients = [row for row in (state.get("latest_model", {}).get("instances") or [])
-                   if row.get("role") == "client" and row.get("pid")
-                   and row.get("state") not in ("offline", "stopped", "failed")]
+        clients = {int(row["pid"]) for row in state.get("rendered_processes", [])
+                   if row.get("role") == "client" and row.get("pid")}
         client_count = len(clients)
         send("start-client", name=f"Client {client_count + 1}")
 
@@ -1821,9 +1820,15 @@ def run(status_provider: Callable[[], dict],
             if pid <= 0:
                 continue
             command_line = str(process.get("command_line") or "")
+            command_flags = {
+                token.strip("\"'").casefold()
+                for token in command_line.split()
+            }
             instance = managed_by_pid.get(pid)
-            role = (str(instance.get("role") or "unknown") if instance else
-                    "server" if "--server" in command_line.lower().split() else "unverified")
+            role = str(instance.get("role") or "unknown") if instance else (
+                "server" if "--server" in command_flags else
+                "client" if command_flags.intersection({"--connect", "--room"}) else
+                "unverified")
             started = str(process.get("process_started_utc") or "")
             row = dict(instance or {})
             if instance and (not instance.get("checkout_available", False)
@@ -1859,9 +1864,16 @@ def run(status_provider: Callable[[], dict],
         state["rendered_processes"] = rows
         count = len(rows)
         if state.get("process_scan_error"):
-            summary = f"PROCESS SCAN FAILED · {state['process_scan_error'][:120]}"
+            summary = (f"PROCESS SCAN FAILED · showing stale list · "
+                       f"{state['process_scan_error'][:100]}")
         else:
-            summary = f"{count} running MiMITA process(es)"
+            servers = sum(1 for row in rows if row.get("role") == "server")
+            clients = sum(1 for row in rows if row.get("role") == "client")
+            unverified = count - servers - clients
+            summary = (f"{count} live · {servers} server(s) · "
+                       f"{clients} client(s) · {unverified} unverified")
+            if state.get("process_scan_in_flight"):
+                summary += " · scan in progress"
         process_summary.configure(text=summary)
 
         current_keys = {row["process_key"] for row in rows}
@@ -2334,12 +2346,6 @@ def run(status_provider: Callable[[], dict],
                 ))
                 refreshed = state.get("dashboard_refresh_monotonic") or time.monotonic()
                 refresh_age = int(max(0.0, time.monotonic() - refreshed))
-                process_count = len(state.get("rendered_processes") or [])
-                process_problem = (f"  ·  {state['process_scan_error'][:100]}"
-                                   if state.get("process_scan_error") else "")
-                process_summary.configure(
-                    text=f"{process_count} running MiMITA process(es)"
-                         + process_problem)
                 journal_path = str(model.get("journal") or "(no active run journal)")
                 checkout_path = str(model.get("checkout") or "")
                 if checkout_path and journal_path != "(no active run journal)":

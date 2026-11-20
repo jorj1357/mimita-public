@@ -72,3 +72,11 @@ Autonomy review found useful context is split across mode JSON/spec, dev-loop la
 ### 2026-11-20T06:53:40.803Z — juggernaut-npc-stuck-shooting
 
 Direct review confirms an AI context/telemetry gap: .dev/launch-reports/*/launch.json currently preserves launch/request/build IDs and a summary failure but omits run_id, actual mode/map, process PIDs, per-process journal paths, and child exit/crash artifacts. The 06:38 report says client_connect_timeout for PID 22852, yet run.json and client journal are separate; the 06:51 launch says reconciliation failed because PID 22852 remained alive. Correlate dashboard request_id → dev-loop event run_id → run.json instances → exact journals/crash artifacts; launch-feedback.md already specifies most of these fields. AI can inspect each source manually, but cannot autonomously produce a reliable self-contained diagnosis from the launch report alone.
+
+## User quote
+
+### 2026-11-20T07:12:55.385Z — launch-latest-stable-fix
+
+Via launch-latest-stable-fix; supports Explicit authorization to restart the existing dashboard/dev-loop daemon when the documented change path requires it, and a priority on collecting strong live proof of each change.:
+
+> ensure that if tihs needs daemon restart or gui restart, ai agents are allowed and encouraged to restart either of those if needed/approrpaite, so that u can test ur changes , a big priroity for agents is to prove somehow whatever u did , like gt as much evidence live super good evidnece that whatever u did is working according to the goal

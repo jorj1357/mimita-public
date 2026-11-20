@@ -22,7 +22,12 @@
 ### Agent work-time
 
 - Added `work_sessions` and `work_phases` tables.
-- Added `agent-coord work start|phase|end|status|list|summary`.
+- Added `agent-coord work start|phase|wait|resume|end|status|list|summary`.
+- `begin` now opens one active work session and `end` closes it, so tracking is
+  agent-owned and model-independent.
+- `dev-loop.py --request build|game-dll --wait-for-build` automatically records
+  `build_wait` with the request ID and resumes the previous phase on success,
+  failure, or timeout. This is the default path for every agent.
 - A session records the received message, task, issue, start/end UTC, total
   elapsed milliseconds, and each phase's elapsed milliseconds, wait reason,
   build ID, and run ID.
@@ -56,9 +61,11 @@
 
 ## Verification
 
-- `python -m unittest devscripts.quality.test_agent_coord -q` passed: 35 tests.
-- `python -m py_compile devscripts/agent_coord.py devscripts/dev_loop/gui.py`
-  passed.
+- `python -m unittest devscripts.quality.test_agent_coord -q` passed: 37 tests,
+  including distinct `build_wait`/automatic resume and automatic begin/end
+  work sessions.
+- `python -m py_compile devscripts/agent_coord.py devscripts/dev-loop.py
+  devscripts/dev_loop/gui.py` passed.
 - `src/actor/player-ai.cpp` compiled in game-DLL generation `397`
   (`game-dll-20261120T063933641878Z-848734`); build status is `published`.
 - Build note `3da33855b15a` is attached to the build record.
@@ -76,10 +83,9 @@ editing   758590 ms
 review    296772 ms
 ```
 
-Planning was the largest phase. The build wait was not split from editing in
-this first measurement, so the editing total is not a pure edit cost. The next
-session must use a distinct `build_wait` or `test_wait` phase when the agent
-stops editing.
+Planning was the largest phase. This measurement predates automatic build-wait
+tracking, so its build wait remains inside editing. New sessions split that
+wait automatically through the dev-loop path.
 
 ## Remaining
 

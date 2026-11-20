@@ -27,6 +27,7 @@
 #include "entities/player-avatar-animations.h"
 #include "vehicles/vehicle-system.h"
 #include "config/networking-config.h"
+#include "config/collision-config.h"
 #include "config/spawn-velocity-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
@@ -281,7 +282,8 @@ void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world)
     // position from accepting a player whose held weapon is embedded in a wall.
     // This pass is capsule/box approximation. The future triangle mode may
     // replace it with cached exact weapon triangles.
-    if (p.dead || p.equippedWeaponId.empty()) return;
+    if (CollisionConfig::instance().arcadeCollision() ||
+        p.dead || p.equippedWeaponId.empty()) return;
     const WeaponDefinition* weapon = WeaponRegistry::instance().get(p.equippedWeaponId);
     if (!weapon || weapon->id == "nothing") return;
     auto param = [&](const char* key, float fallback) {

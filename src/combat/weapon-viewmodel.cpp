@@ -236,6 +236,14 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
     if (hasConfig && vmcfg)
         mTint = vmcfg->color;
 
+    // Mace active pose is a clear per-tick visual cue; use the ordinary tint
+    // outside that phase so the configured weapon color returns immediately.
+    if (def && def->id == "mace" &&
+        player.weaponPoseActionState.size() >= 7 &&
+        player.weaponPoseActionState.compare(
+            player.weaponPoseActionState.size() - 7, 7, "_active") == 0)
+        mTint = glm::vec3(1.0f);
+
     // State-based tint override for rocket launcher and grenade launcher:
     //   - Reloading → grey (0.2, 0.2, 0.2)
     //   - Empty magazine → flash purple/yellow every ~60 ticks
@@ -606,7 +614,13 @@ void WeaponViewModel::render(const Camera& camera, const Player& player, int equ
     r::uniformMatrix4fv(shader.uniform("view"), 1, &view[0][0]);
     r::uniformMatrix4fv(shader.uniform("projection"), 1, &projection[0][0]);
     r::uniformMatrix4fv(shader.uniform("model"), 1, &weaponTransform[0][0]);
-    r::uniform1i(shader.uniform("uUseColor"), 0);
+    const std::string& poseAction = player.weaponPoseActionState;
+    const bool maceActivePose = player.equippedWeaponId == "mace" &&
+        poseAction.size() >= 7 &&
+        poseAction.compare(poseAction.size() - 7, 7, "_active") == 0;
+    r::uniform1i(shader.uniform("uUseColor"), maceActivePose ? 1 : 0);
+    if (maceActivePose)
+        r::uniform4f(shader.uniform("uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
     r::uniform1i(shader.uniform("uTex"), 0);
     r::uniform1i(shader.uniform("uCosmeticTextureEnabled"), 0);
     r::uniform1i(shader.uniform("uTexBreatheEnabled"), 0);

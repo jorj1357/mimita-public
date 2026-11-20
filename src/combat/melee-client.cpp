@@ -446,8 +446,8 @@ void tickClientMeleeContactClaims(Player& player,
     // Mode 1's contact and damage do not depend on an attack active window.
     // The action may still animate/pose the weapon, but physical speed and
     // configured contact values determine the result.
-    const bool actionActive = !def->meleeContact.enabled && action &&
-        g_state.currentPhaseIndex == 1;
+    const bool actionActive = action && g_state.currentPhaseIndex == 1 &&
+        (!def->meleeContact.enabled || action->contactDamageMultiplier > 1.0f);
     float revMultiplier = 1.0f;
     if (def->id == "chainsaw")
     {

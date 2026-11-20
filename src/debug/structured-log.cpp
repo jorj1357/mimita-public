@@ -1187,22 +1187,38 @@ void StructuredLogger::writeSummary() {
 void StructuredLogger::init() {
     if (mInitialized) return;
 
+    const auto startupTraceStart = std::chrono::steady_clock::now();
+    const auto traceStartup = [&](const char* stage) {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - startupTraceStart).count();
+        std::printf("[STRUCTURED_LOG] startup stage=%s elapsed_ms=%lld\n",
+                    stage, static_cast<long long>(elapsed));
+    };
+
     loadConfig();
+    traceStartup("config_loaded");
     if (!mConfig.enabled) return;
 
     createLogDir();
+    traceStartup("log_dir_ready");
     const auto logRoot = logRootForEventsPath(mEventsPath);
     mRunLease = CreateEventA(nullptr, TRUE, FALSE,
         runLeaseName(logRoot, mRunId).c_str());
+    traceStartup("run_lease_created");
     TimedNamedMutexLock quotaMutex(logQuotaMutex(logRoot), mMutexWaitMicroseconds,
                                    mMutexHoldMicroseconds);
+    traceStartup("quota_lock_wait_begin");
     if (quotaMutex.lock(INFINITE)) {
+        traceStartup("quota_lock_acquired");
         SharedLogQuota& quota = sharedLogQuota(logRoot);
+        traceStartup("quota_state_mapped");
         if (quota.state) {
             initializeQuotaState(*quota.state, logRoot);
+            traceStartup("quota_initialized");
             // Reconcile once so legacy or externally-created files still
             // count toward the ceiling, then reuse that exact total below.
             reconcileQuotaState(*quota.state, logRoot);
+            traceStartup("quota_reconciled");
             const uint64_t startupTarget =
                 mConfig.storageLimits.totalLogTreeBytes >
                     mConfig.storageLimits.perSegmentBytes
@@ -1214,6 +1230,7 @@ void StructuredLogger::init() {
                 quota.state->totalBytes);
             quota.state->totalBytes = reclaimed > quota.state->totalBytes
                 ? 0 : quota.state->totalBytes - reclaimed;
+            traceStartup("quota_pruned");
         }
     }
 
@@ -1232,6 +1249,7 @@ void StructuredLogger::init() {
     // segment after the truncation point.
     std::setvbuf(mEventsFile, nullptr, _IONBF, 0);
     mInitialized = true;
+    traceStartup("journal_opened");
 
     char exePath[MAX_PATH]{};
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);

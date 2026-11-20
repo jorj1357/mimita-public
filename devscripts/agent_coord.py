@@ -309,6 +309,48 @@ class CoordStore:
                 fields TEXT NOT NULL DEFAULT '{}',
                 created_utc TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS user_context (
+                context_id TEXT PRIMARY KEY,
+                quote TEXT NOT NULL,
+                quote_hash TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'user',
+                source_agent TEXT NOT NULL DEFAULT '',
+                source_session TEXT NOT NULL DEFAULT '',
+                source_ref TEXT NOT NULL DEFAULT '',
+                priority TEXT NOT NULL DEFAULT 'normal',
+                tags TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'new',
+                canonical_issue_id TEXT NOT NULL DEFAULT '',
+                created_utc TEXT NOT NULL,
+                updated_utc TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS user_context_source_ref
+                ON user_context(source_ref) WHERE source_ref<>'';
+            CREATE TABLE IF NOT EXISTS user_context_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                context_id TEXT NOT NULL,
+                issue_id TEXT NOT NULL,
+                relation TEXT NOT NULL DEFAULT 'related',
+                linked_by TEXT NOT NULL DEFAULT '',
+                reason TEXT NOT NULL DEFAULT '',
+                active INTEGER NOT NULL DEFAULT 1,
+                created_utc TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS user_context_acks (
+                context_id TEXT NOT NULL,
+                agent TEXT NOT NULL,
+                read_utc TEXT NOT NULL,
+                PRIMARY KEY(context_id, agent)
+            );
+            CREATE TABLE IF NOT EXISTS user_context_corrections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                context_id TEXT NOT NULL,
+                from_issue TEXT NOT NULL DEFAULT '',
+                to_issue TEXT NOT NULL DEFAULT '',
+                agent TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                created_utc TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS issues (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -533,6 +575,9 @@ class CoordStore:
                 "paths": "TEXT NOT NULL DEFAULT '[]'",
                 "related_build": "TEXT NOT NULL DEFAULT ''",
                 "related_run": "TEXT NOT NULL DEFAULT ''",
+                "dependencies": "TEXT NOT NULL DEFAULT '[]'",
+                "risk": "TEXT NOT NULL DEFAULT ''",
+                "proof_expectation": "TEXT NOT NULL DEFAULT ''",
             }
             for name, definition in issue_additions.items():
                 if name not in issue_columns:
@@ -698,10 +743,17 @@ class CoordStore:
                 "updated_utc=excluded.updated_utc",
                 (agent, "", "starting", "session started", now))
         self.event("coord.agent.registered", agent, task=task, session=session)
-        return {"agent": agent, "task": task, "session": session}
+        work = self._active_work_session(agent)
+        if work is None:
+            work = self.work_start(agent, notes=f"activation: {task}")
+        return {"agent": agent, "task": task, "session": session,
+                "work_session": str(work["session_id"])}
 
     def end(self, agent: str) -> dict:
         self.require_agent(agent)
+        work = self._active_work_session(agent)
+        if work is not None:
+            self.work_end(agent, str(work["session_id"]), notes="agent end")
         now = utc_now()
         with self.conn:
             leases = self.conn.execute(
@@ -747,6 +799,11 @@ class CoordStore:
                 self.conn.execute(
                     "UPDATE agents SET cursor=? WHERE agent=?",
                     (int(events[-1]["seq"]), agent))
+        unread_context = self.user_context_list(
+            agent, limit=20, unread_only=True)
+        latest_context = self.user_context_list(limit=10)
+        if mark_read and unread_context:
+            self.user_context_ack(agent)
         return {
             "agent": agent,
             "messages": [dict(item) for item in unread],
@@ -774,6 +831,8 @@ class CoordStore:
                 "SELECT id,title,kind,state,severity,priority,owner,summary,"
                 "deferred_reason,deferred_until,updated_utc FROM issues "
                 "WHERE state NOT IN ('done','cancelled') ORDER BY updated_utc DESC")],
+            "user_context": unread_context,
+            "user_context_latest": latest_context,
             "brain_check": self.brain_check(agent),
         }
 
@@ -797,8 +856,13 @@ class CoordStore:
             "WHEN 'low' THEN 2 ELSE 1 END, updated_utc LIMIT 5")]
         work = self.next_work(agent, claim=False)
         next_issue = work.get("issue")
+        latest_context = self.user_context_list(limit=5)
+        unread_context = self.user_context_list(
+            agent, limit=5, unread_only=True)
         return {
             "current_issue": current_issue,
+            "latest_user_context": latest_context,
+            "unread_user_context": unread_context,
             "next_work": ({
                 "issue": {key: next_issue.get(key) for key in
                           ("id", "title", "kind", "state", "priority", "owner")},
@@ -1320,28 +1384,65 @@ class CoordStore:
                   summary: str = "", kind: str = "bug", source: str = "agent",
                   via_agent: str = "", severity: str = "normal",
                   priority: str = "normal", owner: str = "",
-                  evidence: object = None, issue_id: str = "") -> dict:
+                  evidence: object = None, issue_id: str = "",
+                  reproduction: str = "", expected_behavior: str = "",
+                  acceptance: str = "", paths: list[str] | None = None,
+                  dependencies: list[str] | None = None, risk: str = "",
+                  proof_expectation: str = "", context_id: str = "") -> dict:
         self.require_agent(agent)
         title = " ".join(str(title).split())
-        if not title:
-            raise CoordError("issue title is required", 2)
+        paths = [str(item) for item in (paths or []) if str(item)]
+        dependencies = [str(item) for item in (dependencies or []) if str(item)]
+        evidence_value = evidence if isinstance(evidence, dict) else {}
+        required = {
+            "title": bool(title),
+            "quote": bool(str(quote or "").strip()),
+            "summary": bool(str(summary or "").strip()),
+            "reproduction": bool(str(reproduction or "").strip()),
+            "expected_behavior": bool(str(expected_behavior or "").strip()),
+            "acceptance": bool(str(acceptance or "").strip()),
+            "paths": bool(paths),
+            "evidence": bool(evidence_value),
+            "proof_expectation": bool(str(proof_expectation or "").strip()),
+        }
+        missing = [name for name, present in required.items() if not present]
+        if missing:
+            raise CoordError(
+                "issue missing required fields: " + ", ".join(missing) +
+                "; use devscripts/agent-issue.py or fill them with issue context",
+                2)
         issue_id = issue_id.strip() or new_id("issue")
         now = utc_now()
-        payload = json.dumps(evidence if evidence is not None else {},
-                             sort_keys=True)
+        payload = json.dumps(evidence_value, sort_keys=True)
         with self.conn:
             self.conn.execute(
                 "INSERT INTO issues(id,title,kind,state,severity,priority,source,"
-                "reporter,via_agent,owner,human_quote,summary,evidence,created_utc,"
-                "updated_utc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "reporter,via_agent,owner,human_quote,summary,evidence,"
+                "reproduction,expected_behavior,acceptance,paths,dependencies,"
+                "risk,proof_expectation,created_utc,updated_utc) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (issue_id, title, kind, "new", severity, priority, source,
                  agent, via_agent or agent, owner, quote, summary, payload,
-                 now, now))
+                 reproduction, expected_behavior, acceptance,
+                 json.dumps(paths), json.dumps(dependencies), risk,
+                 proof_expectation, now, now))
         self.event("coord.issue.opened", agent, issue=issue_id, title=title,
-                   kind=kind, source=source, severity=severity)
+                   kind=kind, source=source, severity=severity,
+                   priority=priority, paths=paths,
+                   quote_hash=hashlib.sha256(
+                       str(quote or "").encode("utf-8")).hexdigest())
         self._append_issue_doc(issue_id, "", "")
         self._write_issue_index()
-        return self.issue_show(issue_id)
+        if context_id:
+            self.user_context_link(agent, context_id, issue_id,
+                                   reason="issue intake linked context")
+        elif source == "user" and str(quote or "").strip():
+            context = self.user_context_add(
+                agent, quote, source="user", priority=priority, issue_id=issue_id)
+            context_id = str(context["context_id"])
+        result = self.issue_show(issue_id)
+        result["context_id"] = context_id
+        return result
 
     def issue_show(self, issue_id: str) -> dict:
         row = dict(self._issue_row(issue_id))
@@ -1373,6 +1474,7 @@ class CoordStore:
                 "evidence": fields.get("evidence", {}),
             })
         row["occurrences"] = list(reversed(occurrences))
+        row["user_context"] = self.user_context_for_issue(issue_id)
         return row
 
     def issue_brief(self, issue_id: str) -> dict:
@@ -1675,6 +1777,214 @@ class CoordStore:
         return {"issue": self.issue_show(issue_id),
                 "evidence": self.evidence_list(issue_id)}
 
+    # ── user context bus ────────────────────────────────────────────────
+    def _context_row(self, context_id: str) -> sqlite3.Row:
+        row = self.conn.execute(
+            "SELECT * FROM user_context WHERE context_id=?",
+            (context_id,)).fetchone()
+        if row is None:
+            raise CoordError(f"unknown user context {context_id!r}", 2)
+        return row
+
+    def _context_links(self, context_id: str) -> list[dict]:
+        return [dict(row) for row in self.conn.execute(
+            "SELECT l.*, i.title FROM user_context_links l "
+            "LEFT JOIN issues i ON i.id=l.issue_id "
+            "WHERE l.context_id=? ORDER BY l.id", (context_id,))]
+
+    def _context_view(self, row: sqlite3.Row) -> dict:
+        value = dict(row)
+        try:
+            value["tags"] = json.loads(value.get("tags") or "[]")
+        except json.JSONDecodeError:
+            value["tags"] = []
+        value["links"] = self._context_links(str(row["context_id"]))
+        return value
+
+    def user_context_add(self, agent: str, quote: str, *,
+                         source: str = "user", session: str = "",
+                         source_ref: str = "", priority: str = "normal",
+                         tags: list[str] | None = None,
+                         issue_id: str = "") -> dict:
+        self.require_agent(agent)
+        quote = str(quote or "").strip()
+        if not quote:
+            raise CoordError("user context quote is required", 2)
+        digest = hashlib.sha256(quote.encode("utf-8")).hexdigest()
+        reference = str(source_ref or f"quote:{digest}")
+        now = utc_now()
+        existing = self.conn.execute(
+            "SELECT * FROM user_context WHERE source_ref=? OR quote_hash=? "
+            "ORDER BY created_utc LIMIT 1", (reference, digest)).fetchone()
+        created = False
+        if existing is None:
+            context_id = new_id("ctx")
+            with self.conn:
+                self.conn.execute(
+                    "INSERT INTO user_context(context_id,quote,quote_hash,source,"
+                    "source_agent,source_session,source_ref,priority,tags,status,"
+                    "canonical_issue_id,created_utc,updated_utc) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (context_id, quote, digest, source, agent, session,
+                     reference, priority, json.dumps(tags or []), "new", "",
+                     now, now))
+            existing = self._context_row(context_id)
+            created = True
+            self.event("coord.user_context.added", agent, context=context_id,
+                       quote_hash=digest, source=source, priority=priority,
+                       session=session, issue=issue_id, tags=tags or [])
+            self._broadcast_user_context(agent, context_id, quote, priority)
+        context_id = str(existing["context_id"])
+        if issue_id:
+            self.user_context_link(agent, context_id, issue_id,
+                                   reason="created/linked by issue intake")
+        result = self._context_view(self._context_row(context_id))
+        result["created"] = created
+        return result
+
+    def _broadcast_user_context(self, agent: str, context_id: str, quote: str,
+                                priority: str) -> None:
+        msg_id = new_id("msg")
+        thread_id = new_id("thread")
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO messages(msg_id,thread,sender,recipient,kind,"
+                "subject,body,paths,requires_response,due_utc,created_utc,"
+                "reply_to) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (msg_id, thread_id, agent, "all", "user-context",
+                 f"user context {context_id}", quote, "[]", 0, "",
+                 utc_now(), ""))
+        self.event("coord.message.sent", agent, message=msg_id,
+                   thread=thread_id, recipient="all", kind="user-context",
+                   context=context_id, priority=priority, session=agent)
+
+    def user_context_list(self, agent: str = "", *, limit: int = 20,
+                          unread_only: bool = False,
+                          high_priority_only: bool = False) -> list[dict]:
+        clauses: list[str] = []
+        args: list[object] = []
+        if unread_only and agent:
+            clauses.append(
+                "context_id NOT IN (SELECT context_id FROM user_context_acks "
+                "WHERE agent=?)")
+            args.append(agent)
+        if high_priority_only:
+            clauses.append("priority='high'")
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        args.append(max(1, int(limit)))
+        rows = self.conn.execute(
+            "SELECT * FROM user_context" + where +
+            " ORDER BY created_utc DESC LIMIT ?", args).fetchall()
+        return [self._context_view(row) for row in rows]
+
+    def user_context_ack(self, agent: str, context_id: str = "") -> dict:
+        self.require_agent(agent)
+        now = utc_now()
+        if context_id:
+            self._context_row(context_id)
+            ids = [context_id]
+        else:
+            ids = [str(row["context_id"]) for row in self.conn.execute(
+                "SELECT context_id FROM user_context WHERE context_id NOT IN "
+                "(SELECT context_id FROM user_context_acks WHERE agent=?)",
+                (agent,))]
+        with self.conn:
+            for item in ids:
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO user_context_acks"
+                    "(context_id,agent,read_utc) VALUES (?,?,?)",
+                    (item, agent, now))
+        return {"agent": agent, "acknowledged": len(ids), "contexts": ids}
+
+    def user_context_link(self, agent: str, context_id: str, issue_id: str,
+                          *, relation: str = "primary",
+                          reason: str = "") -> dict:
+        self.require_agent(agent)
+        context = self._context_row(context_id)
+        self._issue_row(issue_id)
+        if relation not in ("primary", "related"):
+            raise CoordError("context relation must be primary or related", 2)
+        now = utc_now()
+        with self.conn:
+            if relation == "primary":
+                self.conn.execute(
+                    "UPDATE user_context_links SET active=0 "
+                    "WHERE context_id=? AND relation='primary' AND active=1",
+                    (context_id,))
+            self.conn.execute(
+                "INSERT INTO user_context_links(context_id,issue_id,relation,"
+                "linked_by,reason,active,created_utc) VALUES (?,?,?,?,?,1,?)",
+                (context_id, issue_id, relation, agent, reason, now))
+            canonical = issue_id if relation == "primary" else str(
+                context["canonical_issue_id"] or "")
+            self.conn.execute(
+                "UPDATE user_context SET status=?, canonical_issue_id=?, "
+                "updated_utc=? WHERE context_id=?",
+                ("linked", canonical, now, context_id))
+        self.event("coord.user_context.linked", agent, context=context_id,
+                   issue=issue_id, relation=relation, reason=reason)
+        return self._context_view(self._context_row(context_id))
+
+    def user_context_move(self, agent: str, context_id: str, issue_id: str,
+                          reason: str) -> dict:
+        self.require_agent(agent)
+        if not str(reason or "").strip():
+            raise CoordError("context move reason is required", 2)
+        self._context_row(context_id)
+        self._issue_row(issue_id)
+        previous = self.conn.execute(
+            "SELECT issue_id FROM user_context_links WHERE context_id=? "
+            "AND relation='primary' AND active=1 ORDER BY id DESC LIMIT 1",
+            (context_id,)).fetchone()
+        from_issue = str(previous["issue_id"] if previous else "")
+        now = utc_now()
+        with self.conn:
+            self.conn.execute(
+                "UPDATE user_context_links SET active=0 WHERE context_id=? "
+                "AND relation='primary' AND active=1", (context_id,))
+            self.conn.execute(
+                "INSERT INTO user_context_links(context_id,issue_id,relation,"
+                "linked_by,reason,active,created_utc) VALUES (?,?,?,?,?,1,?)",
+                (context_id, issue_id, "primary", agent, reason, now))
+            self.conn.execute(
+                "INSERT INTO user_context_corrections(context_id,from_issue,"
+                "to_issue,agent,reason,created_utc) VALUES (?,?,?,?,?,?)",
+                (context_id, from_issue, issue_id, agent, reason, now))
+            self.conn.execute(
+                "UPDATE user_context SET status='linked',canonical_issue_id=?,"
+                "updated_utc=? WHERE context_id=?",
+                (issue_id, now, context_id))
+        self.event("coord.user_context.moved", agent, context=context_id,
+                   from_issue=from_issue, to_issue=issue_id, reason=reason)
+        return self._context_view(self._context_row(context_id))
+
+    def user_context_lint(self) -> dict:
+        rows = [self._context_view(row) for row in self.conn.execute(
+            "SELECT * FROM user_context ORDER BY created_utc")]
+        unlinked = [row for row in rows
+                    if not any(link["relation"] == "primary" and
+                               link["active"] for link in row["links"])]
+        multiple = []
+        stale = []
+        for row in rows:
+            primary = [link for link in row["links"]
+                       if link["relation"] == "primary" and link["active"]]
+            if len(primary) > 1:
+                multiple.append(row)
+            if row["canonical_issue_id"] and not any(
+                    link["issue_id"] == row["canonical_issue_id"] and
+                    link["active"] for link in row["links"]):
+                stale.append(row)
+        return {"unlinked": unlinked, "multiple_primary": multiple,
+                "stale_canonical": stale, "total": len(rows)}
+
+    def user_context_for_issue(self, issue_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT DISTINCT c.* FROM user_context c JOIN user_context_links l "
+            "ON l.context_id=c.context_id WHERE l.issue_id=? AND l.active=1 "
+            "ORDER BY c.created_utc", (issue_id,)).fetchall()
+        return [self._context_view(row) for row in rows]
+
     def next_work(self, agent: str, *, claim: bool = False) -> dict:
         self.require_agent(agent)
         priority = ("high", "normal", "low")
@@ -1718,8 +2028,23 @@ class CoordStore:
         }
 
     def wake_check(self, agent: str) -> dict:
+        high_context = self.user_context_list(
+            agent, limit=1, unread_only=True, high_priority_only=True)
         work = self.next_work(agent)
         issue = work.get("issue")
+        if high_context:
+            return {
+                "wake": True,
+                "exit_code": 0,
+                "agent": agent,
+                "reason": "high-priority user context",
+                "user_context": high_context[0],
+                "issue": issue,
+                "task": work.get("task"),
+                "next_step": ("Read the new user context, acknowledge it, and "
+                              "route or repair its issue ownership."),
+                "blocked": work.get("blocked") or [],
+            }
         if not issue:
             blocked = work.get("blocked") or []
             return {
@@ -1915,7 +2240,11 @@ class CoordStore:
                       paths: list[str] | None = None,
                       related_build: str | None = None,
                       related_run: str | None = None,
-                      evidence: object | None = None) -> dict:
+                      evidence: object | None = None,
+                      dependencies: list[str] | None = None,
+                      risk: str | None = None,
+                      proof_expectation: str | None = None,
+                      context_id: str | None = None) -> dict:
         self.require_agent(agent)
         self._issue_row(issue_id)
         updates: dict[str, object] = {}
@@ -1941,6 +2270,19 @@ class CoordStore:
         if evidence is not None:
             updates["evidence"] = json.dumps(evidence, sort_keys=True)
             fields["evidence"] = evidence
+        if dependencies is not None:
+            updates["dependencies"] = json.dumps(dependencies)
+            fields["dependencies"] = dependencies
+        if risk is not None:
+            updates["risk"] = risk
+            fields["risk"] = risk
+        if proof_expectation is not None:
+            updates["proof_expectation"] = proof_expectation
+            fields["proof_expectation"] = proof_expectation
+        if context_id is not None:
+            self.user_context_link(agent, context_id, issue_id,
+                                   reason="context attached by issue context")
+            fields["context_id"] = context_id
         if not updates:
             return self.issue_show(issue_id)
         now = utc_now()
@@ -1998,6 +2340,20 @@ class CoordStore:
     def work_start(self, agent: str, *, task_id: str = "", issue_id: str = "",
                    message_id: str = "", notes: str = "") -> dict:
         self.require_agent(agent)
+        active = self._active_work_session(agent)
+        if active is not None:
+            with self.conn:
+                self.conn.execute(
+                    "UPDATE work_sessions SET "
+                    "task_id=CASE WHEN ?<>'' THEN ? ELSE task_id END, "
+                    "issue_id=CASE WHEN ?<>'' THEN ? ELSE issue_id END, "
+                    "received_message_id=CASE WHEN ?<>'' THEN ? "
+                    "ELSE received_message_id END, "
+                    "notes=CASE WHEN ?<>'' THEN ? ELSE notes END "
+                    "WHERE session_id=?",
+                    (task_id, task_id, issue_id, issue_id, message_id,
+                     message_id, notes, notes, active["session_id"]))
+            return self.work_status(str(active["session_id"]))
         session_id = new_id("work")
         now = utc_now()
         with self.conn:
@@ -2056,6 +2412,12 @@ class CoordStore:
         name = name.strip()
         if not name:
             raise CoordError("work phase name is required", 2)
+        old_phase = str(row["phase"] or "")
+        resume_phase = str(row["resume_phase"] or "")
+        if name in self._WAIT_PHASES and old_phase not in self._WAIT_PHASES:
+            resume_phase = old_phase
+        elif name not in self._WAIT_PHASES:
+            resume_phase = ""
         now = utc_now()
         with self.conn:
             self._close_active_work_phase(session_id, now)
@@ -2064,9 +2426,9 @@ class CoordStore:
                 "wait_reason,build_id,run_id,notes) VALUES (?,?,?,'active',?,?,?,?)",
                 (session_id, name, now, wait_reason, build_id, run_id, notes))
             self.conn.execute(
-                "UPDATE work_sessions SET phase=?, notes=CASE WHEN ?<>'' "
-                "THEN ? ELSE notes END WHERE session_id=?",
-                (name, notes, notes, session_id))
+                "UPDATE work_sessions SET phase=?, resume_phase=?, "
+                "notes=CASE WHEN ?<>'' THEN ? ELSE notes END WHERE session_id=?",
+                (name, resume_phase, notes, notes, session_id))
         self.activity_set(
             agent, task_id=str(row["task_id"]), issue_id=str(row["issue_id"]),
             phase=name, activity=name, wait_reason=wait_reason,
@@ -2075,6 +2437,42 @@ class CoordStore:
         self.event("coord.work.phase", agent, session=session_id, phase=name,
                    wait_reason=wait_reason, build=build_id, run=run_id)
         return self.work_status(session_id)
+
+    def work_wait(self, agent: str, phase: str = "build_wait", *,
+                  wait_reason: str = "", build_id: str = "",
+                  run_id: str = "", notes: str = "",
+                  auto_start: bool = True) -> dict:
+        self.require_agent(agent)
+        if phase not in self._WAIT_PHASES:
+            raise CoordError(f"not a wait phase: {phase!r}", 2)
+        session = self._active_work_session(agent)
+        if session is None and auto_start:
+            started = self.work_start(
+                agent, message_id="auto:dev-loop",
+                notes="automatic wait tracking")
+            session = self._work_session_row(started["session_id"])
+        if session is None:
+            return {"agent": agent, "session_id": "", "phase": phase,
+                    "state": "no-active-session"}
+        if str(session["phase"]) == phase:
+            return self.work_status(str(session["session_id"]))
+        return self.work_phase(
+            agent, str(session["session_id"]), phase,
+            wait_reason=wait_reason, build_id=build_id, run_id=run_id,
+            notes=notes or "automatic wait tracking")
+
+    def work_resume(self, agent: str, *, notes: str = "") -> dict:
+        self.require_agent(agent)
+        session = self._active_work_session(agent)
+        if session is None:
+            return {"agent": agent, "session_id": "", "state": "no-active-session"}
+        phase = str(session["phase"] or "")
+        if phase not in self._WAIT_PHASES:
+            return self.work_status(str(session["session_id"]))
+        target = str(session["resume_phase"] or "editing")
+        return self.work_phase(
+            agent, str(session["session_id"]), target,
+            notes=notes or f"automatic resume after {phase}")
 
     def work_end(self, agent: str, session_id: str, *, state: str = "done",
                  notes: str = "") -> dict:
@@ -3232,6 +3630,33 @@ def create_parser() -> argparse.ArgumentParser:
     t.add_argument("task_id")
     t.add_argument("state")
 
+    p = sub.add_parser("context")
+    csub = p.add_subparsers(dest="context_command", required=True)
+    c = csub.add_parser("add")
+    c.add_argument("quote")
+    c.add_argument("--source", default="user")
+    c.add_argument("--session", default="")
+    c.add_argument("--source-ref", default="")
+    c.add_argument("--priority", default="normal")
+    c.add_argument("--tags", nargs="*", default=[])
+    c.add_argument("--issue", default="")
+    c = csub.add_parser("list")
+    c.add_argument("--limit", type=int, default=20)
+    c.add_argument("--unread", action="store_true")
+    c.add_argument("--high", action="store_true")
+    c = csub.add_parser("ack")
+    c.add_argument("context_id", nargs="?", default="")
+    c = csub.add_parser("link")
+    c.add_argument("context_id")
+    c.add_argument("issue_id")
+    c.add_argument("--related", action="store_true")
+    c.add_argument("--reason", default="")
+    c = csub.add_parser("move")
+    c.add_argument("context_id")
+    c.add_argument("issue_id")
+    c.add_argument("--reason", required=True)
+    c = csub.add_parser("lint")
+
     p = sub.add_parser("issue")
     isub = p.add_subparsers(dest="issue_command", required=True)
     i = isub.add_parser("add")
@@ -3246,6 +3671,14 @@ def create_parser() -> argparse.ArgumentParser:
     i.add_argument("--owner", default="")
     i.add_argument("--evidence", default="")
     i.add_argument("--id", default="")
+    i.add_argument("--reproduction", default="")
+    i.add_argument("--expected-behavior", default="")
+    i.add_argument("--acceptance", default="")
+    i.add_argument("--paths", nargs="*", default=[])
+    i.add_argument("--dependencies", nargs="*", default=[])
+    i.add_argument("--risk", default="")
+    i.add_argument("--proof-expectation", default="")
+    i.add_argument("--context", default="")
     i = isub.add_parser("list")
     i.add_argument("--state", default="")
     i.add_argument("--kind", default="")
@@ -3302,6 +3735,10 @@ def create_parser() -> argparse.ArgumentParser:
     i.add_argument("--build", default=None)
     i.add_argument("--run", default=None)
     i.add_argument("--evidence", default=None)
+    i.add_argument("--dependencies", nargs="*", default=None)
+    i.add_argument("--risk", default=None)
+    i.add_argument("--proof-expectation", default=None)
+    i.add_argument("--user-context", default=None)
     i = isub.add_parser("readiness")
     i.add_argument("issue_id")
     i = isub.add_parser("needs-info")
@@ -3355,6 +3792,14 @@ def create_parser() -> argparse.ArgumentParser:
     w.add_argument("--wait-reason", default="")
     w.add_argument("--build-id", default="")
     w.add_argument("--run-id", default="")
+    w.add_argument("--notes", default="")
+    w = wsub.add_parser("wait")
+    w.add_argument("--phase", default="build_wait")
+    w.add_argument("--wait-reason", required=True)
+    w.add_argument("--build-id", default="")
+    w.add_argument("--run-id", default="")
+    w.add_argument("--notes", default="")
+    w = wsub.add_parser("resume")
     w.add_argument("--notes", default="")
     w = wsub.add_parser("end")
     w.add_argument("session_id")
@@ -3549,7 +3994,9 @@ def run(args: argparse.Namespace) -> object:
     if args.command == "proof" and args.proof_command in {"list", "status"}:
         needs_agent = False
     if args.command == "issue" and args.issue_command in {
-            "list", "show", "readiness", "needs-info"}:
+            "list", "show", "readiness", "needs-info", "brief"}:
+        needs_agent = False
+    if args.command == "context" and args.context_command in {"list", "lint"}:
         needs_agent = False
     if args.command == "work" and args.work_command in {
             "status", "list", "summary"}:
@@ -3576,6 +4023,27 @@ def run(args: argparse.Namespace) -> object:
             return store.status(agent)
         if command == "inbox":
             return store.inbox(agent, unread_only=not args.all)
+        if command == "context":
+            if args.context_command == "add":
+                return store.user_context_add(
+                    agent, args.quote, source=args.source,
+                    session=args.session, source_ref=args.source_ref,
+                    priority=args.priority, tags=args.tags, issue_id=args.issue)
+            if args.context_command == "list":
+                return store.user_context_list(
+                    agent, limit=args.limit, unread_only=args.unread,
+                    high_priority_only=args.high)
+            if args.context_command == "ack":
+                return store.user_context_ack(agent, args.context_id)
+            if args.context_command == "link":
+                return store.user_context_link(
+                    agent, args.context_id, args.issue_id,
+                    relation="related" if args.related else "primary",
+                    reason=args.reason)
+            if args.context_command == "move":
+                return store.user_context_move(
+                    agent, args.context_id, args.issue_id, args.reason)
+            return store.user_context_lint()
         if command == "announce":
             return store.send(agent, "all", "intent: " + (args.purpose or "working"),
                               args.purpose or "working", kind="announce",
@@ -3641,7 +4109,13 @@ def run(args: argparse.Namespace) -> object:
                     agent, args.title, quote=args.quote, summary=args.summary,
                     kind=args.kind, source=args.source, via_agent=args.via,
                     severity=args.severity, priority=args.priority,
-                    owner=args.owner, evidence=evidence, issue_id=args.id)
+                    owner=args.owner, evidence=evidence, issue_id=args.id,
+                    reproduction=args.reproduction,
+                    expected_behavior=args.expected_behavior,
+                    acceptance=args.acceptance, paths=args.paths,
+                    dependencies=args.dependencies, risk=args.risk,
+                    proof_expectation=args.proof_expectation,
+                    context_id=args.context)
             if args.issue_command == "list":
                 return store.issue_list(
                     state=args.state, kind=args.kind, owner=args.owner,
@@ -3683,6 +4157,9 @@ def run(args: argparse.Namespace) -> object:
                     expected_behavior=args.expected_behavior,
                     acceptance=args.acceptance, paths=args.paths,
                     related_build=args.build, related_run=args.run,
+                    dependencies=args.dependencies, risk=args.risk,
+                    proof_expectation=args.proof_expectation,
+                    context_id=args.user_context,
                     evidence=(json.loads(args.evidence)
                               if args.evidence and args.evidence.lstrip().startswith(("{", "["))
                               else ({"text": args.evidence} if args.evidence else None)))
@@ -3739,6 +4216,13 @@ def run(args: argparse.Namespace) -> object:
                     agent, args.session_id, args.name,
                     wait_reason=args.wait_reason, build_id=args.build_id,
                     run_id=args.run_id, notes=args.notes)
+            if args.work_command == "wait":
+                return store.work_wait(
+                    agent, args.phase, wait_reason=args.wait_reason,
+                    build_id=args.build_id, run_id=args.run_id,
+                    notes=args.notes)
+            if args.work_command == "resume":
+                return store.work_resume(agent, notes=args.notes)
             if args.work_command == "end":
                 return store.work_end(
                     agent, args.session_id, state=args.state, notes=args.notes)
@@ -3895,3 +4379,6 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+

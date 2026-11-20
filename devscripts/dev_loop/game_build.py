@@ -994,6 +994,3 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
             "summary_json": str(summary_path.relative_to(root)),
         }
 
-
-
-

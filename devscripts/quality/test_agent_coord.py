@@ -46,6 +46,18 @@ class AgentCoordTests(unittest.TestCase):
     def begin(self, agent: str, task: str = "test") -> None:
         self.store.begin(agent, task)
 
+    def add_issue(self, agent: str, title: str, **fields):
+        fields.setdefault("quote", title)
+        fields.setdefault("summary", title)
+        fields.setdefault("reproduction", "test reproduction")
+        fields.setdefault("expected_behavior", "test expected behavior")
+        fields.setdefault("acceptance", "test acceptance")
+        fields.setdefault("paths", ["AGENTS.md"])
+        fields.setdefault("risk", "test risk")
+        fields.setdefault("proof_expectation", "test proof")
+        fields.setdefault("evidence", {"test": True})
+        return self.store.issue_add(agent, title, **fields)
+
     def test_begin_and_sync_are_persistent(self) -> None:
         self.begin("agent-a", "coordination")
         self.store.task_add("agent-a", "A", "Task A")
@@ -242,7 +254,7 @@ class AgentCoordTests(unittest.TestCase):
         self.begin("owner")
         self.begin("reviewer")
         quote = "The build took 18 minutes. Do not change this quote."
-        issue = self.store.issue_add(
+        issue = self.add_issue(
             "owner", "Build wait is too long", quote=quote,
             summary="slow build", kind="build-friction", source="user",
             via_agent="owner", severity="high")
@@ -287,7 +299,7 @@ class AgentCoordTests(unittest.TestCase):
 
     def test_issue_proof_exemption_requires_reason_and_unblocks_close(self) -> None:
         self.begin("owner")
-        issue = self.store.issue_add(
+        issue = self.add_issue(
             "owner", "Documentation-only issue", quote="document this",
             kind="docs", source="user")
         with self.assertRaises(CoordError):
@@ -301,7 +313,7 @@ class AgentCoordTests(unittest.TestCase):
 
     def test_integration_proof_requires_generation_and_events(self) -> None:
         self.begin("owner")
-        issue = self.store.issue_add(
+        issue = self.add_issue(
             "owner", "Needs integration proof", source="user",
             quote="prove it in the live exe")
         proof = self.store.evidence_record(
@@ -313,7 +325,7 @@ class AgentCoordTests(unittest.TestCase):
 
     def test_unit_proof_closes_and_trace_contains_evidence(self) -> None:
         self.begin("owner")
-        issue = self.store.issue_add("owner", "Pure logic", source="agent")
+        issue = self.add_issue("owner", "Pure logic", source="agent")
         proof = self.store.evidence_record(
             "owner", issue["id"], proof_kind="unit")
         self.assertEqual(proof["result"], "proven")
@@ -324,8 +336,8 @@ class AgentCoordTests(unittest.TestCase):
 
     def test_next_work_claims_high_priority_issue(self) -> None:
         self.begin("owner")
-        low = self.store.issue_add("owner", "low work", priority="low")
-        high = self.store.issue_add("owner", "high work", priority="high")
+        low = self.add_issue("owner", "low work", priority="low")
+        high = self.add_issue("owner", "high work", priority="high")
         result = self.store.next_work("owner", claim=True)
         self.assertEqual(result["issue"]["id"], high["id"])
         self.assertEqual(result["issue"]["owner"], "owner")
@@ -333,7 +345,7 @@ class AgentCoordTests(unittest.TestCase):
 
     def test_observe_bundle_contains_issue_and_evidence(self) -> None:
         self.begin("owner")
-        issue = self.store.issue_add("owner", "observe me", source="user",
+        issue = self.add_issue("owner", "observe me", source="user",
                                      quote="watch this")
         self.store.evidence_record("owner", issue["id"], proof_kind="unit")
         bundle = self.store.observe_issue(issue["id"], "owner")
@@ -379,7 +391,7 @@ class AgentCoordTests(unittest.TestCase):
         idle = self.store.wake_check("owner")
         self.assertFalse(idle["wake"])
         self.assertEqual(idle["exit_code"], 10)
-        issue = self.store.issue_add("owner", "wake me", priority="high")
+        issue = self.add_issue("owner", "wake me", priority="high")
         active = self.store.wake_check("owner")
         self.assertTrue(active["wake"])
         self.assertEqual(active["exit_code"], 0)
@@ -388,7 +400,7 @@ class AgentCoordTests(unittest.TestCase):
 
     def test_issue_clarification_visible_in_status_and_board(self) -> None:
         self.begin("owner")
-        issue = self.store.issue_add(
+        issue = self.add_issue(
             "owner", "TODO needs clarification", quote="unclear requirement",
             kind="todo", source="docs")
         self.store.issue_clarify("owner", issue["id"],
@@ -459,7 +471,7 @@ class AgentCoordTests(unittest.TestCase):
         self.store.activity_set(
             "owner", phase="working", activity="reading the board",
             paths=["src/gamemode/gamemode.cpp"], next_step="run pinned test")
-        issue = self.store.issue_add(
+        issue = self.add_issue(
             "owner", "Panel issue", kind="improvement", source="user")
         session = self.store.work_start("owner", issue_id=issue["id"])
         sent = self.store.send_human(
@@ -482,7 +494,7 @@ class AgentCoordTests(unittest.TestCase):
 
     def test_issue_brief_includes_tasks_and_next_action(self) -> None:
         self.begin("owner")
-        issue = self.store.issue_add(
+        issue = self.add_issue(
             "owner", "Brief me", source="user", summary="handoff")
         self.store.task_add(
             "owner", "T1", "Do the work", owner="owner",
@@ -496,7 +508,7 @@ class AgentCoordTests(unittest.TestCase):
     def test_issue_occurrence_records_recurrence(self) -> None:
         self.store.ensure_agent("launch-doctor", "diagnosis")
         self.store.ensure_agent("launch-doctor", "diagnosis")
-        issue = self.store.issue_add(
+        issue = self.add_issue(
             "launch-doctor", "Launch failure: timeout at server",
             kind="launch-friction", source="dev-loop")
         self.store.issue_occurrence(
@@ -512,7 +524,7 @@ class AgentCoordTests(unittest.TestCase):
 
     def test_issue_context_readiness(self) -> None:
         self.begin("context-agent")
-        issue = self.store.issue_add(
+        issue = self.add_issue(
             "context-agent", "Screenshot is missing", quote="take a screenshot",
             kind="bug", source="user", evidence={"text": "no PNG"})
         initial = self.store.issue_readiness(issue["id"])
@@ -530,6 +542,30 @@ class AgentCoordTests(unittest.TestCase):
         self.assertEqual(ready["score"], ready["possible"])
         self.assertEqual(self.store.issue_show(issue["id"])["acceptance"],
                          "sidecar tick equals 120")
+
+    def test_begin_opens_and_end_closes_work_session(self) -> None:
+        self.begin("auto-agent")
+        self.assertEqual(self.store.work_summary(agent="auto-agent")["active"], 1)
+        self.store.end("auto-agent")
+        summary = self.store.work_summary(agent="auto-agent")
+        self.assertEqual(summary["active"], 0)
+        self.assertEqual(summary["sessions"], 1)
+
+    def test_build_wait_is_distinct_and_auto_resumes(self) -> None:
+        self.begin("wait-agent")
+        session = self.store.work_start("wait-agent", task_id="build")
+        self.store.work_phase("wait-agent", session["session_id"], "editing")
+        waiting = self.store.work_wait(
+            "wait-agent", "build_wait", wait_reason="game DLL build",
+            build_id="request-1")
+        self.assertEqual(waiting["phase"], "build_wait")
+        self.assertEqual(waiting["resume_phase"], "editing")
+        resumed = self.store.work_resume("wait-agent")
+        self.assertEqual(resumed["phase"], "editing")
+        self.assertEqual(resumed["resume_phase"], "")
+        summary = self.store.work_summary(agent="wait-agent")
+        self.assertEqual(summary["sessions"], 1)
+        self.assertIn("build_wait", summary["phases_ms"])
 
     def test_work_sessions_measure_received_to_done(self) -> None:
         self.begin("work-agent")
@@ -558,3 +594,5 @@ class AgentCoordTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+

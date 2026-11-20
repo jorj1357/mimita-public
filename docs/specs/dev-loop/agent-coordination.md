@@ -90,6 +90,18 @@ summary` groups elapsed milliseconds by phase and agent, and `work list
 --active` shows sessions that have not ended. The board includes active
 sessions so a wait is visible, not hidden inside one long total.
 
+`begin` opens one active work session for the agent, and `end` closes it. The
+session is agent-owned and model-independent; agents do not need a
+model-specific instruction to create it.
+
+Build waiting is automatic on the shared dev-loop path. When an agent runs
+`dev-loop.py --request build|game-dll --wait-for-build`, the dev-loop records
+`build_wait` with the request ID and a wait reason before blocking and resumes
+the previous phase when the build succeeds, fails, or times out. This applies
+to every agent identity using the dev-loop, regardless of model or client.
+Manual `work wait` and `work resume` are fallbacks for a wait outside that path.
+`test_wait` uses the same rule when a bounded test-run wait is added.
+
 The measurement is observational, not a performance target by itself. A phase
 that is consistently large becomes an efficiency or build-friction issue with
 the measured evidence and a proposed reduction.
@@ -154,6 +166,47 @@ An agent that lacks knowledge of game state, intent, ownership, or expected
 behavior files an `awareness`/`needs_info` issue with the exact missing
 question and impact. It does not silently assume the answer. The issue stays
 visible on the board until the user or owner clarifies.
+
+## Questions for the user and shared answers
+
+Any agent may ask the user for missing intent or detail. The coordination
+brain is the shared queue; an agent does not need to own the related task to
+record a question:
+
+1. Record the user's report and issue context as usual. Use
+   `agent-coord issue clarify <issue-id> --question "<one clear question>"`.
+   The issue enters `needs_clarification`, and the question is appended to its
+   durable detail record. Put the issue ID in the agent's activity and next
+   step so it is discoverable from the board.
+2. The user-facing coordinator checks the shared board and
+   `agent-coord issue needs-info`, then asks the user the exact open question
+   in the active conversation. Writing an issue detail file alone does not
+   notify the user. When several questions are pending, present them together,
+   attributed to their issue and asking agent. Do not overwrite or combine
+   distinct questions.
+3. After the user answers, append the answer verbatim to the same issue with
+   `agent-coord issue quote <issue-id> "<answer>" --supports "answer to the
+   recorded clarification"`. Record any interpretation or resulting decision
+   separately; never rewrite the original report or question.
+4. Broadcast the answer and any new user direction through the shared brain
+   with `directive add --source user --via <agent> ...` and, when agents need
+   prompt delivery, `send --to all --kind broadcast --issue <issue-id> ...`.
+   Every agent can retrieve the full issue with `issue brief <issue-id>` and
+   receives the broadcast at its next `sync`/activation. The answer is shared
+   state, not private context belonging to the agent that asked.
+
+The user-facing coordinator surfaces questions from every agent, including
+agents working on other issues. A question stays open until the answer is
+appended and the issue's clarification state is updated. If an answer applies
+to multiple issues, preserve it on each relevant issue and broadcast one
+linked directive; do not infer that an answer to one question resolves
+another.
+
+User messages received directly by any agent follow the same sharing rule:
+preserve the exact instruction as a user directive, link it to the affected
+issue/task where known, and broadcast it so agents do not depend on private
+chat context. Delivery to an idle agent occurs at its next activation or
+checkpoint; the coordination brain does not promise to wake an idle agent.
 
 ## Optional intent
 

@@ -258,6 +258,19 @@ def _prompt(request: dict) -> str:
         "events.jsonl for required and forbidden events. Report the first "
         "divergence, evidence, and confidence back to the issue. Do not edit "
         "code or commit without human approval.\n\n"
+        "Proof-first completion:\n"
+        "  - Review `proof status` and your task's proof record before claiming "
+        "completion.\n"
+        "  - A build is not behavior proof. Use the exact pinned run journal "
+        "and required events.\n"
+        "  - If issue context is missing, run `issue readiness` and add the "
+        "missing reproduction, expected behavior, acceptance, paths, or proof "
+        "expectation with `issue context`.\n"
+        "  - If you are waiting for a build/test, use `next --mode waiting` "
+        "to take a missing-field, missing-evidence, stale-proof, or review-only "
+        "task. Never edit a file leased by another agent.\n"
+        "  - Do not close a behavior issue without proven integration/unit "
+        "evidence or a reasoned exemption.\n\n"
         "Requested work:\n" + request.get("prompt", "")
     )
 

@@ -68,4 +68,12 @@ XXITY, Play Test/My Creations, and end-to-end proof.
 
 Source and focused tests only. No DLL build, launch, runtime, visual, or human
 acceptance is claimed.
+## Autonomy restart follow-up
+
+- Restarted the stale dev-loop daemon through the control path and verified
+  exactly one watchdog and one daemon with a matching combined source hash.
+- Added `docs/skills/dev-loop-restart-v1.md` and routed it from
+  `docs/ROUTER.md`.
+- Opened `issue-6fc8f853a674` with the user's verbatim request, readiness
+  context, and five tasks for an always-available restart/self-recovery skill.
 
