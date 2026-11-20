@@ -201,3 +201,26 @@ not establish the exact inner operation responsible for the physics/collision
 spikes; add sub-stage attribution or inspect the called collision routines
 before changing them. Revalidate the identical mode, map, roster, and journal
 metrics after any fix.
+
+## Occurrence 2026-11-19 — Juggernaut 67-NPC repeat run
+
+Status: CONFIRMED RUNTIME OVERLOAD; fix not yet validated.
+
+- Scene: Juggernaut on `dust2cyberiav4`, one player and 67 server NPCs.
+- Run: `logs/2026-11-19/20261119_014024/`, NPC module generation 345.
+- In the last 60 seconds captured, all 32 `performance.server-loop-window`
+  samples were below 59.9 Hz; median was 18.674 Hz, minimum 5.972 Hz, and
+  maximum 39.722 Hz.
+- The worst `performance.server-tick-stall` was 1,605.535 ms total, including
+  1,486.612 ms in NPC work. One `npc.slow-update` attributed 93.16 ms to
+  physics/collision; another attributed 82.03 ms to navigation. A separate
+  global graph plan took 363.214 ms earlier in this same run.
+- Movement decisions and animation events show NPCs continued moving, but this
+  does not establish that every NPC moved continuously or that movement quality
+  was acceptable.
+
+The global graph is a proven occasional navigation spike. The latest sample
+also shows recurrent physics/collision outliers and expensive Recast/local
+planning, so avoiding the custom graph alone cannot meet the 60 Hz target. New
+rate-limited sub-stage diagnostics are awaiting a loaded module generation;
+retain the exact mode/map/roster and repeat the one-minute journal measurement.

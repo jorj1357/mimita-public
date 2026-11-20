@@ -35,6 +35,8 @@ enum GuiMenuState
     GUI_MENU_PRACTICE,
     GUI_MENU_REPLAY,
     GUI_MENU_AVATAR_CREATOR,
+    GUI_MENU_CREATE,
+    GUI_MENU_MY_CREATIONS,
     GUI_MENU_BOMB_TAG_CONFIG,
     GUI_MENU_COMPETITIVE,
     GUI_MENU_COMPETITIVE_RESULT,
@@ -63,6 +65,27 @@ struct SandboxMapSelection
 SandboxMapSelection getPendingSandboxMapSelection();
 void clearPendingSandboxMapSelection();
 void reportSandboxMapLoadResult(const std::string& message, bool success);
+
+// Creator project launch requested by the Create screen or a terminal command.
+// The engine consumes it while entering GAME_PLAYING, loads the project map into
+// the live world, and activates the Map Editor.
+struct CreatorProjectLaunch
+{
+    bool shouldStart = false;
+    bool playtest = false;
+    std::string action = "create"; // create | edit | play_local
+    std::string projectId;
+    std::string mapId;
+    std::string title;
+    std::string workingPath;
+    std::string baseMapPath;
+    std::string initialVersion;
+    std::string manifestHash;
+    std::string floorId;
+    std::string spawnId;
+};
+void requestCreatorProjectLaunch(const CreatorProjectLaunch& info);
+CreatorProjectLaunch takeCreatorProjectLaunch();
 
 // 7 22 2026 1225 
 /**

@@ -4,6 +4,7 @@
 #include "physics/movement/physics-collision-glb-safety.h"
 #include "physics/movement/physics-collision-glb-sweep-slide.h"
 #include "physics/movement/actor-triangle-solver.h"
+#include "physics/movement/physics-scratch.h"
 
 #include <chrono>
 #include <cstdio>
@@ -124,6 +125,58 @@ static void logFrameSummary(const CollisionFrameDiag& d)
         d.totalMs);
 }
 
+static void logNpcCollisionSubstageSample(
+    const Player& p, const World& world, float dt,
+    const CollisionTraceSnapshot& trace, const CollisionFrameDiag& diag)
+{
+    if (!isCurrentEntityNpc() || diag.totalMs < 10.0)
+        return;
+
+    // The aggregate NPC update record shows collision cost but cannot identify
+    // which legacy capsule pass owns an outlier. Keep this diagnostic bounded
+    // across the whole server rather than emitting one row per NPC per tick.
+    static auto nextLogTime = std::chrono::steady_clock::time_point{};
+    static uint64_t suppressed = 0;
+    const auto now = std::chrono::steady_clock::now();
+    if (now < nextLogTime) {
+        ++suppressed;
+        return;
+    }
+    nextLogTime = now + std::chrono::milliseconds(250);
+    const uint64_t suppressedSinceLast = suppressed;
+    suppressed = 0;
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Collision, StructuredLevel::Important,
+        "npc.collision.substage-sample", p.username,
+        "rate-limited legacy NPC collision outlier stage timings",
+        static_cast<uint32_t>(p.movementSimulationTick),
+        nlohmann::json{
+            {"actor", p.username}, {"dt", dt}, {"total_ms", diag.totalMs},
+            {"sweep_slide_ms", diag.sweepSlideMs},
+            {"depenetration_gather_ms", diag.depenGatherMs},
+            {"depenetration_solve_ms", diag.depenSolveMs},
+            {"floor_recovery_ms", diag.floorRecoveryMs},
+            {"emergency_check_ms", diag.emergencyCheckMs},
+            {"emergency_search_ms", diag.emergencySearchMs},
+            {"emergency_triggered", diag.emergencyTriggered},
+            {"emergency_directions_searched", diag.emergencyDirsSearched},
+            {"stuck_tracking_ms", diag.stuckTrackMs},
+            {"debug_visualization_ms", diag.debugVisMs},
+            {"initial_candidates", trace.initialCandidates},
+            {"max_candidates", trace.maxCandidates},
+            {"sweep_hits", trace.sweepHits},
+            {"recovery_contacts", trace.maxRecoveryContacts},
+            {"depenetration_iterations", diag.depenIterations},
+            {"depenetration_contacts", diag.depenContacts},
+            {"body_part_count", p.physicalBody.parts.size()},
+            {"world_triangle_count", world.collisionMesh.triangles.size()},
+            {"position", {p.pos.x, p.pos.y, p.pos.z}},
+            {"velocity", {p.vel.x, p.vel.y, p.vel.z}},
+            {"suppressed_since_last", suppressedSinceLast}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 static void trackGrowth(Player& p, int candidates, int contacts, int bodySpheres)
 {
     auto& d = p.collision;
@@ -161,11 +214,16 @@ void doGLBTriangleCollisions(
     bool includePhysicalEntities,
     bool slideOnly
 ) {
+    const bool arcadeCollision =
+        CollisionConfig::instance().arcadeCollision();
     // ── Single actor-triangle owner (opt-in, hot-reloadable) ─────────────
     // When enabled, every living actor that has a physical body uses the one
     // triangle solver. NPCs intentionally share this owner; their navigation
     // code only supplies movement intent and must not select a legacy solver.
-    if (slideOnly || CollisionConfig::instance().actorTriangleSolver())
+    // Arcade collision always uses the capsule path so limb/weapon geometry is
+    // never part of collision.
+    if (!arcadeCollision &&
+        (slideOnly || CollisionConfig::instance().actorTriangleSolver()))
     {
         if (runActorTriangleCollisionStep(
                 p, world, groundedThisFrame, dt,
@@ -218,8 +276,11 @@ void doGLBTriangleCollisions(
     glm::vec3 totalMove = (p.vel + p.externalImpulse) * dt;
     glm::vec3 remainingMove;
     CollisionTraceSnapshot trace;
-    std::vector<int> candidates;
-    candidates.reserve(512);
+    auto& scratch = physicsScratch();
+    auto& candidates = scratch.ints;
+    candidates.clear();
+    if (candidates.capacity() < 512)
+        candidates.reserve(512);
 
     // TODO-DELETE: Phase 1 — body/weapon pass call. Superseded by the actor
     // triangle solver (solveActorTriangleCollision). Remove when the toggle path
@@ -229,7 +290,7 @@ void doGLBTriangleCollisions(
     // root capsule sweep resolves. This prevents the weapon from
     // entering geometry — the player is pushed away at the weapon's
     // contact point before the capsule can move further into the wall.
-    if (!isCurrentEntityNpc())
+    if (!arcadeCollision && !isCurrentEntityNpc())
     {
         Perf::ScopedTimer _bw("WeaponCollisions");
         auto t0 = std::chrono::steady_clock::now();
@@ -263,7 +324,7 @@ void doGLBTriangleCollisions(
         Capsule cap = p.getCapsule();
         {
             auto tg0 = std::chrono::steady_clock::now();
-            candidates = gatherGLBTriangles(world, cap, glm::vec3(0.0f), "Player_Capsule_Depen");
+            gatherGLBTriangles(candidates, world, cap, glm::vec3(0.0f), "Player_Capsule_Depen");
             auto tg1 = std::chrono::steady_clock::now();
             diag.depenGatherMs = std::chrono::duration<float, std::milli>(tg1 - tg0).count();
         }
@@ -331,7 +392,9 @@ void doGLBTriangleCollisions(
 
         p.updateModelWorldTransforms();
         Capsule stuckCheckCap = p.getCapsule();
-        std::vector<int> stuckCandidates = gatherGLBTriangles(world, stuckCheckCap, glm::vec3(0.0f), "Player_Capsule_EmergencyCheck");
+        auto& stuckCandidates = scratch.ints3;
+        gatherGLBTriangles(stuckCandidates, world, stuckCheckCap,
+                           glm::vec3(0.0f), "Player_Capsule_EmergencyCheck");
         std::vector<RecoveryContact> stuckContacts = collectCapsuleRecoveryContacts(
             world, stuckCheckCap, stuckCandidates
         );
@@ -362,6 +425,7 @@ void doGLBTriangleCollisions(
                     { 1, 0, 1}, {-1, 0, 1}, { 0, 1, 1}, { 0,-1, 1}
                 };
 
+                const auto searchStart = std::chrono::steady_clock::now();
                 for (glm::vec3 dir : searchDirs)
                 {
                     if (glm::length(dir) > 0.001f)
@@ -377,13 +441,14 @@ void doGLBTriangleCollisions(
                         Capsule testCap = testP.getCapsule();
                         char searchTag[64];
                         std::snprintf(searchTag, sizeof(searchTag), "Player_Capsule_EmergencySearch_%d", dirsSearched);
-                        std::vector<int> testCandidates = gatherGLBTriangles(world, testCap, glm::vec3(0.0f), searchTag);
+                        auto& testCandidates = scratch.ints3;
+                        gatherGLBTriangles(testCandidates, world, testCap,
+                                           glm::vec3(0.0f), searchTag);
                         std::vector<RecoveryContact> testContacts;
                         {
-                            std::vector<int> triCandidates = testCandidates;
                             std::vector<glm::vec3> emptySamples;
                             testContacts = collectGLBRecoveryContacts(
-                                world, testCap, emptySamples, triCandidates, BODY_SAMPLE_RADIUS
+                                world, testCap, emptySamples, testCandidates, BODY_SAMPLE_RADIUS
                             );
                         }
 
@@ -406,6 +471,9 @@ void doGLBTriangleCollisions(
                     }
                     if (dirsSearched >= MAX_EMERGENCY_TESTS || foundFree) break;
                 }
+                diag.emergencySearchMs =
+                    std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - searchStart).count();
                 diag.emergencyDirsSearched = dirsSearched;
 
                 if (foundFree || bestPen < worstPen)
@@ -423,7 +491,8 @@ void doGLBTriangleCollisions(
             p.collision.stuckFrames = 0;
         }
         auto t1 = std::chrono::steady_clock::now();
-        diag.emergencyCheckMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+        diag.emergencyCheckMs = std::chrono::duration<float, std::milli>(t1 - t0).count() -
+            diag.emergencySearchMs;
     }
 
     // ── 6. Stuck position tracking ───────────────────────
@@ -535,6 +604,7 @@ void doGLBTriangleCollisions(
 
     // ── Per-frame summary ────────────────────────────────
     logFrameSummary(diag);
+    logNpcCollisionSubstageSample(p, world, dt, trace, diag);
 
     // ── Growth tracking ──────────────────────────────────
     int bodySphereCount = (int)collectPlayerBodyCollisionSamples(p).size();

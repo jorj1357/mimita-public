@@ -98,6 +98,19 @@
       ]
     },
     {
+      "id": 31,
+      "key": "melee-test",
+      "name": "Melee Validation",
+      "description": "Melee test loadout: Mace (1), Chainsaw (2), Swordsword (3), Revolver (4).",
+      "weapons": [
+        "mace",
+        "chainsaw",
+        "swordsword",
+        "revolver",
+        "nothing"
+      ]
+    },
+    {
       "id": 30,
       "key": "funcounterstrike",
       "name": "Fun Counter Strike",

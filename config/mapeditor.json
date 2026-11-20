@@ -27,5 +27,11 @@
   "focus_padding": 1.35,
   "camera_speed_multiplier": 1.0,
   "autosave_delay_ms": 400,
+  "snap_enabled": true,
+  "snap_increment_m": 1.0,
+  "grid_visible": false,
+  "grid_spacing_m": 1.0,
+  "grid_extent_m": 50.0,
+  "grid_major_every": 10,
   "label_mode": "selected"
 }

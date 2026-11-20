@@ -640,34 +640,29 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         respawnAnimTimer = 0.30f;
     else
         respawnAnimTimer = std::max(0.0f, respawnAnimTimer - dt);
-    const bool justDied = dead && !animPrevDead;
     animPrevDead = dead;
-
     const AnimationRuntimeSettings& animSettings = animationRuntimeSettings();
-    const std::string deathClipName = sm
-        ? (!sm->deathSmall.empty() ? sm->deathSmall : sm->death)
-        : std::string();
-    std::string deathPresentation = animSettings.deathPresentation;
-    if (CommunityMatchClient::instance().active()) {
-        const Gamemode& modeConfig =
-            GamemodeRegistry::instance().get(CommunityMatchClient::instance().mode());
-        if (!modeConfig.deathPresentation.empty())
-            deathPresentation = modeConfig.deathPresentation;
-    }
-    if (deathPresentation == "auto")
-        deathPresentation = "animation";
-    const bool deathClipAllowed = deathPresentation != "disappear" &&
-        deathPresentation != "ragdoll";
-    if (justDied) {
-        authoredDeathTimer = deathClipAllowed && !deathClipName.empty() &&
-            findClip(deathClipName) ? clipDurationSeconds(deathClipName) : 0.0f;
-    } else if (!dead) {
+
+    // Death is a hard animation reset: discard the interrupted action and all
+    // transient state so no weapon/reload/dash pose can resume during this life.
+    if (dead) {
+        clearOneShot();
+        hurtTimer = 0.0f;
+        landAnimTimer = 0.0f;
+        respawnAnimTimer = 0.0f;
+        dashAnimTimer = 0.0f;
+        downDashAnimTimer = 0.0f;
+        knockbackAnimTimer = 0.0f;
+        crouchAnimTimer = 0.0f;
+        equipAnimTimer = 0.0f;
         authoredDeathTimer = 0.0f;
-    } else if (authoredDeathTimer > 0.0f) {
-        authoredDeathTimer = std::max(0.0f, authoredDeathTimer - dt);
+        authoredDeathActive = false;
+        dashPoseTimer = -1.0f;
+        freezePoseTimer = -1.0f;
     }
-    authoredDeathActive = dead && !ragdollModeActive && deathClipAllowed &&
-        authoredDeathTimer > 0.0f && !deathClipName.empty() && findClip(deathClipName);
+
+    authoredDeathTimer = 0.0f;
+    authoredDeathActive = false;
 
     std::string activeAnim = currentAnimName;
     nlohmann::json candidateJson;
@@ -722,7 +717,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         const std::string airFallback = !sm->fall.empty()
             ? sm->fall
             : (!sm->jump.empty() ? sm->jump : locomotionClip());
-        addCandidate("death", deathClipName, authoredDeathActive);
+        addCandidate("death", std::string(), authoredDeathActive);
         addCandidate("respawn", sm->respawn, respawnAnimTimer > 0.0f);
         addCandidate("hurt", activeHurtClip, hurtTimer > 0.0f);
         addCandidate("freeze", sm->freeze, freeze.freezeActive || freeze.didFreeze);
@@ -800,6 +795,14 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         } else {
             activeAnim = defaultClip();
         }
+    }
+
+    // While dead, the idle/default clip is the sole selected animation state.
+    // This also overrides locked clips and death/hurt candidates on remote actors.
+    if (dead) {
+        activeAnim = defaultClip();
+        selectedState = "idle";
+        selectedPriority = animationStatePriority("idle");
     }
 
     if (gAnimationPriorityDebug) {
@@ -978,9 +981,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     }
 
     float dashWeight = 0.0f;
-    if (forceDashPose) {
+    if (!dead && forceDashPose) {
         dashWeight = 1.0f;
-    } else if (dashPoseTimer >= 0.0f) {
+    } else if (!dead && dashPoseTimer >= 0.0f) {
         const auto& dp = gPlayerProcedural.dashPose;
         if (dp.snapIn && dashPoseTimer == 0.0f) {
             dashWeight = 1.0f;
@@ -1011,7 +1014,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
     // === FREEZE POSE TIMER ===
     bool wasFreezeActive = freezePoseActive;
-    freezePoseActive = freeze.freezeActive;
+    freezePoseActive = !dead && freeze.freezeActive;
     if (freeze.freezeActive && !wasFreezeActive)
         freezePoseTimer = 0.0f;
     else if (!freeze.freezeActive && wasFreezeActive)
@@ -1129,7 +1132,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     }
 
     // Weapon state
-    bool weaponEquipped = hasValidWeapon && (equippedSlot >= 1);
+    bool weaponEquipped = !dead && hasValidWeapon && (equippedSlot >= 1);
     std::string weaponId = equippedWeaponId;
     std::string poseLookupId = weaponId;
     const WeaponRuntime* currentWeaponRuntime = nullptr;
@@ -1327,7 +1330,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
         if (!meleeExclusivePose) {
 
-        if (isReloading && (part.name == "leftArm" || part.name == "rightArm")) {
+        if (!dead && isReloading && (part.name == "leftArm" || part.name == "rightArm")) {
             target.rotationEuler += gPlayerProcedural.layers.reloadOverlay.rotation;
             target.translation += gPlayerProcedural.layers.reloadOverlay.translation;
         }

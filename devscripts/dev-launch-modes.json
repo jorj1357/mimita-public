@@ -88,10 +88,13 @@
         "--mode",
         "juggernaut",
         "--gamemode",
-      "juggernaut",
+        "juggernaut",
         "--no-npcs"
       ],
-      "client_args": [],
+      "client_args": [
+        "--startup-command",
+        "start juggernaut"
+      ],
       "map": "dust2cyberiav4"
     },
      "10": {

@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "id": "map_editor_chunk_integrity_v1",
+  "description": "Map editor chunk integrity, shared surface fields, meters snapping/grid, and world mode switching.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "funworld3",
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "steps": [
+    {
+      "id": "create",
+      "command": "mapeditor_create",
+      "args": [
+        "creator_chunk_probe",
+        "chunk probe"
+      ],
+      "delay_ms_after": 2500
+    },
+    {
+      "id": "add_chunk",
+      "command": "mapeditor",
+      "args": [
+        "add",
+        "chunk",
+        "probe_chunk"
+      ],
+      "delay_ms_after": 1200
+    },
+    {
+      "id": "select_chunk",
+      "command": "mapeditor",
+      "args": [
+        "select",
+        "probe_chunk"
+      ],
+      "delay_ms_after": 500
+    },
+    {
+      "id": "delete_chunk",
+      "command": "mapeditor",
+      "args": [
+        "delete"
+      ],
+      "delay_ms_after": 1200
+    },
+    {
+      "id": "add_block",
+      "command": "mapeditor",
+      "args": [
+        "add",
+        "block",
+        "surface_block"
+      ],
+      "delay_ms_after": 800
+    },
+    {
+      "id": "snap",
+      "command": "mapeditor",
+      "args": [
+        "snap",
+        "1"
+      ],
+      "delay_ms_after": 300
+    },
+    {
+      "id": "snap_grid",
+      "command": "mapeditor",
+      "args": [
+        "snap_grid",
+        "0.1"
+      ],
+      "delay_ms_after": 300
+    },
+    {
+      "id": "grid",
+      "command": "mapeditor",
+      "args": [
+        "grid",
+        "1"
+      ],
+      "delay_ms_after": 300
+    },
+    {
+      "id": "color",
+      "command": "mapeditor",
+      "args": [
+        "surface_color",
+        "0.2",
+        "0.6",
+        "1.0",
+        "0.5"
+      ],
+      "delay_ms_after": 500
+    },
+    {
+      "id": "opacity",
+      "command": "mapeditor",
+      "args": [
+        "opacity",
+        "0.5"
+      ],
+      "delay_ms_after": 300
+    },
+    {
+      "id": "collide_off",
+      "command": "mapeditor",
+      "args": [
+        "collision",
+        "0"
+      ],
+      "delay_ms_after": 800
+    },
+    {
+      "id": "mode_static",
+      "command": "mapeditor",
+      "args": [
+        "mode",
+        "static"
+      ],
+      "delay_ms_after": 800
+    },
+    {
+      "id": "mode_procedural",
+      "command": "mapeditor",
+      "args": [
+        "mode",
+        "procedural"
+      ],
+      "delay_ms_after": 1200
+    },
+    {
+      "id": "save",
+      "command": "mapeditor",
+      "args": [
+        "save"
+      ],
+      "delay_ms_after": 1500
+    }
+  ],
+  "assertions": [
+    {
+      "type": "event_present",
+      "event": "world-project.created",
+      "where": {
+        "project_id": "creator_chunk_probe"
+      }
+    },
+    {
+      "type": "event_field_equals",
+      "event": "map-editor.object.deleted",
+      "field": "kind",
+      "equals": "chunk"
+    },
+    {
+      "type": "event_field_at_least",
+      "event": "map-editor.scene.applied",
+      "field": "rendered_chunk_count",
+      "value": 1
+    },
+    {
+      "type": "event_present",
+      "event": "map-editor.scene.applied"
+    },
+    {
+      "type": "event_field_at_least",
+      "event": "map-editor.scene.applied",
+      "field": "rendered_block_count",
+      "value": 1
+    },
+    {
+      "type": "event_field_equals",
+      "event": "map-editor.surface.applied",
+      "field": "kind",
+      "equals": "block"
+    },
+    {
+      "type": "event_field_equals",
+      "event": "map-editor.snap.applied",
+      "field": "increment_m",
+      "equals": 0.1
+    },
+    {
+      "type": "event_field_equals",
+      "event": "map-editor.grid.applied",
+      "field": "enabled",
+      "equals": true
+    },
+    {
+      "type": "event_field_equals",
+      "event": "map-editor.project.mode.applied",
+      "field": "mode",
+      "equals": "procedural"
+    },
+    {
+      "type": "event_present",
+      "event": "world-project.version-saved"
+    }
+  ],
+  "timeout_seconds": 240
+}

@@ -271,7 +271,7 @@ reason and must not emit the success event.
 | `map-editor.create.applied` | Project/map owner; `project_id`, `map_id`, `working_path`, `initial_version`, `editor_active:true`, `world_loaded:true`, `floor_id`, `spawn_id` | `mapeditor_create` created the starter project, loaded that project's map into a live world, and activated the editor. A project-file write alone is insufficient. |
 | `map-editor.entity.transform.applied` | `project_id`, `map_id`, `entity_id`, `before_position`, `after_position`, `before_rotation`, `after_rotation`, `before_scale`, `after_scale`, `render_revision`, `collision_revision`, `result` | Move/rotate/scale edits reached both the live viewport and collision world. |
 | `map-editor.spawn-volume.applied` | `project_id`, `map_id`, `volume_id`, `monster_ids`, `max_alive`, `spawn_interval_ticks`, `activation_policy`, `revision`, `result` | The saved volume resolves the selected monster pool and spawn limits. |
-| `monster.spawn.applied` | `actor_id`, `monster_id`, `source_volume_id`, `project_revision`, `rig_revision`, `mode_id`, `tick` | The runtime created the selected monster from the authored volume. |
+| `monster.spawned` | Extend the existing encounter-spawn event with `actor_id` (matching event subject), `monster_id`/`role_id`, `source_volume_id`, `project_id`, `project_revision`, and `rig_revision`; retain `map`, `zone`, and `position` | The runtime created the selected monster from the authored volume. Reuse this existing event; do not emit a duplicate spawn-success record. |
 | `creator.project.action.applied` | `project_id`, `project_revision`, `action` (`edit` or `play_local`), `map_id`, `mode_id`, `run_id`, `pid`, `result` | The selected saved creation opened in the editor or launched into its local game session. |
 | `map-editor.autosaved` | Existing map-editor owner; retain `map`, `path`, `revision`, `saved_revision`, `dirty_after_save`, `entity_count`, `block_count`; add `project_id` and `project_revision` for projects | The edited revision was written and is no longer dirty. |
 | `map-editor.playtest.started` / `map-editor.returned` | `project_id`, `map_id`, `project_revision`, `mode_id`, `run_id`, `editor_active`, `gameplay_active`, `pid` | The local server-authoritative test began and returned to the same project in the same game process. |
@@ -302,7 +302,7 @@ scenario passes only when it sees, in order:
    `map-editor.autosaved` for the block, player spawn, and monster volume;
 3. `map-editor.playtest.started` with the same project revision;
 4. `avatar.model.imported`, `anim.set.reloaded`, and the intended per-tick
-   animation preview/runtime events, followed by `monster.spawn.applied` for
+   animation preview/runtime events, followed by `monster.spawned` for
    an actor created by the authored spawn volume;
 5. `monster.attack.definition.loaded`, one sample for every active sphere
    tick, and `monster.attack.hit` against the deliberate test target with

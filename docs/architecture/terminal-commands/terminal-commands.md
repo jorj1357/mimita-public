@@ -151,6 +151,16 @@ target, equips a legal range-appropriate weapon through the normal equip
 command, and treats walkable ramps as terrain. Returning to `human` clears held
 AI/terminal input and restores normal control immediately.
 
+`player_control ai melee mace|chainsaw|swordsword` is the bounded Mode 1
+validation variant. It forces one melee weapon through the normal slot/equip
+path, follows routes from the existing `NpcNavGraph` owner, rejects movement
+into an unsupported drop or void, and holds a stable contact range while aiming
+and attacking through the normal input boundary. It requests a controlled NPC
+near the player when no close hostile exists. It never teleports the player and
+does not mutate authoritative health or damage. `npc_spawn_near <distance>
+[count]` is the bounded test support command used by that fallback; the server
+still validates and adopts the spawn through the shared safe-spawn owner.
+
 `collision_probe x,y,z` is a local diagnostic command. It reports whether a
 world point is inside static collision, the downward floor height, and bounded
 ray hits in six directions, and writes `collision.probe` to the canonical

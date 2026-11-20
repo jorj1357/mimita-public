@@ -1345,3 +1345,105 @@ same-property conflicts remain visible, own-edit undo works, and each process
 recovers its last confirmed state after disconnect. These are runtime and
 human-visible acceptance requirements; a build or local JSON save alone does
 not satisfy them.
+
+## Live chunk integrity, world modes, and meters snapping (2026-11-19)
+
+### Shared authored surface
+
+`blocks[]` and `chunk.parts[]` use the same authored surface fields:
+
+```json
+{
+  "shape": "box|sphere|cylinder|cone|ramp|ladder",
+  "material": "floorv2",
+  "material_preset": "wood",
+  "color": [1, 1, 1, 1],
+  "opacity": 1.0,
+  "collision": true,
+  "anchored": true,
+  "uv_scale": [1, 1]
+}
+```
+
+Sizes, positions, rotations, radii, and velocities are real-world meters;
+mass is kilograms. Typed numeric fields are exact; snapping applies to
+dragging, placement, and nudging unless the author explicitly snaps a typed
+value.
+
+### Chunk placement and visibility
+
+`AuthoredChunk` gains `origin` (meters), `yaw` (degrees), and `visible`. In
+static/mixed modes every enabled chunk is rendered at its origin, including
+empty chunks, which are represented by an origin/bounds marker. Procedural
+generation treats chunks as templates and ignores `origin` unless the chunk is
+the explicit static spawn hub. Chunk roots and parts are deletable with Delete,
+X, or Ctrl+X; deletion updates the map JSON, render geometry, collision, and
+autosave revision. Disabled chunks remain visible in the outliner with a
+`disabled` marker so they can be repaired or deleted.
+
+### World modes
+
+`world_mode` is `static`, `procedural`, or `mixed`:
+
+- `static`: authored blocks and placed chunks only.
+- `procedural`: generated chunks from enabled generation zones; a minimal
+  static spawn hub is permitted.
+- `mixed`: authored static geometry plus generated zones.
+
+A procedural/mixed project map opts into world streaming even through a generic
+local/sandbox mode. Static maps never enable streamed chunk collision. Switching
+projects/maps live autosaves the current document, reloads the target world, and
+re-enters the editor in the same process.
+
+### Snapping and grid
+
+`config/mapeditor.json` owns `snap_enabled`, `snap_increment_m` (default 1.0),
+`grid_visible`, `grid_spacing_m`, `grid_extent_m`, and `grid_major_every`.
+Increments are meters (1.0, 0.1, 0.01, ...). The grid is a live world-space
+overlay drawn at the snap spacing; major lines are drawn every
+`grid_major_every` minor lines.
+
+### Runtime event evidence
+
+All success records are emitted after the operation applied. Existing events
+are extended rather than duplicated.
+
+| Event | Required fields | Proves |
+|---|---|---|
+| `map-editor.scene.applied` | map_id, project_id, block_count, chunk_count, rendered_block_count, rendered_chunk_count, empty_chunk_count, hidden_count, render_revision, collision_triangles, revision, result | every authored block/chunk reached the renderer; empty chunks are represented |
+| `map-editor.object.deleted` | map_id, project_id, kind, id, chunk_id, part_count, connector_count, spawn_count, revision, saved_revision, result | Delete/X/Ctrl+X removed the selected chunk/part/block and persisted |
+| `map-editor.chunk.visibility.applied` | map_id, project_id, kind, id, visible, revision, result | visibility applied |
+| `map-editor.chunk.placement.applied` | map_id, chunk_id, origin_m, yaw_deg, bounds_min_m, bounds_max_m, render_revision, collision_triangles, result | chunk placed/rendered |
+| `map-editor.surface.applied` | map_id, project_id, kind, id, chunk_id, material, material_preset, color_rgba, opacity, collision, anchored, shape, size_m, render_revision, revision, result | shared fields applied to a block or chunk part |
+| `map-editor.entity.transform.applied` | kind, id, before, after, field, source, snap_enabled, snap_increment_m, render_revision, collision_triangles, revision, result | live transform reached viewport and collision |
+| `map-editor.snap.applied` | enabled, increment_m, grid_visible, source, revision | snap/grid state applied |
+| `map-editor.grid.applied` | enabled, spacing_m, extent_m, major_every, render_revision, result | world grid drawn |
+| `map-editor.project.mode.applied` | project_id, map_id, mode, generate_whole_world, zone_count, revision, result | static/procedural/mixed applied |
+| `map-authored-geometry.applied` | map, world_mode, block_count, applied_count, chunk_count, chunk_part_count, render_vertices, collision_triangles, render_revision | static geometry and placed chunks reached client/server worlds |
+| `world-stream.profile` | existing fields + project_revision, map_mode | procedural profile loaded |
+| `world-stream.chunk.applied` | existing fields + project_revision, authored, generation_ms, render_state, collision_state | generated chunk became visible/collidable |
+| `world-stream.collision.sync` | existing fields + project_revision, npc_collision_ready | collision follows streaming |
+
+Acceptance assertions:
+
+1. Delete a chunk root and assert `map-editor.object.deleted` with
+   `kind:"chunk"`, then a decreased `rendered_chunk_count` and a saved JSON
+   without the chunk id.
+2. Assert `rendered_block_count == block_count` and
+   `rendered_chunk_count == chunk_count` for a static project.
+3. Assert `map-editor.surface.applied` for one block and one chunk part with the
+   same fields, then a live transform event with the expected meter values.
+4. Assert `map-editor.snap.applied` with `increment_m:0.1`, then transform
+   after-values that are multiples of 0.1, plus `map-editor.grid.applied`.
+5. Assert `map-editor.project.mode.applied mode:"static"` and no
+   `world-stream.chunk.applied` records during Play Test.
+6. Assert `map-editor.project.mode.applied mode:"procedural"`, then at least
+   one `world-stream.profile` and multiple `world-stream.chunk.applied` records
+   with `authored:false`, increasing cell coverage after travel, and
+   `world-stream.collision.sync`.
+7. Save, reload, and assert the same chunk origins, visibility, surface fields,
+   and mode in `map.json`.
+
+Spec-only for now: per-tick `block_tracks` animation and physical unanchored
+blocks. Lua remains deferred; data-driven area effects are the planned path for
+per-client area lighting.

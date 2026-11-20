@@ -6,11 +6,34 @@ processes in the dashboard, and verify that clients interact on the same server.
 Use `docs/specs/dev-loop/multi-instance.md` for the state model and
 `docs/specs/networking/bad-connection-simulation.md` for impairment presets.
 
-Agents run this workflow inside their own mode 2 lane. Each lane has its own
-server/client instances, ports, run IDs, and journals. Do not share one lane or
-one server across agents. Agents never build; the lane dev-loop auto-builds the
-lane artifact. See
-[`../specs/dev-loop/agent-lanes-build-authority.md`](../specs/dev-loop/agent-lanes-build-authority.md).
+Agents run this workflow from the shared checkout root dev-loop. The root
+dev-loop is the only build/run authority: saved compiler inputs trigger
+publication automatically; agents do not create lanes, request builds, invoke
+compilers, or wait/poll. Before launch, confirm the published artifact is
+current for the edited source generation. Each run has a build identity and a
+separate journal for every server/client instance. See
+[`../specs/dev-loop/agent-lanes-build-authority.md`](../specs/dev-loop/agent-lanes-build-authority.md)
+and [`runtime-scenario-validation.md`](runtime-scenario-validation.md).
+
+## Start an isolated agent test run
+
+Use this when another live run, such as the map editor, must stay open. The
+controller selects the current published EXE and starts a loopback server and
+client in a new run directory. All parallel runs share that immutable artifact;
+each has its own run ID, process pair, command queue, and journals.
+
+```text
+python devscripts/dev-loop.py --start-test-run --test-profile tdm-validation --test-launch-mode 41
+python devscripts/dev-loop.py --list-test-runs
+python devscripts/dev-loop.py --run-id <run-id> --client client-01 --command "agent.snapshot melee-check"
+python devscripts/dev-loop.py --stop-test-run <run-id>
+```
+
+The start command refuses a stale/unvalidated EXE or an unavailable gameplay
+DLL. Record the returned `run_id`, pinned EXE SHA-256/build ID, DLL generation,
+and exact server/client journal paths. `--stop-test-run` checks process start
+time and executable against the manifest; it does not stop the primary run.
+This is independent runtime isolation, not an independent build or executable.
 
 ## Start one server and two clients
 
@@ -24,6 +47,11 @@ python devscripts/dev-loop.py --list-instances
 The first command starts the server and the primary client (`client-01`).
 `start-client` adds one more client with its own journal, command queue, and
 bad-connection preset.
+
+Do not launch against a stale artifact to claim the edit passed. Record the
+artifact ID, executable hash/path, source generation, run ID, and the exact
+`EVENTS_JSONL_PATH` for the server and every client. Verify the client and
+server build IDs match before interpreting combat outcomes.
 
 Dashboard:
 

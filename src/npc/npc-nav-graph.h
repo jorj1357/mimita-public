@@ -67,7 +67,8 @@ public:
     std::vector<NpcNavRoute> findRoutes(const World& world, const glm::vec3& start,
                                         const glm::vec3& goal,
                                         const NpcNavGraphSettings& settings,
-                                        uint32_t actorSeed);
+                                        uint32_t actorSeed,
+                                        uint32_t simulationTick = 0);
 
     // Diagnostics.
     std::size_t builtChunkCount() const { return mChunks.size(); }
@@ -111,7 +112,7 @@ private:
                       const std::vector<glm::ivec2>& coords,
                       const glm::vec3& start, const glm::vec3& goal,
                       const std::unordered_map<std::uint64_t, float>& penalty,
-                      NpcNavRoute& out);
+                      NpcNavRoute& out, bool* budgetExceeded = nullptr);
 
     std::unordered_map<std::uint64_t, GraphChunk> mChunks; // key = chunk coord
     std::unordered_map<std::uint64_t, bool> mLinkedPairs;

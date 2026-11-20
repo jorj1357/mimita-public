@@ -940,15 +940,20 @@ As long as we have it somewhere
 at this tick
 from this approximate origin
 in this direction.
-The client does not send trusted:
-* Damage.
-* Target identity.
-* Death.
-* Score.
-* Authoritative ammo.
-* Explosion results.
-* Final projectile position.
-The server determines those values.
+The client immediately predicts its local attack and may attach bounded
+candidate claims for target/contact, predicted damage, projectile contact, or
+explosion results, as defined by
+[`contact-authority.md`](contact-authority.md). A claim describes what the
+client observed; it is not trusted merely because the client sent it. The
+server validates it against mapped historical state and adopts plausible
+results as canonical so small client/server simulation differences do not
+turn visible hits into misses.
+
+The client never has authority to declare a target dead, award score, mutate
+shared health, or set authoritative ammo/projectile state. The server applies
+the accepted result through the shared owner and publishes the same outcome to
+all clients. Final projectile/explosion state remains server-owned while its
+presentation and contact are predicted immediately on the client.
 
 
 7 20 2026 update
@@ -1913,6 +1918,13 @@ the relevant request ID
 The server maps the client tick to an estimated server tick and selects the correct validation method for the action type.
 There must not be one universal rewind rule for every interaction.
 Different actions require different treatment.
+Every weapon action nevertheless follows the universal client-prediction and
+server-referee contract in
+[`contact-authority.md`](contact-authority.md#universal-weapon-prediction-and-match-target-2026-11-19).
+Hitscan, projectile, explosion, melee, and physical-contact weapons predict
+immediately on the initiating client. Their validation uses action-specific
+historical state and shared resolvers; none waits for a server round trip
+before showing provisional local feedback.
 ________________
 
 
@@ -1942,6 +1954,42 @@ rewind amount in milliseconds
 whether the value was clamped
 
 ________________
+#### Weapon request ordering under server load
+
+The mapped server action tick, not packet receive or processing time,
+determines whether a weapon request was legal when fired. A server that is
+behind may receive several requests during one simulation tick. It queues and
+deduplicates them by request ID and input sequence, then resolves them in
+validated action-time order. Retransmitting one request never creates another
+shot.
+
+Weapon cooldown remains a gameplay rule. Compare each request's validated
+action tick with the weapon's authoritative next-allowed-fire tick. If the
+request was on cooldown at that action tick, reject it as `cooldown`. If it was
+legal then but reached processing late because the server fell behind, do not
+mislabel it as a cooldown rejection: process the queued request at the next
+authoritative simulation opportunity, preserving its validated action tick.
+Use bounded history for hitscan, melee, and explosion contact; fast projectiles
+use the historical launch validation and bounded fast-forward policy in
+section 45.6. A request that outlives required history may be rejected as
+`server_backlog_history_expired` or `outside_history`, with the actual backlog
+recorded. Never bypass fixed-tick simulation, grant extra shots, or silently
+extend the configured fire interval to compensate for low server Hz.
+
+The client predicts fire according to its local weapon cooldown and sends one
+unique request per edge-triggered shot or generated automatic-fire shot. It
+does not wait for acceptance to show provisional local effects. Pending
+requests are queued/retransmitted with the same identity, not recreated as new
+shots. The server returns an accepted/rejected result for every request.
+Cooldown decisions report the validated action tick and authoritative
+next-allowed tick. Timing diagnostics also report server receive/process tick,
+queue delay/depth, measured server Hz, RTT/jitter, and whether the reason was a
+real cooldown or server backlog.
+
+Queueing changes request ordering and delivery tolerance; it does not execute
+damage, explosions, or knockback outside the authoritative simulation phases.
+________________
+
 45.3 Historical state buffer
 The server maintains a bounded history of state required for validation.
 History may include:
@@ -2062,9 +2110,10 @@ Suggested initial maximum:
 
 #### Melee prediction-first contact and referee validation
 
-**DECIDED Melee-specific policy:** Melee uses the shared movement model's
-client-trusting, immediate-prediction direction as a scoped exception to the
-general server-first contact flow above. The local client predicts the action,
+**DECIDED Melee policy:** Melee follows the universal weapon-prediction and
+server-referee contract in
+[`contact-authority.md`](contact-authority.md#universal-weapon-prediction-and-match-target-2026-11-19).
+The local client predicts the action,
 hit/grab contact, percent, and impulse immediately so the initiating player
 sees one coherent result without waiting for a round trip. It submits the
 candidate contact/result with its input sequence, mapped action tick, actor
@@ -5180,12 +5229,18 @@ The server and client journals are separate. A scenario journal is owned by one
 client and records what that client observed plus server events it received.
 The server writes its own audit journal. They are linked by run, server, and
 client IDs, never silently merged.
-### Melee prediction accuracy targets (2026-10-29)
+### Weapon prediction accuracy target (2026-11-19)
 
-- RTT below `100 ms`: `99.99%` claim acceptance and exact damage match.
-- RTT `100 ms` or more: `99%` claim acceptance and exact damage match.
-- The target is measured across NPC/NPC, NPC/player, player/NPC, and
-  player/player for every configured melee weapon and network profile.
+- At least `99.99%` of eligible client-predicted damaging contacts must be
+  accepted with the same target and exact total damage across the full
+  supported RTT range. There is no lower accuracy target for higher RTT.
+- Measure across NPC/NPC, NPC/player, player/NPC, and player/player for every
+  configured weapon and supported network profile, not just melee or one
+  favorable latency sample.
+- Use the denominator and predeclared exclusions in
+  [`contact-authority.md`](contact-authority.md#accuracy-targets-2026-10-29).
+- Investigate every mismatch to its first divergent stage even when the
+  aggregate rate remains above target.
 - Late plausible contacts are accepted inside the bounded history/tolerance
   window. Only impossible, invalid, stale, duplicate, team-blocked, or
   wall-blocked contacts reject.

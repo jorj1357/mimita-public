@@ -474,6 +474,12 @@ struct ServerGamemodeState
 // Singleton gamemode state for the current server process.
 ServerGamemodeState& serverGamemodeState();
 
+// Select the active mode's spawn for a newly joining actor when its map
+// spawns are assigned. Returns false until mode spawn setup is ready so the
+// caller can use the generic world spawn picker during startup.
+bool serverGamemodeSpawnPointForNewActor(std::uint32_t actorId,
+                                         glm::vec3* outPosition);
+
 // Authoritative match lifecycle-rule queries. These read the active
 // ServerGamemodeState so damage/respawn/NPC code has one source of truth.
 // serverMatchRespawnsEnabled: false => one-life; dead actors become Spectating.

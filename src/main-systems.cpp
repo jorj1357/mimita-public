@@ -1,4 +1,7 @@
 // 08 16 2026, 01 35
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <cstdint>
 /* purpose
 * Initializes MiMITA runtime subsystems, command registration, and default binds.
@@ -20,6 +23,10 @@
 #include <memory>
 #include <new>
 #include <utility>
+#include <filesystem>
+#include <fstream>
+#include <limits>
+#include <windows.h>
 #include "engine/engine.h"
 #include "host/host-runtime.h"
 #include "host/abi/state-capability.h"
@@ -55,6 +62,7 @@
 #include "analytics/analytics-manager.h"
 #include "gui/gui-main.h"
 #include "gui/ui-system.h"
+#include "gui/gui-coord.h"
 #include "gui/gui-layout.h"
 #include "gui/gui-editor.h"
 #include "gui/gui-element-render.h"
@@ -183,6 +191,105 @@ bool postAgentMousePosition(double x, double y)
     int wx = 0, wy = 0;
     if (!mimita::game::hostWindowPosition(wx, wy)) return false;
     return SetCursorPos(wx + static_cast<int>(x), wy + static_cast<int>(y)) != 0;
+}
+
+bool captureAgentWindowBmp(const std::string& relativePath,
+                           int& width, int& height, std::string& error)
+{
+    const std::filesystem::path relative(relativePath);
+    if (relative.is_absolute() || relative.has_root_name() ||
+        relative.extension() != ".bmp") {
+        error = "use a relative .bmp path under logs/";
+        return false;
+    }
+    for (const auto& part : relative) {
+        if (part == "..") {
+            error = "parent traversal is not allowed";
+            return false;
+        }
+    }
+    if (relative.generic_string().rfind("logs/", 0) != 0) {
+        error = "screenshot must be stored under logs/";
+        return false;
+    }
+
+    int windowX = 0, windowY = 0;
+    if (!mimita::game::hostWindowPosition(windowX, windowY) ||
+        !mimita::game::hostWindowSize(width, height) ||
+        width <= 0 || height <= 0 || width > 8192 || height > 8192) {
+        error = "could not read a valid client window rectangle";
+        return false;
+    }
+    const auto root = std::filesystem::weakly_canonical(
+        std::filesystem::current_path() / "logs");
+    const auto output = std::filesystem::weakly_canonical(
+        std::filesystem::current_path() / relative);
+    const auto rootText = root.native();
+    const auto outputText = output.native();
+    if (outputText.size() <= rootText.size() ||
+        outputText.compare(0, rootText.size(), rootText) != 0 ||
+        outputText[rootText.size()] != L'\\') {
+        error = "resolved screenshot path escaped logs/";
+        return false;
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(output.parent_path(), ec);
+    if (ec) {
+        error = "could not create screenshot directory";
+        return false;
+    }
+
+    const std::size_t pixelCount = static_cast<std::size_t>(width) *
+                                   static_cast<std::size_t>(height);
+    if (pixelCount > std::numeric_limits<std::size_t>::max() / 4) {
+        error = "screenshot dimensions overflow";
+        return false;
+    }
+    std::vector<std::uint8_t> pixels(pixelCount * 4);
+    HDC desktop = GetDC(nullptr);
+    HDC memory = desktop ? CreateCompatibleDC(desktop) : nullptr;
+    HBITMAP bitmap = desktop ? CreateCompatibleBitmap(desktop, width, height) : nullptr;
+    HGDIOBJ previous = memory && bitmap ? SelectObject(memory, bitmap) : nullptr;
+    const bool copied = previous &&
+        BitBlt(memory, 0, 0, width, height, desktop, windowX, windowY,
+               SRCCOPY | CAPTUREBLT) != 0;
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width;
+    info.bmiHeader.biHeight = -height;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    const bool read = copied && GetDIBits(memory, bitmap, 0,
+        static_cast<UINT>(height), pixels.data(), &info, DIB_RGB_COLORS) != 0;
+    if (previous) SelectObject(memory, previous);
+    if (bitmap) DeleteObject(bitmap);
+    if (memory) DeleteDC(memory);
+    if (desktop) ReleaseDC(nullptr, desktop);
+    if (!read) {
+        error = "window pixels could not be captured; ensure the client is visible";
+        return false;
+    }
+
+    BITMAPFILEHEADER header{};
+    header.bfType = 0x4D42;
+    header.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    header.bfSize = static_cast<DWORD>(header.bfOffBits + pixels.size());
+    std::ofstream file(output, std::ios::binary | std::ios::trunc);
+    if (!file) {
+        error = "could not open screenshot output";
+        return false;
+    }
+    file.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    file.write(reinterpret_cast<const char*>(&info.bmiHeader), sizeof(info.bmiHeader));
+    file.write(reinterpret_cast<const char*>(pixels.data()),
+               static_cast<std::streamsize>(pixels.size()));
+    if (!file) {
+        error = "could not write screenshot output";
+        return false;
+    }
+    error.clear();
+    return true;
 }
 
 }  // namespace
@@ -715,6 +822,140 @@ void registerAgentCommands()
                 {{"source", "agent"}, {"context", "menu_or_gameplay"},
                  {"action", "mouse_click"}, {"button", button == GLFW_MOUSE_BUTTON_RIGHT ? "right" : "left"}});
         }, "2026-11-14", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.mouse_scroll", "Scroll at a window-relative cursor position.",
+        "agent.mouse_scroll <x> <y> <notches>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 3) {
+                Terminal::instance().addLog(
+                    "[AGENT] Usage: agent.mouse_scroll <x> <y> <notches>");
+                return;
+            }
+            try {
+                const double x = std::stod(args[0]);
+                const double y = std::stod(args[1]);
+                const int notches = std::clamp(std::stoi(args[2]), -20, 20);
+                if (notches == 0 || !postAgentMousePosition(x, y)) return;
+                const LONG wheelDelta = static_cast<LONG>(notches * WHEEL_DELTA);
+                mouse_event(MOUSEEVENTF_WHEEL, 0, 0,
+                            static_cast<DWORD>(wheelDelta), 0);
+                writeAgentCommandEvent("input.normalized", "agent mouse scroll injected",
+                    {{"source", "agent"}, {"context", "menu_or_gameplay"},
+                     {"action", "mouse_scroll"}, {"x", x}, {"y", y},
+                     {"notches", notches}, {"wheel_delta", wheelDelta}});
+            } catch (...) {
+                Terminal::instance().addLog("[AGENT] invalid scroll coordinates or notches");
+            }
+        }, "2026-11-19", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.gui_scan", "Report the visible UI widgets and clickable rectangles.",
+        "agent.gui_scan",
+        [](const std::vector<std::string>&) {
+            int fbW = 0, fbH = 0, winW = 0, winH = 0;
+            mimita::game::hostFramebufferSize(fbW, fbH);
+            mimita::game::hostWindowSize(winW, winH);
+            if (fbW <= 0 || fbH <= 0 || winW <= 0 || winH <= 0) {
+                Terminal::instance().addLog("[AGENT] UI scan unavailable: window dimensions missing");
+                return;
+            }
+            nlohmann::json widgets = nlohmann::json::array();
+            const auto& tracked = uiGetTrackedWidgets();
+            const std::size_t count = std::min<std::size_t>(tracked.size(), 256);
+            for (std::size_t i = 0; i < count; ++i) {
+                const auto& widget = tracked[i];
+                const UIRect screen =
+                    GuiCoordinateSystem::instance().designToScreen(widget.rect);
+                widgets.push_back({
+                    {"index", i}, {"id", widget.id},
+                    {"design", {{"x", widget.rect.x}, {"y", widget.rect.y},
+                                 {"w", widget.rect.w}, {"h", widget.rect.h}}},
+                    {"screen", {{"x", screen.x}, {"y", screen.y},
+                                {"w", screen.w}, {"h", screen.h}}},
+                    {"window", {{"x", screen.x * winW / fbW},
+                                 {"y", screen.y * winH / fbH},
+                                 {"w", screen.w * winW / fbW},
+                                 {"h", screen.h * winH / fbH}}},
+                    {"hovered", widget.hovered}, {"pressed", widget.pressed}});
+            }
+            const auto& requestId = Terminal::instance().currentRequestId();
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Gui, StructuredLevel::Important,
+                "agent.gui.scan", requestId,
+                "captured the current frame's interactive UI rectangles", 0,
+                {{"framebuffer_width", fbW}, {"framebuffer_height", fbH},
+                 {"window_width", winW}, {"window_height", winH},
+                 {"widget_count", count}, {"truncated", tracked.size() > count},
+                 {"widgets", std::move(widgets)}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }, "2026-11-19", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.gui_button", "Press or release a UI button by its current scanned ID.",
+        "agent.gui_button <element_id> <down|up>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2 || (args[1] != "down" && args[1] != "up")) {
+                Terminal::instance().addLog(
+                    "[AGENT] Usage: agent.gui_button <element_id> <down|up>");
+                return;
+            }
+            const auto& widgets = uiGetTrackedWidgets();
+            const auto found = std::find_if(widgets.rbegin(), widgets.rend(),
+                [&](const UITrackedWidget& widget) { return widget.id == args[0]; });
+            if (found == widgets.rend()) {
+                writeAgentCommandEvent("agent.gui.button.failed",
+                    "element ID is not present in the latest UI scan",
+                    {{"element_id", args[0]}, {"operation", args[1]},
+                     {"visible_widget_count", widgets.size()}});
+                return;
+            }
+            int fbW = 0, fbH = 0, winW = 0, winH = 0;
+            if (!mimita::game::hostFramebufferSize(fbW, fbH) ||
+                !mimita::game::hostWindowSize(winW, winH) ||
+                fbW <= 0 || fbH <= 0 || winW <= 0 || winH <= 0) return;
+            const UIRect rect = GuiCoordinateSystem::instance().designToScreen(found->rect);
+            const double x = (rect.x + rect.w * 0.5) * winW / fbW;
+            const double y = (rect.y + rect.h * 0.5) * winH / fbH;
+            if (!postAgentMousePosition(x, y)) {
+                writeAgentCommandEvent("agent.gui.button.failed",
+                    "target window could not receive pointer input",
+                    {{"element_id", args[0]}, {"operation", args[1]},
+                     {"x", x}, {"y", y}});
+                return;
+            }
+            const bool down = args[1] == "down";
+            postAgentMouseButton(GLFW_MOUSE_BUTTON_LEFT, down);
+            writeAgentCommandEvent("agent.gui.button", "agent UI button input injected",
+                {{"element_id", found->id}, {"operation", args[1]},
+                 {"x", x}, {"y", y}, {"design_rect", {
+                     {"x", found->rect.x}, {"y", found->rect.y},
+                     {"w", found->rect.w}, {"h", found->rect.h}}}});
+        }, "2026-11-19", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.screenshot", "Save the current client window to a run-local BMP.",
+        "agent.screenshot <logs/date/run/client-N/screenshot.bmp>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[AGENT] Usage: agent.screenshot <logs/date/run/client-N/screenshot.bmp>");
+                return;
+            }
+            int width = 0, height = 0;
+            std::string error;
+            const bool captured = captureAgentWindowBmp(
+                args[0], width, height, error);
+            writeAgentCommandEvent(
+                captured ? "agent.screenshot.saved" : "agent.screenshot.failed",
+                captured ? "saved visible client window screenshot" : error,
+                {{"path", args[0]}, {"width", width}, {"height", height},
+                 {"captured", captured}});
+        }, "2026-11-19", CommandCategory::Debug
     });
 
     Terminal::instance().registerCommand({

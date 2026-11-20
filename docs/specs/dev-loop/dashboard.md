@@ -44,6 +44,20 @@ by `docs/specs/dev-loop/dev-loop.md`.
   behavior and layout; this does not make Python a replacement for the game's
   JSON-defined GUI presentation or C++ gameplay owners.
 
+## Collapsible sections
+
+Every major dashboard section is collapsible: build cards, WHOLE-GAME DLL BUILD
+QUEUE, CHECKOUTS AND AGENT LANES, MIMITA PROCESSES, RUNTIMES, and LIVE BUILD AND
+LOOP OUTPUT. Each header is a toggle with a visible `[-]`/`[+]` marker and stays
+visible while its body is hidden. Collapsed sections keep their last header
+summary but skip body rendering. Open/closed state persists in
+`.dev/dashboard-ui.json` under `collapsed`, keyed by a stable section id. Toggling
+a section must not stop the daemon or any game process.
+
+The RUNTIMES section lists each independent runtime's id, launch mode, map,
+server/client liveness, port, pinned generation, and journal, with Stop and
+Reload actions and a Start runtime control.
+
 ## Checkout and process visibility
 
 Show the main checkout and each registered lane in a compact overview. Each

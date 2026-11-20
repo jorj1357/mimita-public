@@ -92,7 +92,7 @@ struct HitscanTraceConfig
 {
     float maxRange = DEFAULT_HITSCAN_RANGE;
     float damage = 0.0f;
-    float headshotMultiplier = 2.0f;
+    float headshotMultiplier = 1.5f;
     int pelletCount = 1;
     float spreadDegrees = 0.0f;
     uint32_t deterministicSeed = 0;

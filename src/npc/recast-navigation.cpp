@@ -992,15 +992,20 @@ RecastNavigationResult RecastNavigationBackend::prepare(
     if (!mState) mState = new State();
 
     const std::uint64_t contentHash = collisionContentHash(world, profile);
-    const bool needsBuild = !mState->mesh || mState->world != &world ||
-        mState->collisionHash != contentHash ||
-        mState->triangleCount != baseCollisionTriangleCount(world) ||
-        !mState->dirtyTiles.empty();
+    const size_t baseCount = baseCollisionTriangleCount(world);
+    // A gamemode map commit replaces the World object even when the collision
+    // content is identical. Key the published navmesh on the content hash, not
+    // the object address, so those commits reuse the bake instead of rebuilding
+    // it synchronously inside the next fixed tick.
+    const bool contentSame = mState->mesh &&
+        mState->collisionHash == contentHash &&
+        mState->triangleCount == baseCount;
+    const bool needsBuild = !contentSame || !mState->dirtyTiles.empty();
+    if (!needsBuild)
+        mState->world = &world;
     if (needsBuild) {
-        const bool incremental =
-            mState->mesh && mState->tiled && mState->world == &world;
+        const bool incremental = mState->mesh && mState->tiled && contentSame;
         if (incremental) {
-            const size_t baseCount = baseCollisionTriangleCount(world);
             const bool contentChanged =
                 mState->collisionHash != contentHash ||
                 mState->triangleCount != baseCount;
@@ -1018,7 +1023,7 @@ RecastNavigationResult RecastNavigationBackend::prepare(
             policy.staticTriangles = static_cast<std::uint32_t>(baseCount);
             policy.streamedTriangles = static_cast<std::uint32_t>(
                 world.collisionMesh.streamedTailTriangles);
-            policy.collisionChanged = 1;
+            policy.collisionChanged = contentChanged ? 1u : 0u;
             policy.dirtyTiles =
                 static_cast<std::uint32_t>(mState->dirtyTiles.size());
             policy.inFixedTick =
@@ -1062,8 +1067,11 @@ RecastNavigationResult RecastNavigationBackend::prepare(
             std::abs(profile.height - mState->buildProfile.height) > 0.001f;
         policy.inFixedTick = ModuleHost::instance().insideFixedTick() ? 1u : 0u;
         if (ModuleHost::instance().navigationPolicy(&policy) &&
-            !policy.outAllowRebuild && mState->mesh) {
-            result.available = true;
+            !policy.outAllowRebuild) {
+            // The custom planner remains authoritative when no published
+            // navmesh exists. Never block a fixed tick on a full bake; defer it
+            // to a non-tick context instead of stalling snapshots for seconds.
+            result.available = mState->mesh != nullptr;
             result.failure = "rebuild_deferred_policy";
             result.navmeshVersion = mState->version;
             result.sourceTriangleCount = mState->sourceTriangleCount;
@@ -1227,15 +1235,18 @@ RecastNavigationResult RecastNavigationBackend::query(
 
     const auto begin = std::chrono::steady_clock::now();
     const std::uint64_t contentHash = collisionContentHash(world, profile);
-    const bool needsBuild = !mState->mesh || mState->world != &world ||
-        mState->collisionHash != contentHash ||
-        mState->triangleCount != baseCollisionTriangleCount(world) ||
-        !mState->dirtyTiles.empty();
+    const size_t baseCount = baseCollisionTriangleCount(world);
+    // Reuse the published navmesh when the collision content is unchanged even
+    // if a map commit replaced the World object address.
+    const bool contentSame = mState->mesh &&
+        mState->collisionHash == contentHash &&
+        mState->triangleCount == baseCount;
+    const bool needsBuild = !contentSame || !mState->dirtyTiles.empty();
+    if (!needsBuild)
+        mState->world = &world;
     if (needsBuild) {
-        const bool incremental =
-            mState->mesh && mState->tiled && mState->world == &world;
+        const bool incremental = mState->mesh && mState->tiled && contentSame;
         if (incremental) {
-            const size_t baseCount = baseCollisionTriangleCount(world);
             const bool contentChanged =
                 mState->collisionHash != contentHash ||
                 mState->triangleCount != baseCount;
@@ -1253,7 +1264,7 @@ RecastNavigationResult RecastNavigationBackend::query(
             policy.staticTriangles = static_cast<std::uint32_t>(baseCount);
             policy.streamedTriangles = static_cast<std::uint32_t>(
                 world.collisionMesh.streamedTailTriangles);
-            policy.collisionChanged = 1;
+            policy.collisionChanged = contentChanged ? 1u : 0u;
             policy.dirtyTiles =
                 static_cast<std::uint32_t>(mState->dirtyTiles.size());
             policy.inFixedTick =
@@ -1297,8 +1308,11 @@ RecastNavigationResult RecastNavigationBackend::query(
             std::abs(profile.height - mState->buildProfile.height) > 0.001f;
         policy.inFixedTick = ModuleHost::instance().insideFixedTick() ? 1u : 0u;
         if (ModuleHost::instance().navigationPolicy(&policy) &&
-            !policy.outAllowRebuild && mState->mesh) {
-            result.available = true;
+            !policy.outAllowRebuild) {
+            // The custom planner remains authoritative when no published
+            // navmesh exists. Never block a fixed tick on a full bake; defer it
+            // to a non-tick context instead of stalling snapshots for seconds.
+            result.available = mState->mesh != nullptr;
             result.failure = "rebuild_deferred_policy";
             result.navmeshVersion = mState->version;
             result.sourceTriangleCount = mState->sourceTriangleCount;

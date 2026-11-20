@@ -10,6 +10,7 @@
 #include "game/resident-state-module.h"
 #include <cstdlib>
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -18,6 +19,7 @@
 #include "npc/npc.h"
 #include "npc/npc-combat.h"
 #include "npc/npc-difficulty-config.h"
+#include "npc/npc-navigation.h"
 #include "devtools/dev-npc-selection.h"
 #include "physics/config.h"
 #include "network/net_mode.h"
@@ -44,6 +46,51 @@ void registerNpcCommands()
                 }
             }
             Terminal::instance().addLog("[NPC COMMAND] npc_spawn count=" + std::to_string(count));
+        }
+    });
+    Terminal::instance().registerCommand({
+        "npc_spawn_near", "Spawn NPCs near the local player for a bounded test",
+        "npc_spawn_near <distance_m> [count]",
+        [](const std::vector<std::string>& args) {
+            MimitaNet::MultiplayerContext& ctx = MP_CONTEXT;
+            if (!ctx.active) {
+                Terminal::instance().addLog(
+                    "[NPC COMMAND] npc_spawn_near requires a connected room");
+                return;
+            }
+            float distance = 2.5f;
+            int count = 1;
+            try {
+                if (!args.empty()) distance = std::stof(args[0]);
+                if (args.size() > 1) count = std::stoi(args[1]);
+            } catch (...) {
+                Terminal::instance().addLog(
+                    "[NPC COMMAND] usage: npc_spawn_near <distance_m> [count]");
+                return;
+            }
+            distance = std::clamp(distance, 1.0f, 8.0f);
+            count = std::clamp(count, 1, 5);
+            const Player& player = THE_PLAYER;
+            World& world = THE_WORLD;
+            const float radians = glm::radians(player.yaw);
+            const glm::vec3 forward(std::cos(radians), std::sin(radians), 0.0f);
+            const glm::vec3 base = player.pos + forward * distance +
+                glm::vec3(0.0f, 0.0f, 0.5f);
+            for (int i = 0; i < count; ++i)
+            {
+                const float angle = (float)i * (6.2831853f / (float)count);
+                const glm::vec3 offset(std::cos(angle), std::sin(angle), 0.0f);
+                glm::vec3 spawn = base + offset * (count > 1 ? 0.9f : 0.0f);
+                const float groundZ = NpcNavigation::groundHeightAt(
+                    world, spawn, 8.0f, 0.4f);
+                if (groundZ > -1.0e5f)
+                    spawn.z = groundZ + 0.05f;
+                MimitaNet::mpRequestNpcSpawn(ctx, spawn, 1.0f);
+            }
+            Terminal::instance().addLog(
+                "[NPC COMMAND] npc_spawn_near count=" + std::to_string(count) +
+                " position=(" + std::to_string(base.x) + "," +
+                std::to_string(base.y) + "," + std::to_string(base.z) + ")");
         }
     });
     Terminal::instance().registerCommand({

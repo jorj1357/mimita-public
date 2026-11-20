@@ -119,6 +119,7 @@ from dev_loop.artifacts import (
 from dev_loop.build import run_build as run_build_worker
 from dev_loop.game_build import run_game_build as run_game_build_worker
 from dev_loop.launch import select_launch_artifact
+from dev_loop.runtimes import RuntimeManager
 from dev_loop.instances import (
     RunLayout,
     create_run_layout as runtime_create_run_layout,
@@ -751,7 +752,8 @@ def existing_dashboard_pid() -> int:
     return 0
 
 
-def windows_process_identity(pid: int, fresh: bool = False) -> dict | None:
+def windows_process_identity(pid: int, fresh: bool = False,
+                             timeout_seconds: float = 3.0) -> dict | None:
     """Read identity data for one Windows process without changing it.
 
     Results are cached for a short TTL so that bursty status renders do not spawn
@@ -773,11 +775,12 @@ def windows_process_identity(pid: int, fresh: bool = False) -> dict | None:
                 "if ($null -ne $p) { "
                 "[Console]::WriteLine((ConvertTo-Json -Compress "
                 "@{pid=[int]$p.ProcessId; executable=$p.ExecutablePath; "
-                "command_line=$p.CommandLine})) }",
+                "command_line=$p.CommandLine; process_started_utc="
+                "$p.CreationDate.ToUniversalTime().ToString('o')})) }",
             ],
             capture_output=True,
             text=True,
-            timeout=3,
+            timeout=timeout_seconds,
             check=False,
         )
         value = json.loads(result.stdout.strip()) if result.stdout.strip() else None
@@ -1176,6 +1179,7 @@ class DevLoop:
             else profile.get("launch_mode", 1)
         )
         self.launch_mode = load_launch_mode(self.launch_mode_id)
+        self.runtime_manager = RuntimeManager(ROOT, self._resolve_runtime_build)
         configured_visibility = str(
             launch_visibility if launch_visibility is not None
             else profile.get("launch_visibility", "visible")
@@ -1855,6 +1859,25 @@ class DevLoop:
         except OSError as error:
             print(f"[DEV] manifest write failed: {error}")
 
+    def _resolve_runtime_build(self) -> tuple[Path, Path | None, str]:
+        exe = ROOT / ".dev" / "current" / "mimita.exe"
+        identity = self.latest_build_identity() or {}
+        artifact = Path(str(identity.get("artifact_executable")
+                             or identity.get("executable") or ""))
+        if artifact.is_file():
+            exe = artifact
+        dll: Path | None = None
+        ready = read_json(ROOT / "build" / "game" / "ready.json")
+        dll_value = str(ready.get("dll") or "")
+        if dll_value:
+            candidate = Path(dll_value)
+            if not candidate.is_absolute():
+                candidate = ROOT / candidate
+            if candidate.is_file():
+                dll = candidate
+        build_id = str(identity.get("build_id") or "")
+        return exe, dll, build_id
+
     def state(self, status: str = "idle") -> dict:
         client_executable = self.client_args[0] if self.client_args else None
         latest_identity = self.latest_build_identity()
@@ -1991,6 +2014,7 @@ class DevLoop:
             "server_journal_path": self.server_journal_path,
             "client_journal_path": self.client_journal_path,
             "instances": self._instance_records(),
+            "runtimes": self.runtime_manager.list(),
             "events_path": self.events_path,
             "control_port": self.control_port,
             "control_token": self.control_token if self.control_port else None,
@@ -2229,13 +2253,26 @@ class DevLoop:
     def launch_for_control_request(self, request: dict) -> bool:
         """Keep launch exceptions visible and the daemon available for retry."""
         request_id = str(request.get("request_id", ""))
+        press_epoch = request.get("dashboard_press_epoch")
+        received_epoch = request.get("received_epoch")
+        accept_latency_ms = None
+        if isinstance(press_epoch, (int, float)) and isinstance(received_epoch, (int, float)):
+            accept_latency_ms = round((float(received_epoch) - float(press_epoch)) * 1000.0, 1)
+        received_perf = request.get("received_perf")
+        queue_wait_ms = None
+        if isinstance(received_perf, (int, float)):
+            queue_wait_ms = round((time.perf_counter() - float(received_perf)) * 1000.0, 1)
         try:
             # Launch mode and profile data can change while the persistent
             # dashboard daemon is open. Resolve the current files for each new
             # launch instead of reusing the daemon's startup snapshot.
             self.profile = load_profile(self.profile.get("_path", "npc-navigation"))
             self.launch_mode = load_launch_mode(self.launch_mode_id)
-            return self.launch_latest(request_id=request_id)
+            return self.launch_latest(
+                request_id=request_id, accept_latency_ms=accept_latency_ms,
+                queue_wait_ms=queue_wait_ms,
+                dashboard_press_epoch=(float(press_epoch)
+                                       if isinstance(press_epoch, (int, float)) else None))
         except Exception as error:
             details = traceback.format_exc(limit=12)
             self.last_message = f"launch failed with {type(error).__name__}: {error}"
@@ -2446,6 +2483,9 @@ class DevLoop:
                     response = {"accepted": True, "state": self.state(self.last_status_value)}
                 else:
                     request.setdefault("requested_by", "ai")
+                    request.setdefault("received_utc", utc_now())
+                    request.setdefault("received_epoch", time.time())
+                    request.setdefault("received_perf", time.perf_counter())
                     self.control_requests.put(request)
                     response = {
                         "accepted": True,
@@ -2518,6 +2558,12 @@ class DevLoop:
              "whole-game DLL build phase changed"),
             ("[GAME_FILE] ", "dev-loop.game-build.file",
              "game DLL translation unit completed"),
+            ("[GAME_SCAN] ", "dev-loop.game-build.scan",
+             "game DLL object cache scan progressed"),
+            ("[GAME_ERROR] ", "dev-loop.game-build.error",
+             "game DLL build reported an actionable failure"),
+            ("[GAME_RESULT] ", "dev-loop.game-build.result",
+             "game DLL build reached a terminal result"),
         ):
             if line.startswith(prefix):
                 try:
@@ -2533,7 +2579,8 @@ class DevLoop:
         with self.lock:
             self.game_build_detail = detail
             self.last_message = detail
-        if event_name != "dev-loop.game-build.file":
+        if event_name not in ("dev-loop.game-build.file",
+                              "dev-loop.game-build.scan"):
             self.save_state("game_building")
 
     def start_game_build_worker(self) -> None:
@@ -2594,9 +2641,14 @@ class DevLoop:
                 if success:
                     self.game_build_status = "published"
                     self.game_build_generation = int(result.get("generation") or 0) or None
-                    self.game_build_detail = (
-                        f"published generation {self.game_build_generation} "
-                        f"{result.get('dll') or ''}")
+                    if result.get("no_op"):
+                        self.game_build_detail = (
+                            f"no_op: generation {self.game_build_generation} already "
+                            f"matches revision {str(result.get('revision') or '')[:12]}")
+                    else:
+                        self.game_build_detail = (
+                            f"published generation {self.game_build_generation} "
+                            f"{result.get('dll') or ''}")
                     self.last_message = self.game_build_detail
                 else:
                     self.game_build_status = "failed"
@@ -2606,12 +2658,26 @@ class DevLoop:
             self.record_runtime_event(
                 "dev-loop.game-generation.ready" if success
                 else "dev-loop.game-build.failed",
-                {"generation": self.game_build_generation,
+                {"generation": result.get("generation"),
                  "dll": result.get("dll") or "",
+                 "build_attempt_id": result.get("build_attempt_id") or "",
+                 "source_generation": result.get("source_generation"),
+                 "revision": result.get("revision") or "",
+                 "code_hash": result.get("code_hash") or "",
+                 "success": success,
+                 "no_op": bool(result.get("no_op")),
                  "duration_seconds": self.last_game_build_duration_seconds,
+                 "worker_total_seconds": result.get("worker_total_seconds"),
                  "request_ids": request_ids,
+                 "notes": result.get("notes") or [],
+                 "changed_paths": result.get("changed_paths") or [],
+                 "timing_jsonl": result.get("timing_jsonl") or "",
+                 "summary_json": result.get("summary_json") or "",
+                 "last_attempt_json": result.get("last_attempt_json") or "",
+                 "failed_phase": result.get("failed_phase") or "",
+                 "errors": result.get("errors") or [],
                  "error": "" if success else self.game_build_detail},
-                "whole-game generation published" if success
+                "whole-game generation published or reused" if success
                 else "whole-game generation build failed",
             )
             print(f"[DEV GAME] {'published' if success else 'failed'}: {self.game_build_detail}")
@@ -2629,8 +2695,8 @@ class DevLoop:
                 requested_by = str(request.get("requested_by", "ai")).strip().lower()
                 if not _build_request_authorized(requested_by):
                     self.last_message = (
-                        "Build requests are human-only; save source and let the "
-                        "dev-loop auto-build"
+                        "Build request is missing an agent identity; set "
+                        "MIMITA_AGENT_ID or use the agent build/test surface"
                     )
                     self.record_control_event(request, "rejected", self.last_message)
                     self.record_runtime_event(
@@ -2815,6 +2881,59 @@ class DevLoop:
                     self.record_control_event(request, "completed", self.last_message)
                 else:
                     self.record_control_event(request, "rejected", self.last_message)
+            elif action == "start-runtime":
+                try:
+                    runtime = self.runtime_manager.start(
+                        str(request.get("runtime_id", "") or ""),
+                        str(request.get("runtime_launch_mode", "") or "1"),
+                        str(request.get("runtime_profile", "") or "npc-navigation"),
+                        str(request.get("runtime_map", "") or ""),
+                        with_client=not bool(request.get("no_runtime_client")),
+                    )
+                except (OSError, RuntimeError, ValueError) as error:
+                    self.last_message = f"runtime start failed: {error}"
+                    self.record_control_event(request, "failed", self.last_message)
+                    self.save_state("runtime_start_failed")
+                else:
+                    self.last_message = (
+                        f"runtime {runtime.get('runtime_id')} started "
+                        f"pid={runtime.get('pid')} mode={runtime.get('launch_mode')} "
+                        f"map={runtime.get('map')} journal={runtime.get('journal')}")
+                    self.record_control_event(request, "completed", self.last_message)
+                    self.save_state("runtime_started")
+            elif action == "stop-runtime":
+                try:
+                    runtime = self.runtime_manager.stop(
+                        str(request.get("runtime_id", "") or ""))
+                except (OSError, RuntimeError, ValueError) as error:
+                    self.last_message = f"runtime stop failed: {error}"
+                    self.record_control_event(request, "failed", self.last_message)
+                    self.save_state("runtime_stop_failed")
+                else:
+                    self.last_message = (
+                        f"runtime {runtime.get('runtime_id')} stopped "
+                        f"pid={runtime.get('pid')}")
+                    self.record_control_event(request, "completed", self.last_message)
+                    self.save_state("runtime_stopped")
+            elif action == "reload-runtime":
+                try:
+                    runtime = self.runtime_manager.reload(
+                        str(request.get("runtime_id", "") or ""))
+                except (OSError, RuntimeError, ValueError) as error:
+                    self.last_message = f"runtime reload failed: {error}"
+                    self.record_control_event(request, "failed", self.last_message)
+                    self.save_state("runtime_reload_failed")
+                else:
+                    self.last_message = (
+                        f"runtime {runtime.get('runtime_id')} reloaded "
+                        f"generation={Path(str(runtime.get('game_dll') or '')).stem}")
+                    self.record_control_event(request, "completed", self.last_message)
+                    self.save_state("runtime_reloaded")
+            elif action == "list-runtimes":
+                rows = self.runtime_manager.list()
+                request["results"] = rows
+                self.last_message = f"runtimes={len(rows)}"
+                self.record_control_event(request, "completed", self.last_message)
             elif action == "stop-instance":
                 iid = str(request.get("instance_id", "") or "")
                 if iid == "server-01":
@@ -3655,7 +3774,10 @@ class DevLoop:
         self.cleanup_room_file()
         self.save_state("server_exited")
 
-    def launch_latest(self, request_id: str = "") -> bool:
+    def launch_latest(self, request_id: str = "", *,
+                      accept_latency_ms: float | None = None,
+                      queue_wait_ms: float | None = None,
+                      dashboard_press_epoch: float | None = None) -> bool:
         launch_started = time.monotonic()
         self.last_message = ""
         # Every explicit launch starts a fresh run folder with one journal per
@@ -3674,6 +3796,7 @@ class DevLoop:
         build_id = ""
         artifact_id = ""
         map_name = ""
+        selected_build = ""
 
         def stage(name: str, result: str, reason: str = "",
                   stage_started: float | None = None, **details) -> None:
@@ -3691,6 +3814,9 @@ class DevLoop:
                     "build_id": build_id,
                     "launch_mode": self.launch_mode_id,
                     "map": map_name,
+                    "accept_latency_ms": accept_latency_ms,
+                    "queue_wait_ms": queue_wait_ms,
+                    "dashboard_press_epoch": dashboard_press_epoch,
                     "elapsed_ms": round((now - launch_started) * 1000.0, 1),
                     "stage_elapsed_ms": round(
                         (now - (stage_started if stage_started is not None else launch_started))
@@ -3701,6 +3827,9 @@ class DevLoop:
                 events_path=launch_journal_path,
                 run_id=launch_run_id,
             )
+
+        stage("request_accepted", "accepted",
+              "dashboard launch request accepted by dev-loop")
 
         def stop_server_for_launch() -> bool:
             stopped = self.stop_server()
@@ -4593,7 +4722,38 @@ class DevLoop:
                 return "server"
             return "client" if command_line else "unknown"
 
-        clients = [item for item in processes if process_role(item) == "client"]
+        parallel_test_processes: set[tuple[int, str, str]] = set()
+        for manifest_path in (ROOT / "logs").glob("*/*/run.json"):
+            try:
+                run_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if (run_manifest.get("test_run_kind") != "parallel_agent_test" or
+                    run_manifest.get("status") not in {"starting", "online"}):
+                continue
+            for instance in run_manifest.get("instances", []):
+                if instance.get("role") != "client" or instance.get("state") not in {"starting", "online"}:
+                    continue
+                try:
+                    parallel_test_processes.add((
+                        int(instance.get("pid") or 0),
+                        str(instance.get("process_started_utc") or ""),
+                        os.path.normcase(str(instance.get("executable") or "")),
+                    ))
+                except (TypeError, ValueError):
+                    continue
+
+        def is_parallel_test_process(item: dict) -> bool:
+            try:
+                key = (int(item.get("pid") or 0),
+                       str(item.get("process_started_utc") or ""),
+                       os.path.normcase(str(item.get("executable") or "")))
+            except (TypeError, ValueError):
+                return False
+            return key in parallel_test_processes and bool(key[1] and key[2])
+
+        clients = [item for item in processes
+                   if process_role(item) == "client" and not is_parallel_test_process(item)]
         unknown = [item for item in processes if process_role(item) == "unknown"]
         killed: list[dict] = []
         stopped_pids: list[int] = []
@@ -4661,7 +4821,11 @@ class DevLoop:
             return refuse(f"cannot verify MiMITA process exit: {error}")
         remaining = [item for item in remaining
                      if int(item.get("pid", 0) or 0) != os.getpid()]
-        remaining_clients = [item for item in remaining if process_role(item) == "client"]
+        remaining_clients = [item for item in remaining
+                             if process_role(item) == "client" and
+                             not is_parallel_test_process(item)]
+        retained_parallel_test_pids = [int(item.get("pid", 0) or 0) for item in remaining
+                                       if is_parallel_test_process(item)]
         retained_servers = [item for item in remaining if process_role(item) == "server"]
         remaining_unknown = [item for item in remaining if process_role(item) == "unknown"]
         if remaining_clients or remaining_unknown:
@@ -4673,6 +4837,7 @@ class DevLoop:
                 {"result": "failed", "killed": killed,
                  "remaining_clients": remaining_clients,
                  "remaining_unclassified": remaining_unknown,
+                 "retained_parallel_test_pids": retained_parallel_test_pids,
                  "retained_server_pids": [int(item.get("pid", 0) or 0)
                                           for item in retained_servers]},
                 self.last_message)
@@ -4680,6 +4845,7 @@ class DevLoop:
         self.record_runtime_event(
             "dev-loop.process.reconcile",
             {"result": "completed", "killed": killed, "remaining_clients": [],
+             "retained_parallel_test_pids": retained_parallel_test_pids,
              "retained_server_pids": [int(item.get("pid", 0) or 0)
                                       for item in retained_servers]},
             "verified same-checkout clients exited while retaining servers",
@@ -6608,7 +6774,80 @@ def run_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
-def _print_read_only_status(current: dict, as_json: bool) -> None:
+def _run_coord_request(args: argparse.Namespace) -> int | None:
+    if not (getattr(args, "coord_status", False) or
+            getattr(args, "coord_inbox", False) or
+            getattr(args, "coord_message", "")):
+        return None
+    from devscripts.agent_coord import (
+        CoordError,
+        CoordStore,
+        coordination_brief,
+        format_brief,
+    )
+    agent = (getattr(args, "coord_agent", "") or
+             os.environ.get("MIMITA_AGENT_ID", "")).strip()
+    try:
+        if args.coord_status:
+            brief = coordination_brief(agent)
+            if args.json:
+                print(json.dumps(brief, indent=2, sort_keys=True))
+            else:
+                print(format_brief(brief))
+                for conflict in brief.get("conflicts", []):
+                    print(f"[COORD] conflict {conflict.get('conflict_id')} "
+                          f"task={conflict.get('task_id') or '-'} "
+                          f"{conflict.get('summary')}")
+                latest = brief.get("latest_message")
+                if latest:
+                    print(f"[COORD] latest {latest.get('msg_id')} "
+                          f"from={latest.get('sender')} {latest.get('subject')}")
+            return 0
+        store = CoordStore(publish_docs=False)
+        try:
+            if args.coord_message:
+                message = store.message_view(args.coord_message)
+                if args.json:
+                    print(json.dumps(message, indent=2, sort_keys=True))
+                else:
+                    print(f"[COORD] {message['msg_id']} from={message['sender']} "
+                          f"to={message['recipient']} {message['subject']}")
+                    print(message["body"])
+                return 0
+            if not agent:
+                print("[COORD] --coord-agent or MIMITA_AGENT_ID is required",
+                      file=sys.stderr)
+                return 2
+            messages = store.inbox(agent)
+            if args.json:
+                print(json.dumps(messages, indent=2, sort_keys=True))
+            else:
+                for message in messages:
+                    print(f"[COORD] {message['msg_id']} from={message['sender']} "
+                          f"to={message['recipient']} {message['subject']}")
+                    print(message["body"])
+                if not messages:
+                    print("[COORD] no unread messages")
+            return 0
+        finally:
+            store.close()
+    except CoordError as error:
+        print(f"[COORD] {error}", file=sys.stderr)
+        return error.code
+
+
+def _print_read_only_status(current: dict, as_json: bool,
+                            coord: bool = True) -> None:
+    brief = {}
+    if coord:
+        try:
+            from devscripts.agent_coord import coordination_brief
+            brief = coordination_brief(os.environ.get("MIMITA_AGENT_ID", "").strip())
+            if brief:
+                current = dict(current)
+                current["agent_coord"] = brief
+        except Exception:  # coordination must never break status
+            brief = {}
     if as_json:
         print(json.dumps(current, indent=2))
         return
@@ -6652,6 +6891,13 @@ def _print_read_only_status(current: dict, as_json: bool) -> None:
         f"[DEV STATUS] client pids={current.get('client_pids', [])} "
         f"uptime={DevLoop._duration_text(current.get('client_uptime_seconds'))}"
     )
+    if brief:
+        from devscripts.agent_coord import format_brief
+        print(format_brief(brief))
+        for conflict in brief.get("conflicts", []):
+            print(f"[DEV STATUS] coord-conflict {conflict.get('conflict_id')} "
+                  f"task={conflict.get('task_id') or '-'} "
+                  f"{conflict.get('summary')}")
 
 
 def _control_action(args: argparse.Namespace) -> str:
@@ -6705,46 +6951,72 @@ def run_ai_match(args: argparse.Namespace) -> int:
 
     The player stays the same authoritative actor; only its local input source
     changes through `player_control ai`. The scenario is in-memory because this
-    is live gameplay, not a recorded-input replay.
+    is live gameplay, not a recorded-input replay. With `--ai-weapon` the AI is
+    forced onto one melee weapon and the run also proves a claimed/accepted
+    Mode 1 contact on the live server path.
     """
     seconds = max(5.0, float(args.ai_seconds))
+    weapon = str(getattr(args, "ai_weapon", "") or "")
+    health = int(getattr(args, "ai_health", 0) or 0)
+    profile_name = (args.profile if args.profile and args.profile != "npc-navigation"
+                    else (args.ai_profile or "tdm-validation"))
     scenario_id = f"ai_match_tdm_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    setup = [
+        {
+            "id": "wait_active",
+            "wait_for_event": "network.mode.start",
+            "where": {"stage": "active"},
+            "timeout_seconds": 120,
+        },
+    ]
+    if health > 0:
+        setup.append({"id": "health_override", "command": "healthme",
+                      "args": [str(health)]})
+    setup.append({
+        "id": "enable_ai",
+        "command": "player_control",
+        "args": ["ai", "melee", weapon] if weapon else ["ai"],
+    })
+    assertions = [
+        {"type": "event_count_at_least", "event": "player.control.mode", "minimum": 2},
+        {"type": "event_count_at_least", "event": "actor.collision.contact", "minimum": 1},
+        {"type": "event_field_count_at_least", "event": "npc.shot",
+         "field": "accepted", "equals": True, "minimum": 1},
+        {"type": "event_count_at_least", "event": "npc.damage", "minimum": 1},
+        {"type": "event_count_at_least", "event": "server.damage.applied", "minimum": 1},
+        {"type": "event_count_at_least", "event": "player.ai.state", "minimum": 1},
+        {"type": "event_count_at_least", "event": "npc.focus-changed", "minimum": 1},
+        {"type": "event_count_at_least", "event": "npc.squad-sector-assigned", "minimum": 1},
+    ]
+    if weapon:
+        assertions.extend([
+            {"type": "event_field_count_at_least", "event": "melee.client.contact_claim",
+             "field": "weapon", "equals": weapon, "minimum": 1},
+            {"type": "event_field_count_at_least", "event": "melee.contact.claim.accepted",
+             "field": "weapon", "equals": weapon, "minimum": 1},
+            {"type": "event_field_count_at_least", "event": "server.damage.applied",
+             "field": "source", "equals": "physical_contact", "minimum": 1},
+            {"type": "event_count_at_most", "event": "player.ai.fall_detected", "maximum": 0},
+        ])
     scenario = {
         "id": scenario_id,
         "launch": {
-            "profile": args.profile,
+            "profile": profile_name,
             "launch_mode": args.launch_mode or args.ai_launch_mode,
             "map": args.ai_map,
             "weapon_set": 29,
         },
-        "setup": [
-            {
-                "id": "wait_active",
-                "wait_for_event": "network.mode.start",
-                "where": {"stage": "active"},
-                "timeout_seconds": 120,
-            },
-            {"id": "enable_ai", "command": "player_control", "args": ["ai"]},
-        ],
+        "setup": setup,
         "steps": [
             {"id": "ai_live_match", "wait_seconds": seconds},
             {"id": "restore_human", "command": "player_control", "args": ["human"]},
         ],
-        "assertions": [
-            {"type": "event_count_at_least", "event": "player.control.mode", "minimum": 2},
-            {"type": "event_count_at_least", "event": "actor.collision.contact", "minimum": 1},
-            {"type": "event_field_count_at_least", "event": "npc.shot",
-             "field": "accepted", "equals": True, "minimum": 1},
-            {"type": "event_count_at_least", "event": "npc.damage", "minimum": 1},
-            {"type": "event_count_at_least", "event": "server.damage.applied", "minimum": 1},
-            {"type": "event_count_at_least", "event": "player.ai.state", "minimum": 1},
-            {"type": "event_count_at_least", "event": "npc.focus-changed", "minimum": 1},
-            {"type": "event_count_at_least", "event": "npc.squad-sector-assigned", "minimum": 1},
-        ],
+        "assertions": assertions,
         "timeout_seconds": seconds + 150.0,
     }
     print(f"[DEV AI MATCH] id={scenario_id} map={args.ai_map} seconds={seconds:.0f} "
-          f"launch_mode={scenario['launch']['launch_mode']}")
+          f"launch_mode={scenario['launch']['launch_mode']} "
+          f"weapon={weapon or 'auto'} health={health}")
     return run_scenario_file(args, scenario)
 
 
@@ -6756,29 +7028,15 @@ def _manual_build_override_enabled() -> bool:
 
 
 def _build_request_authorized(requested_by: str) -> bool:
-    return str(requested_by or "ai").strip().lower() in ("human", "dashboard")
+    return bool(str(requested_by or "").strip())
 
 
 def _should_relaunch_after_build(pending_launch: bool) -> bool:
     return bool(pending_launch)
 
 
-def _refuse_agent_build_request(action: str) -> int:
-    print(
-        f"[DEV CONTROL] refused action={action}: build requests are human-only. "
-        "Agents edit and save; the dev-loop auto-builds. Use --status or "
-        "--ensure-running and keep working.",
-        file=sys.stderr,
-    )
-    return 3
-
-
 def run_control_client(args: argparse.Namespace) -> int:
     action = _control_action(args)
-    if action in _MANUAL_BUILD_ACTIONS and not _manual_build_override_enabled():
-        return _refuse_agent_build_request(action)
-    if getattr(args, "wait_for_build", False) and not _manual_build_override_enabled():
-        return _refuse_agent_build_request("wait-for-build")
 
     if action == "list-instances":
         current = read_current_run()
@@ -6786,10 +7044,12 @@ def run_control_client(args: argparse.Namespace) -> int:
             print(f"[DEV CONTROL] no current run state: {STATE_PATH}", file=sys.stderr)
             return 2
         instances = current.get("instances") or []
+        runtimes = current.get("runtimes") or []
         if args.json:
             print(json.dumps({"run_id": current.get("run_id"),
                               "manifest_path": current.get("manifest_path"),
-                              "instances": instances}, indent=2))
+                              "instances": instances,
+                              "runtimes": runtimes}, indent=2))
             return 0
         print(f"[DEV INSTANCES] run={current.get('run_id') or '(none)'} "
               f"manifest={current.get('manifest_path') or '-'}")
@@ -6800,6 +7060,12 @@ def run_control_client(args: argparse.Namespace) -> int:
                   f"{inst.get('role')} {inst.get('state')} "
                   f"pid={inst.get('pid') or '-'} "
                   f"snap={age_text} journal={inst.get('journal_path') or '-'}")
+        for runtime in runtimes:
+            print(f"[DEV RUNTIME] {runtime.get('runtime_id')} "
+                  f"mode={runtime.get('launch_mode')} map={runtime.get('map')} "
+                  f"server={'alive' if runtime.get('server_alive') else 'dead'} "
+                  f"client={'alive' if runtime.get('client_alive') else 'dead'} "
+                  f"journal={runtime.get('journal') or '-'}")
         return 0
 
     # Preserve read-only status behavior: never start or wake the daemon for a
@@ -6811,7 +7077,7 @@ def run_control_client(args: argparse.Namespace) -> int:
         if current is None:
             print(f"[DEV CONTROL] no current run state: {STATE_PATH}", file=sys.stderr)
             return 2
-        _print_read_only_status(current, args.json)
+        _print_read_only_status(current, args.json, not args.no_coord)
         return 0
 
     visibility = args.launch_visibility or "visible"
@@ -6822,7 +7088,9 @@ def run_control_client(args: argparse.Namespace) -> int:
         return run_scenario_file(args)
 
     if action in ("command", "scenario-file", "launch", "build", "start-server",
-                  "start-client", "stop-instance", "restart-instance") or args.ensure_running:
+                  "start-client", "stop-instance", "restart-instance",
+                  "start-runtime", "stop-runtime", "reload-runtime",
+                  "list-runtimes") or args.ensure_running:
         # Control/status/command invocations are headless. Only the explicit
         # dashboard entry point may open a visible window; recovery here must
         # not spawn a second Python/Terminal window.
@@ -6844,7 +7112,7 @@ def run_control_client(args: argparse.Namespace) -> int:
             and not args.scenario_file and not getattr(args, "ai_match", False) \
             and not args.request:
         print("[DEV CONTROL] watchdog and daemon are running")
-        _print_read_only_status(current, args.json)
+        _print_read_only_status(current, args.json, not args.no_coord)
         return 0
 
     if action == "scenario-file":
@@ -6865,7 +7133,10 @@ def run_control_client(args: argparse.Namespace) -> int:
         "request_id": f"{utc_now()}-{uuid.uuid4().hex[:8]}",
     }
     if action in _MANUAL_BUILD_ACTIONS:
-        request["requested_by"] = "human"
+        requested_by = (getattr(args, "coord_agent", "") or
+                        os.environ.get("MIMITA_AGENT_ID", "") or "ai").strip()
+        request["requested_by"] = requested_by or "ai"
+        request["agent"] = requested_by or "ai"
     if getattr(args, "hot_client", False):
         request["hot_client"] = True
     if action == "build":
@@ -6882,6 +7153,15 @@ def run_control_client(args: argparse.Namespace) -> int:
         request["name"] = getattr(args, "name", "") or ""
         request["server_instance_id"] = getattr(args, "server", "") or "server-01"
         request["badconn_preset"] = getattr(args, "badconn_preset", "") or ""
+    if action in ("start-runtime", "stop-runtime", "reload-runtime"):
+        request["runtime_id"] = getattr(args, "runtime", "") or ""
+    if action == "start-runtime":
+        request["runtime_launch_mode"] = getattr(args, "runtime_launch_mode", "") or ""
+        request["runtime_profile"] = (getattr(args, "runtime_profile", "")
+                                      or "npc-navigation")
+        request["runtime_map"] = getattr(args, "runtime_map", "") or ""
+        request["no_runtime_client"] = bool(
+            getattr(args, "no_runtime_client", False))
     if action in ("stop-instance", "restart-instance"):
         request["instance_id"] = (getattr(args, "stop_instance", None)
                                   or getattr(args, "restart_instance", None) or "")
@@ -6939,6 +7219,74 @@ def run_control_client(args: argparse.Namespace) -> int:
 def main() -> int:
     from dev_loop.cli import create_parser
     args = create_parser().parse_args()
+
+    coord_result = _run_coord_request(args)
+    if coord_result is not None:
+        return coord_result
+
+    # Isolated test runs are per-agent gameplay sessions, not build daemons.
+    # They use the canonical root CLI and a pinned published artifact, while
+    # keeping their process pair, run manifest, commands, and journals separate
+    # from the primary editor/gameplay run.
+    if (args.start_test_run or args.start_test_client or args.list_test_runs or
+            args.stop_test_run or (args.run_id and args.command)):
+        from dev_loop import parallel_test_runs
+        try:
+            if args.start_test_run:
+                result = parallel_test_runs.start_parallel_run(
+                    args.test_profile, args.test_launch_mode, args.test_map,
+                    build_id=getattr(args, "test_build_id", "") or "",
+                    game_generation=int(getattr(args, "test_game_generation", 0) or 0),
+                    agent=(getattr(args, "coord_agent", "") or
+                           os.environ.get("MIMITA_AGENT_ID", "") or "").strip())
+                print(json.dumps(result, indent=2) if args.json else
+                      f"[DEV TEST RUN] run={result['run_id']} status={result['status']} "
+                      f"build={result['build_identity']['build_id']} "
+                      f"game_generation={result['build_identity']['game_generation']} "
+                      f"server_events={result['server_journal_path']} "
+                      f"client_events={result['client_journal_path']}")
+                return 0
+            if args.start_test_client:
+                if not args.run_id:
+                    raise RuntimeError("--start-test-client requires --run-id")
+                result = parallel_test_runs.start_second_client(
+                    args.run_id, args.test_client_name)
+                print(json.dumps(result, indent=2) if args.json else
+                      f"[DEV TEST RUN] run={result['run_id']} client={result['client_id']} "
+                      f"status={result['state']} events={result['client_journal_path']}")
+                return 0
+            if args.list_test_runs:
+                runs = parallel_test_runs.list_parallel_runs()
+                print(json.dumps(runs, indent=2) if args.json else
+                      "\n".join(
+                          f"[DEV TEST RUN] {row.get('run_id')} {row.get('status')} "
+                          f"mode={row.get('mode')} build={row.get('build_id')} "
+                          f"dir={row.get('run_dir')}" for row in runs) or
+                      "[DEV TEST RUN] no isolated test runs")
+                return 0
+            if args.stop_test_run:
+                result = parallel_test_runs.stop_parallel_run(
+                    args.stop_test_run,
+                    lambda pid: windows_process_identity(
+                        pid, fresh=True, timeout_seconds=10.0))
+                print(json.dumps(result, indent=2) if args.json else
+                      f"[DEV TEST RUN] run={result['run_id']} status={result['status']} "
+                      f"stopped={result['stopped_pids']} failures={result['failures']}")
+                return 0 if not result["failures"] else 1
+            queued = parallel_test_runs.queue_parallel_command(
+                args.run_id, args.client or "client-01", args.command)
+            result = wait_for_command_result(
+                [queued["client_journal_path"],
+                 str(Path(queued["client_journal_path"]).parents[1] / "dev-loop" / "events.jsonl")],
+                queued["request_id"], timeout=float(args.command_timeout))
+            print(f"[DEV TEST RUN] command=\"{args.command}\" run={args.run_id} "
+                  f"delivered={result['delivered']} completed={result['completed']} "
+                  f"event={result['event'] or '-'} tick={result['tick'] if result['tick'] is not None else '-'}")
+            print(f"[DEV TEST RUN] client_events={queued['client_journal_path']}")
+            return 0 if result["completed"] else 1
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+            print(f"[DEV TEST RUN] failed: {error}", file=sys.stderr)
+            return 2
 
     control = bool(args.status or args.request or args.command or args.scenario_file
                    or args.list_instances or args.start_server or args.start_client

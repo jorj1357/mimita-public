@@ -265,6 +265,67 @@ void engineTickCamera(Engine& engine, float dt)
     }
     InputRouter::applyPendingLook(camera);
 
+    // Keyboard camera controls are local presentation/input intent. Arrow
+    // left/right turn smoothly; Shift+Comma/Period snap to the next 45-degree
+    // world-yaw alignment. Keep them out of replay and editor camera modes.
+    const bool keyboardCameraControl =
+        InputCommandSystem::instance().isKeyboardEnabled() &&
+        InputRouter::gameWindowFocused() &&
+        !MapEditor::instance().active() && !REPLAY_PLAYER.isPlaying() &&
+        !freecamEnabled;
+    if (keyboardCameraControl) {
+        static bool leftWasDown = false;
+        static bool rightWasDown = false;
+        static bool alignLeftWasDown = false;
+        static bool alignRightWasDown = false;
+        const bool leftDown = InputRouter::keyDown(GLFW_KEY_LEFT);
+        const bool rightDown = InputRouter::keyDown(GLFW_KEY_RIGHT);
+        const bool shiftDown = InputRouter::keyDown(GLFW_KEY_LEFT_SHIFT) ||
+                               InputRouter::keyDown(GLFW_KEY_RIGHT_SHIFT);
+        const bool alignLeftDown = shiftDown &&
+                                   InputRouter::keyDown(GLFW_KEY_COMMA);
+        const bool alignRightDown = shiftDown &&
+                                    InputRouter::keyDown(GLFW_KEY_PERIOD);
+        const float yawBefore = camera.yaw;
+        if (alignLeftDown && !alignLeftWasDown) {
+            camera.yaw = std::round(camera.yaw / 45.0f) * 45.0f - 45.0f;
+        } else if (alignRightDown && !alignRightWasDown) {
+            camera.yaw = std::round(camera.yaw / 45.0f) * 45.0f + 45.0f;
+        } else if (!shiftDown) {
+            constexpr float kArrowTurnDegreesPerSecond = 120.0f;
+            const float direction = (rightDown ? 1.0f : 0.0f) -
+                                    (leftDown ? 1.0f : 0.0f);
+            camera.yaw += direction * kArrowTurnDegreesPerSecond *
+                          std::max(0.0f, dt);
+        }
+        const bool alignApplied =
+            (alignLeftDown && !alignLeftWasDown) ||
+            (alignRightDown && !alignRightWasDown);
+        if ((alignApplied || (leftDown && !leftWasDown) ||
+             (rightDown && !rightWasDown)) &&
+            StructuredLogger::instance().shouldLog(
+                StructuredCategory::Camera, StructuredLevel::Important)) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Camera, StructuredLevel::Important,
+                "camera.keyboard_control", "keyboard-camera",
+                alignApplied ? "camera yaw aligned by keyboard" :
+                               "smooth keyboard camera turn started",
+                static_cast<int>(player.movementSimulationTick),
+                nlohmann::json{{"control", alignApplied
+                    ? ((alignLeftDown && !alignLeftWasDown) ? "align_left_45" : "align_right_45")
+                    : ((rightDown && !rightWasDown) ? "turn_right" : "turn_left")},
+                    {"yaw_before_degrees", yawBefore},
+                    {"yaw_after_degrees", camera.yaw},
+                    {"turn_rate_degrees_per_second", 120.0f},
+                    {"aligned_to_world_45_degree_grid", alignApplied}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        leftWasDown = leftDown;
+        rightWasDown = rightDown;
+        alignLeftWasDown = alignLeftDown;
+        alignRightWasDown = alignRightDown;
+    }
+
     if (InputCommandSystem::instance().isKeyboardEnabled())
         applyDebugMovement(player, engine.window(), camera, dt);
 

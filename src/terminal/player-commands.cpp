@@ -388,15 +388,30 @@ void registerPlayerCommands()
 
     Terminal::instance().registerCommand({
         "player_control", "Let AI drive or return control to the human player",
-        "player_control ai|human",
+        "player_control ai|human|ai melee <weapon>",
         [](const std::vector<std::string>& args) {
-            if (args.size() != 1 ||
-                (args[0] != "ai" && args[0] != "human")) {
+            bool ai = false;
+            std::string meleeWeapon;
+            if (args.size() == 1 && args[0] == "human") {
+                ai = false;
+            } else if (args.size() == 1 && args[0] == "ai") {
+                ai = true;
+            } else if (args.size() == 3 && args[0] == "ai" &&
+                       args[1] == "melee") {
+                ai = true;
+                meleeWeapon = args[2];
+                if (meleeWeapon != "mace" && meleeWeapon != "chainsaw" &&
+                    meleeWeapon != "swordsword") {
+                    Terminal::instance().addLog(
+                        "[ERROR] melee weapon must be mace, chainsaw, or swordsword");
+                    return;
+                }
+            } else {
                 Terminal::instance().addLog(
-                    "[ERROR] Usage: player_control ai|human");
+                    "[ERROR] Usage: player_control ai|human|ai melee <weapon>");
                 return;
             }
-            const bool ai = args[0] == "ai";
+            PlayerAiController::setMeleeWeapon(meleeWeapon);
             PlayerAiController::setActive(ai);
             if (!ai) {
                 clearHeldGameplayInputs();
@@ -414,12 +429,15 @@ void registerPlayerCommands()
                    : "human input restored and held intent cleared",
                 (uint32_t)THE_PLAYER.movementSimulationTick,
                 {{"mode", ai ? "ai" : "human"},
+                 {"melee_weapon", meleeWeapon},
                  {"player_id", MP_CONTEXT.localPlayerId},
                  {"position", {THE_PLAYER.pos.x, THE_PLAYER.pos.y,
                                 THE_PLAYER.pos.z}}},
                 __FILE__, __LINE__, __FUNCTION__);
-            Terminal::instance().addLog(ai ? "[PLAYER] AI control ON"
-                                           : "[PLAYER] human control ON");
+            Terminal::instance().addLog(ai
+                ? (meleeWeapon.empty() ? "[PLAYER] AI control ON"
+                                       : "[PLAYER] AI melee control ON weapon=" + meleeWeapon)
+                : "[PLAYER] human control ON");
         },
         "2026-11-01",
         CommandCategory::Player

@@ -111,6 +111,18 @@ bool MapEditorConfig::load(const std::string& path)
             next.cameraSpeedMultiplier, 0.01f, 1000.0f);
         next.autosaveDelayMs =
             readInt(root, "autosave_delay_ms", next.autosaveDelayMs, 0, 10000);
+        if (root.contains("snap_enabled") && root["snap_enabled"].is_boolean())
+            next.snapEnabled = root["snap_enabled"].get<bool>();
+        next.snapIncrementM = readFloat(root, "snap_increment_m",
+            next.snapIncrementM, 0.001f, 100.0f);
+        if (root.contains("grid_visible") && root["grid_visible"].is_boolean())
+            next.gridVisible = root["grid_visible"].get<bool>();
+        next.gridSpacingM = readFloat(root, "grid_spacing_m",
+            next.gridSpacingM, 0.001f, 100.0f);
+        next.gridExtentM = readFloat(root, "grid_extent_m",
+            next.gridExtentM, 1.0f, 500.0f);
+        next.gridMajorEvery = readInt(root, "grid_major_every",
+            next.gridMajorEvery, 1, 100);
         if (root.contains("label_mode") && root["label_mode"].is_string())
             next.labelMode = root["label_mode"].get<std::string>();
         if (next.labelMode != "all" && next.labelMode != "selected" &&
@@ -131,7 +143,10 @@ bool MapEditorConfig::load(const std::string& path)
              {"connector_alpha", next.connectorAlpha},
              {"spawn_alpha", next.spawnAlpha},
              {"glb_alpha", next.glbAlpha},
-             {"bomb_site_alpha", next.bombSiteAlpha}},
+             {"bomb_site_alpha", next.bombSiteAlpha},
+             {"snap_enabled", next.snapEnabled},
+             {"snap_increment_m", next.snapIncrementM},
+             {"grid_visible", next.gridVisible}},
             __FILE__, __LINE__, __func__);
         Debug::warn(Debug::Category::Render,
             "[MAP EDITOR CONFIG] loaded %s\n", path.c_str());

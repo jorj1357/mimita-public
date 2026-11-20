@@ -375,6 +375,49 @@ artifact is used. If no valid artifact exists, the initial build is queued so
 the loop has something it can launch. This keeps a stale artifact from being
 silently launched while avoiding a compile solely because the daemon restarted.
 
+### Per-agent runtimes (shared source, one build)
+
+All agents edit the same checkout and the root dev-loop remains the only builder.
+To test independent workloads without duplicating source, each agent launches its
+own runtime from the same published EXE and a pinned game-DLL generation:
+
+```powershell
+python devscripts/dev-loop.py --request start-runtime --runtime <id> `
+  --runtime-launch-mode 9
+python devscripts/dev-loop.py --list-instances
+python devscripts/dev-loop.py --request reload-runtime --runtime <id>
+python devscripts/dev-loop.py --request stop-runtime --runtime <id>
+```
+
+Each runtime has its own launch mode, map, UDP port, room file, run directory,
+and server/client `events.jsonl` under `logs/<date>/<run>/`. The runtime manager
+never builds; it uses `.dev/current/mimita.exe` and the `build/game/ready.json`
+generation recorded at launch, so a later build does not change a running test
+until `reload-runtime`. Runtime state lives in `.dev/runtimes/<id>.json` and is
+included in `--status`, `--list-instances`, and the dashboard `RUNTIMES` section.
+`devscripts/agent-runtime.py` remains a standalone equivalent for scripts. It
+accepts `--agent`, `--game-generation`, and `--dll` to pin a runtime to one
+immutable game DLL generation; the selected generation/hash is recorded in
+`run.json`.
+
+### Snapshot builds and retention
+
+The whole-game DLL build compiles a frozen per-attempt snapshot under
+`.dev/build-snapshots/<attempt-id>/source`, created by hardlinking the verified
+source mirror. The mirror refresh uses temp-file replacement so an existing
+snapshot keeps its old inode. A source or header save during a build therefore
+does not abort it; the save queues the next generation. Compile
+includes resolve inside the snapshot while the cache identity is computed from
+the historical repository paths, so an unchanged tree keeps its existing object
+cache and only changed translation units rebuild. `src/pch.h` and its precompiled
+header remain the repository copy; all other headers come from the snapshot. A
+mid-build `pch.h` save is excluded from that generation and picked up next.
+
+The build requires `MIMITA_GAME_BUILD_MIN_FREE_MB` (default 2048) free, keeps
+five newest generations plus `ready.json`/`current.json`, prunes dated logs
+beyond three days, acquires the machine-wide module build slot, and kills the
+worker after `MIMITA_GAME_BUILD_TIMEOUT` (default 3600 s).
+
 **Historical lane implementation:** the lane manager creates worktrees only under
 `.dev/agent-lanes/`, the scheduler defaults to `.dev/build-scheduler/`, the
 room-code handoff uses `.dev/tmp/<lane-id>/`, and the shared cache is
@@ -2516,6 +2559,14 @@ which remains the only owner of build, launch, run, and control state. The
 detached daemon never reads the keyboard. Sections 19.4 and 22.1 link here
 rather than restating this table.
 
+The dashboard sends a control request without blocking its render loop, so a
+slow or queued daemon cannot freeze the view. It acknowledges the keypress in
+the next rendered frame, records the press time, and shows the daemon's
+acceptance separately from client process creation and launch readiness. The
+matching request ID must appear in the dashboard and in the run's
+`events.jsonl`; keypress-to-acceptance, keypress-to-client-`Popen`, and
+keypress-to-readiness are reported as separate measured values.
+
 #### One launch and automatic availability check
 
 The user launches only the dev-loop entry point (or its desktop shortcut). On
@@ -2565,6 +2616,19 @@ configured launch readiness checks complete. A pending launch shows elapsed
 time and progress; a failed launch shows completed timings when available and
 the failure message. If no published build exists, the timer includes the wait
 for the first successful build.
+
+The dashboard acknowledges the keypress in its next rendered frame (target
+≤50 ms) and sends the request without blocking UI refresh. Correlated launch
+timing records use the request ID and distinguish keypress, request enqueue and
+acceptance, daemon dispatch, artifact validation/staging, server reuse or
+readiness, client process creation, and configured readiness. They are retained
+in the run's `events.jsonl`. With a valid artifact selected and a healthy
+matching server already running, the keypress-to-client-process target is
+≤100 ms. Build wait, server startup/replacement, map readiness, and join
+readiness remain separate measured stages; do not report them as zero merely
+because process creation was fast. See
+[`build-time-observability.md`](build-time-observability.md) for the timing
+contract and DLL build objectives.
 
 The dashboard shows this control list and the current settings (`auto-restart`,
 `next-launch` visibility, selected launch mode) on fixed rows.
@@ -2787,12 +2851,23 @@ control:
 
 ```text
 python devscripts/dev-loop.py --ai-match --ai-seconds 60 --profile tdm-validation
+python devscripts/dev-loop.py --ai-match --ai-seconds 60 \
+    --ai-profile tdm-melee-validation --ai-weapon mace --ai-health 999999
 ```
 
 It launches or reuses the configured dev-loop server/client (default TDM launch
 mode 41, map `dust2cyberiav4`, weapon set 29), waits for the authoritative
 active phase, sends `player_control ai`, waits for the requested duration, and
 restores `player_control human`. No scenario recording is created.
+
+The melee form forces one Mode 1 weapon, applies the self-only health override,
+and requires a claimed and accepted `melee.client.contact_claim` /
+`melee.contact.claim.accepted` plus a `server.damage.applied` result with
+`source=physical_contact`. It fails on `player.ai.fall_detected`. The player AI
+uses the existing NPC navigation graph for routing, a bounded ground/drop guard,
+and a controlled `npc_spawn_near` fallback when no close natural target exists;
+it does not teleport the player. A dedicated `tdm-melee-validation` profile and
+`devscripts/scenarios/melee_tdm_ai_v1.json` make the run repeatable.
 
 The runner is not allowed to pass on process liveness alone. It requires
 journal evidence for the control transition, actor-pair contacts, accepted NPC
@@ -3150,6 +3225,6 @@ Remaining gaps for full AI proof:
 
 ## Build completion and command delivery events (2026-11-17)
 
-Builds are event-driven. The daemon emits `dev-loop.build.completed` or `dev-loop.build.failed` with build ID, source generation, artifact, duration, and reason. Whole-game builds emit `dev-loop.game-generation.ready` or `dev-loop.game-build.failed` with generation and DLL. Clients emit `game.generation.activated` on same-PID activation. Agents read these events later; they do not poll or wait for a build.
+Builds are event-driven. The daemon emits `dev-loop.build.completed` or `dev-loop.build.failed` with build ID, source generation, artifact, duration, and reason. Whole-game builds emit `dev-loop.game-generation.ready` or `dev-loop.game-build.failed` with attempt ID, source generation, revision, success, generation/DLL/hash when available, duration, request IDs, every attached change note, changed paths, and the per-attempt timing/summary paths. Agents queue `build-note.py --changes ...` before the first DLL compiler-input edit; if edits from multiple agents coalesce into one attempt, all their notes remain attached. Clients emit `game.generation.activated` on same-PID activation. Agents read these events later; they do not poll or wait for a build.
 
 Command delivery uses the client queue plus a journaled lifecycle: `dev-loop.command.request` (queued), `dev-loop.command.host-read`, `dev-loop.command.delivered`, and `dev-loop.command.completed`. A queued command with no host-read within the control timeout must produce `dev-loop.command.timed-out` with the queue path, client PID, last known frame time, and a bounded retry attempt. A missing host-read means the client frame/host loop did not return, not that the command was accepted as gameplay.

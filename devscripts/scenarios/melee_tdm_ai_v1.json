@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "id": "melee_tdm_ai_v1",
+  "description": "Bounded TDM melee validation on dust2cyberiav4. The real local player is driven by the shared AI input path with a forced Mace, a health override, and NPC navigation; the run must produce a claimed and accepted Mode 1 contact without a fall or reconnect.",
+  "launch": {
+    "profile": "tdm-melee-validation",
+    "launch_mode": "41",
+    "map": "dust2cyberiav4",
+    "weapon_set": 31,
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {
+      "id": "wait_active",
+      "wait_for_event": "network.mode.start",
+      "where": {"stage": "active"},
+      "timeout_seconds": 120
+    },
+    {"id": "health_override", "command": "healthme", "args": ["999999"]},
+    {"id": "melee_ai", "command": "player_control",
+     "args": ["ai", "melee", "mace"], "delay_ms_after": 500}
+  ],
+  "steps": [
+    {"id": "live_melee", "wait_seconds": 60},
+    {"id": "restore_human", "command": "player_control", "args": ["human"]}
+  ],
+  "assertions": [
+    {"type": "event_count_at_least", "event": "player.control.mode", "minimum": 2},
+    {"type": "event_field_count_at_least", "event": "melee.client.contact_claim",
+     "field": "weapon", "equals": "mace", "minimum": 1},
+    {"type": "event_field_count_at_least", "event": "melee.contact.claim.accepted",
+     "field": "weapon", "equals": "mace", "minimum": 1},
+    {"type": "event_field_count_at_least", "event": "server.damage.applied",
+     "field": "source", "equals": "physical_contact", "minimum": 1},
+    {"type": "event_count_at_most", "event": "player.ai.fall_detected", "maximum": 0},
+    {"type": "event_count_at_least", "event": "player.ai.state", "minimum": 1},
+    {"type": "event_count_at_least", "event": "npc.focus-changed", "minimum": 1}
+  ],
+  "timeout_seconds": 240
+}

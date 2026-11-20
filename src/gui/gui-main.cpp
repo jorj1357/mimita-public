@@ -36,6 +36,8 @@
 #include "network/community-server-config.h"
 #include "game/bomb-tag-config.h"
 #include "map/map-catalog.h"
+#include "mapeditor/map-editor-projects.h"
+#include "worldproject/world-project-store.h"
 #include "avatar/avatar-editor.h"
 #include "avatar/avatar.h"
 #include "entities/player.h"
@@ -52,6 +54,8 @@
 #include "render/render-player.h"
 #include "render/lighting-config.h"
 #include "gui-layout.h"
+#include "gui-element-render.h"
+#include "gui-coord.h"
 #include "audio/music-manager.h"
 #include "analytics/analytics-manager.h"
 #include "input/input-commands.h"
@@ -65,6 +69,7 @@
 #include "network/coordinator-client.h"
 #include "gui-bindings.h"
 #include <cstdio>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
@@ -160,6 +165,8 @@ static const char* layoutFileForMenu(GuiMenuState state)
         case GUI_MENU_HELP:         return "config/gui/help-menu.json";
         case GUI_MENU_REPLAY:       return "config/gui/replay-menu.json";
         case GUI_MENU_AVATAR_CREATOR: return "config/gui/avatar-creator.json";
+        case GUI_MENU_CREATE:         return "config/gui/create-menu.json";
+        case GUI_MENU_MY_CREATIONS:   return "config/gui/my-creations-menu.json";
         case GUI_MENU_BOMB_TAG_CONFIG: return "config/gui/bomb-tag-config.json";
         case GUI_MENU_COMPETITIVE:      return "config/gui/competitive-menu.json";
         case GUI_MENU_COMPETITIVE_RESULT: return "config/gui/competitive-result.json";
@@ -189,6 +196,7 @@ static bool gServerWeaponSetAuto = true;
 static char gServerAddress[64] = "127.0.0.1:1357";
 static MultiplayerConnectInfo gPendingConnect{};
 static SandboxMapSelection gPendingSandboxMap{};
+static CreatorProjectLaunch gPendingCreatorProject{};
 static PROCESS_INFORMATION gServerProcessInfo{};
 static bool gServerProcessLaunched = false;
 static uint64_t gServerProcessLaunchMs = 0;
@@ -764,6 +772,16 @@ void setPendingMultiplayerConnect(const MultiplayerConnectInfo& info) { gPending
 void clearPendingMultiplayerConnect() { gPendingConnect = {}; }
 SandboxMapSelection getPendingSandboxMapSelection() { return gPendingSandboxMap; }
 void clearPendingSandboxMapSelection() { gPendingSandboxMap = {}; }
+void requestCreatorProjectLaunch(const CreatorProjectLaunch& info)
+{
+    gPendingCreatorProject = info;
+}
+CreatorProjectLaunch takeCreatorProjectLaunch()
+{
+    CreatorProjectLaunch info = gPendingCreatorProject;
+    gPendingCreatorProject = CreatorProjectLaunch{};
+    return info;
+}
 void reportSandboxMapLoadResult(const std::string& message, bool success)
 {
     sandboxMapMenuSetLoadResult(message, success);
@@ -1158,6 +1176,240 @@ void guiTickPendingServerRoomCode(GameState& state)
     gPendingLocalJoinFallbackStartMs = 0;
 }
 
+struct CreateMenuResult
+{
+    bool startBlank = false;
+    bool goBack = false;
+};
+
+static std::string gCreateStatus;
+
+static std::string creatorProjectIdFromName(const std::string& name)
+{
+    std::string id;
+    bool lastUnderscore = false;
+    for (char c : name) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isalnum(uc) || c == '.' || c == '_' || c == '-') {
+            id.push_back(static_cast<char>(std::tolower(uc)));
+            lastUnderscore = c == '_';
+        } else if (std::isspace(uc) && !id.empty() && !lastUnderscore) {
+            id.push_back('_');
+            lastUnderscore = true;
+        }
+        if (id.size() >= 60) break;
+    }
+    while (!id.empty() && id.back() == '_') id.pop_back();
+    if (id.empty()) return {};
+    if (!std::isalnum(static_cast<unsigned char>(id.front()))) id.insert(0, "p_");
+    return id;
+}
+
+static CreateMenuResult drawCreateMenu(GLFWwindow* win)
+{
+    CreateMenuResult result;
+    GuiLayout& layout =
+        GuiLayoutManager::instance().getLayout("config/gui/create-menu.json");
+    for (const std::string& id : layout.elementIds()) {
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
+        if (elem->type == "panel" || elem->type == "text" ||
+            elem->type == "label" || elem->type == "text_input") {
+            drawGuiElement(win, *elem);
+            continue;
+        }
+        UIButtonState s = drawGuiElement(win, *elem);
+        if (!s.clicked) continue;
+        if (id == "backButton") {
+            result.goBack = true;
+        } else if (id == "blankMapButton") {
+            const std::string name = GuiBindings::instance().get(
+                "creator.project_name");
+            const std::string projectId = creatorProjectIdFromName(name);
+            if (projectId.empty()) {
+                gCreateStatus = "enter a project name";
+                continue;
+            }
+            CreatorProjectResult created;
+            if (!creatorProjectCreate(projectId, name, created)) {
+                gCreateStatus = created.error;
+                continue;
+            }
+            CreatorProjectLaunch launch;
+            launch.shouldStart = true;
+            launch.projectId = created.projectId;
+            launch.mapId = created.mapId;
+            launch.title = created.title;
+            launch.workingPath = created.workingPath;
+            launch.baseMapPath = created.baseMapPath;
+            launch.initialVersion = created.initialVersion;
+            launch.manifestHash = created.manifestHash;
+            launch.floorId = created.floorId;
+            launch.spawnId = created.spawnId;
+            requestCreatorProjectLaunch(launch);
+            gCreateStatus = "creating " + projectId;
+            result.startBlank = true;
+        }
+    }
+    const GuiElement* status = layout.get("statusText");
+    if (status && !gCreateStatus.empty()) {
+        GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+        uiDrawText(gCreateStatus.c_str(), cs.designToScreenX(status->x),
+                   cs.designToScreenY(status->y), status->fontSize,
+                   {0.7f, 0.9f, 1.0f, 1.0f});
+    }
+    return result;
+}
+
+struct MyCreationsMenuResult
+{
+    bool edit = false;
+    bool playLocal = false;
+    bool goBack = false;
+};
+
+static std::vector<MimitaWorldProject::WorldProjectSummary> gMyProjects;
+static std::string gMySelectedProject;
+static std::string gMyStatus;
+static int gMyPage = 0;
+static bool gMyActive = false;
+static constexpr int kMyRowsPerPage = 7;
+
+static void refreshMyCreations()
+{
+    gMyProjects.clear();
+    std::string error;
+    if (!MimitaWorldProject::WorldProjectStore::instance().listProjects(
+            gMyProjects, &error)) {
+        gMyStatus = "list failed: " + error;
+        return;
+    }
+    if (gMySelectedProject.empty() && !gMyProjects.empty())
+        gMySelectedProject = gMyProjects.front().manifest.projectId;
+    const int pages = std::max(1, ((int)gMyProjects.size() +
+                                   kMyRowsPerPage - 1) / kMyRowsPerPage);
+    gMyPage = std::clamp(gMyPage, 0, pages - 1);
+    gMyStatus.clear();
+}
+
+static void myCreationsMenuSetActive(bool active)
+{
+    if (active && !gMyActive) {
+        gMyPage = 0;
+        gMySelectedProject.clear();
+        refreshMyCreations();
+    }
+    gMyActive = active;
+}
+
+static MyCreationsMenuResult drawMyCreationsMenu(GLFWwindow* win)
+{
+    MyCreationsMenuResult result;
+    GuiLayout& layout = GuiLayoutManager::instance().getLayout(
+        "config/gui/my-creations-menu.json");
+    GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
+    for (const std::string& id : layout.elementIds()) {
+        const GuiElement* elem = layout.get(id);
+        if (!elem || !elem->visible) continue;
+        if (elem->type == "panel" || elem->type == "text" ||
+            elem->type == "label") {
+            drawGuiElement(win, *elem);
+            continue;
+        }
+        UIButtonState s = drawGuiElement(win, *elem);
+        if (!s.clicked) continue;
+        if (id == "backButton") result.goBack = true;
+        else if (id == "refreshButton") refreshMyCreations();
+        else if (id == "prevPage") {
+            if (gMyPage > 0) --gMyPage;
+        } else if (id == "nextPage") {
+            const int pages = std::max(1, ((int)gMyProjects.size() +
+                                           kMyRowsPerPage - 1) / kMyRowsPerPage);
+            if (gMyPage + 1 < pages) ++gMyPage;
+        } else if (id == "editButton") {
+            if (gMySelectedProject.empty()) gMyStatus = "select a project";
+            else {
+                CreatorProjectResult opened;
+                if (!creatorProjectOpen(gMySelectedProject, "", opened)) {
+                    gMyStatus = opened.error;
+                } else {
+                    CreatorProjectLaunch launch;
+                    launch.shouldStart = true;
+                    launch.action = "edit";
+                    launch.projectId = opened.projectId;
+                    launch.mapId = opened.mapId;
+                    launch.title = opened.title;
+                    launch.workingPath = opened.workingPath;
+                    launch.baseMapPath = opened.baseMapPath;
+                    launch.initialVersion = opened.initialVersion;
+                    launch.manifestHash = opened.manifestHash;
+                    launch.floorId = opened.floorId;
+                    launch.spawnId = opened.spawnId;
+                    requestCreatorProjectLaunch(launch);
+                    result.edit = true;
+                }
+            }
+        } else if (id == "playLocalButton") {
+            if (gMySelectedProject.empty()) gMyStatus = "select a project";
+            else {
+                CreatorProjectResult opened;
+                if (!creatorProjectOpen(gMySelectedProject, "", opened)) {
+                    gMyStatus = opened.error;
+                } else {
+                    CreatorProjectLaunch launch;
+                    launch.shouldStart = true;
+                    launch.action = "play_local";
+                    launch.playtest = true;
+                    launch.projectId = opened.projectId;
+                    launch.mapId = opened.mapId;
+                    launch.title = opened.title;
+                    launch.workingPath = opened.workingPath;
+                    launch.baseMapPath = opened.baseMapPath;
+                    launch.initialVersion = opened.initialVersion;
+                    launch.manifestHash = opened.manifestHash;
+                    launch.floorId = opened.floorId;
+                    launch.spawnId = opened.spawnId;
+                    requestCreatorProjectLaunch(launch);
+                    result.playLocal = true;
+                }
+            }
+        }
+    }
+
+    const int pages = std::max(1, ((int)gMyProjects.size() +
+                                   kMyRowsPerPage - 1) / kMyRowsPerPage);
+    const int first = gMyPage * kMyRowsPerPage;
+    const int last = std::min(first + kMyRowsPerPage, (int)gMyProjects.size());
+    float y = 210.0f;
+    for (int i = first; i < last; ++i) {
+        const auto& project = gMyProjects[i].manifest;
+        const bool selected = project.projectId == gMySelectedProject;
+        const std::string label = project.title + "  [" + project.projectId + "]";
+        if (uiButton(win, label.c_str(), {560.0f, y, 800.0f, 54.0f},
+                     selected ? glm::vec4(0.35f, 0.58f, 0.95f, 1.0f)
+                              : glm::vec4(0.17f, 0.22f, 0.3f, 1.0f)).clicked) {
+            gMySelectedProject = project.projectId;
+            gMyStatus.clear();
+        }
+        y += 62.0f;
+    }
+
+    char pageText[64];
+    std::snprintf(pageText, sizeof(pageText), "Page %d / %d", gMyPage + 1, pages);
+    uiDrawText(pageText, cs.designToScreenX(960.0f), cs.designToScreenY(930.0f),
+               0.28f, {0.72f, 0.78f, 0.88f, 1.0f});
+    if (!gMyStatus.empty()) {
+        uiDrawText(gMyStatus.c_str(), cs.designToScreenX(560.0f),
+                   cs.designToScreenY(170.0f), 0.3f,
+                   {1.0f, 0.45f, 0.3f, 1.0f});
+    } else if (gMyProjects.empty()) {
+        uiDrawText("No local projects yet. Use CREATE to make one.",
+                   cs.designToScreenX(560.0f), cs.designToScreenY(170.0f), 0.3f,
+                   {0.75f, 0.8f, 0.9f, 1.0f});
+    }
+    return result;
+}
+
 void guiMain(GLFWwindow* win, GameState& state)
 {
     AuthSystem& auth = AuthSystem::instance();
@@ -1211,6 +1463,17 @@ void guiMain(GLFWwindow* win, GameState& state)
                 // Duel queue remains disabled until it is intentionally restored.
                 onlineMenuSetActive(true);
                 gGuiMenuState = GUI_MENU_SERVERS;
+            }
+            else if (r.goCreate)
+            {
+                gCreateStatus.clear();
+                GuiBindings::instance().set("creator.project_name", "");
+                gGuiMenuState = GUI_MENU_CREATE;
+            }
+            else if (r.goMyCreations)
+            {
+                myCreationsMenuSetActive(true);
+                gGuiMenuState = GUI_MENU_MY_CREATIONS;
             }
             else if (r.goSettings)
             {
@@ -1711,6 +1974,39 @@ void guiMain(GLFWwindow* win, GameState& state)
             if (bb && uiButton(win, "BACK", {bb->x, bb->y, bb->w, bb->h}, {0.7f, 0.2f, 0.2f, 1.0f}).clicked)
             {
                 browser.setOpen(false);
+                gGuiMenuState = GUI_MENU_MAIN;
+            }
+            break;
+        }
+
+        case GUI_MENU_CREATE:
+        {
+            CreateMenuResult r = drawCreateMenu(win);
+            if (r.startBlank)
+            {
+                gGuiMenuState = GUI_MENU_MAIN;
+                state = GAME_PLAYING;
+            }
+            else if (r.goBack)
+            {
+                gCreateStatus.clear();
+                gGuiMenuState = GUI_MENU_MAIN;
+            }
+            break;
+        }
+
+        case GUI_MENU_MY_CREATIONS:
+        {
+            MyCreationsMenuResult r = drawMyCreationsMenu(win);
+            if (r.edit || r.playLocal)
+            {
+                myCreationsMenuSetActive(false);
+                gGuiMenuState = GUI_MENU_MAIN;
+                state = GAME_PLAYING;
+            }
+            else if (r.goBack)
+            {
+                myCreationsMenuSetActive(false);
                 gGuiMenuState = GUI_MENU_MAIN;
             }
             break;

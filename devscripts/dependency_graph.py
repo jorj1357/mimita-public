@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import posixpath
 import re
 import sys
 from collections import Counter, defaultdict
@@ -14,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = ROOT / "build" / "source-manifest.json"
 DEFAULT_REPORT = ROOT / "build" / "reports" / "dependency-graph.json"
+DEFAULT_FANOUT_ALLOWLIST = ROOT / "config" / "header-fanout-allowlist.json"
 SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx"}
 HEADER_SUFFIXES = {".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp"}
 COLD_OWNERS = {"resident", "bootstrap", "launcher"}
@@ -44,7 +46,7 @@ def repo_relative_token(token: str) -> str:
         token = token[len(root) + 1 :]
     elif token.startswith("/") or (len(token) > 2 and token[1] == ":" and token[2] == "/"):
         return ""
-    return token.lstrip("./").replace("//", "/")
+    return posixpath.normpath(token.lstrip("./")).replace("//", "/")
 
 
 def parse_depfile(path: Path, prefixes: tuple[str, ...] = REPO_PREFIXES) -> tuple[str, list[str]] | None:
@@ -287,6 +289,71 @@ def print_summary(graph: dict, top: int) -> None:
         print(f"  ... {counts['hot_to_cold_edges'] - top} more")
 
 
+def load_allowlist(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"version": 1, "limit": 100, "allow": []}
+    if not isinstance(data, dict):
+        return {"version": 1, "limit": 100, "allow": []}
+    return data
+
+
+def evaluate_fanout(graph: dict, *, limit: int,
+                    allowlist: dict | None = None) -> dict:
+    allowed = {
+        str(row.get("path", "")).replace("\\", "/"): row
+        for row in (allowlist or {}).get("allow", [])
+        if isinstance(row, dict)
+    }
+    rows = []
+    violations = []
+    for row in graph.get("fan_in", []):
+        path = str(row.get("path", "")).replace("\\", "/")
+        dependents = int(row.get("dependents", 0))
+        rule = allowed.get(path)
+        max_allowed = int(rule.get("max", limit)) if rule else limit
+        status = "ok"
+        if rule and dependents > max_allowed:
+            status = "growth"
+            violations.append({
+                "path": path, "dependents": dependents,
+                "max": max_allowed,
+                "reason": "fan-out exceeds allowlist maximum",
+            })
+        elif not rule and dependents > limit:
+            status = "unlisted"
+            violations.append({
+                "path": path, "dependents": dependents, "max": limit,
+                "reason": "fan-out exceeds limit without allowlist entry",
+            })
+        elif rule and dependents <= limit:
+            status = "stale"
+        rows.append({
+            "path": path, "dependents": dependents, "limit": limit,
+            "max": max_allowed, "status": status,
+            "reason": str((rule or {}).get("reason", "")),
+        })
+    return {
+        "limit": limit,
+        "allowlist": str(DEFAULT_FANOUT_ALLOWLIST.relative_to(ROOT)),
+        "rows": rows,
+        "violations": violations,
+        "ok": not violations,
+    }
+
+
+def print_fanout_gate(result: dict, top: int = 20) -> None:
+    print(f"[HEADER FAN-OUT] limit={result['limit']} "
+          f"ok={str(result['ok']).lower()} "
+          f"violations={len(result['violations'])}")
+    for row in result["rows"][:max(1, top)]:
+        if row["status"] == "ok":
+            continue
+        print(f"  {row['status']:8s} {row['dependents']:4d} "
+              f"max={row['max']:4d} {row['path']}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="*", help="dependency .d files or directories")
@@ -298,6 +365,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="scan every build .d file and include external/header dependencies")
     parser.add_argument("--json", default="", help="write the report to a custom path")
     parser.add_argument("--write", action="store_true", help="write the default JSON report")
+    parser.add_argument("--gate", action="store_true",
+                        help="fail when a header exceeds the fan-out limit without an allowlist entry")
+    parser.add_argument("--limit", type=int, default=100,
+                        help="maximum dependents before an allowlist entry is required")
+    parser.add_argument("--allowlist", default=str(DEFAULT_FANOUT_ALLOWLIST),
+                        help="header fan-out allowlist JSON")
     args = parser.parse_args(argv)
 
     depfiles = discover_depfiles(args.paths, args.all)
@@ -332,6 +405,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {source}")
         return 0
 
+    fanout = None
+    if args.gate:
+        allowlist_path = Path(args.allowlist)
+        if not allowlist_path.is_absolute():
+            allowlist_path = ROOT / allowlist_path
+        fanout = evaluate_fanout(
+            graph, limit=max(1, args.limit),
+            allowlist=load_allowlist(allowlist_path))
+        graph["fanout_gate"] = fanout
+        print_fanout_gate(fanout, max(1, args.top))
+
     print_summary(graph, max(1, args.top))
     output = Path(args.json) if args.json else (DEFAULT_REPORT if args.write else None)
     if output:
@@ -339,6 +423,8 @@ def main(argv: list[str] | None = None) -> int:
             output = ROOT / output
         write_report(graph, output)
         print(f"[DEPENDENCY GRAPH] report={relative(output)}")
+    if fanout is not None and not fanout["ok"]:
+        return 1
     return 0
 
 

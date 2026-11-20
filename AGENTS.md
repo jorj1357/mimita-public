@@ -10,18 +10,60 @@ Read these gates before doing anything else:
    currently checked-out branch, and use its existing dev-loop and executable.
    Do not create or use mode 2 lanes, extra worktrees, branches, or a second
    checkout for normal agent work. Preserve existing lane data; do not delete
-   or merge it as part of an unrelated task. Only one agent should edit shared
-   source files at a time. Agents edit and observe; they never run builds.
+   or merge it as part of an unrelated task. Agents may edit different files
+   concurrently, but must coordinate ownership so no two agents edit the same
+   file.
+   Agents request builds and isolated test runs through the root dev-loop; they
+   never invoke a compiler, `build.py`, a module worker, or a second loop
+   directly. The root dev-loop remains the only builder. A saved compiler input
+   still triggers the normal automatic build.
    Forbidden: `build.py`, `build_agent.py`, `buildv2.py`,
-   `module-build-worker.py`, `ccache`, a compiler, `dev-loop.py --request
-   build`, `dev-loop.py --request game-dll`, `dev-loop.py
-   --request cold-link-trial`, and `--wait-for-build`. Allowed: `dev-loop.py
-   --status`, `--list-instances`, `--inspect`, and `--ensure-running`.
-   A saved compiler input is the only normal build trigger; the root dev-loop
-   queues and runs it. Do not start a second loop, do not poll in a loop, and
-   do not wait for a build. Only a human may set `MIMITA_BUILD_OVERRIDE=1` for
-   an explicit manual build. Read
-   `docs/specs/dev-loop/agent-lanes-build-authority.md` before any edit.
+   `module-build-worker.py`, `ccache`, a compiler, and starting a second
+   dev-loop. Do not set `MIMITA_BUILD_OVERRIDE=1`; that emergency variable is
+   human-only.
+   Allowed and automatic: `dev-loop.py --request build`, `--request game-dll`,
+   `--request cold-link-trial`, `--start-test-run`, and the one-shot agent test
+   path. Every request records the agent, task, permit, build ID, and test run.
+   One EXE build runs at a time. Candidate game-DLL builds may be requested as
+   often as needed and run concurrently only within configured CPU/memory
+   limits. Isolated test runs pin one EXE artifact and one game-DLL generation
+   or path; they have their own processes and journals and do not replace the
+   shared runtime.
+   One checkout and one source tree are current policy. Per-agent source
+   isolation is deferred; do not create worktrees or source overlays until the
+   specification changes. Read
+   `docs/specs/dev-loop/agent-lanes-build-authority.md`,
+   `docs/specs/dev-loop/change-to-evidence-latency.md`, and
+   `docs/specs/dev-loop/agent-coordination.md` before any edit.
+
+0b. AGENT COORDINATION: Before editing, run
+   `python devscripts/agent-coord.py begin --agent <task-name> --task <description>`.
+   At the start of every work activation, run
+   `python devscripts/agent-coord.py sync`; during long work, check
+   `python devscripts/dev-loop.py --status`. Before writing a shared or leased
+   file, use `agent-coord.py edit begin`; `edit commit` and `edit abort` release
+   the file immediately. At each phase boundary, update
+   `agent-coord.py activity set` with the task, issue, paths, build, run,
+   blocker, next step, and wait reason. Run `agent-coord.py board` to see every
+   agent's reported work. At the end of the task, run
+   `python devscripts/agent-coord.py end`. The shared brain, directives,
+   decisions, review documents, and optional intent announcements are advisory
+   except for active edit leases, halt, and freeze. Read
+   `docs/specs/dev-loop/agent-coordination.md` before relying on it.
+
+0c. ISSUES AND SELF-IMPROVEMENT: Preserve user reports verbatim in an
+   append-only issue record. Use
+   `agent-coord.py issue add --quote ...`; triage into owned tasks and steps;
+   use `issue assign`, `task dep`, `issue defer`, and `issue clarify`. Do not
+   edit a spec or TODO to resolve a report without user clarification.
+   When a build or test waits, record why; a wait above the measured budget or
+   an avoidable wait creates a `build-friction` issue. Agents are expected to
+   propose safe improvements to coordination, build, test, documentation, and
+   capability surfaces, with evidence and a metric target. Agents may review
+   and iterate; a human makes the final decision on changes to shared authority.
+   Read `docs/specs/dev-loop/change-to-evidence-latency.md`,
+   `docs/specs/dev-loop/agent-self-improvement.md`, and
+   `docs/workflows/issue-intake-and-triage.md`.
 
 1. ROUTER CHAIN: This file is not the complete instruction set. Read
    `docs/ROUTER.md` immediately and follow its routes to the relevant
@@ -58,6 +100,16 @@ Read these gates before doing anything else:
    genuinely required by the change, record why, preserve unrelated running
    processes, and still validate the resulting behavior through the dev-loop
    runtime journal.
+
+6. DLL CHANGE NOTES: Before the first edit to any whole-game DLL compiler
+   input, queue a note with `python devscripts/build-note.py --changes
+   "short description" --files path/to/file`. Queue one note for each
+   independent agent change before saving its compiler inputs. If several
+   agents' changes land in one DLL attempt, each note must remain attached to
+   that attempt; the dev-loop consumes all pending notes together. Never wait
+   for the build to add the note afterward. The final build result and its
+   notes must be traceable from the dev-loop `events.jsonl` and the per-attempt
+   `.dev/build-timings/` summary.
 
 ## Authority and scope
 

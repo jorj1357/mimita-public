@@ -117,6 +117,11 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
             {"faces", {block.faceMaterials[0], block.faceMaterials[1],
                        block.faceMaterials[2], block.faceMaterials[3],
                        block.faceMaterials[4], block.faceMaterials[5]}},
+            {"color", {block.color.r, block.color.g, block.color.b, block.color.a}},
+            {"opacity", block.opacity},
+            {"material_preset", block.materialPreset},
+            {"collision", block.collision},
+            {"anchored", block.anchored},
             {"enabled", block.enabled}
         };
         b["tags"] = block.tags;
@@ -150,6 +155,9 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
     }
 
     root["generate_whole_world"] = current.generateWholeWorld;
+    root["world_mode"] = current.worldMode.empty()
+        ? std::string(current.generateWholeWorld ? "procedural" : "static")
+        : current.worldMode;
     root["chunks"] = json::array();
     for (const auto& chunk : current.chunks) {
         json connectors = json::array();
@@ -178,6 +186,10 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
                            part.faceMaterials[2], part.faceMaterials[3],
                            part.faceMaterials[4], part.faceMaterials[5]}},
                 {"uv_scale", {part.uvScale.x, part.uvScale.y}},
+                {"color", {part.color.r, part.color.g, part.color.b, part.color.a}},
+                {"opacity", part.opacity},
+                {"material_preset", part.materialPreset},
+                {"anchored", part.anchored},
                 {"face_uv_scale", {
                     {part.faceUvScale[0].x, part.faceUvScale[0].y},
                     {part.faceUvScale[1].x, part.faceUvScale[1].y},
@@ -203,6 +215,9 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
             {"id", chunk.id}, {"name", chunk.name},
             {"geometry", chunk.geometryPath},
             {"blob_sha256", chunk.blobSha256},
+            {"origin", {chunk.origin.x, chunk.origin.y, chunk.origin.z}},
+            {"yaw", chunk.yaw},
+            {"visible", chunk.visible},
             {"bounds_min", {chunk.boundsMin.x, chunk.boundsMin.y, chunk.boundsMin.z}},
             {"bounds_max", {chunk.boundsMax.x, chunk.boundsMax.y, chunk.boundsMax.z}},
             {"parts", parts}, {"connectors", connectors},
@@ -499,6 +514,22 @@ bool MapConfigRegistry::loadFromStream(const std::string& mapId,
             }
         }
 
+        auto readMapVec = [](const json& value, const glm::vec3& fallback) {
+            if (!value.is_array() || value.size() < 3) return fallback;
+            return glm::vec3(value[0].get<float>(), value[1].get<float>(),
+                             value[2].get<float>());
+        };
+        auto readMapVec2 = [](const json& value, const glm::vec2& fallback) {
+            if (value.is_number()) return glm::vec2(value.get<float>());
+            if (!value.is_array() || value.size() < 2) return fallback;
+            return glm::vec2(value[0].get<float>(), value[1].get<float>());
+        };
+        auto readMapVec4 = [](const json& value, const glm::vec4& fallback) {
+            if (!value.is_array() || value.size() < 4) return fallback;
+            return glm::vec4(value[0].get<float>(), value[1].get<float>(),
+                             value[2].get<float>(), value[3].get<float>());
+        };
+
         if (root.contains("entities") && root["entities"].is_array()) {
             for (const auto& item : root["entities"]) {
                 if (!item.is_object()) continue;
@@ -578,6 +609,14 @@ bool MapConfigRegistry::loadFromStream(const std::string& mapId,
                         (*rotation)[2].get<float>());
                 }
                 block.material = item.value("material", std::string{});
+                block.materialPreset = item.value("material_preset",
+                    item.value("materialPreset", block.materialPreset));
+                if (item.contains("color"))
+                    block.color = readMapVec4(item["color"], block.color);
+                block.opacity = std::clamp(item.value("opacity", block.opacity),
+                                           0.0f, 1.0f);
+                block.collision = item.value("collision", true);
+                block.anchored = item.value("anchored", true);
                 if (item.contains("faces") && item["faces"].is_array()) {
                     for (size_t face = 0; face < 6 && face < item["faces"].size(); ++face)
                         if (item["faces"][face].is_string())
@@ -642,19 +681,13 @@ bool MapConfigRegistry::loadFromStream(const std::string& mapId,
             }
         }
 
-        auto readMapVec = [](const json& value, const glm::vec3& fallback) {
-            if (!value.is_array() || value.size() < 3) return fallback;
-            return glm::vec3(value[0].get<float>(), value[1].get<float>(),
-                             value[2].get<float>());
-        };
-        auto readMapVec2 = [](const json& value, const glm::vec2& fallback) {
-            if (value.is_number()) return glm::vec2(value.get<float>());
-            if (!value.is_array() || value.size() < 2) return fallback;
-            return glm::vec2(value[0].get<float>(), value[1].get<float>());
-        };
-
         next.generateWholeWorld = root.value("generate_whole_world",
             root.value("generateWholeWorld", next.generateWholeWorld));
+        next.worldMode = root.value("world_mode",
+            root.value("worldMode", next.worldMode));
+        if (next.worldMode != "static" && next.worldMode != "procedural" &&
+            next.worldMode != "mixed")
+            next.worldMode = next.generateWholeWorld ? "procedural" : "static";
 
         if (root.contains("chunks") && root["chunks"].is_array()) {
             for (const auto& item : root["chunks"]) {
@@ -669,7 +702,11 @@ bool MapConfigRegistry::loadFromStream(const std::string& mapId,
                     chunk.boundsMin = readMapVec(item["bounds_min"], chunk.boundsMin);
                 if (item.contains("bounds_max"))
                     chunk.boundsMax = readMapVec(item["bounds_max"], chunk.boundsMax);
+                if (item.contains("origin"))
+                    chunk.origin = readMapVec(item["origin"], chunk.origin);
+                chunk.yaw = item.value("yaw", chunk.yaw);
                 chunk.enabled = item.value("enabled", true);
+                chunk.visible = item.value("visible", true);
                 if (item.contains("tags") && item["tags"].is_array()) {
                     for (const auto& tag : item["tags"])
                         if (tag.is_string()) chunk.tags.push_back(tag.get<std::string>());
@@ -689,7 +726,14 @@ bool MapConfigRegistry::loadFromStream(const std::string& mapId,
                         if (partItem.contains("rotation"))
                             part.rotationEuler = readMapVec(partItem["rotation"], part.rotationEuler);
                         part.material = partItem.value("material", std::string{});
+                        part.materialPreset = partItem.value("material_preset",
+                            partItem.value("materialPreset", part.materialPreset));
+                        if (partItem.contains("color"))
+                            part.color = readMapVec4(partItem["color"], part.color);
+                        part.opacity = std::clamp(partItem.value("opacity", part.opacity),
+                                                 0.0f, 1.0f);
                         part.collision = partItem.value("collision", true);
+                        part.anchored = partItem.value("anchored", true);
                         part.visible = partItem.value("visible", true);
                         if (partItem.contains("faces") && partItem["faces"].is_array()) {
                             for (size_t face = 0; face < 6 && face < partItem["faces"].size(); ++face)
@@ -1277,6 +1321,16 @@ bool MapConfigRegistry::deleteBlock(const std::string& id)
         [&](const AuthoredBlock& block) { return block.id == id; });
     if (it == mCurrent.blocks.end()) return false;
     mCurrent.blocks.erase(it, mCurrent.blocks.end());
+    markChanged();
+    return true;
+}
+
+bool MapConfigRegistry::deleteChunk(const std::string& id)
+{
+    const auto it = std::remove_if(mCurrent.chunks.begin(), mCurrent.chunks.end(),
+        [&](const AuthoredChunk& chunk) { return chunk.id == id; });
+    if (it == mCurrent.chunks.end()) return false;
+    mCurrent.chunks.erase(it, mCurrent.chunks.end());
     markChanged();
     return true;
 }

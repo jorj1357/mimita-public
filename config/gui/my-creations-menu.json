@@ -1,0 +1,66 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 3,
+  "elements": {
+    "myCreationsBg": {
+      "type": "panel",
+      "x": 0, "y": 0, "width": 1920, "height": 1080,
+      "backgroundColor": [0.035, 0.04, 0.052, 1.0]
+    },
+    "myCreationsTitle": {
+      "type": "text",
+      "x": 560, "y": 80, "width": 800, "height": 60,
+      "text": "MY CREATIONS",
+      "fontSize": 0.6,
+      "textColor": [0.85, 0.9, 0.95, 1.0]
+    },
+    "refreshButton": {
+      "type": "button",
+      "x": 1240, "y": 84, "width": 120, "height": 48,
+      "text": "REFRESH",
+      "fontSize": 0.28,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.2, 0.4, 0.5, 1.0]
+    },
+    "prevPage": {
+      "type": "button",
+      "x": 560, "y": 960, "width": 44, "height": 40,
+      "text": "<",
+      "fontSize": 0.34,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.12, 0.15, 0.2, 1.0]
+    },
+    "nextPage": {
+      "type": "button",
+      "x": 1316, "y": 960, "width": 44, "height": 40,
+      "text": ">",
+      "fontSize": 0.34,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.12, 0.15, 0.2, 1.0]
+    },
+    "editButton": {
+      "type": "button",
+      "x": 620, "y": 790, "width": 300, "height": 64,
+      "text": "EDIT",
+      "fontSize": 0.4,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.28, 0.4, 0.78, 1.0]
+    },
+    "playLocalButton": {
+      "type": "button",
+      "x": 1000, "y": 790, "width": 320, "height": 64,
+      "text": "PLAY LOCAL",
+      "fontSize": 0.4,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.14, 0.62, 0.28, 1.0]
+    },
+    "backButton": {
+      "type": "button",
+      "x": 40, "y": 40, "width": 140, "height": 48,
+      "text": "BACK",
+      "fontSize": 0.36,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.7, 0.2, 0.2, 1.0]
+    }
+  }
+}

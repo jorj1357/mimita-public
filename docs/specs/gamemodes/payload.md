@@ -185,9 +185,10 @@ Do not add a second NPC renderer. The shared remote NPC snapshot/render path rem
 Build/test:
 
 The root dev-loop auto-builds saved changes. Agents confirm it is online with
-`python devscripts/dev-loop.py --status` (or `--ensure-running`), keep working,
-and run the latest published artifact's selftests. Agents do not request builds
-or wait for them.
+`python devscripts/dev-loop.py --status` (or `--ensure-running`), then request
+a normal or pinned build/test through the root dev-loop when needed. Do not
+invoke a compiler directly or start a second loop. Record the agent identity,
+build ID, and wait reason.
 
 ```text
 .dev/builds/<build>/mimita.exe --payload-selftest

@@ -42,7 +42,9 @@
 #include "network/multiplayer-context.h"
 #include "network/community-match-client.h"
 #include "game/objective-state.h"
+#include "gamemode/gamemode.h"
 #include "gamemode/map-config.h"
+#include "config/collision-config.h"
 #include "network/community-match-client.h"
 #include "terminal/terminal-state.h"
 #include "vehicles/vehicle-system.h"
@@ -175,6 +177,16 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
 {
     MIMITA_PERF_SCOPE("Simulation::SimulateTick");
     if (!sim.player || !sim.world || !sim.npcSystem) return;
+
+    // Keep local prediction on the same collision mode as the authoritative
+    // server for the active gamemode.
+    {
+        const auto& match = MimitaNet::CommunityMatchClient::instance();
+        const Gamemode& activeMode =
+            GamemodeRegistry::instance().get(match.mode());
+        CollisionConfig::instance().setArcadeCollision(
+            activeMode.features.arcadeCollision);
+    }
 
     // Recomputed below only while a physical body or ragdoll is running, so a
     // stopped body sends one inactive pose to clear the remote replicas.

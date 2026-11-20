@@ -1079,6 +1079,20 @@ Triggers available to the state machine (produced by existing owners):
 - death;
 - explicit command (`anim.play <clip>`) for editor/testing.
 
+## Death reset
+
+When an actor transitions from alive to dead, animation state resets immediately
+on that fixed simulation tick. Clear any locked one-shot or action clip,
+weapon-action pose, procedural melee pose, and transient animation timers
+(including hurt, reload/equip, dash, landing, crouch, and knockback). Select the
+actor's idle/default clip and keep it selected for the remainder of that life;
+death, hurt, reload, weapon, locomotion, and other transient clips must not
+resume or replace it while the actor remains dead. Weapon and reload pose
+overlays are suppressed while dead so they cannot preserve a mid-action arm
+pose. On respawn, normal state selection resumes from a clean state. This
+animation reset does not change gameplay weapon runtime, inventory, or
+authoritative death/respawn behavior.
+
 ## Layers and precedence
 
 Composition order, lowest to highest:

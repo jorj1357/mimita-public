@@ -15,7 +15,10 @@
 #include <unordered_set>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "combat/area-effect.h"
+#include "config/collision-config.h"
 #include "devtools/scenario-server-playback.h"
 #include "devtools/scenario-server-recorder.h"
 #include "network/network-weapons.h"
@@ -216,10 +219,17 @@ void validatePlayerDomains(Players& players, Npcs& npcs, std::uint32_t tick) {
 
 }  // namespace
 
+static void syncArcadeCollision() {
+    const auto& state = MimitaNet::serverGamemodeState();
+    const Gamemode& mode = GamemodeRegistry::instance().get(state.matchMode);
+    CollisionConfig::instance().setArcadeCollision(mode.features.arcadeCollision);
+}
+
 int serverRuntimeSimulatePlayers(void* rawFrame) {
     if (!rawFrame) {
         return 0;
     }
+    syncArcadeCollision();
     auto& frame = *static_cast<mimita::host::ServerFrameV1*>(rawFrame);
     const auto start = Clock::now();
     auto& players = playersOf(frame);
@@ -254,6 +264,7 @@ int serverRuntimeSimulateWorld(void* rawFrame) {
     if (!rawFrame) {
         return 0;
     }
+    syncArcadeCollision();
     auto& frame = *static_cast<mimita::host::ServerFrameV1*>(rawFrame);
     const auto start = Clock::now();
     auto& players = playersOf(frame);
@@ -263,6 +274,28 @@ int serverRuntimeSimulateWorld(void* rawFrame) {
     auto& npcWorld = npcWorldOf(frame);
     const SOCKET sock = socketOf(frame);
     std::uint64_t& packetsOut = packetsOutOf(frame);
+
+    // Bounded per-block timing. The resident tick reports the whole world
+    // module as "npc_ms"; this split attributes the cost that is not inside
+    // simulateSharedNpcs so the dominant owner can be fixed without guessing.
+    struct WorldPhaseWindow {
+        double infiniteMs = 0.0, npcSimMs = 0.0, posHistoryMs = 0.0;
+        double recorderMs = 0.0, projectilesMs = 0.0, hazardMs = 0.0;
+        double meleeMs = 0.0, physicalContactMs = 0.0, impactsMs = 0.0;
+        double totalMs = 0.0;
+        std::uint64_t ticks = 0;
+    };
+    static WorldPhaseWindow worldWindow;
+    static Clock::time_point worldWindowLastEmit = Clock::now();
+    auto mark = start;
+    auto lap = [&mark]() {
+        const auto now = Clock::now();
+        const double ms = std::chrono::duration<double, std::milli>(
+            now - mark).count();
+        mark = now;
+        return ms;
+    };
+    const auto begin = start;
 
     ScenarioServerPlayback::instance().tick(
         frame.tick, players, npcSystem);
@@ -285,20 +318,25 @@ int serverRuntimeSimulateWorld(void* rawFrame) {
                 .get(MimitaNet::serverGamemodeState().matchMode)
                 .worldStreaming.enabled);
     }
+    worldWindow.infiniteMs += lap();
     MimitaNet::simulateSharedNpcs(
         sock, players, npcs, npcSystem, worldOf(frame), npcWorld,
         mirrorOf(frame), aliveIdsOf(frame), projectiles,
         *frame.nextProjectileId, frame.tick, packetsOut);
+    worldWindow.npcSimMs += lap();
     for (auto& entry : players) {
         if (!entry.second.connectionStale) {
             MimitaNet::pushPositionHistory(entry.second, frame.tick);
         }
     }
+    worldWindow.posHistoryMs += lap();
     ScenarioServerRecorder::instance().captureTick(
         players, npcs, npcSystem, projectiles, worldOf(frame), frame.tick);
+    worldWindow.recorderMs += lap();
     MimitaNet::tickServerProjectiles(sock, players, npcs, projectiles,
                                      worldOf(frame), MimitaNet::SERVER_DT,
                                      frame.tick, packetsOut);
+    worldWindow.projectilesMs += lap();
     if ((frame.flags & mimita::host::kServerFrameHazardScratch) != 0) {
         std::vector<AreaEffect> hazards;
         for (const auto& entry : projectiles) {
@@ -322,14 +360,18 @@ int serverRuntimeSimulateWorld(void* rawFrame) {
         }
         npcSystem.setProjectileHazards(hazards);
     }
+    worldWindow.hazardMs += lap();
     MimitaNet::tickServerMeleeActions(sock, players, npcs, frame.tick,
                                       packetsOut);
+    worldWindow.meleeMs += lap();
     MimitaNet::tickServerPhysicalContactWeapons(
         sock, players, npcs, worldOf(frame), MimitaNet::SERVER_DT, frame.tick,
         packetsOut);
+    worldWindow.physicalContactMs += lap();
     MimitaNet::flushServerWorldImpacts(
         worldOf(frame), npcWorld, MimitaNet::serverGamemodeState().mapId,
         frame.tick);
+    worldWindow.impactsMs += lap();
     if (frame.procedural_mode && *frame.procedural_mode &&
         frame.procedural_start_queued && !*frame.procedural_start_queued &&
         !MimitaNet::serverGamemodeState().procedural.enabled &&
@@ -358,6 +400,61 @@ int serverRuntimeSimulateWorld(void* rawFrame) {
                         frame.procedural_mode);
         }
         *frame.procedural_start_queued = 1;
+    }
+    worldWindow.totalMs += std::chrono::duration<double, std::milli>(
+        Clock::now() - begin).count();
+    ++worldWindow.ticks;
+    {
+        const auto now = Clock::now();
+        if (now - worldWindowLastEmit >= std::chrono::seconds(1)) {
+            const double seconds = std::chrono::duration<double>(
+                now - worldWindowLastEmit).count();
+            const double ticks = worldWindow.ticks
+                ? static_cast<double>(worldWindow.ticks) : 1.0;
+            // Prove the full living roster moved, not a sampled subset.
+            static std::unordered_map<std::uint32_t, glm::vec3> lastMoverPositions;
+            if (lastMoverPositions.size() > 256)
+                lastMoverPositions.clear();
+            std::uint64_t livingNpcs = 0, movedNpcs = 0;
+            nlohmann::json stationary = nlohmann::json::array();
+            for (const Npc& npc : npcSystem.all()) {
+                if (npc.body.dead)
+                    continue;
+                ++livingNpcs;
+                auto it = lastMoverPositions.find(npc.id);
+                if (it != lastMoverPositions.end()) {
+                    const glm::vec2 moved(npc.body.pos.x - it->second.x,
+                                          npc.body.pos.y - it->second.y);
+                    if (glm::length(moved) > 0.1f)
+                        ++movedNpcs;
+                    else
+                        stationary.push_back(npc.id);
+                }
+                lastMoverPositions[npc.id] = npc.body.pos;
+            }
+            ::StructuredLogger::instance().writeEvent(
+                StructuredCategory::Performance, StructuredLevel::Important,
+                "server.world-phase-window", "server",
+                "one-second server world-phase totals", frame.tick,
+                {{"ticks", worldWindow.ticks},
+                 {"seconds", seconds},
+                 {"total_avg_ms", worldWindow.totalMs / ticks},
+                 {"living_npcs", livingNpcs},
+                 {"moved_npcs", movedNpcs},
+                 {"stationary_npcs", std::move(stationary)},
+                 {"infinite_collision_ms", worldWindow.infiniteMs},
+                 {"npc_sim_ms", worldWindow.npcSimMs},
+                 {"pos_history_ms", worldWindow.posHistoryMs},
+                 {"recorder_ms", worldWindow.recorderMs},
+                 {"projectiles_ms", worldWindow.projectilesMs},
+                 {"hazard_ms", worldWindow.hazardMs},
+                 {"melee_ms", worldWindow.meleeMs},
+                 {"physical_contact_ms", worldWindow.physicalContactMs},
+                 {"impacts_ms", worldWindow.impactsMs}},
+                __FILE__, __LINE__, __func__);
+            worldWindow = WorldPhaseWindow{};
+            worldWindowLastEmit = now;
+        }
     }
     frame.simulate_world_us = microsecondsSince(start);
     return 1;

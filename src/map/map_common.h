@@ -2,45 +2,10 @@
 
 #pragma once
 // make this cross platform happy friendly
-#include <cstdint>
 #include <glm/glm.hpp>
 #include <vector>
-#include <string>
-#include <limits>
 
-struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 normal;
-    glm::vec2 uv;
-};
-
-struct Face {
-    std::vector<Vertex> verts;
-    int texID = 0; // NEW — random texture index
-};
-
-// One authored mesh-bearing GLB node. The loader bakes the node transform into
-// renderVertices, so the editor can move the object by applying a delta to this
-// contiguous vertex range and still reuse the normal map collision builder.
-struct MapGLBObject {
-    std::string id;                 // stable per map: "node:<index>"
-    std::string name;               // authored GLB node name
-    int nodeIndex = -1;
-    glm::mat4 transform{1.0f};      // current world transform
-    glm::vec3 basePosition{0.0f};   // original GLB translation before editor overrides
-    glm::vec3 boundsMin{0.0f};
-    glm::vec3 boundsMax{0.0f};
-    // Optional Map Editor material override. Empty means the destructible
-    // material heuristic decides.
-    std::string materialName;
-    // Hidden while this node is represented by a destructible physical entity.
-    // Renderer skips its vertex range; collision queries skip its solid id.
-    bool hidden = false;
-    // Stable local collision solid identity assigned by the collision builder.
-    uint32_t collisionSolidId = 0;
-    size_t vertexFirst = 0;
-    size_t vertexCount = 0;
-};
+#include "map/map-mesh-types.h"
 
 // Pristine authored-GLB bases owned by the resident World. These survive hot
 // generation swaps so overrides never have to be recovered by inverting an
@@ -49,27 +14,6 @@ struct AuthoredGLBBase {
     glm::mat4 transform{1.0f};
     std::vector<glm::vec3> positions;
     std::vector<glm::vec3> normals;
-};
-
-struct Mesh {
-    std::vector<Face> faces;
-    std::vector<Vertex> verts; // keep legacy for VAO creation
-    std::vector<MapGLBObject> objects;
-
-    struct Batch {
-        int materialIndex = -1;
-        std::string materialName = "default";
-        std::uint32_t texture = 0;
-        size_t first = 0;
-        size_t count = 0;
-        bool doubleSided = false;   // GLTF material doubleSided flag
-        glm::vec3 boundsMin{std::numeric_limits<float>::max()};
-        glm::vec3 boundsMax{std::numeric_limits<float>::lowest()};
-        bool hasBounds = false;
-    };
-
-    std::vector<Batch> batches;
-    std::vector<std::uint32_t> ownedTextures;
 };
 
 // do NOT define struct chunk here

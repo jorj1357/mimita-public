@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include "map/map_common.h"
+#include "map/map-mesh-types.h"
 #include "physics/physics-types.h"
 #include "gui/hud/chat-bubble.h"
 #include "entities/avatar-rig.h"

@@ -12,18 +12,23 @@ world-streaming/navmesh/reconnect compile and runtime checklist, start at
 
 The dev-loop is the only EXE builder. The running game's `ModuleHost` is the
 only module builder. Agents never invoke `build.py`, `module-build-worker.py`,
-a build request, or a compiler directly. The mode 2 lane is repository-local;
-agents ensure its dev-loop is running and read status/journals while it
-auto-detects saved edits. Lane creation rejects paths, metadata, symlinks,
-junctions, schedulers, and caches that escape this checkout. See
-[`docs/specs/dev-loop/agent-lanes-build-authority.md`](../../specs/dev-loop/agent-lanes-build-authority.md).
+a compiler, or a second dev-loop directly. They may request an EXE build,
+candidate game-DLL build, or isolated test run through the root dev-loop. One
+EXE build runs at a time; candidate DLL builds and pinned runs are bounded by
+PC resources. Mode 2 source lanes remain deferred; the current policy is one
+shared source tree. See
+[`docs/specs/dev-loop/agent-lanes-build-authority.md`](../../specs/dev-loop/agent-lanes-build-authority.md),
+[`change-to-evidence-latency.md`](../../specs/dev-loop/change-to-evidence-latency.md),
+and [`agent-coordination.md`](../../specs/dev-loop/agent-coordination.md).
 
-A human may submit an explicit build or use the emergency override. Agents
-must never run either command:
+Direct compiler and `build.py` use remains forbidden. `MIMITA_BUILD_OVERRIDE=1`
+is an emergency human-only variable; agents do not set it. A normal agent
+request uses the root dev-loop build/test surface and records its identity:
 
 ```text
-MIMITA_BUILD_OVERRIDE=1 python devscripts/dev-loop.py --request build --wait-for-build
-MIMITA_BUILD_OVERRIDE=1 python build.py build-only
+python devscripts/dev-loop.py --request build
+python devscripts/dev-loop.py --request game-dll
+python devscripts/dev-loop.py --start-test-run --profile <profile> --launch-mode <mode>
 ```
 
 The persistent dev-loop owns request ordering, build status, artifact
@@ -108,30 +113,32 @@ the dev-loop verifies and copies that executable and required runtime DLLs into
 executable or a running published artifact. The artifact ID and executable
 SHA-256 are stored in `build-identity.json`.
 
-Each agent build is intended to come from a separate worktree under
-`.dev/agent-lanes/<lane-id>/`, so lanes do not share source, object files, PCH,
-executable output, or dev-loop state. Shared OS build slots limit simultaneous
-compilation across lanes. The single active EXE build uses all logical
-processors. Each build also records its lane's
-source revision, submodule revisions, dirty-tree fingerprint, and whether the
-source changed while it was building.
+Current policy is one shared checkout and one source tree. Per-agent source
+isolation is deferred; do not create worktrees or source overlays. Each build
+records the source revision, submodule revisions, dirty-tree fingerprint, source
+snapshot, whether the source changed while it was building, and the requesting
+agent/task. Shared OS build slots and CPU/memory guards limit simultaneous
+compilation. One EXE build runs at a time; candidate game-DLL builds may run
+concurrently within those limits and write isolated candidate output, not the
+normal global `current.json`/`ready.json`.
 
 Automatic build entry:
 
 The root dev-loop watches saved compiler inputs and queues the incremental
-build itself. Agents do not run a build command and do not wait. A saved edit
-is the only normal build trigger.
+build itself. A saved edit remains the normal automatic trigger. An active
+agent may also request a build, candidate game-DLL build, or isolated test run
+through the same root dev-loop. The request is recorded with the agent, task,
+permit, build ID, wait reason, and test run.
 
-A human may use a manual request only when the automatic path cannot produce the
-required artifact:
+A human may still use the emergency override for an exceptional manual build:
 
 ```
 MIMITA_BUILD_OVERRIDE=1 python devscripts/dev-loop.py --request build --wait-for-build
 ```
 
-Use `--build-mode release` when a release configuration is specifically
-needed. The build output remains timestamped unless `MIMITA_EXE_NAME` is set
-by an internal build workflow.
+Agents do not set that variable. Use `--build-mode release` when a release
+configuration is specifically needed. The build output remains timestamped
+unless `MIMITA_EXE_NAME` is set by an internal build workflow.
 
 The previous "single canonical `mimita.exe`" rule is replaced by this
 timestamped rule. Do not create feature-specific *test* executables (for example

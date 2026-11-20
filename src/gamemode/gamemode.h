@@ -65,6 +65,9 @@ struct GamemodeFeatures {
     // never ends the round; the timer/bomb still resolve it.
     bool objectiveOnlyRoundWins = false;
     bool destructibleBodyParts = false; // Per-mode actor body-part damage/destruction policy.
+    // Arcade collision: every actor collides as a capsule (world and actor
+    // pairs); limb/body-part hitboxes are used only to classify damage.
+    bool arcadeCollision = false;
     // -1 inherits the global config/destructible-world.json world.enabled
     // value, 0 disables world destruction, 1 enables it.
     int destructibleWorld = -1;

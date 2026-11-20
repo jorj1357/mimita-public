@@ -69,12 +69,24 @@ bool capsuleFitsWorld(const World& world,
         center + glm::vec3(0.0f, 0.0f, -height * 0.5f + radius),
         center,
         center + glm::vec3(0.0f, 0.0f, height * 0.5f - radius)};
+    static thread_local std::vector<int> candidates;
     for (const glm::vec3& sample : samples)
     {
         if (worldPointInsideSolid(world, sample))
             return false;
-        for (const CollisionTriangle& triangle : world.collisionMesh.triangles)
+        AABB queryBounds;
+        queryBounds.min = sample - glm::vec3(radius + 0.05f);
+        queryBounds.max = sample + glm::vec3(radius + 0.05f);
+        candidates.clear();
+        appendChunkTrianglesForAABB(world, queryBounds, 0.0f, candidates,
+                                    "spawnCapsuleFits");
+        for (int index : candidates)
         {
+            if (index < 0 ||
+                static_cast<size_t>(index) >= world.collisionMesh.triangles.size())
+                continue;
+            const CollisionTriangle& triangle =
+                world.collisionMesh.triangles[static_cast<size_t>(index)];
             const glm::vec3 closest =
                 closestPointOnTriangle(sample, triangle.a, triangle.b, triangle.c);
             const float distance = glm::length(sample - closest);
@@ -85,41 +97,35 @@ bool capsuleFitsWorld(const World& world,
     return true;
 }
 
-bool raycastDownWorld(const World& world,
-                      const glm::vec3& origin,
-                      float maxDistance,
-                      float& outZ)
-{
-    const glm::vec3 direction(0.0f, 0.0f, -1.0f);
-    float nearest = maxDistance;
-    bool found = false;
-    for (const CollisionTriangle& triangle : world.collisionMesh.triangles)
-    {
-        float distance = 0.0f;
-        if (rayTriangle(origin, direction, triangle, distance) &&
-            distance < nearest)
-        {
-            nearest = distance;
-            found = true;
-        }
-    }
-    if (found)
-        outZ = origin.z - nearest;
-    return found;
-}
+namespace {
 
-bool raycastUpWorld(const World& world,
-                    const glm::vec3& origin,
-                    float maxDistance,
-                    float& outDistance)
+bool raycastVerticalWorld(const World& world,
+                          const glm::vec3& origin,
+                          float maxDistance,
+                          float directionZ,
+                          const char* caller,
+                          float& outDistance)
 {
-    const glm::vec3 direction(0.0f, 0.0f, 1.0f);
+    const glm::vec3 end = origin +
+        glm::vec3(0.0f, 0.0f, directionZ * maxDistance);
+    AABB queryBounds;
+    queryBounds.min = glm::min(origin, end) - glm::vec3(0.05f);
+    queryBounds.max = glm::max(origin, end) + glm::vec3(0.05f);
+    static thread_local std::vector<int> candidates;
+    candidates.clear();
+    appendChunkTrianglesForAABB(world, queryBounds, 0.0f, candidates, caller);
+    const glm::vec3 direction(0.0f, 0.0f, directionZ);
     float nearest = maxDistance;
     bool found = false;
-    for (const CollisionTriangle& triangle : world.collisionMesh.triangles)
+    for (int index : candidates)
     {
+        if (index < 0 ||
+            static_cast<size_t>(index) >= world.collisionMesh.triangles.size())
+            continue;
         float distance = 0.0f;
-        if (rayTriangle(origin, direction, triangle, distance) &&
+        if (rayTriangle(origin, direction,
+                        world.collisionMesh.triangles[static_cast<size_t>(index)],
+                        distance) &&
             distance < nearest)
         {
             nearest = distance;
@@ -129,6 +135,30 @@ bool raycastUpWorld(const World& world,
     if (found)
         outDistance = nearest;
     return found;
+}
+
+} // namespace
+
+bool raycastDownWorld(const World& world,
+                      const glm::vec3& origin,
+                      float maxDistance,
+                      float& outZ)
+{
+    float distance = 0.0f;
+    if (!raycastVerticalWorld(world, origin, maxDistance, -1.0f,
+                              "spawnRaycastDown", distance))
+        return false;
+    outZ = origin.z - distance;
+    return true;
+}
+
+bool raycastUpWorld(const World& world,
+                    const glm::vec3& origin,
+                    float maxDistance,
+                    float& outDistance)
+{
+    return raycastVerticalWorld(world, origin, maxDistance, 1.0f,
+                                "spawnRaycastUp", outDistance);
 }
 
 bool resolveCandidate(const World& world,

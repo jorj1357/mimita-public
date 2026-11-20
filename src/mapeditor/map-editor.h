@@ -72,6 +72,14 @@ public:
     bool wantsTextInput() const;
     float cameraSpeedMultiplier() const;
     void setCameraSpeedMultiplier(float multiplier);
+    void setSnapEnabled(bool enabled);
+    void setSnapIncrement(float meters);
+    void setGridVisible(bool visible);
+    bool snapEnabled() const { return mGridSnap; }
+    float snapIncrement() const { return mSnapGrid; }
+    bool gridVisible() const { return mGridVisible; }
+    bool setMapMode(const std::string& mode);
+    std::string mapMode() const;
     void focusSelection();
     void renderWorld(Camera& camera);
     void renderUI(GLFWwindow* window);
@@ -85,6 +93,9 @@ public:
     bool save(bool writeBackup = true);
     bool autosave();
     bool reload();
+    bool playTest();
+    bool returnFromPlayTest(bool reactivateEditor = true);
+    bool playtestActive() const { return mPlaytest.valid; }
     void flushCollisionNow();
     void rebuildGeometry();
     void rebuildAuthoredRenderGeometry();
@@ -124,6 +135,8 @@ public:
     // so they share selection, history, and geometry rebuild behavior.
     std::string addEntity(const std::string& type, const std::string& id = {});
     std::string addBlock(const std::string& id = {});
+    std::string addPlayerSpawn(const std::string& tag = "player_spawn");
+    std::string addMonsterVolume(const std::string& monsterPool = "default");
     std::string addChunk(const std::string& id = {});
     std::string addChunkWithFootprint(const std::string& id,
                                       const glm::vec3& footprint);
@@ -153,6 +166,13 @@ public:
     void addCartOrigin();
     bool previewChunk(const std::string& chunkId);
     bool setSelectedChunkPartMaterial(const std::string& material);
+    bool setSelectedCollision(bool enabled);
+    bool setSelectedAnchored(bool anchored);
+    bool setSelectedVisible(bool visible);
+    bool setSelectedSurfaceColor(const glm::vec4& color);
+    bool setSelectedOpacity(float opacity);
+    void openMaterialPicker();
+    bool applyMaterialPicker(const std::string& value);
     bool setSelectedChunkPartUvScale(float u, float v);
     bool setSelectedSize(const glm::vec3& size);
     bool setSelectedRotation(const glm::vec3& rotation);
@@ -226,6 +246,20 @@ private:
         bool shift = false;
     };
 
+    struct PlaytestSnapshot {
+        bool valid = false;
+        bool startedServer = false;
+        std::string projectId;
+        std::string workingPath;
+        std::string baseMapPath;
+        std::vector<EditorObjectRef> selection;
+        glm::vec3 cameraPos{0.0f};
+        glm::vec3 cameraFront{0.0f, 1.0f, 0.0f};
+        glm::vec3 cameraUp{0.0f, 0.0f, 1.0f};
+        float cameraYaw = -90.0f;
+        float cameraPitch = 10.0f;
+    };
+
     bool mActive = false;
     bool mFreezeWorld = true;
     bool mPrevFreecam = false;
@@ -234,6 +268,7 @@ private:
     bool mVertexSnap = true;
     bool mGridSnap = false;
     float mSnapGrid = 1.0f;
+    bool mGridVisible = false;
     double mMouseX = 0.0;
     double mMouseY = 0.0;
     bool mLeftPrev = false;
@@ -259,6 +294,10 @@ private:
     UITextInputState mPropertyRotation[3];
     UITextInputState mPropertyScale[3];
     UITextInputState mPropertyMaterial;
+    bool mMaterialPickerOpen = false;
+    std::vector<std::string> mMaterialPickerLabels;
+    std::vector<std::string> mMaterialPickerValues;
+    int mMaterialPickerPage = 0;
     UITextInputState mPropertyUvScale[2];
     bool mPropertyOwnerValid = false;
     EditorObjectRef mPropertyOwner;
@@ -283,6 +322,7 @@ private:
     bool mBoxSelecting = false;
     glm::vec2 mBoxStartScreen{0.0f};
     glm::vec2 mBoxEndScreen{0.0f};
+    PlaytestSnapshot mPlaytest;
     bool mContextMenuOpen = false;
     glm::vec2 mContextMenuPos{0.0f};
     EditorObjectRef mContextMenuTarget;

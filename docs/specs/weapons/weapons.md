@@ -1094,6 +1094,7 @@ Conceptual structure:
 
 
     uint64_t clientSimulationTick;
+    uint32_t inputCommandSequence;
 
 
     glm::vec3 aimOrigin;
@@ -1103,20 +1104,28 @@ Conceptual structure:
     glm::vec3 predictedMuzzlePosition;
 };
 The request contains intent.
-For the current client-first hitscan contract, the client may also send a
-bounded per-target claim containing the damage and pellet-hit total it saw.
-The server validates and caps that claim before adopting it. This is the
-intentional client-authority policy in
-`../networking/contact-authority.md`.
-The client must never send:
+The request identifies the client's predicted action and its time in the
+input stream. Every weapon family predicts its local action and plausible
+contact immediately. It may include bounded per-target contact/result claims
+defined by
+[`../networking/contact-authority.md`](../networking/contact-authority.md).
+The server is a plausibility referee: it validates claims against mapped
+historical state and adopts a valid predicted result as canonical. It does not
+run a second independent trace whose small timing or interpolation differences
+silently turn a client-visible hit into a miss. The shared damage owner still
+applies the accepted result and publishes it to all clients. Client prediction
+does not permanently write shared health, death, or score.
+The client must never send these as authoritative outcome assertions:
 I killed player 2
 My grenade exploded here and damaged these players
-For projectile and melee attacks, the client instead sends:
-I attempted to fire this weapon
-from this origin
-in this direction
-at this simulation tick
-The server determines the result.
+It may send bounded predicted contact candidates for server validation under
+the shared contact policy; a candidate is not an authoritative outcome.
+Projectile and melee requests also carry their predicted launch/contact
+candidate, stable IDs, actor generations, and mapped action/contact tick. The
+server validates and confirms or corrects that candidate under the shared
+contact policy; it does not defer all visible feedback until confirmation.
+Request delivery and cooldown ordering follow
+[`../networking/networking.md`](../networking/networking.md#weapon-request-ordering-under-server-load).
 ________________
 
 
@@ -1201,7 +1210,8 @@ Is the player connected?
 Is the player alive?
 Is grenade_launcher actually equipped?
 Does the player have at least one ammo?
-Has the authoritative fire cooldown completed?
+Was the weapon's authoritative cooldown complete at the validated action tick,
+not merely at packet receive or processing time?
 Is the player not already reloading?
 Is request ID 481 new?
 Is the aim direction finite and normalized?
@@ -1215,7 +1225,7 @@ ________________
 Phase 5: server accepts the shot
 The server updates authoritative weapon runtime:
 authoritative ammo: 4 → 3
-next allowed fire tick: current tick + fire delay
+next allowed fire tick: validated action tick + fire delay
 The server creates an authoritative projectile.
 Todo 7 18 2026 can we make this naming more similar? Looseobject is a projectile, like, projectile fits within looseobject 
 ProjectileEntity grenade =

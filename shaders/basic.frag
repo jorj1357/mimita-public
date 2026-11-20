@@ -35,6 +35,8 @@ uniform vec4 uColor;
 // Per-object tint multiplier applied to textured output.
 // Set to (1,1,1) by default; weapons and future items override for color tinting.
 uniform vec3 uTint;
+uniform float uOpacity;
+uniform int uOpacityEnabled;
 
 // Alpha cutoff: fragments with alpha below this are discarded
 uniform float uAlphaCutoff;
@@ -314,6 +316,8 @@ void main()
                 0.0, 1.0);
         }
         float finalAlpha = texel.a * proximityAlpha;
+        if (uOpacityEnabled != 0)
+            finalAlpha *= uOpacity;
         if (finalAlpha <= 0.0)
             discard;
         FragColor = vec4(lit, finalAlpha);

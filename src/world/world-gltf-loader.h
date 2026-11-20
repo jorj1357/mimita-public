@@ -11,6 +11,7 @@
 
 #include "world/world.h"
 #include <cstdint>
+#include <string>
 
 struct MapLoadTiming {
     double read_glb = 0;
@@ -51,7 +52,8 @@ struct MapLoadMetrics {
 
 bool loadWorldFromGLB(
     World& world,
-    const char* path
+    const char* path,
+    const std::string& authoredMapId = {}
 );
 
 void extractSpawnPointsFromGLB(World& world, const char* path);

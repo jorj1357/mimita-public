@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
 #include <vector>
-#include "map/map_common.h"
+#include "map/map-mesh-types.h"
 
 class Camera;
 class Player;

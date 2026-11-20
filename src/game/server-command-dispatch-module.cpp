@@ -20,6 +20,7 @@
 #include "game/transport-bridge-module.h"
 #include "network/community-server-config.h"
 #include "network/coordinator-client.h"
+#include "network/server-gamemode.h"
 #include "network/packets.h"
 #include "network/server.h"
 #include "physics/movement/movement-conversion.h"
@@ -653,16 +654,23 @@ bool dispatchHello(const mimita::host::TransportMessageV1* message,
     }
 
     if (!existing) {
+        glm::vec3 modeSpawn(0.0f);
         mimita::host::WorldSpawnV1 spawn{};
         spawn.structSize = static_cast<std::uint32_t>(sizeof(spawn));
-        if (pickHostSpawn(playerId, &spawn) ==
-                mimita::host::HostResult::Ok &&
-            spawn.found != 0) {
-            const float position[3] = {spawn.position[0], spawn.position[1],
-                                       spawn.position[2]};
+        const bool hasModeSpawn = MimitaNet::serverGamemodeSpawnPointForNewActor(
+            playerId, &modeSpawn);
+        if (hasModeSpawn ||
+            (pickHostSpawn(playerId, &spawn) ==
+                 mimita::host::HostResult::Ok &&
+             spawn.found != 0)) {
+            const float position[3] = {
+                hasModeSpawn ? modeSpawn.x : spawn.position[0],
+                hasModeSpawn ? modeSpawn.y : spawn.position[1],
+                hasModeSpawn ? modeSpawn.z : spawn.position[2]};
             const float velocity[3] = {0.0f, 0.0f, 0.0f};
             const MovementConfig config = makeCurrentRuntimeMovementConfig();
-            resetHostTransform(handle, position, velocity, spawn.yaw, 0, 0,
+            resetHostTransform(handle, position, velocity,
+                               hasModeSpawn ? 0.0f : spawn.yaw, 0, 0,
                                static_cast<std::uint32_t>(config.maximumAirJumps),
                                1);
         }
@@ -994,17 +1002,24 @@ bool dispatchJoin(const mimita::host::TransportMessageV1* message,
     }
 
     if (!existing) {
+        glm::vec3 modeSpawn(0.0f);
         mimita::host::WorldSpawnV1 spawn{};
         spawn.structSize = static_cast<std::uint32_t>(sizeof(spawn));
-        if (pickHostSpawn(playerId, &spawn) ==
-                mimita::host::HostResult::Ok &&
-            spawn.found != 0) {
-            const float position[3] = {spawn.position[0], spawn.position[1],
-                                       spawn.position[2]};
+        const bool hasModeSpawn = MimitaNet::serverGamemodeSpawnPointForNewActor(
+            playerId, &modeSpawn);
+        if (hasModeSpawn ||
+            (pickHostSpawn(playerId, &spawn) ==
+                 mimita::host::HostResult::Ok &&
+             spawn.found != 0)) {
+            const float position[3] = {
+                hasModeSpawn ? modeSpawn.x : spawn.position[0],
+                hasModeSpawn ? modeSpawn.y : spawn.position[1],
+                hasModeSpawn ? modeSpawn.z : spawn.position[2]};
             const float velocity[3] = {0.0f, 0.0f, 0.0f};
             const MovementConfig config = makeCurrentRuntimeMovementConfig();
             resetHostTransform(
-                handle, position, velocity, spawn.yaw, 0, 0,
+                handle, position, velocity,
+                hasModeSpawn ? 0.0f : spawn.yaw, 0, 0,
                 static_cast<std::uint32_t>(config.maximumAirJumps), 1);
         }
     } else {

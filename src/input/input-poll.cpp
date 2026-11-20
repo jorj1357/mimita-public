@@ -280,11 +280,23 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     const bool scheduledMove = consumeScheduledTerminalMove(
         scheduledSide, scheduledForward, &scheduledJustStarted, nullptr);
 
-    if (cmd.getState("walkforward").held) {
+    const bool arrowsEnabled = cmd.isKeyboardEnabled() &&
+                               InputRouter::gameWindowFocused();
+    const bool arrowForward = arrowsEnabled &&
+                              InputRouter::keyDown(GLFW_KEY_UP);
+    const bool arrowBackward = arrowsEnabled &&
+                               InputRouter::keyDown(GLFW_KEY_DOWN);
+    static bool arrowForwardWasDown = false;
+    static bool arrowBackwardWasDown = false;
+    const bool arrowForwardPressed = arrowForward && !arrowForwardWasDown;
+    const bool arrowBackwardPressed = arrowBackward && !arrowBackwardWasDown;
+    arrowForwardWasDown = arrowForward;
+    arrowBackwardWasDown = arrowBackward;
+    if (cmd.getState("walkforward").held || arrowForward) {
         wish.x += f.x;
         wish.y += f.y;
     }
-    if (cmd.getState("walkback").held) {
+    if (cmd.getState("walkback").held || arrowBackward) {
         wish.x -= f.x;
         wish.y -= f.y;
     }
@@ -319,12 +331,14 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     // so agent.move reported movementPressed=false.
     const bool keyboardMoving =
         cmd.getState("walkforward").held ||
+        arrowForward ||
         cmd.getState("walkback").held ||
+        arrowBackward ||
         cmd.getState("walkleft").held ||
         cmd.getState("walkright").held;
     const bool keyboardJustPressed =
-        cmd.getState("walkforward").pressed ||
-        cmd.getState("walkback").pressed ||
+        cmd.getState("walkforward").pressed || arrowForwardPressed ||
+        cmd.getState("walkback").pressed || arrowBackwardPressed ||
         cmd.getState("walkleft").pressed ||
         cmd.getState("walkright").pressed;
     in.movementPressed = scheduledMove || keyboardMoving;

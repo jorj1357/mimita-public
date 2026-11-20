@@ -12,6 +12,7 @@ import time
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
+from tkinter import simpledialog
 from typing import Callable
 
 
@@ -23,6 +24,25 @@ FONT_PATH = Path(r"C:\important\mingliu-font\mingliu.ttf")
 MIN_WIDTH = 500
 MIN_HEIGHT = 500
 APP_USER_MODEL_ID = "MiMITA.DevLoop.Dashboard"
+UI_STATE_PATH = Path(__file__).resolve().parents[2] / ".dev" / "dashboard-ui.json"
+
+
+def _load_ui_state() -> dict:
+    try:
+        value = json.loads(UI_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _save_ui_state(value: dict) -> None:
+    try:
+        UI_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = UI_STATE_PATH.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(UI_STATE_PATH)
+    except OSError:
+        pass
 
 
 def _configured_launch_modes() -> list[dict[str, str]]:
@@ -75,19 +95,25 @@ def _launch_timing_from_journal(events_path: str, request_id: str,
             continue
         stage_name = str(fields.get("stage") or "")
         try:
-            event_epoch = datetime.fromisoformat(
-                str(record.get("wall_time", "")).replace("Z", "+00:00")
-            ).timestamp()
-        except ValueError:
-            event_epoch = time.time()
-        elapsed = max(0.0, event_epoch - launch_started_epoch)
+            stage_elapsed = float(fields.get("elapsed_ms")) / 1000.0
+        except (TypeError, ValueError):
+            try:
+                event_epoch = datetime.fromisoformat(
+                    str(record.get("wall_time", "")).replace("Z", "+00:00")
+                ).timestamp()
+            except ValueError:
+                event_epoch = time.time()
+            stage_elapsed = max(0.0, event_epoch - launch_started_epoch)
+        accept = fields.get("accept_latency_ms")
+        if isinstance(accept, (int, float)):
+            stages["accept_latency_ms"] = float(accept)
         if stage_name == "client_process_start" and fields.get("result") == "started":
-            stages["client_start_seconds"] = elapsed
+            stages["client_start_seconds"] = stage_elapsed
         elif stage_name == "process_reuse" and fields.get("result") == "reused":
             stages["client_reused"] = True
         elif stage_name == "complete":
             stages["status"] = "succeeded" if fields.get("result") == "succeeded" else "failed"
-            stages["readiness_seconds"] = elapsed
+            stages["readiness_seconds"] = stage_elapsed
             stages["message"] = str(record.get("reason") or "")
     return stages
 
@@ -164,12 +190,16 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
         source_count = int(current.get("source_count") or source_count)
         completed = max(completed, source_count)
     percent = min(100, round(completed * 100 / source_count)) if source_count > 0 else None
-    if str(progress.get("phase") or "").lower() == "compile" and percent is not None:
+    if progress.get("no_op") or str(progress.get("status") or "").lower() == "no_op":
+        headline = f"Game DLL: NO-OP · published generation reused  ·  {elapsed_text}"
+    elif str(progress.get("phase") or "").lower() == "compile" and percent is not None:
         headline = f"Game DLL: COMPILE {completed}/{source_count} ({percent}%)  ·  {elapsed_text}"
     else:
         headline = f"Game DLL: {phase}  ·  {elapsed_text}"
 
     details = [f"revision {revision[:12]}"]
+    if isinstance(progress.get("worker_elapsed_s"), (int, float)):
+        details.append(f"worker elapsed {float(progress['worker_elapsed_s']):.3f}s")
     active = progress.get("active_sources")
     if isinstance(active, list) and active:
         details.append("compiling: " + ", ".join(str(item) for item in active[:3]))
@@ -177,6 +207,15 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
         details.append("current: " + str(progress["current"]))
     if progress.get("compiled") is not None or progress.get("skipped") is not None:
         details.append(f"CXX {int(progress.get('compiled') or 0)}  ·  SKIP {int(progress.get('skipped') or 0)}")
+    if isinstance(progress.get("object_scan_s"), (int, float)):
+        scan_detail = f"scan {float(progress['object_scan_s']):.3f}s"
+        if isinstance(progress.get("scan_unique_dependencies"), int):
+            scan_detail += f"  ·  {progress['scan_unique_dependencies']} unique deps"
+        if isinstance(progress.get("scan_parse_ms"), (int, float)):
+            scan_detail += f"  ·  parse {float(progress['scan_parse_ms']):.0f} ms"
+        if isinstance(progress.get("scan_stat_ms"), (int, float)):
+            scan_detail += f"  ·  stat {float(progress['scan_stat_ms']):.0f} ms"
+        details.append(scan_detail)
     file_events = progress.get("file_events")
     if isinstance(file_events, list) and file_events:
         recent = []
@@ -191,7 +230,7 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
     notes = progress.get("notes") if isinstance(progress.get("notes"), list) else []
     if notes:
         details.extend("change note: " + str(item.get("changes", ""))
-                       for item in notes[:4] if isinstance(item, dict))
+                       for item in notes if isinstance(item, dict))
     else:
         details.append("change note: none; use devscripts/build-note.py --changes \"...\"")
     if current_revision == revision and current.get("status") == "ok":
@@ -308,6 +347,9 @@ def run(status_provider: Callable[[], dict],
         "launch_readiness_elapsed": None,
         "launch_timing_status": "",
         "launch_timing_message": "",
+        "launch_ack_elapsed": None,
+        "control_queue": queue.Queue(),
+        "control_results": queue.SimpleQueue(),
         "launch_modes": [],
         "active_mode": "",
         "latest_model": {},
@@ -327,7 +369,28 @@ def run(status_provider: Callable[[], dict],
         "dashboard_refresh_monotonic": 0.0,
         "dashboard_refresh_utc": "",
         "dashboard_refresh_count": 0,
+        "collapsed": dict(_load_ui_state().get("collapsed", {}) or {}),
     }
+
+    def control_worker() -> None:
+        """Send dashboard control requests without blocking Tk's frame loop."""
+        while True:
+            item = state["control_queue"].get()
+            if item is None:
+                return
+            action, fields, press_epoch, press_monotonic = item
+            response = None
+            error = ""
+            try:
+                response = control(action, **fields)
+            except Exception as exc:  # noqa: BLE001 - surfaced in the status line
+                error = str(exc)
+            state["control_results"].put(
+                (action, response, error, press_epoch, press_monotonic,
+                 time.monotonic()))
+
+    threading.Thread(target=control_worker, name="dashboard-control",
+                     daemon=True).start()
 
     def frame(parent, *, padx=0, pady=0, **kwargs):
         return tk.Frame(parent, bg=BLACK, highlightthickness=1,
@@ -362,6 +425,50 @@ def run(status_provider: Callable[[], dict],
         if width is not None:
             options["width"] = width
         return tk.Button(parent, **options)
+
+    def collapsible_section(parent, row, title_text, key, default_open=True):
+        """Wrap a dashboard section in a click-to-collapse header."""
+        collapsed = state.setdefault("collapsed", {})
+        is_open = [not bool(collapsed.get(key, not default_open))]
+        container = tk.Frame(parent, bg=BLACK)
+        container.grid(row=row, column=0, sticky="ew", pady=(3, 0))
+        container.grid_columnconfigure(0, weight=1)
+        header = tk.Frame(container, bg=BLACK)
+        header.grid(row=0, column=0, sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
+        tk.Label(header, text=title_text, bg=BLACK, fg=RED,
+                 font=(family, 9, "bold"), anchor="w").grid(
+            row=0, column=0, sticky="w")
+        toggle_holder = {}
+
+        def apply_state():
+            if is_open[0]:
+                body.grid()
+                toggle_holder["button"].configure(text="[-]")
+            else:
+                body.grid_remove()
+                toggle_holder["button"].configure(text="[+]")
+            try:
+                body_canvas.configure(scrollregion=body_canvas.bbox("all"))
+            except (tk.TclError, NameError):
+                pass
+
+        def on_toggle():
+            is_open[0] = not is_open[0]
+            collapsed[key] = not is_open[0]
+            _save_ui_state({"collapsed": collapsed})
+            apply_state()
+
+        body = tk.Frame(container, bg=BLACK)
+        body.grid(row=1, column=0, sticky="ew", pady=(1, 0))
+        toggle = tk.Button(header, text="[-]", command=on_toggle, bg=BLACK, fg=RED,
+                           activebackground="#330000", activeforeground=WHITE,
+                           relief="flat", bd=0, highlightthickness=0,
+                           font=(family, 10, "bold"), padx=2, pady=0, takefocus=True)
+        toggle.grid(row=0, column=1, sticky="e")
+        toggle_holder["button"] = toggle
+        apply_state()
+        return body
 
     # Make a taskbar entry for the borderless custom-caption window.
     if os.name == "nt":
@@ -582,7 +689,8 @@ def run(status_provider: Callable[[], dict],
 
     body_canvas.bind_all("<MouseWheel>", scroll_body)
 
-    cards = tk.Frame(body, bg=BLACK)
+    cards_host = collapsible_section(body, 0, "BUILD", "build")
+    cards = tk.Frame(cards_host, bg=BLACK)
     cards.grid(row=0, column=0, sticky="ew")
     cards.grid_columnconfigure(0, weight=1)
     cards.grid_columnconfigure(1, weight=1)
@@ -609,11 +717,12 @@ def run(status_provider: Callable[[], dict],
     game_build_detail = label(activity_card, "", size=8, wraplength=500)
     game_build_detail.grid(row=4, column=0, sticky="ew")
 
-    game_queue_card = frame(body, padx=7, pady=5)
-    game_queue_card.grid(row=1, column=0, sticky="ew", pady=(3, 0))
+    queue_host = collapsible_section(body, 1, "WHOLE-GAME DLL BUILD QUEUE", "queue")
+    game_queue_card = frame(queue_host, padx=7, pady=5)
+    game_queue_card.grid(row=0, column=0, sticky="ew")
     game_queue_card.grid_columnconfigure(0, weight=1)
     game_queue_title = label(game_queue_card,
-                             "WHOLE-GAME DLL BUILD QUEUE", size=10, bold=True)
+                             "Queue detail", size=10, bold=True)
     game_queue_title.grid(row=0, column=0, sticky="w")
     game_queue_summary = label(game_queue_card, "Checking build queue…",
                                size=11, bold=True)
@@ -637,10 +746,11 @@ def run(status_provider: Callable[[], dict],
     runtime_card, runtime_value, runtime_detail = make_card("Runtime and mode/map")
     scenario_card, scenario_value, scenario_detail = make_card("Scenario evidence")
 
-    checkout_card = frame(body, padx=5, pady=3)
-    checkout_card.grid(row=2, column=0, sticky="ew", pady=(3, 0))
+    checkout_host = collapsible_section(body, 2, "CHECKOUTS AND AGENT LANES", "checkouts")
+    checkout_card = frame(checkout_host, padx=5, pady=3)
+    checkout_card.grid(row=0, column=0, sticky="ew")
     checkout_card.grid_columnconfigure(0, weight=1)
-    label(checkout_card, "CHECKOUTS AND AGENT LANES", size=9, bold=True).grid(
+    label(checkout_card, "Checkout detail", size=9, bold=True).grid(
         row=0, column=0, sticky="w")
     checkout_canvas = tk.Canvas(checkout_card, height=126, background=BLACK,
                                 highlightthickness=0, bd=0)
@@ -661,11 +771,12 @@ def run(status_provider: Callable[[], dict],
         "<Configure>", lambda event: checkout_canvas.itemconfigure(
             checkout_rows_window, width=event.width))
 
-    process_card = frame(body, padx=5, pady=3)
-    process_card.grid(row=3, column=0, sticky="ew", pady=(3, 0))
+    process_host = collapsible_section(body, 3, "MIMITA PROCESSES", "processes")
+    process_card = frame(process_host, padx=5, pady=3)
+    process_card.grid(row=0, column=0, sticky="ew")
     process_card.grid_columnconfigure(0, weight=1)
     process_card.grid_columnconfigure(1, weight=0)
-    label(process_card, "MIMITA PROCESSES", size=9, bold=True).grid(
+    label(process_card, "Process detail", size=9, bold=True).grid(
         row=0, column=0, sticky="w")
     process_summary = label(process_card, "Checking for running MiMITA processes…",
                             size=9, wraplength=700)
@@ -690,6 +801,58 @@ def run(status_provider: Callable[[], dict],
         "<Configure>",
         lambda event: process_canvas.itemconfigure(
             process_rows_window, width=event.width))
+
+    runtimes_host = collapsible_section(body, 4, "RUNTIMES", "runtimes")
+    runtimes_card = frame(runtimes_host, padx=5, pady=3)
+    runtimes_card.grid(row=0, column=0, sticky="ew")
+    runtimes_card.grid_columnconfigure(0, weight=1)
+    runtimes_summary = label(runtimes_card, "No independent runtimes.", size=9)
+    runtimes_summary.grid(row=0, column=0, sticky="w")
+    runtimes_rows = tk.Frame(runtimes_card, bg=BLACK)
+    runtimes_rows.grid(row=1, column=0, sticky="ew")
+
+    def start_runtime_dialog():
+        runtime_id = simpledialog.askstring(
+            "Start runtime", "Runtime id (for example juggernaut-a):", parent=root)
+        if not runtime_id:
+            return
+        mode = simpledialog.askstring(
+            "Start runtime", "Launch mode:", initialvalue="9", parent=root)
+        if not mode:
+            return
+        send("start-runtime", runtime_id=runtime_id.strip(),
+             runtime_launch_mode=mode.strip())
+
+    button(runtimes_card, "Start runtime", start_runtime_dialog, width=12).grid(
+        row=0, column=1, sticky="e")
+
+    def render_runtimes(model: dict) -> None:
+        rows = list(model.get("runtimes") or [])
+        runtimes_summary.configure(
+            text=f"{len(rows)} runtime(s)" if rows else "No independent runtimes.")
+        for child in runtimes_rows.winfo_children():
+            child.destroy()
+        for row in rows[:8]:
+            runtime_id = str(row.get("runtime_id") or "")
+            alive = bool(row.get("server_alive"))
+            client_alive = bool(row.get("client_alive"))
+            line = tk.Frame(runtimes_rows, bg=BLACK)
+            line.grid(sticky="ew", pady=1)
+            line.grid_columnconfigure(0, weight=1)
+            label(line,
+                  f"{runtime_id}  mode={row.get('launch_mode')} "
+                  f"map={row.get('map')} "
+                  f"server={'alive' if alive else 'dead'} "
+                  f"client={'alive' if client_alive else 'dead'} "
+                  f"port={row.get('port') or '-'}", size=8).grid(
+                row=0, column=0, sticky="w")
+            button(line, "Stop",
+                   lambda rid=runtime_id: send("stop-runtime", runtime_id=rid),
+                   width=6).grid(row=0, column=1, padx=(4, 0))
+            button(line, "Reload",
+                   lambda rid=runtime_id: send("reload-runtime", runtime_id=rid),
+                   width=7).grid(row=0, column=2, padx=(4, 0))
+
     process_buttons = tk.Frame(content, bg=BLACK)
     process_buttons.grid(row=3, column=0, sticky="ew", pady=(3, 0))
     for column in range(4):
@@ -699,10 +862,11 @@ def run(status_provider: Callable[[], dict],
         process_card, "Refresh", lambda: manual_process_refresh(), width=8)
     refresh_process_button.grid(row=0, column=1, sticky="e")
 
-    details = frame(content, padx=5, pady=3)
-    details.grid(row=4, column=0, sticky="ew", pady=(3, 0))
+    details_host = collapsible_section(content, 4, "LIVE BUILD AND LOOP OUTPUT", "output")
+    details = frame(details_host, padx=5, pady=3)
+    details.grid(row=0, column=0, sticky="ew")
     details.grid_columnconfigure(0, weight=1)
-    label(details, "LIVE BUILD AND LOOP OUTPUT  ·  FOLLOWING LATEST",
+    label(details, "FOLLOWING LATEST",
           size=9, bold=True).pack(anchor="w", pady=(0, 2))
     refresh_indicator = label(details, "", size=8, color=GREEN)
     refresh_indicator.pack(anchor="w", pady=(0, 1))
@@ -759,45 +923,24 @@ def run(status_provider: Callable[[], dict],
     def send(action: str, **fields) -> None:
         state["pending_checkout_id"] = str(fields.get("checkout_id") or "main")
         launch_start = time.monotonic() if action == "build-or-launch" else None
+        press_epoch = time.time()
         if launch_start is not None:
             state["launch_started_monotonic"] = launch_start
-            state["launch_started_epoch"] = time.time()
+            state["launch_started_epoch"] = press_epoch
             state["launch_events_path_before"] = state["current_events_path"]
             state["launch_request_id"] = ""
             state["launch_client_started_elapsed"] = None
             state["launch_client_reused"] = False
             state["launch_readiness_elapsed"] = None
+            state["launch_ack_elapsed"] = None
             state["launch_timing_status"] = "pending"
             state["launch_timing_message"] = "Waiting for the dev loop"
-            action_status.configure(text="Launch request sending…")
-        try:
-            response = control(action, **fields)
-            if isinstance(response, dict):
-                accepted = bool(response.get("accepted"))
-                message = response.get("message")
-                request_id = str(response.get("request_id") or "")
-            else:
-                accepted = bool(response)
-                message = None
-                request_id = ""
-            if accepted:
-                state["pending_request_id"] = request_id
-                if launch_start is not None:
-                    state["launch_request_id"] = request_id
-            elif launch_start is not None:
-                state["launch_timing_status"] = "failed"
-                state["launch_readiness_elapsed"] = max(0.0, time.monotonic() - launch_start)
-                state["launch_timing_message"] = str(message or "Launch request was not accepted")
-            action_status.configure(text=message or
-                                    (f"{action}: queued · request {request_id}" if request_id
-                                     else f"{action}: {'accepted' if accepted else 'not accepted'}"))
-        except Exception as error:
-            action_status.configure(text=f"{action}: {error}")
-            if launch_start is not None:
-                state["launch_timing_status"] = "failed"
-                state["launch_readiness_elapsed"] = max(0.0, time.monotonic() - launch_start)
-                state["launch_timing_message"] = str(error)
-        refresh()
+            fields["dashboard_press_epoch"] = press_epoch
+            action_status.configure(text="Launch request queued · waiting for acknowledgement")
+        else:
+            action_status.configure(text=f"{action}: queued")
+        state["control_queue"].put(
+            (action, dict(fields), press_epoch, launch_start))
 
     def render_checkout_rows(model: dict) -> None:
         checkouts = model.get("checkouts") or []
@@ -1303,17 +1446,17 @@ def run(status_provider: Callable[[], dict],
         notes = progress.get("notes") if isinstance(progress.get("notes"), list) else []
         if notes:
             lines.append("CHANGES:")
-            for note in notes[:8]:
+            for note in notes:
                 if isinstance(note, dict):
                     lines.append("  " + str(note.get("changes") or "(empty note)"))
                     if note.get("files"):
-                        lines.append("    files: " + ", ".join(map(str, note["files"][:8])))
+                        lines.append("    files: " + ", ".join(map(str, note["files"])))
         elif progress.get("status") in ("preparing", "running"):
             lines.append("CHANGES: no agent note attached; run python devscripts/build-note.py --changes \"...\"")
         pending_notes = progress.get("pending_notes")
         if isinstance(pending_notes, list) and pending_notes:
             lines.append("NEXT BUILD NOTES:")
-            lines.extend("  " + str(note.get("changes", "")) for note in pending_notes[:4]
+            lines.extend("  " + str(note.get("changes", "")) for note in pending_notes
                          if isinstance(note, dict))
 
         paths = progress.get("changed_paths")
@@ -1338,26 +1481,55 @@ def run(status_provider: Callable[[], dict],
                     continue
                 result = {"compiled": "CXX", "skipped": "SKIP", "failed": "FAIL"}.get(
                     str(item.get("status")), str(item.get("status", "?")).upper())
-                detail = (f"{float(item.get('compile_ms') or 0):.0f} ms compile"
+                detail = (f"{float(item.get('compile_ms') or 0):.0f} ms compiler time"
                           if result == "CXX" else
-                          f"{float(item.get('dependency_check_ms') or 0):.1f} ms dep check")
+                          f"{float(item.get('dependency_check_ms') or 0):.1f} ms for this TU dep check")
                 queue_wait = float(item.get("queue_wait_ms") or 0)
                 if queue_wait:
                     detail += f"  ·  {queue_wait:.0f} ms queued"
                 lines.append(f"  {result}  {item.get('path', '')}  ·  {detail}")
 
-        for key, label_text in (("object_scan_s", "object/dependency scan"),
-                                ("compile_s", "compile wall time"),
-                                ("link_s", "link"),
-                                ("publish_s", "publish"),
-                                ("total_s", "whole attempt")):
+        phase = str(progress.get("phase") or "")
+        phase_elapsed = float(progress.get("phase_elapsed_ms") or 0) / 1000.0
+        elapsed = progress.get("elapsed_s")
+        if phase == "no_op" or progress.get("no_op"):
+            lines.append(f"NO-OP: reusing published generation "
+                         f"{progress.get('generation') or '?'}; no identity, compile, link, or publish")
+        elif phase == "changed_source_preflight":
+            candidates = int(progress.get("preflight_candidates") or 0)
+            lines.append(f"changed-source compile preflight in progress: "
+                         f"{phase_elapsed:.3f}s · {candidates} source(s)")
+        elif phase == "object_cache_scan":
+            scanned = int(progress.get("scan_scanned") or 0)
+            total = int(progress.get("total") or 0)
+            stale = int(progress.get("stale_count") or 0)
+            lines.append(f"object/dependency scan in progress: {phase_elapsed:.3f}s · "
+                         f"{scanned}/{total} checked · {stale} stale")
+        elif isinstance(progress.get("object_scan_s"), (int, float)):
+            lines.append(f"object/dependency scan: {float(progress['object_scan_s']):.3f}s")
+        for key, phase_name, label_text in (
+                ("compile_s", "compile", "compile wall time"),
+                ("link_s", "link", "link"),
+                ("publish_s", "publish", "publish")):
             value = progress.get(key)
-            if isinstance(value, (int, float)):
+            if phase == phase_name:
+                lines.append(f"{label_text} in progress: {phase_elapsed:.3f}s")
+            elif isinstance(value, (int, float)) and float(value) > 0:
                 lines.append(f"{label_text}: {float(value):.3f}s")
+        if isinstance(elapsed, (int, float)):
+            total_text = "whole attempt" if progress.get("status") != "running" else "attempt elapsed"
+            lines.append(f"{total_text}: {float(elapsed):.3f}s")
+        if isinstance(progress.get("worker_elapsed_s"), (int, float)):
+            lines.append(f"worker entry elapsed: {float(progress['worker_elapsed_s']):.3f}s")
         if progress.get("dependency_check_ms") is not None:
             lines.append(f"dependency checks sum: {float(progress['dependency_check_ms']):.1f} ms")
+        if progress.get("scan_parse_ms") is not None or progress.get("scan_stat_ms") is not None:
+            lines.append(
+                f"scan detail: parse {float(progress.get('scan_parse_ms') or 0):.1f} ms · "
+                f"stat {float(progress.get('scan_stat_ms') or 0):.1f} ms · "
+                f"{int(progress.get('scan_unique_dependencies') or 0)} unique deps")
         if progress.get("cache_record_overhead_ms") is not None:
-            lines.append(f"cache-result reporting sum: {float(progress['cache_record_overhead_ms']):.1f} ms")
+            lines.append(f"legacy per-skip reporting sum: {float(progress['cache_record_overhead_ms']):.1f} ms")
         if progress.get("dev_loop_output_handler_ms") is not None:
             lines.append(f"dev-loop output handling sum: {float(progress['dev_loop_output_handler_ms']):.1f} ms")
         phase_durations = progress.get("phase_durations_ms")
@@ -1375,7 +1547,46 @@ def run(status_provider: Callable[[], dict],
         game_queue_rows.insert("1.0", "\n".join(lines))
         game_queue_rows.configure(state="disabled")
 
+    def apply_control_results() -> None:
+        while True:
+            try:
+                (action, response, error, press_epoch,
+                 press_monotonic, completed) = state["control_results"].get_nowait()
+            except queue.Empty:
+                return
+            if press_monotonic is not None:
+                state["launch_ack_elapsed"] = max(0.0, completed - press_monotonic)
+            if error:
+                action_status.configure(text=f"{action}: {error}")
+                if press_monotonic is not None:
+                    state["launch_timing_status"] = "failed"
+                    state["launch_timing_message"] = error
+                continue
+            if isinstance(response, dict):
+                accepted = bool(response.get("accepted"))
+                message = response.get("message")
+                request_id = str(response.get("request_id") or "")
+            else:
+                accepted = bool(response)
+                message = None
+                request_id = ""
+            if accepted:
+                state["pending_request_id"] = request_id
+                if press_monotonic is not None:
+                    state["launch_request_id"] = request_id
+                action_status.configure(text=message or (
+                    f"{action}: queued · request {request_id}" if request_id
+                    else f"{action}: accepted"))
+            else:
+                action_status.configure(text=str(message or f"{action}: not accepted"))
+                if press_monotonic is not None:
+                    state["launch_timing_status"] = "failed"
+                    state["launch_readiness_elapsed"] = state["launch_ack_elapsed"]
+                    state["launch_timing_message"] = str(
+                        message or "Launch request was not accepted")
+
     def refresh() -> None:
+        apply_control_results()
         if not state["frozen"]:
             try:
                 apply_process_scan_result()
@@ -1385,6 +1596,7 @@ def run(status_provider: Callable[[], dict],
                 state["dashboard_refresh_utc"] = _utc_now_iso()
                 state["latest_model"] = model
                 render_checkout_rows(model)
+                render_runtimes(model)
                 request_process_scan()
                 modes = _configured_launch_modes()
                 modes_changed = modes != state["launch_modes"]
@@ -1443,21 +1655,25 @@ def run(status_provider: Callable[[], dict],
                     elapsed = max(0.0, time.monotonic() - state["launch_started_monotonic"])
                     client = state["launch_client_started_elapsed"]
                     ready = state["launch_readiness_elapsed"]
+                    ack = state["launch_ack_elapsed"]
+                    ack_text = f"ack {ack * 1000.0:.0f} ms  ·  " if ack is not None else ""
                     if ready is not None:
                         client_text = (f"client {client:.2f}s" if client is not None else
                                        "client reused" if state["launch_client_reused"] else
                                        "client not started")
-                        launch_text = f"Launch: {client_text}  ·  readiness {ready:.2f}s"
+                        launch_text = f"Launch: {ack_text}{client_text}  ·  readiness {ready:.2f}s"
                     elif client is not None:
-                        launch_text = f"Launch: client {client:.2f}s  ·  readiness {elapsed:.2f}s…"
+                        launch_text = f"Launch: {ack_text}client {client:.2f}s  ·  readiness {elapsed:.2f}s…"
                     elif state["launch_client_reused"]:
-                        launch_text = f"Launch: client reused  ·  readiness {elapsed:.2f}s…"
+                        launch_text = f"Launch: {ack_text}client reused  ·  readiness {elapsed:.2f}s…"
                     else:
-                        launch_text = f"Launch: waiting for client  ·  {elapsed:.2f}s"
+                        launch_text = f"Launch: {ack_text}waiting for client  ·  {elapsed:.2f}s"
                     action_status.configure(text=launch_text)
                 elif state["launch_timing_status"] in ("succeeded", "failed"):
                     client = state["launch_client_started_elapsed"]
                     ready = state["launch_readiness_elapsed"]
+                    ack = state["launch_ack_elapsed"]
+                    ack_text = f"ack {ack * 1000.0:.0f} ms  ·  " if ack is not None else ""
                     client_text = (f"client {client:.2f}s" if client is not None else
                                    "client reused" if state["launch_client_reused"] else
                                    "client not started")
@@ -1466,7 +1682,7 @@ def run(status_provider: Callable[[], dict],
                     message_text = f"  ·  {message[:100]}" if (
                         state["launch_timing_status"] == "failed" and message) else ""
                     action_status.configure(text=(
-                        f"Launch {state['launch_timing_status']}: {client_text}  ·  "
+                        f"Launch {state['launch_timing_status']}: {ack_text}{client_text}  ·  "
                         f"{ready_text}{message_text}"))
 
                 artifact = str(model.get("artifact_id") or "—")

@@ -15,7 +15,7 @@
 #include "combat/weapon-data.h"
 #include "combat/weapon-registry.h"
 #include "debug/debug-visuals.h"
-#include "map/map_common.h"
+#include "map/map-mesh-types.h"
 #include "map/map_loader.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"

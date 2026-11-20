@@ -4,7 +4,7 @@
 #include <vector>
 #include <unordered_map>
 #include <glm/glm.hpp>
-#include "map/map_common.h"
+#include "map/map-mesh-types.h"
 
 class Player;
 struct CosmeticSlot;

@@ -438,6 +438,15 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
     const HeadlessWorld* world)
 {
     actors.clear();
+    // Arcade modes use capsule collisions and client contact claims; skip the
+    // server-side per-actor animated pose and weapon-shape pass. Local client
+    // prediction (INVALID_SOCKET) still runs so it can send its own claims.
+    if (sock != INVALID_SOCKET && CollisionConfig::instance().arcadeCollision()) {
+        for (auto& pair : runtimes)
+            flushPending(sock, players, npcs, pair.first, pair.second, tick, packets);
+        runtimes.clear();
+        return;
+    }
     auto configured = [](const std::string& id) {
         const auto* def = WeaponRegistry::instance().get(id);
         return def && def->id != "nothing";
@@ -655,10 +664,12 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                     int actionPhaseTick = 0, actionPhaseTicks = 0;
                     const WeaponData::MeleeAction* contactAction = currentAction(
                         attacker, tick, &actionPhase, &actionPhaseTick, &actionPhaseTicks);
-                    const bool actionActive = contactAction && actionPhase &&
+                    const bool actionActive = !def->meleeContact.enabled &&
+                        contactAction && actionPhase &&
                         std::string(actionPhase) == "active";
                     const float force = glm::clamp(speed / std::max(0.001f,
-                        contactAction && contactAction->contactMaxForceSpeed >= 0.0f
+                        actionActive && contactAction &&
+                            contactAction->contactMaxForceSpeed >= 0.0f
                             ? contactAction->contactMaxForceSpeed
                             : WeaponExecution::paramOr(*def, "contactMaxForceSpeed", 22)),
                         0.0f, 1.0f) * directness;

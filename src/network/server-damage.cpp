@@ -355,6 +355,30 @@ static ActorBodyPart classifyNpcBodyPart(const ServerNpc& target,
             point.z >= part.cz - part.hz && point.z <= part.cz + part.hz)
             return (ActorBodyPart)part.actorPart;
     }
+    // Arcade NPCs have no collision body parts. Classify damage from the shared
+    // limb template so every actor still gets head/torso/limb hit zones without
+    // paying for body-part collision.
+    if (const auto* tpl = standardPlayerBodyTemplate())
+    {
+        const float scale = target.sizeScale > 0.0f ? target.sizeScale : 1.0f;
+        const float c = std::cos(target.yaw);
+        const float s = std::sin(target.yaw);
+        for (const auto& part : *tpl)
+        {
+            if (part.actorPart != 0xFF &&
+                target.body.destroyed((ActorBodyPart)part.actorPart))
+                continue;
+            const glm::vec3 offset(part.offset.x * c - part.offset.y * s,
+                                   part.offset.x * s + part.offset.y * c,
+                                   part.offset.z);
+            const glm::vec3 center = target.pos + offset * scale;
+            const glm::vec3 half = part.half * scale;
+            if (point.x >= center.x - half.x && point.x <= center.x + half.x &&
+                point.y >= center.y - half.y && point.y <= center.y + half.y &&
+                point.z >= center.z - half.z && point.z <= center.z + half.z)
+                return (ActorBodyPart)part.actorPart;
+        }
+    }
     return ActorBodyPart::Torso;
 }
 

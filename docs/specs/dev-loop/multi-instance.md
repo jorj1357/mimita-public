@@ -1,17 +1,33 @@
 # Dev-loop multi-instance topology and presentation
 
-**Status:** Desired behavior contract for one dev-loop run that owns one or
-more servers and clients.
+**Status:** Desired behavior contract for the primary dev-loop run and for
+isolated test runs launched by `dev-loop.py`.
 
-This runtime topology applies within one checkout. Independent agent lanes use
-separate Git worktrees under the coordinator checkout's
-`.dev/agent-lanes/<lane-id>/` directory and therefore separate dev-loop
-daemons, build locks, artifacts, run manifests, and journals. Do not use this document's multiple
-server/client instances as a substitute for source/build isolation between
-agents; see the independent agent worktree lane contract in `dev-loop.md`.
+The shared checkout has one build authority and one published EXE artifact.
+Separate agent test runs launch independent server/client processes from that
+artifact and keep independent run manifests, command queues, and journals.
+These runs do not create worktrees, branches, second build loops, or duplicate
+EXEs. They must not stop or replace the primary map-editor/gameplay session.
 
-`agent-lane.py` enforces the repository-local path and rejects escaping
-worktrees, metadata, symlinks, and junctions.
+## Parallel test-run topology
+
+The primary dev-loop run may own one or more instances. A parallel agent test
+run is a separate run directory pinned to the same immutable EXE build:
+
+```text
+root dev-loop build authority
+├── primary run (for example, map editor)
+└── parallel test run(s)
+    ├── own run.json and dev-loop/events.jsonl
+    ├── server-01/events.jsonl
+    └── client-01/events.jsonl
+```
+
+The test-run controller is a one-shot action through `dev-loop.py`, not
+another daemon. It accepts only a current published artifact, records its
+hash/build identity, and starts a loopback server/client pair. Explicit stop
+is scoped to PIDs whose executable and process start time still match that
+run's manifest.
 
 ## Purpose
 

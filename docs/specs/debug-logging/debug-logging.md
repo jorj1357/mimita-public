@@ -1642,6 +1642,11 @@ generated directions
 spread seed
 execution path
 hit/projectile/melee result
+prediction versus accepted target and damage
+mapped action/contact tick versus receive and process ticks
+request/contact/projectile/explosion correlation IDs
+queue depth and delay, measured server Hz, RTT/jitter
+acceptance, rejection, correction, and stable reason
 Projectiles and loose objects
 Log:
 position
@@ -2004,6 +2009,34 @@ run again
 verify numeric success conditions
 
 
+## Weapon prediction and mismatch evidence (2026-11-19)
+
+Weapon prediction is proven from the correlated client and server
+`events.jsonl` journals, not from a muzzle flash, local health-bar change, or
+successful attack-request enqueue alone. Follow each request through the
+prediction, send/receive, queue, authoritative decision, contact or explosion,
+damage application, replication, and reconciliation stages. The canonical
+authority and accuracy target are defined in
+[`../networking/contact-authority.md`](../networking/contact-authority.md).
+
+Use one stable request ID across retransmission and prediction reconciliation;
+add contact, projectile, and explosion IDs as child correlations. Each
+accepted/rejected/corrected decision records the client and mapped server
+action/contact tick, server receive/process tick, actor/target generation,
+weapon definition and revision, predicted and authoritative target/result/
+damage, and a stable reason. When timing is implicated, also record request
+queue depth/wait, server Hz, RTT, jitter, and the authoritative cooldown before
+and after the decision. Explosion records include predicted/confirmed
+position, radius, contact list, damage results, and whether the authoritative
+event adopted or corrected the prediction.
+
+Log the first divergent or missing stage as a bounded event such as
+`weapon.prediction.mismatch`, with `first_divergent_stage`, expected value,
+observed value, delta, reason, and the relevant IDs. Do not emit a per-frame
+stream or count a missing confirmation as success. A mismatch is investigated
+to the first failed/mismatched stage even when the aggregate agreement rate
+remains above target.
+
 ## Scenario input recording and playback events
 
 The scenario input recorder/player emits these GENERAL-level events:
@@ -2110,6 +2143,7 @@ grow over time under the configured quota; do not create parallel log files.
 | `input.host-key` | `general` | important | key, action, mods |
 | `input.state` | `general` | important | focused, keyboard_enabled, terminal_open, raw keys, callback_count |
 | `input.look` | `camera` | off | source, delta, yaw, pitch, cursor mode |
+| `camera.keyboard_control` | `camera` | important | control, yaw_before_degrees, yaw_after_degrees, turn_rate_degrees_per_second, aligned_to_world_45_degree_grid |
 | `input.mouse` | `general` | off | source, buttons, cursor, foreground |
 | `ui.mouse_transition` | `gui` | important | pass, down, click_edge, cursor_mode |
 | `ui.button` | `gui` | off | id, hovered, clicked, bounds |

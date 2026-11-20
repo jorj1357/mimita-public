@@ -20,7 +20,7 @@
 #include "debug/structured-log.h"
 #include "world/texture-store.h"
 #include "combat/projectile-render.h"
-#include "map/map_common.h"
+#include "map/map-mesh-types.h"
 #include "map/map_loader.h"
 #include <algorithm>
 #include <chrono>

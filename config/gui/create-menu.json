@@ -1,0 +1,59 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 3,
+  "elements": {
+    "createBg": {
+      "type": "panel",
+      "x": 0, "y": 0, "width": 1920, "height": 1080,
+      "backgroundColor": [0.035, 0.04, 0.052, 1.0]
+    },
+    "createTitle": {
+      "type": "text",
+      "x": 700, "y": 90, "width": 600, "height": 60,
+      "text": "CREATE",
+      "fontSize": 0.6,
+      "textColor": [0.85, 0.9, 0.95, 1.0]
+    },
+    "nameLabel": {
+      "type": "text",
+      "x": 700, "y": 220, "width": 520, "height": 40,
+      "text": "PROJECT NAME",
+      "fontSize": 0.34,
+      "textColor": [0.7, 0.8, 0.9, 1.0]
+    },
+    "projectNameInput": {
+      "type": "text_input",
+      "x": 700, "y": 270, "width": 420, "height": 56,
+      "text": "",
+      "binding": "creator.project_name",
+      "placeholder": "my_map",
+      "maxLength": 60,
+      "fontSize": 0.34,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.12, 0.15, 0.2, 1.0]
+    },
+    "blankMapButton": {
+      "type": "button",
+      "x": 700, "y": 360, "width": 420, "height": 70,
+      "text": "BLANK MAP",
+      "fontSize": 0.42,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.14, 0.62, 0.28, 1.0]
+    },
+    "statusText": {
+      "type": "text",
+      "x": 700, "y": 460, "width": 620, "height": 40,
+      "text": "",
+      "fontSize": 0.3,
+      "textColor": [0.7, 0.9, 1.0, 1.0]
+    },
+    "backButton": {
+      "type": "button",
+      "x": 40, "y": 40, "width": 140, "height": 48,
+      "text": "BACK",
+      "fontSize": 0.36,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.7, 0.2, 0.2, 1.0]
+    }
+  }
+}

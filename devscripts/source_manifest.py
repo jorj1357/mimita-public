@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -36,7 +37,19 @@ OWNERS_REL = Path("config/source-owners.json")
 CATALOG_REL = Path("config/modules/modules.json")
 MANIFEST_REL = Path("build/source-manifest.json")
 INVENTORY_REL = Path("docs/handoffs/cpp-source-inventory.json")
-EXCLUDE_DIRS = {".git", ".dev", "build", "dist", "node_modules", ".venv", "__pycache__"}
+EXCLUDE_DIRS = {
+    ".git", ".dev", "build", "dist", "node_modules", ".venv", "__pycache__",
+    ".codex", ".vscode", "assets", "Characters", "content",
+    "coordinator-server", "deploy", "docs", "installer", "logs", "manifests",
+    "replays", "shaders", "website",
+}
+DEEP_EXCLUDE_DIRS = {
+    ".git", "build", "dist", "node_modules", ".venv", "__pycache__",
+    ".codex", ".vscode", "logs",
+}
+HEADER_EXCLUDE_DIRS = {
+    ".git", ".dev", "build", "dist", "node_modules", ".venv", "__pycache__",
+}
 HEADER_SUFFIXES = (".h", ".hpp", ".hh", ".hxx", ".inl", ".ipp")
 HEADER_ROOTS = ("src", "include")
 ALLOWED_OWNERS = {"game", "resident", "bootstrap", "launcher", "tool", "test", "vendor"}
@@ -48,6 +61,22 @@ def sha256_file(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def stamped_sha256(path: Path, attempts: int = 3) -> tuple[str, int, int]:
+    """Hash a file and return the stat observed around that read.
+
+    A build may reuse the stamp only for the attempt whose snapshot produced
+    it. If the file changes while it is being hashed, retry so a torn read is
+    never paired with a post-change stamp.
+    """
+    for _ in range(max(1, attempts)):
+        before = path.stat()
+        digest = sha256_file(path)
+        after = path.stat()
+        if (before.st_size, before.st_mtime_ns) == (after.st_size, after.st_mtime_ns):
+            return digest, after.st_size, after.st_mtime_ns
+    return sha256_file(path), after.st_size, after.st_mtime_ns
 
 
 def read_json(path: Path) -> dict:
@@ -72,11 +101,15 @@ def relative(root: Path, path: Path) -> str:
 
 def enumerate_repository_cpp(root: Path) -> list[str]:
     result: list[str] = []
-    for path in root.rglob("*.cpp"):
-        parts = set(path.relative_to(root).parts)
-        if parts & EXCLUDE_DIRS:
-            continue
-        result.append(relative(root, path))
+    for directory, dirs, files in os.walk(root):
+        base = Path(directory)
+        if base == root:
+            dirs[:] = [name for name in dirs if name not in EXCLUDE_DIRS]
+        else:
+            dirs[:] = [name for name in dirs if name not in DEEP_EXCLUDE_DIRS]
+        for name in files:
+            if name.endswith(".cpp"):
+                result.append(relative(root, base / name))
     return sorted(result)
 
 
@@ -90,7 +123,7 @@ def enumerate_repository_headers(root: Path) -> list[str]:
             if not path.is_file() or path.suffix.lower() not in HEADER_SUFFIXES:
                 continue
             parts = set(path.relative_to(root).parts)
-            if parts & EXCLUDE_DIRS:
+            if parts & HEADER_EXCLUDE_DIRS:
                 continue
             result.append(relative(root, path))
     return sorted(set(result))
@@ -201,16 +234,42 @@ class OwnerResolver:
         return result
 
 
-def build_manifest(root: Path, resolver: OwnerResolver | None = None) -> dict:
+def build_manifest(root: Path, resolver: OwnerResolver | None = None,
+                   hash_cache: dict | None = None) -> dict:
     root = Path(root).resolve()
     resolver = resolver or OwnerResolver(root)
+    used_cache: dict[str, dict] = {}
+
+    def digest_for(rel: str) -> tuple[str, int, int]:
+        path = root / rel
+        stat = path.stat()
+        if hash_cache is not None:
+            cached = hash_cache.get(rel)
+            if isinstance(cached, dict) and cached.get("sha256"):
+                try:
+                    cached_size = int(cached.get("size", -1))
+                    cached_mtime = int(cached.get("mtime_ns", -1))
+                except (TypeError, ValueError):
+                    cached_size = cached_mtime = -1
+                if (cached_size == stat.st_size
+                        and cached_mtime == stat.st_mtime_ns):
+                    used_cache[rel] = cached
+                    return str(cached["sha256"]), stat.st_size, stat.st_mtime_ns
+        digest, size, mtime_ns = stamped_sha256(path)
+        if hash_cache is not None:
+            used_cache[rel] = {"sha256": digest, "size": size,
+                               "mtime_ns": mtime_ns}
+        return digest, size, mtime_ns
+
     sources: list[dict] = []
     for rel in enumerate_repository_cpp(root):
         owner, reason = resolver.resolve(rel)
-        path = root / rel
+        digest, size, mtime_ns = digest_for(rel)
         sources.append({
             "path": rel,
-            "sha256": sha256_file(path),
+            "sha256": digest,
+            "size": size,
+            "mtime_ns": mtime_ns,
             "owner": owner,
             "owner_reason": reason,
             "active_in_manifest": owner not in ("unresolved", "vendor"),
@@ -219,7 +278,12 @@ def build_manifest(root: Path, resolver: OwnerResolver | None = None) -> dict:
     lines = [f"{item['path']}:{item['sha256']}" for item in sources]
     headers: list[dict] = []
     for rel in enumerate_repository_headers(root):
-        headers.append({"path": rel, "sha256": sha256_file(root / rel)})
+        digest, size, mtime_ns = digest_for(rel)
+        headers.append({"path": rel, "sha256": digest,
+                        "size": size, "mtime_ns": mtime_ns})
+    if hash_cache is not None:
+        hash_cache.clear()
+        hash_cache.update(used_cache)
     lines.extend(f"header:{item['path']}:{item['sha256']}" for item in headers)
     config_hashes = resolver.config_hashes()
     lines.extend(f"config:{name}:{value}" for name, value in config_hashes.items())

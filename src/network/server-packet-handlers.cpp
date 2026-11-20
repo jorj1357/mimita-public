@@ -1062,7 +1062,7 @@ static bool handleGenericMeleeContactBatch(
 {
     const WeaponData::MeleeMoveSet* set =
         WeaponData::MeleeMoveSetRegistry::instance().get(def.id);
-    if (!set || !set->animationOnly)
+    if (!set)
         return false;
 
     const float tolerance = std::max(0.0f, def.meleeContact.claimToleranceM);
@@ -1106,6 +1106,7 @@ static bool handleGenericMeleeContactBatch(
                                {"contact_tick", pkt.contactTick},
                                {"server_tick", tick},
                                {"delta_ticks", (int64_t)pkt.contactTick - (int64_t)tick},
+                               {"stage", "claim_time"},
                                {"reason", reason}});
             continue;
         }
@@ -1151,14 +1152,22 @@ static bool handleGenericMeleeContactBatch(
                                {"diagonal", boxDiagonal},
                                {"max_diagonal", maxBoxDiagonal},
                                {"box_claim", boxClaim},
+                               {"stage", "bounds"},
                                {"reason", "invalid_contact_bounds"}});
             continue;
         }
 
-        auto npcIt = npcs.find(pkt.targetId);
-        ServerNpc* npc = npcIt != npcs.end() ? &npcIt->second : nullptr;
+        // Honor the client's target namespace. Player and NPC ids come from
+        // different allocators and must not be resolved by lookup order.
+        ServerNpc* npc = nullptr;
         ServerPlayer* playerTarget = nullptr;
-        if (!npc)
+        if (pkt.targetIsNpc)
+        {
+            auto npcIt = npcs.find(pkt.targetId);
+            if (npcIt != npcs.end())
+                npc = &npcIt->second;
+        }
+        else
         {
             auto playerIt = players.find(pkt.targetId);
             if (playerIt != players.end())
@@ -1173,6 +1182,7 @@ static bool handleGenericMeleeContactBatch(
                 nlohmann::json{{"attacker", attacker.id},
                                {"target", pkt.targetId},
                                {"contact_id", pkt.contactId},
+                               {"stage", "eligibility"},
                                {"reason", "target_not_found"}});
             continue;
         }
@@ -1184,6 +1194,8 @@ static bool handleGenericMeleeContactBatch(
                 "melee claim target is dead", tick,
                 nlohmann::json{{"attacker", attacker.id},
                                {"target", pkt.targetId},
+                               {"contact_id", pkt.contactId},
+                               {"stage", "eligibility"},
                                {"reason", "target_dead"}});
             continue;
         }
@@ -1196,7 +1208,9 @@ static bool handleGenericMeleeContactBatch(
                 "melee claim target is friendly", tick,
                 nlohmann::json{{"attacker", attacker.id},
                                {"target", pkt.targetId},
+                               {"contact_id", pkt.contactId},
                                {"target_health", npc->health},
+                               {"stage", "eligibility"},
                                {"reason", "friendly_fire"}});
             continue;
         }
@@ -1209,6 +1223,8 @@ static bool handleGenericMeleeContactBatch(
                 "melee claim player target is not active", tick,
                 nlohmann::json{{"attacker", attacker.id},
                                {"target", pkt.targetId},
+                               {"contact_id", pkt.contactId},
+                               {"stage", "eligibility"},
                                {"reason", "target_inactive"}});
             continue;
         }
@@ -1223,8 +1239,10 @@ static bool handleGenericMeleeContactBatch(
                 "melee claim target generation changed", tick,
                 nlohmann::json{{"attacker", attacker.id},
                                {"target", pkt.targetId},
+                               {"contact_id", pkt.contactId},
                                {"claimed_generation", pkt.targetGeneration},
                                {"server_generation", targetGeneration},
+                               {"stage", "generation"},
                                {"reason", "target_generation_changed"}});
             continue;
         }
@@ -1264,6 +1282,7 @@ static bool handleGenericMeleeContactBatch(
                                {"allowed_distance", allowedDistance},
                                {"tolerance", tolerance},
                                {"box_claim", boxClaim},
+                               {"stage", "shape"},
                                {"reason", "outside_claim_radius"}});
             continue;
         }
@@ -1286,6 +1305,7 @@ static bool handleGenericMeleeContactBatch(
                                {"contact_id", pkt.contactId},
                                {"reach", reach},
                                {"max_reach", maxReach},
+                               {"stage", "reach"},
                                {"reason", "out_of_reach"}});
             continue;
         }
@@ -1307,6 +1327,7 @@ static bool handleGenericMeleeContactBatch(
                                    {"target", pkt.targetId},
                                    {"contact_id", pkt.contactId},
                                    {"distance", distance},
+                                   {"stage", "occlusion"},
                                    {"reason", "world_occluded"}});
                 continue;
             }
@@ -1327,7 +1348,7 @@ static bool handleGenericMeleeContactBatch(
             action = set && !claimActionId.empty()
                 ? set->find(claimActionId) : nullptr;
         }
-        const bool actionActive = action &&
+        const bool actionActive = !def.meleeContact.enabled && action &&
             elapsed >= action->windup.ticks &&
             elapsed < action->windup.ticks + action->active.ticks;
         const float force = glm::clamp(pkt.impactSpeed /
@@ -1391,7 +1412,7 @@ static bool handleGenericMeleeContactBatch(
         contact.eventId = pkt.contactId;
         contact.contactId = pkt.contactId;
         contact.hitTolerance = 0.5f;
-        contact.validateHitVolume = true;
+        contact.validateHitVolume = false;
         const ServerContactResult contactResult =
             resolveServerContact(players, npcs, contact);
         const ServerDamageResult result = contactResult.damage;
@@ -1404,7 +1425,9 @@ static bool handleGenericMeleeContactBatch(
                 nlohmann::json{{"attacker", attacker.id},
                                {"target", pkt.targetId},
                                {"contact_id", pkt.contactId},
+                               {"contact_tick", pkt.contactTick},
                                {"damage", damage},
+                               {"stage", "contact_resolution"},
                                {"reason", contactResult.rejectionReason},
                                {"damage_rejection", result.rejectionReason}});
             continue;
@@ -1448,11 +1471,19 @@ static bool handleGenericMeleeContactBatch(
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Weapons, StructuredLevel::Important,
             "melee.contact.claim.accepted", std::to_string(attacker.id),
-            "lenient client melee claim accepted and applied", tick,
+            "client melee claimed shape accepted and applied", tick,
             nlohmann::json{{"attacker", attacker.id},
                            {"target", pkt.targetId},
+                           {"target_kind", npc ? "npc" : "player"},
+                           {"target_generation", targetGeneration},
                            {"contact_id", pkt.contactId},
                            {"contact_tick", pkt.contactTick},
+                           {"stage", "accepted"},
+                           {"box_claim", boxClaim},
+                           {"claimed_center", {center.x, center.y, center.z}},
+                           {"claimed_half", {half.x, half.y, half.z}},
+                           {"validate_hit_volume", false},
+                           {"hit_tolerance", contact.hitTolerance},
                            {"client_action_elapsed", pkt.actionElapsedTicks},
                            {"server_action_elapsed", (int)(tick - attacker.meleeActionStartTick)},
                            {"weapon", def.id},
@@ -1493,6 +1524,15 @@ void handleSpyKnifeHitClaim(SOCKET sock,
         Debug::warn(Debug::Category::Weapons,
             "[SPYKNIFE_AUTH] REJECT reason=attacker_not_found attacker=%u serverTick=%u",
             batch->attackerId, tick);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "melee.contact.batch.rejected", std::to_string(batch->attackerId),
+            "melee contact batch attacker was not found", tick,
+            nlohmann::json{{"attacker", batch->attackerId},
+                           {"batch_id", batch->batchId},
+                           {"count", (int)batch->contactCount},
+                           {"stage", "attacker"},
+                           {"reason", "attacker_not_found"}});
         return;
     }
     ServerPlayer& attacker = attackerIt->second;
@@ -1501,6 +1541,17 @@ void handleSpyKnifeHitClaim(SOCKET sock,
         Debug::warn(Debug::Category::Weapons,
             "[SPYKNIFE_AUTH] REJECT reason=attacker_inactive attacker=%u dead=%d spawnState=%d serverTick=%u",
             batch->attackerId, (int)attacker.dead, (int)attacker.spawnState, tick);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "melee.contact.batch.rejected", std::to_string(attacker.id),
+            "melee contact batch attacker was inactive", tick,
+            nlohmann::json{{"attacker", attacker.id},
+                           {"batch_id", batch->batchId},
+                           {"count", (int)batch->contactCount},
+                           {"dead", attacker.dead},
+                           {"spawn_state", (int)attacker.spawnState},
+                           {"stage", "attacker"},
+                           {"reason", "attacker_inactive"}});
         return;
     }
 
@@ -1509,6 +1560,17 @@ void handleSpyKnifeHitClaim(SOCKET sock,
             "[SPYKNIFE_AUTH] REJECT reason=spawn_generation attacker=%u claimed=%u server=%u serverTick=%u",
             batch->attackerId, batch->attackerSpawnGeneration,
             attacker.spawnGeneration, tick);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "melee.contact.batch.rejected", std::to_string(attacker.id),
+            "melee contact batch claimed a stale attacker generation", tick,
+            nlohmann::json{{"attacker", attacker.id},
+                           {"batch_id", batch->batchId},
+                           {"count", (int)batch->contactCount},
+                           {"claimed_generation", batch->attackerSpawnGeneration},
+                           {"server_generation", attacker.spawnGeneration},
+                           {"stage", "attacker_generation"},
+                           {"reason", "attacker_spawn_generation_changed"}});
         return;
     }
 

@@ -1212,7 +1212,9 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
                 (policy == nullptr ||
                  npcPolicyAllowsJump(*policy, NpcJumpReason::Navigation));
             const std::vector<NpcNavRoute> routes =
-                NpcNavGraph::instance().findRoutes(world, npc.body.pos, dest, gs, npc.id);
+                NpcNavGraph::instance().findRoutes(
+                    world, npc.body.pos, dest, gs, npc.id,
+                    static_cast<uint32_t>(npc.body.movementSimulationTick));
             if (!routes.empty() && routes.front().valid()) {
                 const std::vector<glm::vec3>& pts = routes.front().points;
                 glm::vec3 last = npc.body.pos;

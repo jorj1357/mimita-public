@@ -99,6 +99,49 @@ client-trusting** until anti-cheat becomes a real requirement, or a better
 shared-simulation design replaces this policy. The server is a referee for
 impossible or self-contradictory outcomes, not a second independent shooter.
 
+### Universal weapon prediction and match target (2026-11-19)
+
+This policy applies to every damaging weapon family and actor pairing:
+hitscan, shotgun, projectile, explosion, melee, and configured physical weapon
+contact; player-to-player, player-to-NPC, NPC-to-player, and NPC-to-NPC. It is
+not an opt-in per weapon. Each client predicts the locally observable attack
+and contact immediately using the shared weapon definition and reusable
+simulation/query owners. The client does not wait for a server round trip to
+show its own provisional recoil, muzzle/attack effects, projectile, melee
+contact, hit feedback, or predicted damage/knockback presentation.
+
+The server remains the only writer of shared health, death, score, inventory,
+and authoritative projectile/explosion state. Client prediction is provisional
+presentation and a bounded contact claim; it is not a permanent write to a
+remote actor's authoritative state. On acceptance, the server publishes the
+same contact and resolved damage/knockback as the canonical outcome. Clients
+adopt the matching prediction without replaying effects or applying impulse a
+second time. On rejection or correction, clients reconcile the predicted
+presentation and state to the authoritative result and retain the reason.
+
+The acceptance target is at least `99.99%` agreement between eligible
+client-predicted damaging contacts and the server's accepted target and total
+damage, measured across the supported actor, weapon, and network-profile
+matrix. This is an acceptance target, not permission to hide or discard
+disagreements. Every mismatch, including a rate below the target, must be
+investigated to the first divergent stage and categorized; one unexplained
+mismatch is actionable. Eligibility exclusions are declared before a run and
+limited to predictions that were correctly suppressed by shared rules, such as
+a same-team contact when friendly fire is disabled or a weapon clash that does
+not deal damage. A post-hoc server rejection is not an exclusion.
+
+For every prediction, the journal chain correlates one attack/request ID,
+contact ID, projectile ID, and explosion ID as applicable. Record client
+prediction and send, server receive/queue/decision, contact or explosion
+validation, damage application, replication, and client reconciliation. Each
+decision includes the mapped action/contact tick, receive and process ticks,
+actor and target generations, weapon definition/revision, predicted and
+authoritative target/result/damage, and a stable accept/rejection/correction
+reason. Queue wait, server tick rate, RTT/jitter, and relevant cooldown state
+are required when timing or ordering differs. Log decisions and state changes,
+not every simulation tick. A missing stage is a diagnosable failed request,
+not an assumed success.
+
 For hitscan, including every shotgun pellet and the shotgun aggregate:
 
 - The client owns what it saw, including the per-target total damage and
@@ -167,10 +210,21 @@ only in how damage is resolved from config and contact data.
 - geometry: swept sphere/capsule vs world/actor
 - direct hit: shared projectile contact profile
 - explosion: shared splash resolver
+- the client predicts launch, motion, direct contact, and explosion presentation
+  immediately; a predicted hit/explosion submits bounded contact candidates
+  correlated to the attack/projectile/explosion IDs
+- the server validates candidates at the mapped launch/contact/explosion tick
+  and adopts a plausible result through the shared resolver; it does not
+  silently substitute a present-day re-trace for the historical contact
+- predicted explosion visuals and per-target damage/knockback presentation
+  reconcile to the one confirmed explosion event without replaying its effects
 - pass-through: explicit profile flags, not weapon-ID checks
 
 ### Melee
 
+- this contract applies to every damaging melee weapon/action and is not
+  gated by a per-weapon opt-in; melee configuration tunes its geometry and
+  legal envelope, not whether client prediction/contact claims exist
 - geometry: capsule or OBB sweep
 - when `melee_contact.use_weapon_collision_hitbox` is true, the client and
   server must use the exact same authored `weaponcollisions.json` box
@@ -182,10 +236,17 @@ only in how damage is resolved from config and contact data.
 - late claims: the server retains the last started melee action ID so a claim
   that arrives just after the server action timeline ends still resolves the
   authored damage/rev profile
-- animation-only actions are not rejected by the server cooldown gate; the
-  client owns the action cadence
-- feedback: melee HP, hitmarker, blood, and damage numbers are server-confirmed
-  only; no speculative melee damage is shown
+- animation-only actions use their mapped action tick for validation; a late
+  server processing tick does not itself make an otherwise legal action miss
+  its active window or weapon cooldown
+- feedback: the attacking client immediately shows provisional contact,
+  hitmarker, damage/percent, and impulse presentation from the predicted
+  contact. These overlays do not directly write shared health or death. The
+  server validates the claim against the mapped historical active window,
+  applies the canonical result through the shared damage owner, and replicates
+  it. Matching confirmation adopts the prediction without duplicate feedback
+  or impulse; rejection/correction reconciles it and records the first
+  divergence and reason
 - arm-ragdoll weapons replicate the physical right-arm pose with
   `RAGDOLL_NET_ARM_RAGDOLL`; the server merges that limb with the animated body
   boxes so contact validation sees the same weapon pose the client rendered
@@ -357,9 +418,12 @@ final server outcome matches the client prediction.
 - Record `predicted_damage`, `actual_damage`, delta, ratio, weapon, target,
   pellet hits, and the accept/reject reason so the match rate is measurable.
 
-A predicted damaging contact is the denominator. Weapon-clash bounces,
-same-team contacts that correctly produce no damage, and predictions suppressed
-because the authoritative target life already advanced are excluded.
+A predicted damaging contact is the denominator. Exclusions are declared
+before the run and are limited to predictions correctly suppressed by shared
+rules, such as weapon-clash bounces or same-team contacts that correctly
+produce no damage. A claim rejected after prediction, including for a target
+life change, timing, geometry, or validation disagreement, remains in the
+denominator and must be investigated.
 
 ## Late contact policy
 

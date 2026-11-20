@@ -7,20 +7,33 @@
 
 # Agent lanes and build authority
 
-## Current repository policy (2026-11-11)
+## Current repository policy (2026-11-20)
 
 For normal agent development, the user has selected one shared checkout:
-`C:\mimita-v9`, its current branch, the root dev-loop, and the same EXE.
-Mode 2 lanes are deferred as of 2026-11-11 18:41 EST. Do not create, enter,
-build, sync, promote, or clean up a lane. The lane command entry points reject
-mutating actions. Existing lane worktrees, branches, and edits are parked and
-preserved; do not delete or merge them as part of this policy change.
+`C:\mimita-v9`, its current branch, the root dev-loop, and one source tree.
+Mode 2 source lanes remain deferred. Do not create, enter, build, sync, promote,
+or clean up a lane or worktree. Existing lane worktrees, branches, and edits are
+parked and preserved; do not delete or merge them as part of this policy change.
+Per-agent source isolation is a future option; the specification must change
+again before worktrees or source overlays are used.
 
-Agents may edit and inspect the shared checkout, but must not run build scripts
-or direct compiler commands. The existing root dev-loop remains the only live
-build/run authority. Use its status and control interface, and serialize shared
-source edits so two agents do not overwrite each other. This policy changes
-where work happens; it does not itself make EXE-owned C++ hot-reloadable.
+Agents may edit and inspect the shared checkout, but must not invoke a compiler,
+`build.py`, a module worker, or a second dev-loop. Agents may work concurrently
+only on disjoint files; coordinate ownership before editing. The root dev-loop
+remains the only build authority.
+
+Agents may request builds and isolated test runs through the root dev-loop
+without a human approval override. Every request records the agent, task,
+permit, build ID, and test run. One EXE build runs at a time. Candidate
+game-DLL builds may be requested as often as needed and run concurrently only
+within configured CPU and memory limits. They must not overwrite the normal
+published `build/game/current.json` or `ready.json`.
+
+Isolated test runs pin one EXE artifact and one game-DLL generation or explicit
+DLL path. They own separate processes, ports, command queues, manifests, and
+`events.jsonl` journals and do not replace the shared runtime. A pinned run may
+start while another agent's build is pending. The normal automatic build path
+remains unchanged.
 
 The detailed Mode 2 procedure below is retained as historical/reference
 documentation and is superseded by this policy. Resume it only after the user
@@ -29,18 +42,25 @@ changes the project policy and the CLI guard is deliberately revised.
 ## Live build and journal coordination
 
 - **The root dev-loop is the only build/run authority.** It owns the build lock,
-  source snapshot, codegen checks, game-DLL request, publication, activation
-  status, and run control. Do not start a second watcher or invoke
+  source snapshot, codegen checks, queueing, publication, activation status, and
+  run control. Do not start a second watcher or invoke
   `game_build_worker.py` directly.
-- **One game-DLL build at a time.** The dev-loop coalesces saves, waits for the
-  active build to finish, and only then starts the next revision.
-- **No agent owns or issues build requests.** The root dev-loop watcher queues
-  builds from saved compiler inputs. Every agent edits, saves, and keeps
-  working; nobody requests a build and nobody waits for one. Use
-  `docs/handoffs/hot-reload-agent-focus.md` plus the latest changelog to avoid
-  overlapping edits.
-- **One journal, many readers.** Each server/client instance writes its own
-  `events.jsonl`. Multiple agents may read the same journal to diagnose a bug.
+- **One EXE build at a time; bounded candidate DLL builds.** The dev-loop
+  coalesces saves and waits for an active EXE build before starting the next
+  one. Per-agent candidate DLL requests are accepted; active compile workers are
+  bounded by CPU and memory. Failed candidate builds do not stop another
+  agent's pinned run.
+- **Agents request; the dev-loop builds.** Use the agent build/test request
+  surface, not a compiler. Record the request and wait reason in the
+  coordination activity board. A wait above the measured budget or an avoidable
+  wait creates a build-friction issue.
+- **Pinned journals and artifacts.** Each test run records the exact EXE
+  artifact, SHA-256, game generation/path, run ID, and journal paths. A journal
+  from a different artifact or unpinned executable cannot prove the change.
+- **Source is shared today.** Builds take a frozen snapshot of the shared source
+  at request time and may include another agent's concurrent edits. Leases,
+  activity, tasks, and dependencies are the coordination mechanism. Source
+  isolation is deferred, not silently emulated.
 - **Fallback is explicit.** Resident fallback is a migration aid, not a hot-path
   success. Migrated behavior must reject rather than silently use resident code.
 

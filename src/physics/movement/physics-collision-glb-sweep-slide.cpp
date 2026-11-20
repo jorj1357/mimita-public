@@ -11,6 +11,7 @@
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision-glb-sweep.h"
 #include "physics/movement/physics-collision-glb-sweep-slide.h"
+#include "physics/movement/physics-scratch.h"
 
 #include <chrono>
 #include <cstdio>
@@ -73,6 +74,7 @@ void doGLBSweepSlide(
 )
 {
     SweepSlideDiag diag;
+    auto& scratch = physicsScratch();
     auto tSweepStart = std::chrono::steady_clock::now();
     constexpr float SURFACE_SLOP = 0.01f;
     constexpr float MAX_CORRECTION = 2.0f;
@@ -82,18 +84,20 @@ void doGLBSweepSlide(
 
     {
         auto t0 = std::chrono::steady_clock::now();
-        candidates = gatherGLBTriangles(world, cap, totalMove, "Player_Capsule_SweepInitial");
+        gatherGLBTriangles(candidates, world, cap, totalMove, "Player_Capsule_SweepInitial");
         auto t1 = std::chrono::steady_clock::now();
         diag.broadphaseMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
     }
     diag.initialCandidates = (int)candidates.size();
 
-    std::vector<glm::vec3> bodySamples = collectPlayerBodyCollisionSamples(p);
+    auto& bodySamples = scratch.vec3s;
+    collectPlayerBodyCollisionSamples(p, bodySamples);
     diag.bodySampleCount = (int)bodySamples.size();
 
     {
         auto t0 = std::chrono::steady_clock::now();
-        std::vector<glm::vec3> bodyDeltas(bodySamples.size(), glm::vec3(0.0f));
+        auto& bodyDeltas = scratch.vec3s2;
+        bodyDeltas.assign(bodySamples.size(), glm::vec3(0.0f));
         for (size_t si = 0; si < bodySamples.size() && si < p.previousBodySamplePositions.size(); ++si)
             bodyDeltas[si] = bodySamples[si] - p.previousBodySamplePositions[si];
 
@@ -137,7 +141,8 @@ void doGLBSweepSlide(
                 bodyUnion.min.z <= bodyUnion.max.z;
             if (stillValid)
             {
-                std::vector<int> bodyUnionCandidates;
+                auto& bodyUnionCandidates = scratch.ints3;
+                bodyUnionCandidates.clear();
                 appendChunkTrianglesForAABB(world, bodyUnion, BODY_SAMPLE_RADIUS,
                                             bodyUnionCandidates, "bodySampleUnion");
                 appendUniqueTriangleIndices(candidates, bodyUnionCandidates);
@@ -167,15 +172,19 @@ void doGLBSweepSlide(
 
     remainingMove = totalMove;
 
-    std::vector<int> preMoveCandidates = candidates;
+    auto& preMoveCandidates = scratch.ints2;
+    preMoveCandidates.assign(candidates.begin(), candidates.end());
+    auto& toiHits = scratch.sweepHits;
+    toiHits.clear();
+    if (toiHits.capacity() < 4)
+        toiHits.reserve(4);
 
     for (int iter = 0; iter < 5; ++iter)
     {
+        toiHits.clear();
         auto tIterStart = std::chrono::steady_clock::now();
         SweepHit earliest;
         earliest.time = 1.0f;
-        std::vector<SweepHit> toiHits;
-        toiHits.reserve(4);
         constexpr float TOI_EPSILON = 0.001f;
 
         cap = p.getCapsule();
@@ -183,7 +192,7 @@ void doGLBSweepSlide(
             auto t0 = std::chrono::steady_clock::now();
             char iterTag[64];
             std::snprintf(iterTag, sizeof(iterTag), "Player_Capsule_SweepIter_%d", iter);
-            candidates = gatherGLBTriangles(world, cap, remainingMove, iterTag);
+            gatherGLBTriangles(candidates, world, cap, remainingMove, iterTag);
             auto t1 = std::chrono::steady_clock::now();
             diag.sweepMs += std::chrono::duration<float, std::milli>(t1 - t0).count();
         }
@@ -494,7 +503,9 @@ void doGLBSweepSlide(
 
         {
             Capsule slideCap = p.getCapsule();
-            std::vector<int> slideCandidates = gatherGLBTriangles(world, slideCap, glm::vec3(0.0f), "Player_Capsule_SlideContacts");
+            auto& slideCandidates = scratch.ints3;
+            gatherGLBTriangles(slideCandidates, world, slideCap,
+                               glm::vec3(0.0f), "Player_Capsule_SlideContacts");
             std::vector<RecoveryContact> slideContacts = collectCapsuleRecoveryContacts(
                 world, slideCap, slideCandidates);
             trace.maxSlideContacts = std::max(trace.maxSlideContacts, (int)slideContacts.size());

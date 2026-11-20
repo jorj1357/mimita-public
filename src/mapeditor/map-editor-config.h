@@ -41,6 +41,13 @@ struct MapEditorConfigData
     float focusPadding = 1.35f;
     float cameraSpeedMultiplier = 1.0f;
     int autosaveDelayMs = 400;
+    // Meters-based snapping and grid. Typed property fields stay exact.
+    bool snapEnabled = true;
+    float snapIncrementM = 1.0f;
+    bool gridVisible = false;
+    float gridSpacingM = 1.0f;
+    float gridExtentM = 50.0f;
+    int gridMajorEvery = 10;
     // "all" | "selected" | "hovered" | "off"
     std::string labelMode = "selected";
 };

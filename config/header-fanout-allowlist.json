@@ -1,0 +1,362 @@
+{
+  "version": 1,
+  "limit": 100,
+  "description": "Known wide headers. New headers above the limit require an entry. Raising a max is an intentional fan-out decision.",
+  "allow": [
+    {
+      "path": "src/avatar/avatar-autosave.h",
+      "max": 249,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/avatar/avatar.h",
+      "max": 249,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/camera.h",
+      "max": 153,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/combat/area-effect.h",
+      "max": 157,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/combat/weapon-collision-config.h",
+      "max": 237,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/combat/weapon-quick-hit.h",
+      "max": 139,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/combat/weapon-spyknife.h",
+      "max": 139,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/combat/weapon-swordsword.h",
+      "max": 124,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/combat/weapon-types.h",
+      "max": 273,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/combat/weapon-viewmodel.h",
+      "max": 114,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/config.h",
+      "max": 272,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/debug/debug-log.h",
+      "max": 265,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/debug/debug-visuals.h",
+      "max": 166,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/debug/structured-log.h",
+      "max": 338,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/devtools/terminal.h",
+      "max": 114,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/entities/actor-body.h",
+      "max": 257,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/entities/avatar-rig.h",
+      "max": 267,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/entities/player.h",
+      "max": 237,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/game/game-state.h",
+      "max": 113,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/gui/hud/chat-bubble.h",
+      "max": 238,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/gui/ui-system.h",
+      "max": 115,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/host/abi/effects-capability.h",
+      "max": 155,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/host/abi/game-host-abi.h",
+      "max": 161,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/input/input-frame.h",
+      "max": 178,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/input/input-state.h",
+      "max": 150,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/map/map-mesh-types.h",
+      "max": 400,
+      "reason": "mesh vocabulary split from map_common; keep below 400"
+    },
+    {
+      "path": "src/map/map_common.h",
+      "max": 286,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/connection-state.h",
+      "max": 122,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/game-transport.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/local-gameplay-readiness.h",
+      "max": 121,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/movement-validation.h",
+      "max": 156,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/multiplayer-context.h",
+      "max": 121,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/net_common.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/packets.h",
+      "max": 169,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/projectile-terminal-dedupe.h",
+      "max": 122,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/remote-entity-lifecycle.h",
+      "max": 121,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/schema/packet-avatar.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/schema/packet-chat.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/schema/packet-combat.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/schema/packet-common.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/schema/packet-gamemode.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/schema/packet-header.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/schema/packet-input.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/schema/packet-physical.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/schema/packet-player.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/schema/packet-session.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/schema/packet-snapshot.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/network/schema/packet-vehicle.h",
+      "max": 164,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/npc/npc-behavior.h",
+      "max": 141,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/npc/npc-goal.h",
+      "max": 141,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/npc/npc-movement-context.h",
+      "max": 140,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/npc/npc-navigator.h",
+      "max": 139,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/npc/npc-perception.h",
+      "max": 139,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/npc/npc-state-machine.h",
+      "max": 139,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/npc/npc-surface.h",
+      "max": 141,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/npc/npc-traversal.h",
+      "max": 139,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/npc/npc-utility.h",
+      "max": 143,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/npc/npc.h",
+      "max": 139,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/pch.h",
+      "max": 629,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/physics/config.h",
+      "max": 216,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/physics/movement/actor-final-pose.h",
+      "max": 237,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/physics/movement/collision-aabb-tree.h",
+      "max": 172,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/physics/movement/movement-types.h",
+      "max": 277,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/physics/physics-types.h",
+      "max": 299,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/ragdoll/ragdoll-replication.h",
+      "max": 158,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/replay/replay-camera.h",
+      "max": 112,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/replay/replay-factory.h",
+      "max": 114,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/replay/replay-scene.h",
+      "max": 145,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/replay/replay.h",
+      "max": 137,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/vip/vip-appearance.h",
+      "max": 270,
+      "reason": "baseline fan-out; split intentionally"
+    },
+    {
+      "path": "src/world/world.h",
+      "max": 170,
+      "reason": "baseline fan-out; split intentionally"
+    }
+  ]
+}

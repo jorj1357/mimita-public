@@ -34,6 +34,18 @@ Records remain append-only and searchable side by side. Cross-instance
 correlation uses `run_id`/`instance_id`, actor/entity/projectile IDs, and ticks;
 it must not rely on two processes sharing one file.
 
+## Whole-game DLL build outcomes
+
+The dev-loop journal records each terminal DLL attempt as
+`dev-loop.game-generation.ready` or `dev-loop.game-build.failed`. Its fields
+include `build_attempt_id`, `source_generation`, `revision`, `success`,
+`duration_seconds`, `generation`, `dll`, `code_hash`, `request_ids`, the full
+`notes` list, `changed_paths`, `timing_jsonl`, `summary_json`, and `error`.
+Failed attempts keep the same attempt identity and note list even when no DLL
+was published. The referenced per-attempt timing stream and summary live under
+`.dev/build-timings/`; the run journal provides the durable searchable outcome
+for that dev-loop run.
+
 ## Rotation
 
 Inside an instance folder, rotate `events.jsonl` to `events-NNNN.jsonl` before

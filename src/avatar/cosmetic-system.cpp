@@ -3,7 +3,7 @@
 #include "avatar.h"
 #include "entities/player.h"
 #include "map/map_loader.h"
-#include "map/map_common.h"
+#include "map/map-mesh-types.h"
 #include "renderer/renderer.h"
 #include "gui/ui-system.h"
 #include "world/texture-store.h"

@@ -7,6 +7,8 @@
 */
 #pragma once
 
+#include <string>
+
 struct Player;
 struct Camera;
 struct World;
@@ -16,6 +18,12 @@ namespace PlayerAiController {
 
 bool active();
 void setActive(bool enabled);
+
+// Force one melee weapon for an agent-driven Mode 1 test. Empty id restores
+// normal range-based weapon choice. The weapon is equipped through the normal
+// slot/equip owner; it is not written into authoritative state here.
+void setMeleeWeapon(const std::string& weaponId);
+const std::string& meleeWeapon();
 
 // Builds one input frame from replicated hostiles and the current player pose.
 // Safe to call when inactive (returns an empty frame).

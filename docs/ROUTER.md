@@ -27,6 +27,9 @@ This is the map for the project documentation.
 - `docs/skills/`: focused review checklists used for the task.
 - `docs/regressions/`: confirmed failures and their permanent lessons;
   `docs/regressions/<domain>/README.md` is the domain index; flat files in that folder own detail.
+- `docs/issues/`: append-only user reports, TODO surfacing, build-friction, and
+  improvement/capability proposals; `README.md` is generated from the shared
+  coordination brain.
 - `docs/changelog/`: one final record for every AI work session.
 - `docs/features/`: stable feature records linking goals, owners, tests, logs,
   changelogs, regressions, and human acceptance.
@@ -94,7 +97,7 @@ systems first. Use this default order:
 | Animation, rigs, monster/NPC clips, arbitrary body parts, flying/crawling actors | `docs/specs/animations/animations.md`, `docs/specs/avatar/avatar-editor.md`, `docs/skills/spec-behavior-review-v1.md` |
 | Multiplayer or server behavior | `docs/specs/networking/networking.md`, `docs/specs/gamemodes/gamemodes.md` |
 | Logging or diagnostics | `docs/specs/debug-logging/debug-logging.md`, `docs/skills/logging-checker-v1.md` |
-| Performance | `docs/specs/performance/performance.md`, `docs/specs/performance/perf-report-overlay.md`, `docs/skills/efficiency-checker-v1.md` |
+| Performance | `docs/specs/performance/performance.md`, `docs/specs/performance/perf-report-overlay.md`, `docs/specs/hotreload/hot-layer-latency-and-language.md`, `docs/skills/efficiency-checker-v1.md` |
 | Terminal commands | `docs/architecture/terminal-commands/terminal-commands.md`, `docs/skills/terminal-command-checker-v1.md` |
 | Runtime behavior validation | `docs/workflows/runtime-scenario-validation.md`, `docs/specs/dev-loop/quality-gates.md`, `docs/specs/debug-logging/debug-logging.md`, `docs/architecture/terminal-commands/terminal-commands.md` |
 | Human-recorded scenarios, replay checkpoints, or collision trace capture | `docs/specs/dev-loop/scenario-input-recording.md`, `docs/workflows/runtime-scenario-validation.md`, `docs/specs/debug-logging/debug-logging.md`, `docs/specs/dev-loop/quality-gates.md` |
@@ -110,9 +113,13 @@ systems first. Use this default order:
 | Build or EXE | `docs/operations/build-and-exe/build-and-exe.md`, `docs/operations/task-completion/task-completion.md`, `docs/specs/hotreload/hotreload.md`, `docs/specs/dev-loop/agent-lanes-build-authority.md`, `docs/architecture/live-development/module-migration-plan.md` |
 | Dev scripts, script inventory, dependency fan-in, or cold-change preflight | `docs/operations/devscripts/script-inventory.md`, `docs/operations/devscripts/dependency-graph.md`, `docs/operations/devscripts/cold-change-guard.md` |
 | Merge agent lanes into one EXE, or find pending lane compile/runtime validation | `docs/operations/build-and-exe/agent-lane-integration-and-pending-validation.md`, `docs/specs/dev-loop/agent-lanes-build-authority.md`, `docs/specs/dev-loop/dev-loop.md` |
-| Build duration, phase progress, or compile-time diagnosis | `docs/specs/dev-loop/build-time-observability.md`, `docs/specs/dev-loop/dev-loop.md`, `docs/operations/build-and-exe/build-and-exe.md`, `docs/architecture/time-and-formatting/time-and-formatting.md` |
+| Build duration, phase progress, or compile-time diagnosis | `docs/specs/dev-loop/build-time-observability.md`, `docs/specs/dev-loop/dev-loop.md`, `docs/operations/build-and-exe/build-and-exe.md`, `docs/architecture/time-and-formatting/time-and-formatting.md`, `docs/specs/hotreload/hot-layer-latency-and-language.md` |
 | Agent work, isolated lanes, or build authority | `docs/specs/dev-loop/agent-lanes-build-authority.md`, `docs/specs/dev-loop/dev-loop.md`, `docs/operations/build-and-exe/build-and-exe.md`, `docs/architecture/live-development/self-contained-workspace.md` |
-| Live code, hot reload, or replaceable game modules | `docs/specs/hotreload/hotreload.md`, `docs/skills/spec-writing-v1.md`, `docs/architecture/time-and-formatting/time-and-formatting.md`, `docs/skills/logging-checker-v1.md` |
+| Agent build/test requests, candidate DLL builds, pinned runs, or change-to-evidence latency | `docs/specs/dev-loop/change-to-evidence-latency.md`, `docs/specs/dev-loop/agent-lanes-build-authority.md`, `docs/specs/dev-loop/build-time-observability.md`, `docs/workflows/runtime-scenario-validation.md`, `docs/operations/build-and-exe/build-and-exe.md` |
+| Concurrent agents, shared-file coordination, activity/board, messages, edit leases, or autonomous decisions | `docs/specs/dev-loop/agent-coordination.md`, `docs/specs/dev-loop/agent-lanes-build-authority.md`, `docs/specs/debug-logging/canonical-jsonl.md` |
+| User reports, issue intake/triage, append-only issue docs, or TODO surfacing | `docs/workflows/issue-intake-and-triage.md`, `docs/specs/dev-loop/agent-coordination.md`, `docs/skills/issue-triage-v1.md`, `docs/issues/README.md` |
+| Agent self-improvement, capability proposals, build-friction review, or coordination improvements | `docs/specs/dev-loop/agent-self-improvement.md`, `docs/specs/dev-loop/change-to-evidence-latency.md`, `docs/skills/self-improvement-v1.md`, `docs/workflows/issue-intake-and-triage.md` |
+| Live code, hot reload, or replaceable game modules | `docs/specs/hotreload/hotreload.md`, `docs/specs/hotreload/hot-layer-latency-and-language.md`, `docs/skills/spec-writing-v1.md`, `docs/architecture/time-and-formatting/time-and-formatting.md`, `docs/skills/logging-checker-v1.md` |
 | Entity, component, or ECS migration | `docs/architecture/ecs-entity-etc/ecs.md`, `docs/architecture/ecs-entity-etc/ecs-migration.md`, `docs/architecture/live-development/hot-kernel.md`, `docs/architecture/player-npc-systems/player-npc-systems.md` |
 | Reusable collision/volume queries or soft-fit movement | `docs/architecture/collision/collision.md`, `docs/specs/movement/movement.md`, `docs/specs/gamemodes/gamemodes.md` |
 | VPS inspection or repository-to-production comparison | `docs/operations/vps-audit.md`, `docs/operations/vps-deployment/vps-deployment.md`, `docs/operations/task-completion/task-completion.md` |

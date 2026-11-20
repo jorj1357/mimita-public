@@ -16,6 +16,22 @@
       "textColor": [1, 1, 1, 1],
       "backgroundColor": [0.14, 0.62, 0.28, 1.0]
     },
+    "createButton": {
+      "type": "button",
+      "x": 850, "y": 524, "width": 210, "height": 93,
+      "text": "CREATE",
+      "fontSize": 0.44,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.28, 0.4, 0.78, 1.0]
+    },
+    "myCreationsButton": {
+      "type": "button",
+      "x": 1070, "y": 524, "width": 210, "height": 93,
+      "text": "MY CREATIONS",
+      "fontSize": 0.34,
+      "textColor": [1, 1, 1, 1],
+      "backgroundColor": [0.35, 0.28, 0.62, 1.0]
+    },
     "settingsButton": {
       "type": "button",
       "x": 480, "y": 627, "width": 354, "height": 60,

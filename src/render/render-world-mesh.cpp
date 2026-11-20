@@ -396,6 +396,21 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
             if (boundsDistance < proximityConfig.proximityFadeEndDistanceMeters)
                 ++nearFadeCandidateCount;
         }
+        const bool transparentBatch = batch.opacity < 0.999f ||
+            batch.tint.a < 0.999f;
+        setVec3(shader, "uTint",
+                glm::vec3(batch.tint.r, batch.tint.g, batch.tint.b));
+        if (shader.uniform("uOpacity") >= 0)
+            setFloat(shader, "uOpacity", batch.opacity * batch.tint.a);
+        if (shader.uniform("uOpacityEnabled") >= 0)
+            r::uniform1i(shader.uniform("uOpacityEnabled"),
+                         transparentBatch ? 1 : 0);
+        if (transparentBatch) {
+            r::enable(r::Capability::Blend);
+            r::blendFunc(r::BlendFactor::SrcAlpha,
+                         r::BlendFactor::OneMinusSrcAlpha);
+            r::depthMask(false);
+        }
         std::uint32_t tex = batch.texture ? batch.texture : gTextures.get("default");
         if (gWorldTextureDebug)
         {
@@ -450,6 +465,10 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
 
         if (temporarilyDisableCulling)
             r::enable(r::Capability::CullFace);
+        if (transparentBatch) {
+            r::depthMask(true);
+            r::disable(r::Capability::Blend);
+        }
     }
     diagRenderWorldCounts(mesh.batches.size(), mesh.verts.size(), drawCalls);
 

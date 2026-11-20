@@ -1412,8 +1412,16 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
                     [](const GenerationZone& zone) {
                         return zone.enabled && zone.modeId == "connected_world";
                     });
+    const bool mapProcedural = config.worldMode == "procedural" ||
+        config.worldMode == "mixed";
     GamemodeWorldStreaming streaming =
         GamemodeRegistry::instance().get(gameModeId).worldStreaming;
+    if (!streaming.enabled && mapProcedural) {
+        // A project authored in procedural/mixed mode owns streaming even when
+        // it is launched through a generic local/sandbox mode.
+        streaming = GamemodeRegistry::instance()
+            .get("connected_world").worldStreaming;
+    }
     if (!streaming.enabled && gameModeId.empty() &&
         mapDeclaresConnectedWorld) {
         // Map-level connected-world variants can finish loading before the
@@ -1429,9 +1437,8 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
     layer.setStreamFocus(
         player.pos, mStreaming.enabled ? mStreaming.collisionRadiusM : 0.0f);
 
-    // The gamemode is the sole owner of whether chunk streaming exists. A map
-    // zone or generateWholeWorld flag must never opt a non-connected gamemode
-    // into streaming. This also keeps streamed collision out of ordinary maps.
+    // Procedural/mixed project maps explicitly opt into streaming; ordinary
+    // static maps still keep streamed collision out of their world.
     if (!mStreaming.enabled) {
         static std::string lastDisabledMode;
         if (lastDisabledMode != gameModeId) {
@@ -1453,7 +1460,7 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
         return;
 
     const bool connectedWorldMode = gameModeId == "connected_world" ||
-        (gameModeId.empty() && mapDeclaresConnectedWorld);
+        mapProcedural || (gameModeId.empty() && mapDeclaresConnectedWorld);
 
     GenerationZone fallbackZone;
     const GenerationZone* mapZone = nullptr;
@@ -1595,7 +1602,9 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
                                          mModeZone.streamRadius.z}},
                       {"stream_radius_units",
                        mModeZone.spacingMode == "connector" ? "meters" : "cells"},
-                      {"spacing_mode", mModeZone.spacingMode}});
+                      {"spacing_mode", mModeZone.spacingMode},
+                      {"project_revision", revision},
+                      {"world_mode", config.worldMode}});
         }
         activeZone = &mModeZone;
         applyStreamingConfig(*activeZone, mStreaming);
@@ -1782,7 +1791,9 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
                   {"rejected", mRejected.size()},
                   {"resolved", mResolved.size()},
                   {"desired", mDesired.size()},
-                  {"radius", {radius.x, radius.y, radius.z}}});
+                  {"radius", {radius.x, radius.y, radius.z}},
+                  {"project_revision", revision},
+                  {"world_mode", config.worldMode}});
     upgradeProxyChunks(player, candidates);
     layer.setCoarseColliders(
         buildCoarseColliders(player, *activeZone, candidates));

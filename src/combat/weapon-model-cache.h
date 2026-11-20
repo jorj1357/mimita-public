@@ -20,7 +20,7 @@
 
 #include <glm/glm.hpp>
 
-#include "map/map_common.h"
+#include "map/map-mesh-types.h"
 #include "tinygltf/tiny_gltf.h"
 
 // CPU-parsed weapon model asset shared by every viewmodel that uses the path.

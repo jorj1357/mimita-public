@@ -224,6 +224,8 @@ void appendBlockMesh(World& world, const AuthoredBlock& block)
         Mesh::Batch batch;
         batch.materialName = material.empty() ? "default" : material;
         batch.texture = resolveBlockTexture(material);
+        batch.tint = block.color;
+        batch.opacity = block.opacity;
         batch.first = first;
         batch.count = 0;
         batch.boundsMin = glm::vec3(std::numeric_limits<float>::max());
@@ -309,12 +311,50 @@ void appendBlockMesh(World& world, const AuthoredBlock& block)
     MapGLBObject object;
     object.id = "block:" + block.id;
     object.name = block.id;
+    object.collision = block.collision;
     object.transform = transform;
     object.vertexFirst = objectFirst;
     object.vertexCount = world.mesh.verts.size() - objectFirst;
     object.boundsMin = objectBoundsMin;
     object.boundsMax = objectBoundsMax;
     world.authoredObjects.push_back(std::move(object));
+}
+
+void appendAuthoredChunkParts(World& world, const MapObjectiveConfig& config)
+{
+    if (config.worldMode != "static" && config.worldMode != "mixed")
+        return;
+    for (const AuthoredChunk& chunk : config.chunks) {
+        if (!chunk.enabled || !chunk.visible)
+            continue;
+        const float yaw = glm::radians(chunk.yaw);
+        const float c = std::cos(yaw);
+        const float s = std::sin(yaw);
+        for (const ChunkPart& part : chunk.parts) {
+            if (!part.visible)
+                continue;
+            AuthoredBlock block;
+            block.id = "chunk:" + chunk.id + "/" + part.id;
+            block.name = part.name;
+            block.shape = "box";
+            block.position = chunk.origin + glm::vec3(
+                part.position.x * c - part.position.y * s,
+                part.position.x * s + part.position.y * c,
+                part.position.z);
+            block.size = part.size;
+            block.rotationEuler = part.rotationEuler;
+            block.rotationEuler.z += chunk.yaw;
+            block.material = part.material;
+            block.materialPreset = part.materialPreset;
+            block.color = part.color;
+            block.opacity = part.opacity;
+            block.collision = part.collision;
+            block.anchored = part.anchored;
+            for (int face = 0; face < 6; ++face)
+                block.faceMaterials[face] = part.faceMaterials[face];
+            appendBlockMesh(world, block);
+        }
+    }
 }
 
 bool ensureMapLoaded(const std::string& mapId)
@@ -361,6 +401,7 @@ uint64_t authoredGeometrySignature(const MapObjectiveConfig& config)
 {
     uint64_t hash = 1469598103934665603ull;
     hashPod(hash, config.generateWholeWorld);
+    hashString(hash, config.worldMode);
 
     for (const AuthoredBlock& block : config.blocks) {
         hashString(hash, block.id);
@@ -369,6 +410,12 @@ uint64_t authoredGeometrySignature(const MapObjectiveConfig& config)
         hashVec3(hash, block.size);
         hashVec3(hash, block.rotationEuler);
         hashString(hash, block.material);
+        hashString(hash, block.materialPreset);
+        hashString(hash, block.shape);
+        hashPod(hash, block.color);
+        hashPod(hash, block.opacity);
+        hashPod(hash, block.collision);
+        hashPod(hash, block.anchored);
         for (const std::string& face : block.faceMaterials)
             hashString(hash, face);
         hashPod(hash, block.enabled);
@@ -377,6 +424,9 @@ uint64_t authoredGeometrySignature(const MapObjectiveConfig& config)
     for (const AuthoredChunk& chunk : config.chunks) {
         hashString(hash, chunk.id);
         hashString(hash, chunk.geometryPath);
+        hashPod(hash, chunk.origin);
+        hashPod(hash, chunk.yaw);
+        hashPod(hash, chunk.visible);
         hashString(hash, chunk.blobSha256);
         hashVec3(hash, chunk.boundsMin);
         hashVec3(hash, chunk.boundsMax);
@@ -388,6 +438,12 @@ uint64_t authoredGeometrySignature(const MapObjectiveConfig& config)
             hashVec3(hash, part.size);
             hashVec3(hash, part.rotationEuler);
             hashString(hash, part.material);
+            hashString(hash, part.materialPreset);
+            hashPod(hash, part.color);
+            hashPod(hash, part.opacity);
+            hashPod(hash, part.collision);
+            hashPod(hash, part.anchored);
+            hashPod(hash, part.visible);
             for (const std::string& face : part.faceMaterials)
                 hashString(hash, face);
             hashPod(hash, part.uvScale.x);
@@ -996,6 +1052,7 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
         appendBlockMesh(world, block);
         ++added;
     }
+    appendAuthoredChunkParts(world, config);
 
     StaticUnionStats unionStats;
     StaticUnionStats removalStats;
@@ -1021,6 +1078,8 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
         nlohmann::json{{"map", mapId},
                        {"block_count", config.blocks.size()},
                        {"applied_count", added},
+                       {"world_mode", config.worldMode},
+                       {"chunk_count", config.chunks.size()},
                        {"render_vertices", world.mesh.verts.size()},
                        {"collision_triangles", world.collisionMesh.triangles.size()},
                        {"glb_override_count", config.glbObjects.size()},
@@ -1419,6 +1478,34 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
                                                false);
         ++added;
     }
+    size_t chunkPartsAdded = 0;
+    if (config.worldMode == "static" || config.worldMode == "mixed") {
+        for (const AuthoredChunk& chunk : config.chunks) {
+            if (!chunk.enabled || !chunk.visible)
+                continue;
+            const float yaw = glm::radians(chunk.yaw);
+            const float c = std::cos(yaw);
+            const float s = std::sin(yaw);
+            for (const ChunkPart& part : chunk.parts) {
+                if (!part.visible || !part.collision)
+                    continue;
+                AuthoredBlock block;
+                block.position = chunk.origin + glm::vec3(
+                    part.position.x * c - part.position.y * s,
+                    part.position.x * s + part.position.y * c,
+                    part.position.z);
+                block.size = part.size;
+                block.rotationEuler = part.rotationEuler;
+                block.rotationEuler.z += chunk.yaw;
+                MimitaNet::HeadlessWorld cube;
+                buildBoxCollisionTriangles(cube.triangles, glm::vec3(0.0f),
+                                           block.size * 0.5f);
+                MimitaNet::appendHeadlessWorldInstance(
+                    world, cube, blockTransform(block), false);
+                ++chunkPartsAdded;
+            }
+        }
+    }
 
     StaticUnionStats unionStats;
     StaticUnionStats removalStats;
@@ -1452,6 +1539,8 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
         nlohmann::json{{"map", mapId},
                        {"block_count", config.blocks.size()},
                        {"applied_count", added},
+                       {"chunk_part_count", chunkPartsAdded},
+                       {"world_mode", config.worldMode},
                        {"authored_spawn_count", spawnsAdded},
                        {"spawn_points", world.spawnPoints.size()},
                        {"collision_triangles", world.triangles.size()},

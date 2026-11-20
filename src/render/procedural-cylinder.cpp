@@ -13,7 +13,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "camera.h"
-#include "map/map_common.h"
+#include "map/map-mesh-types.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
 #include "render/render-command.h"

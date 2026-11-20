@@ -357,6 +357,13 @@ std::vector<RecoveryContact> collectBodyWeaponContacts(
 std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p)
 {
     std::vector<glm::vec3> samples;
+    collectPlayerBodyCollisionSamples(p, samples);
+    return samples;
+}
+
+void collectPlayerBodyCollisionSamples(Player& p, std::vector<glm::vec3>& samples)
+{
+    samples.clear();
 
     // Defensive limits: a valid player body is only a few units across. If a body
     // part's world transform is garbage (scattered over hundreds of units — see the
@@ -411,5 +418,4 @@ std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p)
         }
     }
 
-    return samples;
 }

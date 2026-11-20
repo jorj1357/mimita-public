@@ -12,7 +12,7 @@ target_radius_m — lenient historical target body radius. Limb/edge hits missed
 
 max_reach_m — explicit server reach cap; 0 derives it from the box/blade size. Valid long swings rejected as out_of_reach: set/raise it. Remote hits accepted: lower toward visible reach.
 
-claim_batch_ticks — how often claims are sent; detection is still 60 Hz. Damage feels delayed: lower toward 2–3. Packet volume: raise toward 6–12.
+claim_batch_ticks — how often claims are sent; detection is still 60 Hz. The focused Mode 1 weapons (Chainsaw, Mace, SwordSword) use `1` to send each contact tick. Raising this value adds network delay and requires measured evidence before changing it.
 
 occlusion — rejects claims blocked by world geometry. Legitimate corner/limb hits rejected as world_occluded: investigate geometry first; false is the permissive fallback. Hits through walls: keep true.
 
@@ -186,6 +186,28 @@ or:
 
 This is intentional for Mode 1 across all melee weapons.
 
+### Focused Mode 1 implementation: Chainsaw, Mace, SwordSword
+
+For these three weapons, Mode 1 contact is checked every fixed simulation tick
+while the weapon is equipped, whether or not an attack action is active. Input
+may animate or pose the weapon; it does not open or close a damage window.
+Damage and knockback are resolved from the swept physical contact, relative
+speed/directness, and the weapon's configured contact profile. An action's
+windup/active/recovery values do not gate or scale Mode 1 contact damage.
+
+The attacking client immediately predicts the contacted replica's health
+presentation and sends the contact claim on the same fixed-tick cadence. The
+server checks the claimed target and weapon volume against bounded historical
+state, then applies plausible contacts through the authoritative damage owner.
+Confirmation reconciles the prediction; a rejection or damage mismatch must
+identify the reason in the event journal. Client prediction never writes
+authoritative server health.
+
+The Mode 1 send cadence for these weapons is one simulation tick. Do not batch
+their claims across multiple ticks as a latency optimization; measure packet
+and server cost before changing that cadence. Spy Knife and Godball are outside
+this focused implementation.
+
 Do NOT "fix" this by adding:
 
 ```
@@ -231,15 +253,23 @@ Reloads are validated as a whole and published at a fixed-tick boundary.
 Malformed or out-of-range edits keep the last valid values. All weapon clash
 paths, including block contacts, use the same pair-scoped policy.
 
-### Mode 2 — Click-triggered active hitbox (TODO)
+### Mode 2 — Click-triggered active hitbox (specified; not in this implementation)
 
-Mode 2 is the click-triggered attack model: clicking starts an attack
-animation and its authored active hitbox, similar to Super Smash Bros. Melee.
-This mode has **not been implemented as of 2026-10-29 23:16
-America/New_York**. TODO: update this section when Mode 2 is implemented,
-including its contact cadence, per-activation/per-victim hit policy, and any
-intentional limits. Do not assume Mode 1's continuous-contact rule defines
-Mode 2's hit policy until that decision is recorded.
+Mode 2 is a separate contact-generation policy. A fresh attack input starts an
+action with these states:
+
+```text
+idle -> windup -> active -> recovery -> idle
+```
+
+The authored hitbox exists only during the action's `active` ticks. Windup and
+recovery have no damaging hitbox. The active duration and shape come from the
+action definition; they are not inferred from the rendered animation. Contact
+still produces the same transport-neutral candidate, historical server
+validation, shared damage resolution, and prediction reconciliation used by
+Mode 1. Mode 2's per-activation repeat policy remains to be specified before
+implementing it. This work focuses on Mode 1 for Chainsaw, Mace, and
+SwordSword; it does not implement Mode 2.
 
 Initial development priority is fast, responsive melee play. Build and tune
 those styles first; add slower, more deliberate fighting styles (potentially
@@ -1075,7 +1105,8 @@ Do not fabricate unavailable measurements.
 
 # **10\. Regression Tests & Definition of Done**
 
-The first implementation is **Mode 1 physical melee \+ Spy Knife**.
+The current implementation focus is **Mode 1 physical contact for Chainsaw,
+Mace, and SwordSword**. Spy Knife and Godball are deferred from this work.
 
 Mode 2 — animation-generated fighting-game hitboxes similar to Smash — is future work.
 
@@ -1341,24 +1372,26 @@ backstab sound/effects
 
 ## Client contact claims — implementation bridge (2026-10-28)
 
-SwordSword, mace, and chainsaw now use a lenient client-contact claim path in
-addition to the existing authoritative server contact scan.
+SwordSword, mace, and chainsaw use the client-contact claim path in addition to
+the existing authoritative server contact scan. This section describes the
+current bridge, including its remaining migration gaps; it is not evidence of
+complete single-path behavior.
 
 - The client resolves the same rendered weapon attachment it draws, tests the
   swept blade capsule against remote player/NPC replicas at the fixed 60 Hz
   tick, and queues one contact per target per tick.
 - Claims carry target identity/kind, contact tick and ID, blade segment and
-  radius, contact point/normal, and impact speed/directness. They are batched
-  through the existing physical-contact batch transport at the configured
-  contact claim cadence, initially 6 ticks.
+  radius, contact point/normal, and impact speed/directness. The focused Mode 1
+  weapons submit on each fixed tick so batching adds no intentional delay.
 - The server validates attacker life/equipment/generation, target life and
   friendliness, claimed tick, blade bounds, historical target pose, reach, and
   clear world occlusion. It accepts when the claimed blade is within the
   target collision volume plus blade radius plus configurable
   `contactClaimTolerance` (default 0.75 m).
-- The server recalculates damage/knockback from the weapon/action configuration
-  and applies it through the shared damage owner. Client damage numbers remain
-  prediction.
+- The client immediately predicts the remote health overlay from the same
+  contact speed/force inputs, then reconciles it with server damage. The server
+  validates the historical claim and applies accepted damage through the
+  shared damage owner.
 - The existing server contact scan remains a fallback. Accepted claims are
   deduplicated per target/tick so the fallback cannot apply the same contact
   twice.
@@ -1440,7 +1473,7 @@ damage or knockback fields.
 | `claim_tolerance_m` | Extra radius added to the target body radius when validating the claimed contact. This absorbs network lag, one-frame pose differences, and animation mismatch. | Increase in steps of `0.25` (`0.75 → 1.0 → 1.25`). Use more for fast weapons, high ping, or large swings. | Decrease toward `0.25–0.5`. If hits land visibly beside the target, tolerance or target radius is too large. |
 | `target_radius_m` | Treats the historical target as a body sphere of this radius for the lenient claim check. It is deliberately larger than the true limb geometry. | Increase toward `1.1–1.3` if edge/limb hits are rejected with `outside_claim_radius`. | Decrease toward `0.6–0.8` if near-misses count. Keep it close to the actual actor capsule; do not use it to fake reach. |
 | `max_reach_m` | Explicit maximum attacker-to-target distance for a claim. `0` derives a value from the claimed shape size + target radius + tolerance + 2 m. | If valid long-reach swings are rejected as `out_of_reach`, set an explicit value slightly above the visible reach (for example sword `8`, chainsaw `7`, mace `14`). | Lower it toward the visible reach. Never set it below the actual blade/box length or legitimate overhead swings will be rejected. |
-| `claim_batch_ticks` | Sends queued contacts every N fixed ticks. Detection still runs every 60 Hz tick; only transmission is batched. `1` = every tick, `6` = 10 Hz. | Lower to `2–3` when damage feels delayed behind the visual hit. | Raise toward `6–12` if packet volume is a concern; higher values increase perceived latency. Never set below `1`. |
+| `claim_batch_ticks` | Sends queued contacts every N fixed ticks. Detection still runs every 60 Hz tick; only transmission is batched. `1` = every tick, `6` = 10 Hz. | Chainsaw, Mace, and SwordSword Mode 1 stay at `1`; other weapons may be lowered only when a measured delay requires it. | Higher values increase perceived latency. Never set below `1`. |
 | `occlusion` | When `true`, rejects a claim if world geometry is clearly between the attacker position at the contact tick and the target center. | Set `false` only if legitimate corner/limb/through-gap hits are being rejected as `world_occluded`. | Keep `true` to prevent hits through walls. If it causes false rejects, fix the contact point/geometry rather than disabling it globally. |
 | `damage_scale` | Multiplies authoritative damage after base range, action multiplier, rev multiplier, and impact force. | Increase above `1.0` (`1.1–1.5`) if accepted contacts do too little health damage. Check `server.damage.applied` first. | Decrease below `1.0` (`0.5–0.9`) if accepted contacts damage too much. This does not change hit registration. |
 | `force_scale` | Multiplies authoritative knockback impulse. | Increase above `1.0` if hits connect but barely move the target. | Decrease below `1.0` if targets launch too far. This does not change damage. |
@@ -1490,7 +1523,9 @@ damage or knockback fields.
 
 **"Damage arrives late."**
 
-1. Lower `claim_batch_ticks` toward `2–3`.
+1. Keep Chainsaw, Mace, and SwordSword at `claim_batch_ticks: 1`; for other
+   weapons, reduce batching only after logs show that the batch interval is
+   causing the delay.
 2. Do not add a cooldown or change contact geometry.
 
 #### Important invariants

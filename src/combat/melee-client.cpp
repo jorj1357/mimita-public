@@ -27,6 +27,7 @@
 #include "terminal/terminal-state.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -409,8 +410,6 @@ void tickClientMeleeContactClaims(Player& player,
         g_lastClientMeleeWeapon.clear();
         return;
     }
-    if (!g_state.active && g_lastClientMeleeShape.radius > 0.0f && g_pendingMeleeClaims.empty())
-        return;
     if (simTick == g_lastMeleeContactSimTick)
         return;
     g_lastMeleeContactSimTick = simTick;
@@ -419,7 +418,23 @@ void tickClientMeleeContactClaims(Player& player,
     const MeleeAction* action = g_state.active ? &g_state.actionSnapshot : nullptr;
     WeaponExecution::PhysicalContactShape shape;
     if (!clientMeleeShape(player, *def, action, shape))
+    {
+        static uint32_t lastShapeLogTick = 0;
+        if (simTick - lastShapeLogTick >= 60)
+        {
+            lastShapeLogTick = simTick;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "melee.client.shape_missing", def->id,
+                "client melee contact shape could not be built", simTick,
+                nlohmann::json{{"weapon", def->id},
+                               {"body_parts", player.physicalBody.parts.size()},
+                               {"has_valid_weapon", player.hasValidWeapon},
+                               {"equipped_slot", player.equippedSlot}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
         return;
+    }
     if (g_lastClientMeleeWeapon == def->id && g_lastClientMeleeShape.radius > 0.0f)
     {
         shape.previousA = g_lastClientMeleeShape.currentA;
@@ -428,7 +443,11 @@ void tickClientMeleeContactClaims(Player& player,
     g_lastClientMeleeShape = shape;
     g_lastClientMeleeWeapon = def->id;
 
-    const bool actionActive = action && g_state.currentPhaseIndex == 1;
+    // Mode 1's contact and damage do not depend on an attack active window.
+    // The action may still animate/pose the weapon, but physical speed and
+    // configured contact values determine the result.
+    const bool actionActive = !def->meleeContact.enabled && action &&
+        g_state.currentPhaseIndex == 1;
     float revMultiplier = 1.0f;
     if (def->id == "chainsaw")
     {
@@ -596,23 +615,44 @@ void tickClientMeleeContactClaims(Player& player,
         const int damage = (int)clientContactDamage(*def, action, actionActive,
                                                     force, revMultiplier);
 
-        // Melee damage feedback is server-confirmed only. Sending the claim is
-        // the prediction; HP, hitmarker, blood, and damage number are shown
-        // when the authoritative damage event arrives. This guarantees that
-        // every visible melee damage event corresponds to real server damage.
+        // Mode 1 predicts the target health overlay on the contact tick. This
+        // changes only the local replica presentation; the server still owns
+        // authoritative health and reconciles it through the normal damage
+        // confirmation path.
+        const bool predictedHealth = MimitaNet::mpApplyPredictedDamage(
+            ctx, id, damage, npc);
+        if (predictedHealth && npc)
+        {
+            const auto now = std::chrono::steady_clock::now().time_since_epoch();
+            const uint64_t nowMs = (uint64_t)std::chrono::duration_cast<
+                std::chrono::milliseconds>(now).count();
+            ctx.predictedNpcHitMs[id] = nowMs;
+            ctx.predictedNpcDamage[id] = damage;
+        }
+
         PendingMeleeClaim claim;
         claim.targetId = id;
         claim.targetGeneration = target.spawnGeneration;
         claim.targetIsNpc = npc;
         claim.contactTick = contactTick;
         claim.contactId = g_nextMeleeContactId++;
-        claim.actionElapsedTicks = (uint16_t)std::clamp(
-            (int)(simTick - g_state.startSimTick), 0, 65535);
+        // Mode 1 contact exists while the weapon is equipped and does not
+        // require a running action. Only attach action identity when one is
+        // actually active; a stale g_state.startSimTick otherwise made every
+        // continuous-contact claim look older than the server's 600-tick
+        // action limit and rejected it as invalid.
+        claim.actionElapsedTicks = 0;
         claim.actionIndex = 0xffff;
-        for (size_t actionIdx = 0; actionIdx < moveSet.actions.size(); ++actionIdx) {
-            if (moveSet.actions[actionIdx].id == g_state.actionId) {
-                claim.actionIndex = (uint16_t)actionIdx;
-                break;
+        if (action)
+        {
+            claim.actionElapsedTicks = (uint16_t)std::clamp(
+                (int)(simTick - g_state.startSimTick), 0, 600);
+            for (size_t actionIdx = 0; actionIdx < moveSet.actions.size();
+                 ++actionIdx) {
+                if (moveSet.actions[actionIdx].id == g_state.actionId) {
+                    claim.actionIndex = (uint16_t)actionIdx;
+                    break;
+                }
             }
         }
         claim.hitPosition = hit.hitPosition;
@@ -643,7 +683,8 @@ void tickClientMeleeContactClaims(Player& player,
                            {"action_index", claim.actionIndex},
                            {"action_active", actionActive},
                            {"damage_predicted", damage},
-                           {"feedback", "server_confirmed"},
+                           {"feedback", predictedHealth ? "predicted_then_reconciled"
+                                                        : "claim_only"},
                            {"blade_base", {shape.currentA.x, shape.currentA.y,
                                            shape.currentA.z}},
                            {"blade_tip", {shape.currentB.x, shape.currentB.y,
@@ -665,9 +706,34 @@ void tickClientMeleeContactClaims(Player& player,
     for (const auto& entry : ctx.remoteNpcs)
         tryTarget(entry.second, entry.first, true, entry.second.networkTransformEpoch);
 
+    if (g_pendingMeleeClaims.empty())
+    {
+        static uint32_t lastScanLogTick = 0;
+        if (simTick - lastScanLogTick >= 60)
+        {
+            lastScanLogTick = simTick;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "melee.client.scan", def->id,
+                "client melee contact scan produced no claim this window",
+                simTick,
+                nlohmann::json{{"weapon", def->id},
+                               {"remote_npcs", ctx.remoteNpcs.size()},
+                               {"remote_players", ctx.remotePlayers.size()},
+                               {"damage_boxes", damageBoxes.size()},
+                               {"weapon_collision_hitbox", useCollisionBoxes},
+                               {"action_active", actionActive},
+                               {"shape_radius", shape.radius},
+                               {"player", {player.pos.x, player.pos.y, player.pos.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
+
     g_lastClientDamageBoxes = damageBoxes;
     g_lastClientDamageBoxWeapon = def->id;
 
+    // Mode 1 for chainsaw, mace, and swordsword uses one tick so transport
+    // aggregation does not add a visible hit-registration delay.
     const uint32_t batchTicks = (uint32_t)std::max(1,
         def->meleeContact.claimBatchTicks);
     if (!g_pendingMeleeClaims.empty() &&

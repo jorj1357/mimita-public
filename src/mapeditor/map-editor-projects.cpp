@@ -10,6 +10,7 @@
 #include "debug/structured-log.h"
 #include "devtools/terminal.h"
 #include "gamemode/map-config.h"
+#include "worldproject/world-project-sha256.h"
 #include "worldproject/world-project-store.h"
 
 namespace {
@@ -18,7 +19,13 @@ namespace fs = std::filesystem;
 using MimitaWorldProject::WorldProjectStore;
 using MimitaWorldProject::WorldProjectVersion;
 
+constexpr const char* kCreatorBaseMapPath = "assets/maps/arena1.glb";
+constexpr const char* kCreatorStarterFloorId = "floor_starter";
+constexpr const char* kCreatorStarterSpawnId = "spawn_player";
+
 std::string gCurrentProjectId;
+std::string gCurrentProjectMapPath;
+std::string gCurrentProjectBaseMapPath;
 
 void log(const std::string& message)
 {
@@ -37,6 +44,81 @@ std::string workingPath(const std::string& projectId)
 {
     return (fs::path(WorldProjectStore::instance().root()) / projectId /
             "working" / "map.json").string();
+}
+
+std::string starterMapJson()
+{
+    nlohmann::json doc;
+    doc["schema_version"] = 1;
+    doc["bomb_sites"] = nlohmann::json::array();
+    doc["bomb"] = {
+        {"plant_seconds", 3.0f},
+        {"defuse_seconds", 5.0f},
+        {"explosion_seconds", 40.0f}};
+    doc["entities"] = nlohmann::json::array();
+    doc["entities"].push_back({
+        {"id", kCreatorStarterSpawnId},
+        {"name", "Player Spawn"},
+        {"type", "spawnpoint"},
+        {"position", {0.0f, 0.0f, 2.0f}},
+        {"size", {1.0f, 1.0f, 1.0f}},
+        {"yaw", 0.0f},
+        {"radius", 1.0f},
+        {"enabled", true},
+        {"visible", true},
+        {"oneShot", false},
+        {"tag", "creator_spawn"}});
+    doc["blocks"] = nlohmann::json::array();
+    doc["blocks"].push_back({
+        {"id", kCreatorStarterFloorId},
+        {"name", "Starter Floor"},
+        {"shape", "box"},
+        {"position", {0.0f, 0.0f, 0.25f}},
+        {"size", {10.0f, 10.0f, 0.5f}},
+        {"rotationEuler", {0.0f, 0.0f, 0.0f}},
+        {"material", ""},
+        {"faces", {"", "", "", "", "", ""}},
+        {"enabled", true},
+        {"tags", nlohmann::json::array()}});
+    doc["vehicles"] = nlohmann::json::array();
+    doc["glb_objects"] = nlohmann::json::array();
+    doc["chunks"] = nlohmann::json::array();
+    doc["attachments"] = nlohmann::json::array();
+    doc["generation_zones"] = nlohmann::json::array();
+    doc["npc_presets"] = nlohmann::json::array();
+    doc["weapon_overrides"] = nlohmann::json::array();
+    doc["interactions"] = nlohmann::json::array();
+    return doc.dump(2) + "\n";
+}
+
+std::string manifestPath(const std::string& projectId)
+{
+    return (fs::path(WorldProjectStore::instance().root()) / projectId /
+            "project.json").string();
+}
+
+bool fillResult(const std::string& projectId, const std::string& title,
+                CreatorProjectResult& out, std::string& error)
+{
+    WorldProjectStore& store = WorldProjectStore::instance();
+    MimitaWorldProject::WorldProjectManifest manifest;
+    if (!store.readManifest(projectId, manifest, &error))
+        return false;
+    out.ok = true;
+    out.projectId = projectId;
+    out.mapId = projectId;
+    out.title = title.empty() ? manifest.title : title;
+    out.workingPath = workingPath(projectId);
+    out.initialVersion = manifest.head;
+    out.baseMapPath = kCreatorBaseMapPath;
+    out.floorId = kCreatorStarterFloorId;
+    out.spawnId = kCreatorStarterSpawnId;
+    std::string hashError;
+    out.manifestHash = MimitaWorldProject::sha256File(manifestPath(projectId),
+                                                      &hashError);
+    if (!hashError.empty())
+        out.manifestHash.clear();
+    return true;
 }
 
 bool openProject(const std::string& projectId, const std::string& version,
@@ -69,6 +151,8 @@ bool openProject(const std::string& projectId, const std::string& version,
         return false;
     }
     gCurrentProjectId = projectId;
+    gCurrentProjectMapPath = workingPath(projectId);
+    gCurrentProjectBaseMapPath = kCreatorBaseMapPath;
     return true;
 }
 
@@ -77,6 +161,173 @@ bool openProject(const std::string& projectId, const std::string& version,
 std::string currentWorldProjectId()
 {
     return gCurrentProjectId;
+}
+
+const std::string& currentWorldProjectMapPath()
+{
+    return gCurrentProjectMapPath;
+}
+
+const std::string& currentWorldProjectBaseMapPath()
+{
+    return gCurrentProjectBaseMapPath;
+}
+
+void clearCurrentWorldProject()
+{
+    gCurrentProjectId.clear();
+    gCurrentProjectMapPath.clear();
+    gCurrentProjectBaseMapPath.clear();
+}
+
+void activateWorldProject(const std::string& projectId,
+                          const std::string& workingPath,
+                          const std::string& baseMapPath)
+{
+    gCurrentProjectId = projectId;
+    gCurrentProjectMapPath = workingPath;
+    gCurrentProjectBaseMapPath = baseMapPath;
+}
+
+bool creatorProjectCreate(const std::string& projectId,
+                          const std::string& title,
+                          CreatorProjectResult& out)
+{
+    out = CreatorProjectResult{};
+    WorldProjectStore& store = WorldProjectStore::instance();
+    out.projectId = projectId;
+    out.mapId = projectId;
+    out.failedStep = "validate";
+    if (!WorldProjectStore::validProjectId(projectId)) {
+        out.error = "project id must be 1-64 letters, digits, '.', '_' or '-'";
+        return false;
+    }
+    std::string error;
+    MimitaWorldProject::WorldProjectManifest existing;
+    if (store.readManifest(projectId, existing, nullptr)) {
+        out.error = "project already exists: " + projectId;
+        return false;
+    }
+    out.failedStep = "persist";
+    if (!store.createFromMap(projectId, "local", title, "public",
+                             starterMapJson(), &error)) {
+        out.error = error;
+        return false;
+    }
+    out.failedStep = "verify";
+    if (!fillResult(projectId, title, out, error)) {
+        out.error = error;
+        out.ok = false;
+        return false;
+    }
+    out.failedStep.clear();
+    activateWorldProject(projectId, out.workingPath, out.baseMapPath);
+    event("world-project.created", projectId,
+          {{"project_id", projectId}, {"project", projectId},
+           {"map_id", projectId}, {"owner", "local"},
+           {"working_path", out.workingPath},
+           {"initial_version", out.initialVersion},
+           {"manifest_hash", out.manifestHash},
+           {"result", "persisted"}, {"root", store.root()},
+           {"source", "creator_create"}});
+    return true;
+}
+
+bool creatorProjectClone(const std::string& sourceProjectId,
+                         const std::string& projectId,
+                         const std::string& title,
+                         CreatorProjectResult& out)
+{
+    out = CreatorProjectResult{};
+    WorldProjectStore& store = WorldProjectStore::instance();
+    out.projectId = projectId;
+    out.mapId = projectId;
+    out.failedStep = "validate";
+    if (!WorldProjectStore::validProjectId(sourceProjectId) ||
+        !WorldProjectStore::validProjectId(projectId)) {
+        out.error = "invalid source or destination project id";
+        return false;
+    }
+    MimitaWorldProject::WorldProjectManifest source;
+    if (!store.readManifest(sourceProjectId, source, nullptr)) {
+        out.error = "source project does not exist: " + sourceProjectId;
+        return false;
+    }
+    MimitaWorldProject::WorldProjectManifest existing;
+    if (store.readManifest(projectId, existing, nullptr)) {
+        out.error = "project already exists: " + projectId;
+        return false;
+    }
+    out.failedStep = "fork";
+    std::string error;
+    if (!store.fork(sourceProjectId, source.head, projectId, "local",
+                    title.empty() ? projectId : title, "public", &error)) {
+        out.error = error;
+        return false;
+    }
+    out.failedStep = "verify";
+    if (!fillResult(projectId, title, out, error)) {
+        out.error = error;
+        out.ok = false;
+        return false;
+    }
+    out.failedStep.clear();
+    activateWorldProject(projectId, out.workingPath, out.baseMapPath);
+    event("world-project.forked", projectId,
+          {{"source", sourceProjectId}, {"fork", projectId},
+           {"project_id", projectId}, {"map_id", projectId},
+           {"version", out.initialVersion}, {"owner", "local"}});
+    return true;
+}
+
+bool creatorProjectOpen(const std::string& projectId,
+                        const std::string& version,
+                        CreatorProjectResult& out)
+{
+    out = CreatorProjectResult{};
+    out.projectId = projectId;
+    out.mapId = projectId;
+    out.failedStep = "load";
+    std::string error;
+    if (!openProject(projectId, version, error)) {
+        out.error = error;
+        return false;
+    }
+    out.failedStep = "verify";
+    if (!fillResult(projectId, "", out, error)) {
+        out.error = error;
+        out.ok = false;
+        return false;
+    }
+    out.failedStep.clear();
+    event("world-project.opened", projectId,
+          {{"project_id", projectId}, {"map_id", projectId},
+           {"version", version.empty() ? std::string("working") : version},
+           {"working_path", out.workingPath}, {"root",
+            WorldProjectStore::instance().root()}});
+    return true;
+}
+
+void creatorProjectListCommand()
+{
+    std::vector<MimitaWorldProject::WorldProjectSummary> projects;
+    std::string error;
+    if (!WorldProjectStore::instance().listProjects(projects, &error)) {
+        log("[CREATOR] list failed: " + error);
+        return;
+    }
+    if (projects.empty()) {
+        log("[CREATOR] no local projects");
+        return;
+    }
+    for (const auto& project : projects) {
+        log("[CREATOR] " + project.manifest.projectId +
+            " head=" + (project.manifest.head.empty()
+                            ? std::string("unsaved")
+                            : project.manifest.head.substr(0, 12)) +
+            " versions=" + std::to_string(project.versionCount) +
+            " title=" + project.manifest.title);
+    }
 }
 
 void registerWorldProjectCommands()
@@ -135,6 +386,8 @@ void registerWorldProjectCommands()
                     return;
                 }
                 gCurrentProjectId = args[1];
+                gCurrentProjectMapPath = workingPath(args[1]);
+                gCurrentProjectBaseMapPath = kCreatorBaseMapPath;
                 event("world-project.created", args[1],
                       {{"project", args[1]}, {"owner", "local"},
                        {"root", store.root()}, {"source", "map_editor"}});

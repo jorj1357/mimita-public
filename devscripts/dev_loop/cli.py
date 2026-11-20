@@ -46,13 +46,48 @@ def create_parser() -> argparse.ArgumentParser:
                         help="print the scenario purpose, steps, launch config, and assertions without running it")
     parser.add_argument("--ai-match", action="store_true",
                         help="run an unattended TDM match with the local player under AI control")
+    parser.add_argument("--start-test-run", action="store_true",
+                        help="start an isolated server/client run using the root dev-loop's current published build")
+    parser.add_argument("--test-profile", default="tdm-validation",
+                        help="profile used by --start-test-run (default: tdm-validation)")
+    parser.add_argument("--test-launch-mode", default="41",
+                        help="launch mode used by --start-test-run (default: 41 = TDM)")
+    parser.add_argument("--test-map", default="",
+                        help="optional map override for --start-test-run")
+    parser.add_argument("--test-build-id", default="",
+                        help="pin --start-test-run to a published build/artifact ID")
+    parser.add_argument("--test-game-generation", type=int, default=0,
+                        help="pin --start-test-run to a game DLL generation")
+    parser.add_argument("--start-test-client", action="store_true",
+                        help="add a second client to an online isolated test run for PvP")
+    parser.add_argument("--test-client-name", default="",
+                        help="display name for the second isolated test client")
+    parser.add_argument("--list-test-runs", action="store_true",
+                        help="list isolated test runs and their pinned build/journal paths")
+    parser.add_argument("--run-id", default="",
+                        help="isolated test run ID for --command or --stop-test-run")
+    parser.add_argument("--stop-test-run", metavar="RUN_ID",
+                        help="stop only the verified server/client processes owned by this isolated run")
     parser.add_argument("--ai-seconds", type=float, default=90.0, help="bounded duration for --ai-match")
     parser.add_argument("--ai-map", default="dust2cyberiav4", help="map for --ai-match")
     parser.add_argument("--ai-profile", default="tdm-validation", help="dev profile for --ai-match")
     parser.add_argument("--ai-launch-mode", default="41", help="dev launch mode for --ai-match (default 41 = TDM networking)")
-    parser.add_argument("--request", choices=("launch", "build", "game-dll", "cold-link-trial", "stop-client", "stop-server", "stop"),
-                        help="send a command to the already-running dev-loop daemon and exit; build/game-dll/cold-link-trial are human-only and require MIMITA_BUILD_OVERRIDE=1")
-    parser.add_argument("--wait-for-build", action="store_true", help="human-only with MIMITA_BUILD_OVERRIDE=1; agents never wait for builds")
+    parser.add_argument("--ai-weapon", default="",
+                        choices=("", "mace", "chainsaw", "swordsword"),
+                        help="force one melee weapon and enable the melee validation path")
+    parser.add_argument("--ai-health", type=int, default=999999,
+                        help="self-only health override for the AI player (0 disables)")
+    parser.add_argument("--runtime", default="", help="runtime id for runtime actions")
+    parser.add_argument("--runtime-launch-mode", default="",
+                        help="launch mode for --request start-runtime")
+    parser.add_argument("--runtime-profile", default="npc-navigation")
+    parser.add_argument("--runtime-map", default="")
+    parser.add_argument("--no-runtime-client", action="store_true",
+                        help="start the runtime server without a local client")
+    parser.add_argument("--request", choices=("launch", "build", "game-dll", "cold-link-trial", "stop-client", "stop-server", "stop", "start-runtime", "stop-runtime", "reload-runtime", "list-runtimes"),
+                        help="send a command to the already-running dev-loop daemon and exit; agents may request build/game-dll/cold-link-trial and are recorded by MIMITA_AGENT_ID")
+    parser.add_argument("--wait-for-build", action="store_true",
+                        help="wait for the requested build to finish; allowed for agent requests")
     parser.add_argument("--build-mode", choices=("debug", "release"), default="debug",
                         help="configuration for --request build")
     parser.add_argument("--build-timeout", type=float, default=36000.0,
@@ -73,4 +108,14 @@ def create_parser() -> argparse.ArgumentParser:
                         help="render this many dashboard frames then exit (0 = run until quit)")
     parser.add_argument("--command-timeout", type=float, default=15.0,
                         help="seconds to wait for a command result from the client")
+    parser.add_argument("--coord-status", action="store_true",
+                        help="show the shared agent coordination summary and exit")
+    parser.add_argument("--coord-inbox", action="store_true",
+                        help="show unread agent coordination messages and exit")
+    parser.add_argument("--coord-message", metavar="MESSAGE_ID",
+                        help="show one agent coordination message and exit")
+    parser.add_argument("--coord-agent", default="",
+                        help="agent name for coordination status (default: MIMITA_AGENT_ID)")
+    parser.add_argument("--no-coord", action="store_true",
+                        help="suppress the coordination summary in status output")
     return parser

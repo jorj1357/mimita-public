@@ -2570,6 +2570,9 @@ int actorTeamOf(const ServerGamemodeState& d, uint32_t actorId,
 {
     auto it = d.matchTeams.find(actorId);
     if (it != d.matchTeams.end() && it->second >= 0) return it->second;
+    auto communityTeam = d.communityTeams.find(actorId);
+    if (communityTeam != d.communityTeams.end() && communityTeam->second >= 0)
+        return communityTeam->second;
     auto aIt = d.matchActors.find(actorId);
     if (aIt != d.matchActors.end() && aIt->second.teamId >= 0) return aIt->second.teamId;
     auto pIt = players.find(actorId);
@@ -2671,6 +2674,45 @@ glm::vec3 gamemodeSpawnPointForActor(
             info.fallback, spawn.x, spawn.y, spawn.z, reason);
     }
     return spawn;
+}
+
+bool serverGamemodeSpawnPointForNewActor(std::uint32_t actorId,
+                                         glm::vec3* outPosition)
+{
+    if (!outPosition) return false;
+    const ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled) return false;
+    if (!d.spawnsAssigned) {
+        ::StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "gamemode.spawn-mode-not-ready", std::to_string(actorId),
+            "active mode spawn setup is not ready; caller will use startup picker",
+            d.currentServerTick,
+            nlohmann::json{{"actor", actorId}, {"actor_type", "player"},
+                           {"mode", d.matchMode}, {"map", d.mapId},
+                           {"reason", "join"}, {"fallback", "generic-world-picker"}});
+        return false;
+    }
+
+    static const std::unordered_map<std::uint32_t, ServerPlayer> noPlayers;
+    static const std::unordered_map<std::uint32_t, ServerNpc> noNpcs;
+    *outPosition = effectiveServerSpawn(gamemodeSpawnPointForActor(
+        d, actorId, noPlayers, noNpcs, "join"));
+    int team = -1;
+    const auto teamIt = d.matchTeams.find(actorId);
+    if (teamIt != d.matchTeams.end()) team = teamIt->second;
+    else if (const auto communityIt = d.communityTeams.find(actorId);
+             communityIt != d.communityTeams.end()) team = communityIt->second;
+    ::StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "gamemode.spawn-new-actor", std::to_string(actorId),
+        "new actor spawn resolved by active gamemode", d.currentServerTick,
+        nlohmann::json{{"actor", actorId}, {"actor_type", "player"},
+                       {"team", team}, {"mode", d.matchMode},
+                       {"map", d.mapId}, {"reason", "join"},
+                       {"position", {outPosition->x, outPosition->y,
+                                      outPosition->z}}});
+    return true;
 }
 
 void assignGamemodeParticipants(ServerGamemodeState& d,
@@ -2963,7 +3005,16 @@ void commitGamemodeMap(ServerGamemodeState& d, HeadlessWorld& world, World& npcW
     clearServerWorldDestruction(world);
     clearHeadlessWorld(world);
     world = std::move(tmp);
-    buildNpcWorldCollision(npcWorld, world);
+    // A map commit can run inside the fixed tick. Never synchronously bake the
+    // optional Recast comparison mesh here; the authoritative custom planner
+    // covers movement while a stale/absent comparison mesh defers its rebuild.
+    buildNpcWorldCollision(npcWorld, world, /*allowRecastPrewarm=*/false);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        "npc.navmesh.prewarm-skipped", "server",
+        "gamemode map commit skipped synchronous Recast comparison bake", 0,
+        nlohmann::json{{"map", mapId}},
+        __FILE__, __LINE__, __FUNCTION__);
     setServerMapId(mapId);
     d.mapId = mapId;
     ++d.mapVersion;

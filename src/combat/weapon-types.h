@@ -236,7 +236,7 @@ struct WeaponDefinition {    std::string id;
     // Per-weapon multiplier applied by the shared hitscan damage model.
     // Keeps JSON tuning separate from the base damage value.
     float damageScale = 1.0f;
-    float headshotMultiplier = 2.0f;
+    float headshotMultiplier = 1.5f;
     float fireDelay = 0.1f;
     float reloadTime = 1.0f;
     int magazineSize = 6;

@@ -1,4 +1,10 @@
-﻿2026 11 17 1620 jorj issue
+﻿> Canonical live issue state is `.dev/agent-coord/brain.db`; durable append-only
+> records are under `docs/issues/`. This file is the historical OGI feed and
+> preserves the original human reports verbatim. New reports and clarifications
+> go through `agent-coord issue add` and the issue-intake workflow. OGI entries
+> are migrated without altering their quotes.
+
+2026 11 17 1620 jorj issue
 press ` = console
 but it shows it in the tping thing
 not good

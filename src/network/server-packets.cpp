@@ -3223,11 +3223,24 @@ void buildAndSendSnapshot(SOCKET sock,
     const std::vector<std::vector<uint8_t>>* previous =
         (resendPrevious && gPreviousTick != 0) ? &gPreviousChunks : nullptr;
 
+    static uint64_t lastSnapshotEventMs = 0;
+    const uint64_t snapshotEventNow = nowMs();
+    const uint64_t snapshotEventInterval = (uint64_t)std::max(
+        100.0, NetworkingConfig::instance().data()
+                   .observability.snapshotDiagnosticsIntervalMs);
+    const bool capturePeerSends =
+        snapshotEventNow - lastSnapshotEventMs >= snapshotEventInterval;
+    nlohmann::json peerSends = capturePeerSends
+        ? nlohmann::json::array() : nlohmann::json();
+
     uint64_t sentChunks = 0;
     uint64_t failedChunks = 0;
     uint64_t sentBytes = 0;
     const auto sendPayload = [&](const std::vector<uint8_t>& payload,
-                                 const ServerPlayer& sp) {
+                                 const ServerPlayer& sp,
+                                 uint64_t& peerSentChunks,
+                                 uint64_t& peerFailedChunks,
+                                 uint64_t& peerSentBytes) {
         const bool sent =
             serverSendToPlayer(sock, sp, payload.data(), payload.size());
         if (sent)
@@ -3235,21 +3248,45 @@ void buildAndSendSnapshot(SOCKET sock,
             ++totalPacketsOut;
             ++sentChunks;
             sentBytes += payload.size();
+            ++peerSentChunks;
+            peerSentBytes += payload.size();
         }
         else
         {
             ++failedChunks;
+            ++peerFailedChunks;
         }
     };
 
     for (const auto& kv : players)
     {
+        uint64_t peerSentChunks = 0;
+        uint64_t peerFailedChunks = 0;
+        uint64_t peerSentBytes = 0;
         if (previous)
             for (const auto& chunk : *previous)
-                sendPayload(chunk, kv.second);
+                sendPayload(chunk, kv.second, peerSentChunks,
+                            peerFailedChunks, peerSentBytes);
         for (int copy = 0; copy <= redundancyCopies; ++copy)
             for (const auto& chunk : chunks)
-                sendPayload(chunk, kv.second);
+                sendPayload(chunk, kv.second, peerSentChunks,
+                            peerFailedChunks, peerSentBytes);
+        if (capturePeerSends)
+        {
+            const ServerPlayer& player = kv.second;
+            peerSends.push_back({
+                {"player_id", kv.first},
+                {"transport_kind", transportKindName(
+                    player.hasConnectionId
+                        ? player.connectionId.kind : TransportKind::Udp)},
+                {"transport_handle_bound",
+                 player.transportHandle != kNoServerTransport},
+                {"spawned", player.spawned},
+                {"connection_stale", player.connectionStale},
+                {"sent_chunks", peerSentChunks},
+                {"failed_chunks", peerFailedChunks},
+                {"sent_bytes", peerSentBytes}});
+        }
         if (tick % 120 == 0)
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Network, StructuredLevel::Important,
@@ -3264,17 +3301,12 @@ void buildAndSendSnapshot(SOCKET sock,
                 __FILE__, __LINE__, __FUNCTION__);
     }
     {
-        static uint64_t lastSnapshotEventMs = 0;
-        const uint64_t snapshotEventNow = nowMs();
-        const uint64_t snapshotEventInterval = (uint64_t)std::max(
-            100.0, NetworkingConfig::instance().data()
-                       .observability.snapshotDiagnosticsIntervalMs);
-        if (snapshotEventNow - lastSnapshotEventMs >= snapshotEventInterval)
+        if (capturePeerSends)
         {
             lastSnapshotEventMs = snapshotEventNow;
             NetworkEvents::Context context;
             context.role = "server";
-            context.transport = "udp";
+            context.transport = players.empty() ? "none" : "mixed";
             context.connectionId = 0;
             NetworkEvents::emit(
                 context, "network.server.snapshot.build", "built", "ok",
@@ -3287,7 +3319,8 @@ void buildAndSendSnapshot(SOCKET sock,
                                {"snapshot_bytes", queueBytes},
                                {"sent_chunks", sentChunks},
                                {"failed_chunks", failedChunks},
-                               {"sent_bytes", sentBytes}},
+                               {"sent_bytes", sentBytes},
+                               {"peer_sends", peerSends}},
                 __FILE__, __LINE__, __FUNCTION__);
             NetworkEvents::emit(
                 context, "network.server.snapshot.send", "sent",
@@ -3298,14 +3331,15 @@ void buildAndSendSnapshot(SOCKET sock,
                                {"chunk_count", chunks.size()},
                                {"sent_chunks", sentChunks},
                                {"failed_chunks", failedChunks},
-                               {"sent_bytes", sentBytes}},
+                               {"sent_bytes", sentBytes},
+                               {"peer_sends", peerSends}},
                 __FILE__, __LINE__, __FUNCTION__);
             NetworkEvents::emit(
                 context, "network.metrics.window", "window", "ok",
                 "metrics_window", "network.metrics.window", tick,
                 nlohmann::json{{"window_ms", snapshotEventInterval},
                                {"role", "server"},
-                               {"transport", "udp"},
+                               {"transport", context.transport},
                                {"players", players.size()},
                                {"npcs", npcs.size()},
                                {"entity_count", entityCount},

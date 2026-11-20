@@ -6,6 +6,7 @@
 #include "gui/menus/pause-menu.h"
 #include <algorithm>
 #include <cstdio>
+#include <process.h>
 #include <random>
 #include <GLFW/glfw3.h>
 #include "world/world-gltf-loader.h"
@@ -34,6 +35,7 @@
 #include "notifications/notifications.h"
 #include "gui/password-popup.h"
 #include "mapeditor/map-editor.h"
+#include "mapeditor/map-editor-projects.h"
 #include "replay/replay.h"
 #include "replay/replay-export.h"
 #include "debug/debug-log.h"
@@ -127,6 +129,9 @@ void engineTickState(Engine& engine, float dt)
             MusicManager::instance().enterGameMode();
         } else {
             MusicManager::instance().enterMenuMode();
+            if (MapEditor::instance().playtestActive())
+                MapEditor::instance().returnFromPlayTest(false);
+            clearCurrentWorldProject();
         }
         if (gameState == GAME_PLAYING)
         {
@@ -134,6 +139,7 @@ void engineTickState(Engine& engine, float dt)
                 getPendingSandboxMapSelection();
             if (sandboxSelection.shouldStart)
             {
+                clearCurrentWorldProject();
                 const std::string selectedPath = sandboxSelection.mapPath;
                 clearPendingSandboxMapSelection();
                 printf("[SANDBOX MAP] selected path=%s\n", selectedPath.c_str());
@@ -286,6 +292,115 @@ void engineTickState(Engine& engine, float dt)
         }
         prevState = gameState;
     }
+
+            CreatorProjectLaunch creatorLaunch = takeCreatorProjectLaunch();
+            if (creatorLaunch.shouldStart)
+            {
+                const std::string projectId = creatorLaunch.projectId;
+                const std::string workingPath = creatorLaunch.workingPath;
+                const std::string basePath =
+                    creatorLaunch.baseMapPath.empty()
+                        ? std::string("assets/maps/arena1.glb")
+                        : creatorLaunch.baseMapPath;
+                activateWorldProject(projectId, workingPath, basePath);
+                // Edit Mode is a local authoring session. Leave any joined or
+                // hosted network session so client/server map identity cannot
+                // diverge from the project document being edited.
+                if (MapEditor::instance().playtestActive())
+                    MapEditor::instance().returnFromPlayTest(false);
+                if (mpContext.active)
+                    MimitaNet::mpShutdown(mpContext);
+                if (MimitaNet::ListenServerState* listen = getListenServerState()) {
+                    if (listen->active)
+                        MimitaNet::stopListenServer(*listen);
+                }
+                const bool configOk = !projectId.empty() &&
+                    MapConfigRegistry::instance().loadFromFile(
+                        projectId, workingPath);
+                const bool worldOk = configOk &&
+                    loadWorldFromGLB(world, basePath.c_str(), projectId);
+                bool editorActive = false;
+                if (worldOk)
+                {
+                    activeMapPath = "assets/maps/" + projectId + ".glb";
+                    worldLoaded = true;
+                    npcSystem.destroyAll();
+                    npcsSpawned = false;
+                    player.reset();
+                    player.username = AuthSystem::instance().displayName();
+                    if (!world.spawnPoints.empty())
+                    {
+                        const glm::vec3 spawn =
+                            world.spawnPoints.front().position;
+                        player.pos = spawn;
+                        player.respawnPosition = spawn;
+                    }
+                    editorActive = MapEditor::instance().setActive(true);
+                }
+                else
+                {
+                    gameState = GAME_MENU;
+                }
+                const std::string action = creatorLaunch.action.empty()
+                    ? std::string("create") : creatorLaunch.action;
+                bool playtestStarted = false;
+                if (worldOk && editorActive && creatorLaunch.playtest)
+                    playtestStarted = MapEditor::instance().playTest();
+                const bool applied = worldOk && editorActive &&
+                    (!creatorLaunch.playtest || playtestStarted);
+                const uint64_t projectRevision =
+                    MapConfigRegistry::instance().savedRevision();
+                if (action == "create")
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::World,
+                        applied ? StructuredLevel::Important
+                                : StructuredLevel::Errors,
+                        "map-editor.create.applied", projectId,
+                        applied
+                            ? "new project map loaded and map editor activated"
+                            : "project map load or editor activation failed",
+                        0,
+                        {{"project_id", projectId},
+                         {"map_id", projectId},
+                         {"working_path", workingPath},
+                         {"initial_version", creatorLaunch.initialVersion},
+                         {"manifest_hash", creatorLaunch.manifestHash},
+                         {"base_map_path", basePath},
+                         {"world_loaded", worldOk},
+                         {"editor_active", editorActive},
+                         {"floor_id", creatorLaunch.floorId},
+                         {"spawn_id", creatorLaunch.spawnId},
+                         {"result", applied ? "applied" : "failed"}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+                else
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::World,
+                        applied ? StructuredLevel::Important
+                                : StructuredLevel::Errors,
+                        "creator.project.action.applied", projectId,
+                        applied
+                            ? "saved creation opened from My Creations"
+                            : "saved creation could not be opened",
+                        0,
+                        {{"project_id", projectId},
+                         {"project_revision", projectRevision},
+                         {"action", action},
+                         {"map_id", projectId},
+                         {"mode_id", "sandbox"},
+                         {"run_id", StructuredLogger::instance().runId()},
+                         {"pid", static_cast<long long>(_getpid())},
+                         {"world_loaded", worldOk},
+                         {"editor_active", MapEditor::instance().active()},
+                         {"playtest_started", playtestStarted},
+                         {"result", applied ? "applied" : "failed"}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+            }
+
+
 
     {
             MultiplayerConnectInfo mci = getPendingMultiplayerConnect();

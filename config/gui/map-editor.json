@@ -92,6 +92,36 @@
       "fontSize": 0.28
     },
     {
+      "id": "map-editor.add-player-spawn",
+      "type": "button",
+      "x": 673,
+      "y": 124,
+      "width": 110,
+      "height": 36,
+      "text": "Add Player Spawn",
+      "fontSize": 0.24
+    },
+    {
+      "id": "map-editor.delete",
+      "type": "button",
+      "x": 944,
+      "y": 124,
+      "width": 76,
+      "height": 36,
+      "text": "Delete",
+      "fontSize": 0.26
+    },
+    {
+      "id": "map-editor.add-monster-volume",
+      "type": "button",
+      "x": 786,
+      "y": 124,
+      "width": 150,
+      "height": 36,
+      "text": "Add Monster Volume",
+      "fontSize": 0.24
+    },
+    {
       "id": "map-editor.toolbar-button",
       "type": "button",
       "backgroundColor": [0.16, 0.25, 0.34, 0.94],

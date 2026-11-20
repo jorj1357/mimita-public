@@ -7,6 +7,7 @@
 */
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -63,6 +64,16 @@ public:
     // without a rebuild.
     bool actorTriangleSolver() const { return mActorTriangleSolver; }
 
+    // Set by the active gamemode. Arcade collision uses a capsule for every
+    // actor (world and actor pairs) and classifies damage from limb hitboxes
+    // only. Not a config.json value; the server/client tick sets it.
+    bool arcadeCollision() const {
+        return mArcadeCollision.load(std::memory_order_relaxed);
+    }
+    void setArcadeCollision(bool enabled) {
+        mArcadeCollision.store(enabled, std::memory_order_relaxed);
+    }
+
     // When true, the actor narrowphase prunes candidate pairs with a per-solve
     // AABB tree instead of scanning the candidate list. Hot-reloadable.
     bool actorCollisionAccelerated() const { return mActorCollisionAccelerated; }
@@ -107,6 +118,7 @@ private:
     int mLimbBounceMode = 2;
     bool mBodyMeshCollision = true;
     bool mActorTriangleSolver = false;
+    std::atomic<bool> mArcadeCollision{false};
     bool mActorCollisionAccelerated = true;
     bool mActorCollisionComparison = false;
     float mCollisionSkin = 0.05f;

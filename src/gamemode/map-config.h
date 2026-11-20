@@ -58,7 +58,11 @@ struct ChunkPart
     glm::vec2 uvScale{1.0f, 1.0f};
     glm::vec2 faceUvScale[6]{{0.0f, 0.0f}, {0.0f, 0.0f}, {0.0f, 0.0f},
                             {0.0f, 0.0f}, {0.0f, 0.0f}, {0.0f, 0.0f}};
+    glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
+    float opacity = 1.0f;
+    std::string materialPreset;
     bool collision = true;
+    bool anchored = true;
     bool visible = true;
     std::string name;
 };
@@ -81,11 +85,15 @@ struct AuthoredChunk
     std::string blobSha256;
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};
+    // Static/mixed world placement in meters. Procedural generation ignores it.
+    glm::vec3 origin{0.0f};
+    float yaw = 0.0f;
     std::vector<ChunkPart> parts;
     std::vector<AuthoredChunkConnector> connectors;
     std::vector<ChunkSpawnPoint> spawnPoints;
     std::vector<std::string> tags;
     bool enabled = true;
+    bool visible = true;
     std::string name;
 };
 
@@ -212,6 +220,11 @@ struct AuthoredBlock
     // Optional per-face material overrides. Face order: +X, -X, +Y, -Y, +Z, -Z.
     // Empty entries fall back to `material`.
     std::string faceMaterials[6];
+    glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
+    float opacity = 1.0f;
+    std::string materialPreset;
+    bool collision = true;
+    bool anchored = true;
     bool enabled = true;
     std::vector<std::string> tags;
     std::string name;
@@ -378,6 +391,8 @@ struct MapObjectiveConfig
     std::vector<GenerationZone> generationZones;
     std::vector<NpcPreset> npcPresets;
     std::vector<WorldWeaponOverride> weaponOverrides;
+    // static | procedural | mixed. Empty derives from generateWholeWorld.
+    std::string worldMode;
     std::vector<AuthoredInteraction> interactions;
     bool generateWholeWorld = false;
     PayloadConfig payload;
@@ -424,6 +439,9 @@ public:
     bool pollReload();
 
     const MapObjectiveConfig& current() const { return mCurrent; }
+    // Editor-owned runtime mutation of the authored document. Callers must
+    // update rev/render state through markChanged/rebuild paths.
+    MapObjectiveConfig& currentMutable() { return mCurrent; }
     const std::string& mapId() const { return mCurrent.mapId; }
 
     // Find a site by id; nullptr when absent.
@@ -456,6 +474,7 @@ public:
     std::string createBlock(const glm::vec3& position, const glm::vec3& size,
                             const std::string& requestedId = "");
     bool deleteBlock(const std::string& id);
+    bool deleteChunk(const std::string& id);
 
     const MapVehicleSpawn* findVehicle(const std::string& id) const;
     MapVehicleSpawn* findVehicleMutable(const std::string& id);

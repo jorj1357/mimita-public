@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 28
+Entries: 29
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -214,3 +214,14 @@ correction in the detail file.
 - Status: FIXED — GUI launch mode 9 and Juggernaut NPC role loadouts verified in the live journal; separate in-game mode-switch command remains unverified.
 - Summary: A stale one-shot `--weapon-set 12` survived mode selection and forced Captain Falcon loadouts. Mode changes now clear it, and Auto GUI launches ignore stale weapon values. A fresh mode 9 launch omitted the override, resolved the gamemode default, and equipped Juggernaut NPCs with their configured Heavy Shotgun, Large Machine Gun, and Force Punch role loadout.
 - Detail: [juggernaut-gui-weapon-set-REG-2026-11-17.md](juggernaut-gui-weapon-set-REG-2026-11-17.md)
+
+## Entry 29 — DLL build time accounting hid long cache scans
+
+- Recorded: 2026-11-19
+- Status: FIXED for the observed display, scan-reporting, and split-clock failures — a live generation 353 warm no-op measured 0.403 s worker time; generation 348's generic exit code 2 cause remains unknown.
+- Summary: The dashboard showed one TU's 46 ms dependency check beside a 642-TU scan and printed initialized zero compile/link/total fields. A generation 348 GUI failure at ~364 s disagreed with the run-journal duration (~470 s), with no retained failed-source cause. The worker also performs per-TU synchronous progress reporting during serial dependency scanning.
+- Detail: [dll-build-time-accounting-REG-2026-11-19.md](dll-build-time-accounting-REG-2026-11-19.md)
+- Later evidence (2026-11-19): the published generation 351 attempt measured 1658.10 s of synchronous per-skip progress/record overhead inside a 1716.38 s cache scan; detail is in the linked record.
+- Lean-scan evidence (2026-11-19): an intermediate generation 352 publish measured a 14.22 s scan (3.95 s parse, 9.03 s stat, 1,496 unique dependencies) versus 315-1716 s earlier.
+- Verified (2026-11-19): a live generation 353 warm no-op completed in 0.403 s worker time with a 0.096 s marker scan, 642 skips, no compile/link/publish, and a 36.346 s complete request-to-result interval. The batched scan and worker clock are live-verified.
+- Repeated (2026-11-19): a second warm no-op measured 0.290 s worker time, 0.052 s scan, 642 skips, and 9.927 s complete request-to-result. Worker-boundary latency is verified and repeatable; codegen/manifest snapshot remain the dominant complete-interval stages.

@@ -11,6 +11,8 @@
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <string>
+#include <vector>
 
 #include <glm/glm.hpp>
 
@@ -20,7 +22,11 @@
 #include "devtools/terminal.h"
 #include "input/input-frame.h"
 #include "network/community-match-client.h"
+#include "network/community-server-config.h"
 #include "network/multiplayer-context.h"
+#include "npc/npc-difficulty-config.h"
+#include "npc/npc-nav-graph.h"
+#include "npc/npc-navigation.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/config.h"
 #include "terminal/terminal-state.h"
@@ -29,6 +35,32 @@
 namespace {
 
 bool gActive = false;
+std::string gMeleeWeapon;
+std::vector<glm::vec3> gRoute;
+size_t gRouteIndex = 0;
+uint32_t gRouteTargetId = 0;
+glm::vec3 gRouteGoal{0.0f};
+uint32_t gRoutePlanTick = 0;
+uint32_t gLastSpawnGeneration = 0;
+uint32_t gLatchedTargetId = 0;
+uint64_t gLastFallLogMs = 0;
+uint64_t gLastFallbackMs = 0;
+int gFallbackSpawns = 0;
+
+uint64_t aiNowMs()
+{
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+void resetRoute()
+{
+    gRoute.clear();
+    gRouteIndex = 0;
+    gRouteTargetId = 0;
+    gRouteGoal = glm::vec3(0.0f);
+    gRoutePlanTick = 0;
+}
 
 struct TargetView {
     bool valid = false;
@@ -56,11 +88,34 @@ bool hostile(const Player& player, const Player& candidate)
 TargetView chooseTarget(const Player& player)
 {
     TargetView best;
+    if (!gMeleeWeapon.empty() && gLatchedTargetId != 0) {
+        const auto latch = [&](const std::unordered_map<uint32_t, Player>& map) {
+            auto it = map.find(gLatchedTargetId);
+            if (it == map.end() || !hostile(player, it->second))
+                return false;
+            best.valid = true;
+            best.id = it->first;
+            best.team = it->second.matchTeam;
+            best.pos = it->second.pos;
+            best.distance = glm::length(it->second.pos - player.pos);
+            // Keep a close target latched, but allow a freshly spawned near
+            // target to take over when the latched one has drifted away. Six
+            // metres is outside every focused melee weapon's contact volume.
+            return best.distance <= 6.0f;
+        };
+        if (latch(MP_CONTEXT.remoteNpcs) || latch(MP_CONTEXT.remotePlayers))
+            return best;
+        gLatchedTargetId = 0;
+    }
     float bestScore = std::numeric_limits<float>::max();
     const auto consider = [&](const Player& candidate, uint32_t id) {
         if (!hostile(player, candidate)) return;
         const glm::vec3 delta = candidate.pos - player.pos;
         const float distance = glm::length(delta);
+        // A melee validation run should not chase a target across the map.
+        // When no local hostile exists, the fallback spawn (and the normal
+        // match AI) can bring one into range.
+        if (!gMeleeWeapon.empty() && distance > 25.0f) return;
         const glm::vec3 planar(delta.x, delta.y, 0.0f);
         const float len = glm::length(planar);
         float score = distance;
@@ -82,7 +137,131 @@ TargetView chooseTarget(const Player& player)
         consider(entry.second, entry.first);
     for (const auto& entry : MP_CONTEXT.remotePlayers)
         consider(entry.second, entry.first);
+    if (!gMeleeWeapon.empty())
+        gLatchedTargetId = best.valid && best.distance <= 15.0f ? best.id : 0;
     return best;
+}
+
+bool groundAhead(const World& world, const Player& player,
+                 const glm::vec2& direction, float maxDrop, float& outGroundZ)
+{
+    if (glm::length(direction) < 0.001f) return false;
+    const glm::vec3 forward =
+        glm::normalize(glm::vec3(direction.x, direction.y, 0.0f));
+    const glm::vec3 probe =
+        player.pos + forward * 1.6f + glm::vec3(0.0f, 0.0f, 0.25f);
+    outGroundZ = NpcNavigation::groundHeightAt(world, probe, 6.0f, 0.25f);
+    return outGroundZ > -1.0e5f && outGroundZ >= player.pos.z - maxDrop;
+}
+
+glm::vec2 avoidUnsafeGround(const World& world, const Player& player,
+                            glm::vec2 desired, bool allowRouteDrop)
+{
+    if (!player.ground.onGround)
+        return glm::vec2(0.0f);
+    if (glm::length(desired) < 0.001f)
+        return desired;
+    desired = glm::normalize(desired);
+    const float maxDrop = allowRouteDrop ? 8.0f : 3.0f;
+    float groundZ = 0.0f;
+    if (groundAhead(world, player, desired, maxDrop, groundZ))
+        return desired;
+    static const float angles[] = {25.0f, -25.0f, 50.0f, -50.0f,
+                                   75.0f, -75.0f, 105.0f, -105.0f,
+                                   140.0f, -140.0f, 180.0f};
+    for (float degrees : angles) {
+        const float radians = glm::radians(degrees);
+        const glm::vec2 candidate(
+            desired.x * std::cos(radians) - desired.y * std::sin(radians),
+            desired.x * std::sin(radians) + desired.y * std::cos(radians));
+        if (groundAhead(world, player, candidate, maxDrop, groundZ))
+            return candidate;
+    }
+    return glm::vec2(0.0f);
+}
+
+NpcNavGraphSettings playerNavGraphSettings()
+{
+    const auto& difficulty = NpcDifficultyConfig::instance().settings();
+    NpcNavGraphSettings settings;
+    settings.chunkSize = difficulty.navGraphChunkSize;
+    settings.cellSize = difficulty.navGraphCellSize;
+    settings.maxRoutes = std::max(1, difficulty.navGraphMaxRoutes);
+    settings.maxDropHeight = difficulty.navGraphMaxDropHeight;
+    return settings;
+}
+
+void planRoute(const Player& player, const TargetView& target,
+               const World& world)
+{
+    if (!target.valid) {
+        resetRoute();
+        return;
+    }
+    const uint32_t tick = (uint32_t)player.movementSimulationTick;
+    const bool goalMoved =
+        glm::length(glm::vec2(target.pos.x - gRouteGoal.x,
+                              target.pos.y - gRouteGoal.y)) > 2.5f;
+    const bool need = gRoute.empty() || gRouteTargetId != target.id ||
+        goalMoved || tick >= gRoutePlanTick;
+    if (!need) return;
+
+    const auto start = std::chrono::steady_clock::now();
+    const std::vector<NpcNavRoute> routes = NpcNavGraph::instance().findRoutes(
+        world, player.pos, target.pos, playerNavGraphSettings(),
+        MP_CONTEXT.localPlayerId, tick);
+    const double milliseconds = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - start).count();
+
+    gRoute.clear();
+    gRouteIndex = 0;
+    gRouteTargetId = target.id;
+    gRouteGoal = target.pos;
+    gRoutePlanTick = tick + 30u;
+    if (!routes.empty() && routes.front().valid()) {
+        gRoute = routes.front().points;
+        if (gRoute.size() > 1 &&
+            glm::length(glm::vec2(gRoute[0].x - player.pos.x,
+                                  gRoute[0].y - player.pos.y)) < 1.5f)
+            gRouteIndex = 1;
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "player.ai.navplan", "player-ai",
+        gRoute.empty() ? "no route; using local steering" : "route planned",
+        tick, {{"target_id", target.id},
+               {"target_distance", target.distance},
+               {"points", gRoute.size()},
+               {"plan_ms", milliseconds},
+               {"route_index", gRouteIndex}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+bool followRoute(const Player& player, glm::vec2& outDirection, bool& outJump)
+{
+    while (gRouteIndex < gRoute.size()) {
+        const glm::vec3& waypoint = gRoute[gRouteIndex];
+        const float dx = waypoint.x - player.pos.x;
+        const float dy = waypoint.y - player.pos.y;
+        const float planar = std::sqrt(dx * dx + dy * dy);
+        if (planar <= 1.6f && waypoint.z - player.pos.z <= 1.5f) {
+            ++gRouteIndex;
+            continue;
+        }
+        if (planar > 0.001f) outDirection = glm::vec2(dx, dy) / planar;
+        outJump = waypoint.z - player.pos.z > 0.9f;
+        return true;
+    }
+    return false;
+}
+
+int meleeLogicalSlot(const std::string& weaponId)
+{
+    auto& config = MimitaNet::CommunityServerConfig::instance();
+    if (config.weaponSets().empty()) config.load();
+    const int weaponSetId = MP_CONTEXT.communityWeaponSetId > 0
+        ? MP_CONTEXT.communityWeaponSetId : 1;
+    return config.slotForWeapon(weaponSetId, weaponId);
 }
 
 bool worldBlocks(const World& world, const glm::vec3& from, const glm::vec3& to)
@@ -169,6 +348,8 @@ bool usableWeapon(const Player& player, const std::string& id)
 
 std::string chooseWeapon(const Player& player, const TargetView& target)
 {
+    if (!gMeleeWeapon.empty())
+        return usableWeapon(player, gMeleeWeapon) ? gMeleeWeapon : std::string();
     static const char* closeWeapons[] = {
         "chainsaw", "swordsword", "mace", "shotgun", "revolver"};
     static const char* midWeapons[] = {
@@ -198,7 +379,11 @@ void maybeEquipWeapon(const Player& player, const TargetView& target)
     const std::string wanted = chooseWeapon(player, target);
     if (wanted.empty() || wanted == from) return;
     lastAttemptTick = tick;
-    Terminal::instance().execute("equipweapon " + wanted);
+    const int logicalSlot = meleeLogicalSlot(wanted);
+    if (logicalSlot > 0 && !gMeleeWeapon.empty())
+        Terminal::instance().execute("equipslot " + std::to_string(logicalSlot));
+    else
+        Terminal::instance().execute("equipweapon " + wanted);
     StructuredLogger::instance().writeEvent(
         StructuredCategory::General, StructuredLevel::Important,
         "player.ai.equip", "player-ai", "normal equip command",
@@ -206,7 +391,67 @@ void maybeEquipWeapon(const Player& player, const TargetView& target)
         {{"player_id", MP_CONTEXT.localPlayerId},
          {"from", from},
          {"to", wanted},
+         {"logical_slot", logicalSlot},
+         {"forced_melee", !gMeleeWeapon.empty()},
          {"target_distance", target.distance}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+void checkPlayerFall(const Player& player, const World& world, uint32_t tick)
+{
+    const uint32_t generation = MP_CONTEXT.lastKnownSpawnGeneration;
+    const bool hadGeneration = gLastSpawnGeneration != 0 && generation != 0;
+    const bool respawned = hadGeneration && generation != gLastSpawnGeneration;
+    const bool belowMap = !world.collisionMesh.triangles.empty() &&
+        player.pos.z < world.collisionMesh.boundsMin.z - 2.0f;
+    if (gLastSpawnGeneration == 0 && generation != 0)
+        gLastSpawnGeneration = generation;
+    const uint64_t now = aiNowMs();
+    if ((respawned || belowMap || player.dead) && now - gLastFallLogMs >= 2000)
+    {
+        gLastFallLogMs = now;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Errors,
+            "player.ai.fall_detected", "player-ai",
+            belowMap ? "player below the map floor"
+                     : (respawned ? "player respawned during AI mode"
+                                  : "player died during AI mode"),
+            tick,
+            {{"player_id", MP_CONTEXT.localPlayerId},
+             {"reason", belowMap ? "below_map"
+                                 : (respawned ? "respawned" : "dead")},
+             {"position", {player.pos.x, player.pos.y, player.pos.z}},
+             {"spawn_generation", generation},
+             {"previous_spawn_generation", gLastSpawnGeneration},
+             {"dead", player.dead},
+             {"weapon", gMeleeWeapon}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+    gLastSpawnGeneration = generation;
+}
+
+void maybeRequestFallback(const TargetView& target, uint32_t tick)
+{
+    if (gMeleeWeapon.empty() || gFallbackSpawns >= 12)
+        return;
+    if (target.valid && target.distance < 8.0f)
+        return;
+    const uint64_t now = aiNowMs();
+    if (now - gLastFallbackMs < 8000)
+        return;
+    gLastFallbackMs = now;
+    ++gFallbackSpawns;
+    Terminal::instance().execute("npc_spawn_near 1.5 2");
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "player.ai.fallback_spawn", "player-ai",
+        "requested a controlled NPC near the player because no close target existed",
+        tick,
+        {{"player_id", MP_CONTEXT.localPlayerId},
+         {"weapon", gMeleeWeapon},
+         {"target_valid", target.valid},
+         {"target_distance", target.distance},
+         {"fallback_count", gFallbackSpawns}},
         __FILE__, __LINE__, __FUNCTION__);
 }
 
@@ -216,15 +461,41 @@ namespace PlayerAiController {
 
 bool active() { return gActive; }
 
-void setActive(bool enabled) { gActive = enabled; }
+void setActive(bool enabled)
+{
+    gActive = enabled;
+    if (!enabled) {
+        gMeleeWeapon.clear();
+        gLatchedTargetId = 0;
+        resetRoute();
+    }
+}
+
+void setMeleeWeapon(const std::string& weaponId)
+{
+    gMeleeWeapon = weaponId;
+    gLatchedTargetId = 0;
+    resetRoute();
+    gFallbackSpawns = 0;
+    gLastFallbackMs = 0;
+}
+
+const std::string& meleeWeapon() { return gMeleeWeapon; }
 
 InputFrame buildFrame(const Player& player, Camera& camera,
                       const World& world)
 {
     InputFrame frame;
+    const uint32_t tick = (uint32_t)player.movementSimulationTick;
+    if (gActive)
+        checkPlayerFall(player, world, tick);
     if (!gActive || player.dead) return frame;
 
     const TargetView target = chooseTarget(player);
+    const bool meleeMode = !gMeleeWeapon.empty();
+    if (!meleeMode || !target.valid || target.distance <= 2.5f)
+        resetRoute();
+
     const glm::vec3 eye = player.pos + glm::vec3(0.0f, 0.0f, 1.35f);
 
     float desiredYaw = camera.yaw;
@@ -233,6 +504,11 @@ InputFrame buildFrame(const Player& player, Camera& camera,
                            std::sin(glm::radians(camera.yaw)), 0.0f);
     glm::vec2 worldMove(0.0f);
     bool hasLineOfSight = false;
+    bool followingRoute = false;
+    bool requestJump = false;
+
+    if (meleeMode && target.valid && target.distance > 2.5f)
+        planRoute(player, target, world);
 
     if (target.valid) {
         const glm::vec3 aimPoint = target.pos + glm::vec3(0.0f, 0.0f, 0.85f);
@@ -252,14 +528,31 @@ InputFrame buildFrame(const Player& player, Camera& camera,
             const glm::vec2 strafe(-planar.y, planar.x);
             const float strafePhase =
                 std::sin((float)player.movementSimulationTick * 0.035f);
-            if (target.distance > 6.0f)
+            if (meleeMode) {
+                // Mode 1: close into the weapon volume and stay there instead
+                // of holding a ranged stand-off distance.
+                if (target.distance > 1.8f)
+                    worldMove = planar;
+                else if (target.distance < 0.8f)
+                    worldMove = -planar * 0.6f;
+                else
+                    worldMove = strafe * (0.6f * strafePhase);
+            } else if (target.distance > 6.0f) {
                 worldMove = planar + strafe * (0.35f * strafePhase);
-            else if (target.distance < 2.4f)
+            } else if (target.distance < 2.4f) {
                 worldMove = -planar + strafe * (0.5f * strafePhase);
-            else
+            } else {
                 worldMove = strafe * strafePhase + planar * 0.15f;
+            }
             if (glm::length(worldMove) > 0.001f)
                 worldMove = glm::normalize(worldMove);
+        }
+
+        if (meleeMode) {
+            glm::vec2 routeDirection(0.0f);
+            followingRoute = followRoute(player, routeDirection, requestJump);
+            if (followingRoute)
+                worldMove = routeDirection;
         }
 
         hasLineOfSight = !worldBlocks(world, eye, aimPoint);
@@ -271,6 +564,8 @@ InputFrame buildFrame(const Player& player, Camera& camera,
     }
 
     worldMove = avoidWalls(world, player, worldMove);
+    if (meleeMode)
+        worldMove = avoidUnsafeGround(world, player, worldMove, followingRoute);
 
     // The real camera is part of the player. Turn it smoothly toward the same
     // point the body/weapon is aiming at; otherwise engineTickCamera rebuilds
@@ -278,7 +573,6 @@ InputFrame buildFrame(const Player& player, Camera& camera,
     if (target.valid)
         applySmoothAim(camera, desiredYaw, desiredPitch);
 
-    const uint32_t tick = (uint32_t)player.movementSimulationTick;
     const uint32_t playerId = MP_CONTEXT.localPlayerId;
     if (((tick + playerId) % 60u) == 0u) {
         StructuredLogger::instance().writeEvent(
@@ -297,7 +591,12 @@ InputFrame buildFrame(const Player& player, Camera& camera,
              {"camera_pitch", camera.pitch},
              {"body_yaw", player.yaw},
              {"camera_body_error_deg", std::remainder(camera.yaw - player.yaw, 360.0f)},
-             {"pos", {player.pos.x, player.pos.y, player.pos.z}}},
+             {"pos", {player.pos.x, player.pos.y, player.pos.z}},
+             {"melee_weapon", gMeleeWeapon},
+             {"following_route", followingRoute},
+             {"route_nodes", gRoute.size() > gRouteIndex
+                                 ? gRoute.size() - gRouteIndex : 0},
+             {"on_ground", player.ground.onGround}},
             __FILE__, __LINE__, __FUNCTION__);
     }
 
@@ -316,16 +615,31 @@ InputFrame buildFrame(const Player& player, Camera& camera,
     frame.wishSide = glm::dot(glm::vec3(worldMove.x, worldMove.y, 0.0f), right);
 
     // Jump/dash are legal shared actions; use them sparingly to clear contact.
-    if (target.valid && target.distance < 3.0f && (tick % 47u) == 0u)
-        frame.jumpPressed = true;
-    if (target.valid && target.distance > 7.0f && (tick % 83u) == 0u)
-        frame.dashPressed = true;
+    if (meleeMode) {
+        if (requestJump)
+            frame.jumpPressed = true;
+        if (target.valid && target.distance > 7.0f && (tick % 83u) == 0u)
+            frame.dashPressed = true;
+    } else {
+        if (target.valid && target.distance < 3.0f && (tick % 47u) == 0u)
+            frame.jumpPressed = true;
+        if (target.valid && target.distance > 7.0f && (tick % 83u) == 0u)
+            frame.dashPressed = true;
+    }
 
-    if (target.valid && hasLineOfSight && target.distance < 45.0f) {
-        const float aimError = glm::degrees(std::acos(glm::clamp(
+    float aimError = 180.0f;
+    if (target.valid && hasLineOfSight) {
+        aimError = glm::degrees(std::acos(glm::clamp(
             glm::dot(aimDirection, camera.front), -1.0f, 1.0f)));
+    }
+    if (target.valid && hasLineOfSight && target.distance < 45.0f) {
         frame.primaryHeld = aimError < 12.0f;
         frame.secondaryHeld = target.distance < 8.0f && aimError < 18.0f;
+    }
+    if (meleeMode) {
+        frame.primaryHeld = target.valid && hasLineOfSight &&
+            target.distance < 4.8f && aimError < 20.0f;
+        frame.secondaryHeld = false;
     }
 
     // Reload when the equipped weapon is empty. This is the same reload input
@@ -337,6 +651,8 @@ InputFrame buildFrame(const Player& player, Camera& camera,
 
     if (target.valid)
         maybeEquipWeapon(player, target);
+    if (meleeMode)
+        maybeRequestFallback(target, tick);
 
     return frame;
 }

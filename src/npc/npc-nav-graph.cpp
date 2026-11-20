@@ -9,6 +9,7 @@
 #include "npc/npc-nav-graph.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -18,6 +19,7 @@
 #include "map/map-loader-collision.h"
 #include "physics/physics-types.h"
 #include "physics/movement/physics-collision.h"
+#include "debug/structured-log.h"
 
 namespace {
 
@@ -360,10 +362,33 @@ std::vector<NpcNavRoute> NpcNavGraph::findRoutes(const World& world,
                                                  const glm::vec3& start,
                                                  const glm::vec3& goal,
                                                  const NpcNavGraphSettings& settings,
-                                                 uint32_t actorSeed)
+                                                 uint32_t actorSeed,
+                                                 uint32_t simulationTick)
 {
+    const auto queryStart = std::chrono::steady_clock::now();
+    double geometryCheckMs = 0.0;
+    double chunkBuildMs = 0.0;
+    double chunkLinkMs = 0.0;
+    double routeSearchMs = 0.0;
+    uint64_t chunksBuiltThisQuery = 0;
+    uint32_t attempts = 0;
     std::vector<NpcNavRoute> routes;
 
+    // Cap the total global-graph work spent in one fixed tick across every
+    // actor. Without this, several actors replanning on the same tick can each
+    // consume the whole 16.67 ms budget. Actors that miss the budget simply
+    // keep their previous route or fall back to the local planner this tick.
+    constexpr double kPerTickNavGraphBudgetMs = 8.0;
+    static thread_local uint32_t sBudgetTick = std::numeric_limits<uint32_t>::max();
+    static thread_local double sBudgetUsedMs = 0.0;
+    if (simulationTick != sBudgetTick) {
+        sBudgetTick = simulationTick;
+        sBudgetUsedMs = 0.0;
+    }
+    if (sBudgetUsedMs >= kPerTickNavGraphBudgetMs)
+        return routes;
+
+    const auto geometryStart = std::chrono::steady_clock::now();
     const std::uint64_t sig = (std::uint64_t)world.collisionMesh.triangles.size() * 1315423911ull +
                               (std::uint64_t)world.collisionChunks.size() * 2654435761ull;
     if (sig != mGeometrySignature) {
@@ -378,6 +403,8 @@ std::vector<NpcNavRoute> NpcNavGraph::findRoutes(const World& world,
         }
         if (!(gMeshMinZ < gMeshMaxZ)) { gMeshMinZ = -100.0f; gMeshMaxZ = 100.0f; }
     }
+    geometryCheckMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - geometryStart).count();
 
     const glm::vec2 planarDelta(goal.x - start.x, goal.y - start.y);
     if (glm::length(planarDelta) > settings.maxRouteMeters)
@@ -426,15 +453,38 @@ std::vector<NpcNavRoute> NpcNavGraph::findRoutes(const World& world,
     };
 
     for (int attempt = 0; attempt < 4; ++attempt) {
+        ++attempts;
         const int margin = attempt;  // 0,1,2,3 chunk ring expansion
         const std::vector<glm::ivec2> coords = buildCoords(margin);
+        const std::uint64_t chunksBefore = mBuildCount;
+        const auto chunkBuildStart = std::chrono::steady_clock::now();
+        // Chunks are built eagerly for the requested ring. A partial build would
+        // leave holes and starve every actor onto the local planner, so the
+        // graph must be complete before the route search runs. The per-query
+        // route search budget in findOneRoute still bounds the expensive A*.
         for (const glm::ivec2& c : coords) buildChunk(world, settings, c);
+        chunkBuildMs += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - chunkBuildStart).count();
+        chunksBuiltThisQuery += mBuildCount - chunksBefore;
+        const auto linkStart = std::chrono::steady_clock::now();
         ensureLinks(world, settings, coords);
+        chunkLinkMs += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - linkStart).count();
 
         std::unordered_map<std::uint64_t, float> penalty;
         NpcNavRoute first;
-        if (!findOneRoute(world, settings, coords, start, goal, penalty, first))
+        const auto routeSearchStart = std::chrono::steady_clock::now();
+        bool searchBudgetExceeded = false;
+        if (!findOneRoute(world, settings, coords, start, goal, penalty, first,
+                          &searchBudgetExceeded)) {
+            routeSearchMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - routeSearchStart).count();
+            // The search hit its wall-clock budget. Expanding the chunk ring
+            // only adds nodes, so retrying would make the stall worse.
+            if (searchBudgetExceeded)
+                break;
             continue;
+        }
 
         // Multiple equal-cost routes: repeatedly re-search with the previous
         // route's edges penalized. This yields genuinely different lines.
@@ -486,7 +536,43 @@ std::vector<NpcNavRoute> NpcNavGraph::findRoutes(const World& world,
         const int offset = count > 0 ? (int)(actorSeed % (uint32_t)count) : 0;
         for (int i = 0; i < count; ++i)
             routes.push_back(found[(size_t)((i + offset) % count)]);
+        routeSearchMs += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - routeSearchStart).count();
         break;
+    }
+
+    const double totalMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - queryStart).count();
+    sBudgetUsedMs += totalMs;
+    if (totalMs >= 10.0) {
+        static thread_local uint64_t lastSlowQueryLogMs = 0;
+        const uint64_t nowMs = static_cast<uint64_t>(std::chrono::duration_cast<
+            std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        if (nowMs - lastSlowQueryLogMs >= 1000) {
+            lastSlowQueryLogMs = nowMs;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.nav.graph-query-cost", std::to_string(actorSeed),
+                "rate-limited global navigation graph query stages",
+                simulationTick,
+                nlohmann::json{
+                    {"actor", actorSeed}, {"total_ms", totalMs},
+                    {"geometry_check_ms", geometryCheckMs},
+                    {"chunk_build_ms", chunkBuildMs},
+                    {"chunk_link_ms", chunkLinkMs},
+                    {"route_search_ms", routeSearchMs},
+                    {"chunks_built_this_query", chunksBuiltThisQuery},
+                    {"cached_chunks", mChunks.size()},
+                    {"graph_build_count", mBuildCount},
+                    {"attempts", attempts}, {"route_count", routes.size()},
+                    {"start", {start.x, start.y, start.z}},
+                    {"goal", {goal.x, goal.y, goal.z}},
+                    {"max_active_chunks", settings.maxActiveChunks},
+                    {"chunk_size", settings.chunkSize},
+                    {"cell_size", settings.cellSize}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 
     return routes;
@@ -496,9 +582,22 @@ bool NpcNavGraph::findOneRoute(const World& world, const NpcNavGraphSettings& s,
                                const std::vector<glm::ivec2>& coords,
                                const glm::vec3& start, const glm::vec3& goal,
                                const std::unordered_map<std::uint64_t, float>& penalty,
-                               NpcNavRoute& out)
+                               NpcNavRoute& out, bool* budgetExceeded)
 {
     (void)world;
+    // Hard wall-clock budget. The global graph can hold hundreds of thousands of
+    // nodes; an exhaustive A* over an unreachable goal previously cost hundreds
+    // of milliseconds inside one fixed tick. Bounding it here (and telling the
+    // caller so it does not expand the chunk ring) keeps navigation inside the
+    // 60 Hz tick budget; the caller still has the local planner fallback.
+    constexpr double kRouteSearchBudgetMs = 6.0;  // bounded A* per query [ms] cache
+    const auto searchBudgetStart = std::chrono::steady_clock::now();
+    if (budgetExceeded) *budgetExceeded = false;
+    auto overBudget = [&]() {
+        return std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - searchBudgetStart).count() >=
+            kRouteSearchBudgetMs;
+    };
     constexpr float kInf = std::numeric_limits<float>::max();
     struct SearchNode {
         std::uint32_t id = 0;
@@ -522,6 +621,10 @@ bool NpcNavGraph::findOneRoute(const World& world, const NpcNavGraphSettings& s,
         }
     }
     if (nodes.empty()) return false;
+    if (overBudget()) {
+        if (budgetExceeded) *budgetExceeded = true;
+        return false;
+    }
 
     auto nearest = [&](const glm::vec3& p) {
         int best = -1;
@@ -558,7 +661,12 @@ bool NpcNavGraph::findOneRoute(const World& world, const NpcNavGraphSettings& s,
     std::priority_queue<OpenEntry, std::vector<OpenEntry>, OpenEntryGreater> open;
     std::uint64_t nextOpenOrder = 0;
     open.push({nodes[(size_t)startIdx].f, nextOpenOrder++, startIdx});
+    std::uint32_t expansions = 0;
     while (!open.empty()) {
+        if ((++expansions & 511u) == 0u && overBudget()) {
+            if (budgetExceeded) *budgetExceeded = true;
+            return false;
+        }
         const OpenEntry entry = open.top();
         open.pop();
         const int cur = entry.nodeIndex;

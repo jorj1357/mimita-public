@@ -10,6 +10,11 @@ The historical design record is archived at
 [`docs/archive/hotreload/hotreload-history-2026-11-14.md`](../../archive/hotreload/hotreload-history-2026-11-14.md).
 It is background evidence, not current authority.
 
+Audience: contributors changing DLL-owned gameplay, gamemode, actor, and spawn
+behavior. This document defines reload continuity requirements; it DOES NOT
+define individual gamemode spawn layouts, which remain owned by their mode
+specifications.
+
 ## Specification authority
 
 This document states desired behavior and standing decisions. It is not a
@@ -67,6 +72,24 @@ Cutover-1 is complete when:
     same PID and session, and the behavior change is visible.
 11. Rollback restores the previous generation and state.
 12. The game is visibly playable in the target mode.
+
+### Gameplay continuity across a DLL generation swap
+
+A successful generation swap must preserve the active match's mode, team and
+role assignments, map-authored spawn rules, and spawn override. New joins,
+respawns, and actors created by the mode after the swap resolve positions
+through that active mode's spawn policy. They must not fall back to a generic
+map spawn merely because the code generation changed. If mode spawn state is
+not ready, the owner must report that bounded condition and use the documented
+startup fallback; it must not silently treat that fallback as the active
+mode's spawn policy.
+
+Runtime proof correlates the generation activation with the active mode, actor
+identity and type, spawn-policy result or bounded startup-fallback event, and
+resulting position in the same server journal. Exercise at least one new actor
+and one respawn after activation in each affected mode; confirm
+distinct/team-correct positions where that mode's authored spawn rules require
+them.
 
 Cutover-1 does not require normalized input, ECS expansion, agent command
 tooling, hot backends for every OS/device, or distributed storage.
@@ -196,6 +219,12 @@ Cutover-3 is the broader live-collaboration phase:
 - live tools beyond the game.
 
 These phases must preserve the Cutover-1 evidence rules.
+
+A separate, deferred target defines a power-first hot-layer language/runtime and
+a 50-changed-file save-to-active budget of one second or less on the reference
+laptop: [hot-layer-latency-and-language.md](hot-layer-latency-and-language.md).
+It does not change Cutover-1's one-game.dll contract or relax any hotness proof
+requirement.
 
 ## Architecture
 

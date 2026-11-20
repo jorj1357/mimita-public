@@ -89,6 +89,18 @@ void buildCollisionMeshFromRenderMesh(World& world)
     constexpr float MIN_TRI_AREA = 0.000001f;
 
     std::vector<uint32_t> vertexSolidIds(world.mesh.verts.size(), 0);
+    std::vector<uint8_t> vertexNoCollision(world.mesh.verts.size(), 0);
+    auto markNoCollision = [&](const MapGLBObject& object) {
+        const size_t first = std::min(object.vertexFirst, world.mesh.verts.size());
+        const size_t last = std::min(object.vertexFirst + object.vertexCount,
+                                      world.mesh.verts.size());
+        for (size_t vi = first; vi < last; ++vi)
+            vertexNoCollision[vi] = 1;
+    };
+    for (const MapGLBObject& object : world.mesh.objects)
+        if (!object.collision) markNoCollision(object);
+    for (const MapGLBObject& object : world.authoredObjects)
+        if (!object.collision) markNoCollision(object);
     uint32_t nextSolidId = 1;
     const auto assignObjectRange = [&](MapGLBObject& object) {
         const size_t first = std::min(object.vertexFirst, world.mesh.verts.size());
@@ -120,6 +132,9 @@ void buildCollisionMeshFromRenderMesh(World& world)
 
     for (size_t i = 0; i + 2 < world.mesh.verts.size(); i += 3)
     {
+        if (vertexNoCollision[i] || vertexNoCollision[i + 1] ||
+            vertexNoCollision[i + 2])
+            continue;
         const uint32_t ra = vertRep[i + 0];
         const uint32_t rb = vertRep[i + 1];
         const uint32_t rc = vertRep[i + 2];

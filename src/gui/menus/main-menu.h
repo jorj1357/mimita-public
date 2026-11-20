@@ -22,6 +22,8 @@ struct MainMenuResult
     bool goSettings = false;
     bool goReplays = false;
     bool goAvatarCreator = false;
+    bool goCreate = false;
+    bool goMyCreations = false;
     bool goExit = false;
     bool switchAccount = false;
     bool logOut = false;

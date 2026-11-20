@@ -306,6 +306,32 @@ static void runRecastIsolatedSelfTest(const World& npcWorld,
                        hw.boundsMax + glm::vec3(5000.0f), profile));
 }
 
+static void rebuildNpcSolidBounds(World& npcWorld)
+{
+    auto& mesh = npcWorld.collisionMesh;
+    mesh.solidBounds.clear();
+    for (size_t i = 0; i < mesh.triangles.size(); ++i)
+    {
+        const uint32_t solidId =
+            i < mesh.solidIds.size() ? mesh.solidIds[i] : 0u;
+        if (solidId == 0 || solidId == kRemovedCollisionSolidId)
+            continue;
+        const CollisionTriangle& tri = mesh.triangles[i];
+        const glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
+        const glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
+        auto it = mesh.solidBounds.find(solidId);
+        if (it == mesh.solidBounds.end())
+        {
+            mesh.solidBounds.emplace(solidId, AABB{mn, mx});
+        }
+        else
+        {
+            it->second.min = glm::min(it->second.min, mn);
+            it->second.max = glm::max(it->second.max, mx);
+        }
+    }
+}
+
 void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw,
                             bool allowRecastPrewarm)
 {
@@ -372,6 +398,7 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw,
         __FILE__, __LINE__, __FUNCTION__);
     npcWorld.collisionChunkSize = hw.collisionChunkSize;
     ++npcWorld.renderRevision;
+    rebuildNpcSolidBounds(npcWorld);
 
     // Build the same acceleration grids the client builds: chunk cells PLUS
     // the coarse large-triangle grid + sub-grids. Reusing the client builder
@@ -476,6 +503,7 @@ bool buildNpcWorldCollisionDetached(
         destructibleSurfaceTriangles.size(), 0u);
     npcWorld.collisionChunkSize = hw.collisionChunkSize;
     ++npcWorld.renderRevision;
+    rebuildNpcSolidBounds(npcWorld);
     buildCollisionChunks(npcWorld, nullptr);
     if (buildRecast) {
         if (!navOut)
@@ -490,6 +518,49 @@ bool buildNpcWorldCollisionDetached(
 // Adopt newly spawned ServerNpc entries (from npc_spawn requests or startup)
 // into the real NpcSystem so they get full AI simulation.
 static void applyRoleStartingAmmo(Npc& npc, const ActorSpawnProfile& profile);
+
+struct NpcSpawnResolution
+{
+    glm::vec3 safeSpawn{0.0f};
+    bool rawInside = false;
+    bool safeInside = false;
+    bool cached = false;
+};
+
+static NpcSpawnResolution resolveNpcSpawnCached(const World& world,
+                                                uint32_t npcId,
+                                                const glm::vec3& rawSpawn)
+{
+    struct CacheEntry
+    {
+        glm::vec3 rawSpawn{0.0f};
+        NpcSpawnResolution resolution;
+        std::uint64_t geometrySignature = 0;
+    };
+    static std::unordered_map<uint32_t, CacheEntry> cache;
+    const std::uint64_t geometrySignature =
+        world.renderRevision * 1315423911ull ^
+        static_cast<std::uint64_t>(world.collisionMesh.triangles.size());
+    auto it = cache.find(npcId);
+    if (it != cache.end() &&
+        it->second.geometrySignature == geometrySignature &&
+        glm::all(glm::equal(it->second.rawSpawn, rawSpawn)))
+    {
+        NpcSpawnResolution cached = it->second.resolution;
+        cached.cached = true;
+        return cached;
+    }
+    NpcSpawnResolution resolution;
+    // A respawn can run inside the fixed tick. Bound the candidate search so a
+    // bad raw spawn cannot stall gameplay for seconds; an unbounded fallback
+    // still returns the raw point when no safe candidate fits the budget.
+    resolution.safeSpawn =
+        resolveSafeStandingSpawn(world, rawSpawn, 0.60f, 2.0f, 24, 25.0);
+    resolution.rawInside = worldPointInsideSolid(world, rawSpawn);
+    resolution.safeInside = worldPointInsideSolid(world, resolution.safeSpawn);
+    cache[npcId] = CacheEntry{rawSpawn, resolution, geometrySignature};
+    return resolution;
+}
 
 static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& npcs,
                                NpcSystem& npcSystem,
@@ -510,8 +581,9 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
         if (!alreadySimulated)
         {
             const glm::vec3 rawSpawn = kv.second.pos;
-            const glm::vec3 safeSpawn = resolveSafeStandingSpawn(
-                world, rawSpawn, 0.60f, 2.0f);
+            const NpcSpawnResolution resolved =
+                resolveNpcSpawnCached(world, kv.first, rawSpawn);
+            const glm::vec3& safeSpawn = resolved.safeSpawn;
             npcSystem.spawnNpc(kv.first, kv.second.difficulty, safeSpawn);
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::NpcMovement, StructuredLevel::Important,
@@ -523,8 +595,9 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                     {"mode", serverGamemodeState().matchMode},
                     {"raw", {rawSpawn.x, rawSpawn.y, rawSpawn.z}},
                     {"safe", {safeSpawn.x, safeSpawn.y, safeSpawn.z}},
-                    {"raw_inside_solid", worldPointInsideSolid(world, rawSpawn)},
-                    {"safe_inside_solid", worldPointInsideSolid(world, safeSpawn)},
+                    {"raw_inside_solid", resolved.rawInside},
+                    {"safe_inside_solid", resolved.safeInside},
+                    {"cached", resolved.cached},
                     {"corrected_m", glm::length(safeSpawn - rawSpawn)}},
                 __FILE__, __LINE__, __FUNCTION__);
         }
@@ -762,7 +835,9 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
 static void respawnServerNpc(Npc& npc, const World& world)
 {
     const glm::vec3 rawSpawn = effectiveServerSpawn(npc.body.respawnPosition);
-    const glm::vec3 spawnPos = resolveSafeStandingSpawn(world, rawSpawn, 0.60f, 2.0f);
+    const NpcSpawnResolution resolved =
+        resolveNpcSpawnCached(world, npc.id, rawSpawn);
+    const glm::vec3& spawnPos = resolved.safeSpawn;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::NpcMovement, StructuredLevel::Important,
         "npc.spawn.resolved", std::to_string(npc.id),
@@ -773,8 +848,9 @@ static void respawnServerNpc(Npc& npc, const World& world)
             {"mode", serverGamemodeState().matchMode},
             {"raw", {rawSpawn.x, rawSpawn.y, rawSpawn.z}},
             {"safe", {spawnPos.x, spawnPos.y, spawnPos.z}},
-            {"raw_inside_solid", worldPointInsideSolid(world, rawSpawn)},
-            {"safe_inside_solid", worldPointInsideSolid(world, spawnPos)},
+            {"raw_inside_solid", resolved.rawInside},
+            {"safe_inside_solid", resolved.safeInside},
+            {"cached", resolved.cached},
             {"corrected_m", glm::length(spawnPos - rawSpawn)}},
         __FILE__, __LINE__, __FUNCTION__);
     npc.body.pos = spawnPos;
@@ -2801,6 +2877,13 @@ void simulateSharedNpcs(SOCKET sock,
                                      candidate.body.pos.z}}},
                             __FILE__, __LINE__, __FUNCTION__);
                     }
+                }
+                else
+                {
+                    // The actor is flagged stuck but the root is clear. Without
+                    // a cooldown this deep check repeated every tick and was a
+                    // dominant fixed-tick cost; recheck at 0.5 s intervals.
+                    recoveryCooldownTick[candidate.id] = tick + 30u;
                 }
                 // At most one deep inside-solid check per server tick.
                 break;

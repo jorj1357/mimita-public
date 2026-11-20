@@ -159,6 +159,8 @@ Coordinate rules:
    * So if ur looking up, u dont walk up/down, u just keep walking forward. U only move along x/y , horizontal axis, using the walk 
 * W means horizontal camera forward.
 * S means horizontal camera backward.
+* Up Arrow is an alternate forward input, equivalent to W.
+* Down Arrow is an alternate backward input, equivalent to S.
 * A means camera-relative left.
 * D means camera-relative right.
 * Diagonal input is normalized before applying normal movement or dash direction.

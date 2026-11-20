@@ -565,6 +565,7 @@ std::vector<RecoveryContact> collectBodyWeaponContacts(
     const std::vector<BodyWeaponSphere>& spheres
 );
 std::vector<glm::vec3> collectPlayerBodyCollisionSamples(Player& p);
+void collectPlayerBodyCollisionSamples(Player& p, std::vector<glm::vec3>& out);
 
 // Body collision from each part's real mesh triangles (triangle-vs-triangle
 // against the world). This is "what you see is what the hitbox is": the collider

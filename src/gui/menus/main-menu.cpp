@@ -128,7 +128,7 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
     AccountPanelAction account = drawAccountPanel(win);
 
     // Buttons from layout (positions/sizes/colors editable in main-menu.json)
-    const char* btnIds[] = {"playButton", "settingsButton", "replaysButton", "avatarButton", "helpButton", "enterSignInCodeButton", "exitButton", nullptr};
+    const char* btnIds[] = {"playButton", "createButton", "myCreationsButton", "settingsButton", "replaysButton", "avatarButton", "helpButton", "enterSignInCodeButton", "exitButton", nullptr};
     float sX = (float)fbW / 1920.0f;
     float sY = (float)fbH / 1080.0f;
     for (int i = 0; btnIds[i]; ++i)
@@ -148,6 +148,8 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
 
         printf("[MAIN MENU] %s pressed\n", elem->id.c_str());
         if (elem->id == "playButton") r.goPlay = true;
+        else if (elem->id == "createButton") r.goCreate = true;
+        else if (elem->id == "myCreationsButton") r.goMyCreations = true;
         else if (elem->id == "settingsButton") r.goSettings = true;
         else if (elem->id == "replaysButton") r.goReplays = true;
         else if (elem->id == "avatarButton") r.goAvatarCreator = true;

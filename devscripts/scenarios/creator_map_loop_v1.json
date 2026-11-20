@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "creator_map_loop_v1",
+  "description": "Creator slice 1: create a blank project, load it into the live world, edit a block and a monster volume, save, play test, and return to the editor in one process.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "funworld3",
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "steps": [
+    {"id": "create", "command": "mapeditor_create", "args": ["creator_slice1_probe", "slice1 probe"], "delay_ms_after": 2500},
+    {"id": "add_block", "command": "mapeditor", "args": ["add", "block", "probe_block"], "delay_ms_after": 500},
+    {"id": "move_block", "command": "mapeditor", "args": ["set_position", "0", "0", "1"], "delay_ms_after": 500},
+    {"id": "add_volume", "command": "mapeditor", "args": ["add_monster_volume", "default"], "delay_ms_after": 500},
+    {"id": "save", "command": "mapeditor", "args": ["save"], "delay_ms_after": 1000},
+    {"id": "playtest", "command": "mapeditor", "args": ["playtest"], "delay_ms_after": 4000},
+    {"id": "return", "command": "mapeditor", "args": ["return"], "delay_ms_after": 2500}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "world-project.created", "where": {"project_id": "creator_slice1_probe"}},
+    {"type": "event_field_equals", "event": "map-editor.create.applied", "field": "world_loaded", "equals": true},
+    {"type": "event_field_equals", "event": "map-editor.create.applied", "field": "editor_active", "equals": true},
+    {"type": "event_present", "event": "map-editor.entity.transform.applied"},
+    {"type": "event_present", "event": "map-editor.spawn-volume.applied"},
+    {"type": "event_present", "event": "world-project.version-saved"},
+    {"type": "event_field_equals", "event": "map-editor.playtest.started", "field": "gameplay_active", "equals": true},
+    {"type": "event_field_equals", "event": "map-editor.returned", "field": "editor_active", "equals": true}
+  ],
+  "timeout_seconds": 240
+}

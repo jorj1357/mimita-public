@@ -291,7 +291,9 @@ No map coordinates are invented by this slice.
 1. Inspect `git status`/`git diff` before every overlapping edit.
 2. Confirm the single root dev-loop is online with
    `python devscripts/dev-loop.py --status` or `--ensure-running`; save the
-   source and let the dev-loop auto-build. Agents do not request builds or wait.
+   source and let the dev-loop auto-build. Request a normal or pinned build/test
+   through the root dev-loop when needed; never invoke a compiler directly or
+   start a second loop.
 3. Launch ZT through the existing dev loop (launch mode 10 or a ZT profile).
 4. Record the exact executable and `EVENTS_JSONL_PATH`.
 5. Exercise lobby intermission, countdown/freeze, roster, `zt_team`, checkpoint

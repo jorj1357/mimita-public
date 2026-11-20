@@ -19,17 +19,20 @@
 5. Compare code with the specification and record disagreements.
 6. Make the smallest correct change.
 7. Run the focused skills required by the route.
-8. For code changes, use the repository-local lane dev-loop. `agent-lane.py`
-   enforces the `.dev/agent-lanes/` root and rejects escaping paths; never run
-   `build.py`, a build request, `module-build-worker.py`, or a compiler
-   directly. Read the lane's build status and journals. Only a human may use
-   `MIMITA_BUILD_OVERRIDE=1`. See
-   `docs/specs/dev-loop/agent-lanes-build-authority.md`.
-   Agent worktrees and all generated files must remain inside the project. If a
-   lane path, temporary path, scheduler path, or cache path resolves outside
-   the checkout, stop and report the blocker.
-9. Confirm expected outputs exist and report the lane ID, build ID, PID,
-   module generation, and exact journal path.
+8. For code changes, use the shared checkout's root dev-loop. A saved compiler
+   input triggers automatic publication; agents must not invoke a build,
+   submit a build request, start another compiler/dev-loop, or wait/poll for
+   completion. Check the daemon once, continue other useful work, then inspect
+   its status/journal when evidence is needed. See
+   `docs/specs/dev-loop/agent-lanes-build-authority.md` and
+   `docs/specs/dev-loop/dev-loop.md`.
+9. Before live validation, verify that the published artifact is current for
+   the edited source generation. Launch that exact published artifact through
+   the dev-loop in the requested mode. Record artifact ID and hash, executable
+   path, source generation, run ID, server/client PIDs and build IDs, module
+   generations where relevant, and each exact `EVENTS_JSONL_PATH`. If only a
+   stale artifact is available or publication failed, mark runtime validation
+   `NOT_TESTED`; a prior executable's journal cannot prove the edit.
 10. Write exactly one changelog file immediately before completion.
 11. Report what was proven and what still needs human review.
 

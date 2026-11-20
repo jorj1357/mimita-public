@@ -43,7 +43,8 @@ static double msSince(std::chrono::steady_clock::time_point start)
         std::chrono::steady_clock::now() - start).count();
 }
 
-bool loadWorldFromGLB(World& world, const char* path)
+bool loadWorldFromGLB(World& world, const char* path,
+                      const std::string& authoredMapId)
 {
     MapLoadTiming timing;
     MapLoadMetrics metrics;
@@ -138,7 +139,9 @@ bool loadWorldFromGLB(World& world, const char* path)
     // would otherwise move the new map's nodes to the old map's coordinates.
     MapGLBAuthoredState::instance().clear(&world.mesh);
     world.authoredGLBBases.clear();
-    applyAuthoredMapGeometry(world, mapIdFromAssetPath(path ? path : ""));
+    applyAuthoredMapGeometry(
+        world, authoredMapId.empty() ? mapIdFromAssetPath(path ? path : "")
+                                     : authoredMapId);
     const auto finished = std::chrono::steady_clock::now();
     timing.world_commit = std::chrono::duration<double, std::milli>(finished - unloadStarted).count();
     timing.total = std::chrono::duration<double, std::milli>(finished - loadStarted).count();

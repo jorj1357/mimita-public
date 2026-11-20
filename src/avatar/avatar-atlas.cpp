@@ -41,7 +41,7 @@ static void fillAvatarRigExtraNodes(const AvatarRig& rig)
 #include "devtools/terminal.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
-#include "map/map_common.h"
+#include "map/map-mesh-types.h"
 #include "cosmetic-system.h"
 #include "stb_image.h"
 #include "stb_image_resize2.h"

@@ -10,11 +10,106 @@
 
 #include "debug/structured-log.h"
 #include "devtools/terminal.h"
+#include "gui/gui-main.h"
 #include "hot-reload/module-host.h"
 #include "mapeditor/map-editor.h"
+#include "mapeditor/map-editor-projects.h"
 #include "modules/api/map-editor-api.h"
 #include "terminal/terminal-state.h"
 #include "worldgen/worldgen-library.h"
+
+namespace {
+
+void launchCreatorProject(const CreatorProjectResult& result,
+                          const std::string& action = "create",
+                          bool playtest = false)
+{
+    CreatorProjectLaunch launch;
+    launch.shouldStart = true;
+    launch.action = action;
+    launch.playtest = playtest;
+    launch.projectId = result.projectId;
+    launch.mapId = result.mapId;
+    launch.title = result.title;
+    launch.workingPath = result.workingPath;
+    launch.baseMapPath = result.baseMapPath;
+    launch.initialVersion = result.initialVersion;
+    launch.manifestHash = result.manifestHash;
+    launch.floorId = result.floorId;
+    launch.spawnId = result.spawnId;
+    requestCreatorProjectLaunch(launch);
+    GAME_STATE = GAME_PLAYING;
+}
+
+void creatorCreateCommand(const std::vector<std::string>& args)
+{
+    if (args.size() < 2) {
+        Terminal::instance().addLog(
+            "[CREATOR] create <project-id> [title]");
+        return;
+    }
+    CreatorProjectResult result;
+    if (!creatorProjectCreate(args[1], args.size() >= 3 ? args[2] : args[1],
+                              result)) {
+        Terminal::instance().addLog("[CREATOR] create failed: " + result.error);
+        return;
+    }
+    launchCreatorProject(result, "create");
+    Terminal::instance().addLog("[CREATOR] created " + result.projectId +
+        " working=" + result.workingPath);
+}
+
+void creatorCloneCommand(const std::vector<std::string>& args)
+{
+    if (args.size() < 3) {
+        Terminal::instance().addLog(
+            "[CREATOR] clone <source-project-id> <project-id> [title]");
+        return;
+    }
+    CreatorProjectResult result;
+    if (!creatorProjectClone(args[1], args[2],
+                             args.size() >= 4 ? args[3] : args[2], result)) {
+        Terminal::instance().addLog("[CREATOR] clone failed: " + result.error);
+        return;
+    }
+    launchCreatorProject(result);
+    Terminal::instance().addLog("[CREATOR] cloned " + args[1] + " as " +
+                                result.projectId);
+}
+
+void creatorOpenCommand(const std::vector<std::string>& args)
+{
+    if (args.size() < 2) {
+        Terminal::instance().addLog("[CREATOR] open <project-id> [version]");
+        return;
+    }
+    CreatorProjectResult result;
+    if (!creatorProjectOpen(args[1], args.size() >= 3 ? args[2] : "",
+                            result)) {
+        Terminal::instance().addLog("[CREATOR] open failed: " + result.error);
+        return;
+    }
+    launchCreatorProject(result, "edit");
+    Terminal::instance().addLog("[CREATOR] opened " + result.projectId);
+}
+
+void creatorPlayLocalCommand(const std::vector<std::string>& args)
+{
+    if (args.size() < 2) {
+        Terminal::instance().addLog("[CREATOR] play_local <project-id>");
+        return;
+    }
+    CreatorProjectResult result;
+    if (!creatorProjectOpen(args[1], "", result)) {
+        Terminal::instance().addLog("[CREATOR] play local failed: " +
+                                    result.error);
+        return;
+    }
+    launchCreatorProject(result, "play_local", true);
+    Terminal::instance().addLog("[CREATOR] play local " + result.projectId);
+}
+
+} // namespace
 
 void registerMapEditorCommands()
 {
@@ -29,6 +124,121 @@ void registerMapEditorCommands()
                 return;
             }
             const std::string& command = args[0];
+            if (command == "create") {
+                creatorCreateCommand(args);
+                return;
+            }
+            if (command == "clone") {
+                creatorCloneCommand(args);
+                return;
+            }
+            if (command == "open") {
+                creatorOpenCommand(args);
+                return;
+            }
+            if (command == "list") {
+                creatorProjectListCommand();
+                return;
+            }
+            if (command == "play_local") {
+                creatorPlayLocalCommand(args);
+                return;
+            }
+            if (command == "snap") {
+                editor.setSnapEnabled(args.size() < 2 || args[1] != "0");
+                return;
+            }
+            if (command == "snap_grid") {
+                if (args.size() < 2) {
+                    Terminal::instance().addLog("[MAPEDIT] snap_grid <meters>");
+                    return;
+                }
+                try {
+                    editor.setSnapIncrement(std::stof(args[1]));
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid snap increment");
+                }
+                return;
+            }
+            if (command == "grid") {
+                editor.setGridVisible(args.size() < 2 || args[1] != "0");
+                return;
+            }
+            if (command == "mode") {
+                if (args.size() < 2) {
+                    Terminal::instance().addLog("[MAPEDIT] mode <static|procedural|mixed>");
+                    return;
+                }
+                editor.setMapMode(args[1]);
+                return;
+            }
+            if (command == "delete" || command == "del") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.deleteEdit();
+                return;
+            }
+            if (command == "collide" || command == "collision") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.setSelectedCollision(args.size() < 2 || args[1] != "0");
+                return;
+            }
+            if (command == "anchor") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.setSelectedAnchored(args.size() < 2 || args[1] != "0");
+                return;
+            }
+            if (command == "visible") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.setSelectedVisible(args.size() < 2 || args[1] != "0");
+                return;
+            }
+            if (command == "surface_color" || command == "block_color") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 5) {
+                    Terminal::instance().addLog("[MAPEDIT] surface_color <r> <g> <b> <a>");
+                    return;
+                }
+                try {
+                    editor.setSelectedSurfaceColor(glm::vec4(
+                        std::stof(args[1]), std::stof(args[2]),
+                        std::stof(args[3]), std::stof(args[4])));
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid color");
+                }
+                return;
+            }
+            if (command == "opacity") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 2) {
+                    Terminal::instance().addLog("[MAPEDIT] opacity <0..1>");
+                    return;
+                }
+                try {
+                    editor.setSelectedOpacity(std::stof(args[1]));
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid opacity");
+                }
+                return;
+            }
+            if (command == "playtest") {
+                editor.playTest();
+                return;
+            }
+            if (command == "return") {
+                editor.returnFromPlayTest();
+                return;
+            }
+            if (command == "add_player_spawn") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.addPlayerSpawn(args.size() >= 2 ? args[1]
+                                                       : "player_spawn");
+                return;
+            }
+            if (command == "add_monster_volume") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.addMonsterVolume(args.size() >= 2 ? args[1] : "default");
+                return;
+            }
             if (command == "1" || command == "on") {
                 editor.setActive(true);
                 return;
@@ -881,6 +1091,32 @@ void registerMapEditorCommands()
             MapEditor::instance().setFreezeWorld(args[0] != "0");
         },
         "2026-10-23",
+        CommandCategory::Editor
+    });
+
+    terminal.registerCommand({
+        "mapeditor_create",
+        "Create a native starter map project and enter the map editor",
+        "mapeditor_create <project-id> [title]",
+        [](const std::vector<std::string>& args) {
+            std::vector<std::string> forwarded{"create"};
+            forwarded.insert(forwarded.end(), args.begin(), args.end());
+            creatorCreateCommand(forwarded);
+        },
+        "2026-11-19",
+        CommandCategory::Editor
+    });
+
+    terminal.registerCommand({
+        "mapeditor_clone",
+        "Clone a native world project and enter the map editor",
+        "mapeditor_clone <source-project-id> <project-id> [title]",
+        [](const std::vector<std::string>& args) {
+            std::vector<std::string> forwarded{"clone"};
+            forwarded.insert(forwarded.end(), args.begin(), args.end());
+            creatorCloneCommand(forwarded);
+        },
+        "2026-11-19",
         CommandCategory::Editor
     });
 }

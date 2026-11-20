@@ -154,9 +154,13 @@ void validateSchema(const json& value, const json& schema,
         if (schema.contains("fields") && schema["fields"].is_object()) {
             const json& fields = schema["fields"];
             for (auto it = fields.begin(); it != fields.end(); ++it) {
-                if (!value.contains(it.key()))
-                    errors.push_back(joinPath(path, it.key()) +
-                        ": missing setting (all masterlist fields are required)");
+                if (value.contains(it.key())) continue;
+                const json& field = it.value();
+                const bool optional = field.is_object() &&
+                    field.contains("required") && field["required"].is_boolean() &&
+                    !field["required"].get<bool>();
+                if (!optional)
+                    errors.push_back(joinPath(path, it.key()) + ": missing setting");
             }
             for (auto it = value.begin(); it != value.end(); ++it) {
                 if (!fields.contains(it.key())) {
@@ -829,6 +833,8 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 optBool(f, "objective_only_round_wins", next.features.objectiveOnlyRoundWins);
             next.features.destructibleBodyParts =
                 optBool(f, "destructible_body_parts", next.features.destructibleBodyParts);
+            next.features.arcadeCollision =
+                optBool(f, "arcade_collision", next.features.arcadeCollision);
             if (f.contains("destructible_world")) {
                 if (f["destructible_world"].is_null())
                     next.features.destructibleWorld = -1;

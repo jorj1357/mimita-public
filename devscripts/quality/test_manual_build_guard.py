@@ -1,4 +1,4 @@
-"""Focused tests for the human-only manual build guard."""
+"""Focused tests for agent build-request authorization."""
 
 from __future__ import annotations
 
@@ -43,26 +43,16 @@ class ManualBuildGuardTests(unittest.TestCase):
             else:
                 os.environ["MIMITA_BUILD_OVERRIDE"] = previous
 
-    def test_daemon_authorizes_only_human_or_dashboard(self) -> None:
+    def test_daemon_authorizes_named_agents(self) -> None:
         self.assertTrue(self.dev_loop._build_request_authorized("human"))
         self.assertTrue(self.dev_loop._build_request_authorized("dashboard"))
-        self.assertFalse(self.dev_loop._build_request_authorized("ai"))
+        self.assertTrue(self.dev_loop._build_request_authorized("agent-a"))
+        self.assertTrue(self.dev_loop._build_request_authorized("ai"))
         self.assertFalse(self.dev_loop._build_request_authorized(""))
 
     def test_build_completion_never_auto_replaces_live_process(self) -> None:
         self.assertFalse(self.dev_loop._should_relaunch_after_build(False))
         self.assertTrue(self.dev_loop._should_relaunch_after_build(True))
-
-    def test_cli_refuses_manual_build_without_override(self) -> None:
-        env = {key: value for key, value in os.environ.items()
-               if key != "MIMITA_BUILD_OVERRIDE"}
-        result = subprocess.run(
-            [sys.executable, str(DEV_LOOP), "--request", "build"],
-            cwd=REPO, env=env, text=True, capture_output=True, check=False,
-        )
-        self.assertEqual(result.returncode, 3, result.stderr)
-        self.assertIn("human-only", result.stderr)
-        self.assertIn("dev-loop auto-builds", result.stderr)
 
 
 if __name__ == "__main__":

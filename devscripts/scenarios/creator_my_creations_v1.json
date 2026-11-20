@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "creator_my_creations_v1",
+  "description": "Creator My Creations: the shared project actions open a saved project for edit and launch it as a local authoritative Play Local session, then return to the editor.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "funworld3",
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "steps": [
+    {"id": "create", "command": "mapeditor_create", "args": ["creator_my_creations_probe", "my creations probe"], "delay_ms_after": 2500},
+    {"id": "leave_editor", "command": "mapeditor", "args": ["0"], "delay_ms_after": 800},
+    {"id": "edit_action", "command": "mapeditor", "args": ["open", "creator_my_creations_probe"], "delay_ms_after": 2500},
+    {"id": "play_local_action", "command": "mapeditor", "args": ["play_local", "creator_my_creations_probe"], "delay_ms_after": 5000},
+    {"id": "return", "command": "mapeditor", "args": ["return"], "delay_ms_after": 2500}
+  ],
+  "assertions": [
+    {"type": "event_field_count_at_least", "event": "creator.project.action.applied", "field": "action", "equals": "edit", "minimum": 1},
+    {"type": "event_field_count_at_least", "event": "creator.project.action.applied", "field": "action", "equals": "play_local", "minimum": 1},
+    {"type": "event_field_equals", "event": "map-editor.playtest.started", "field": "gameplay_active", "equals": true},
+    {"type": "event_field_equals", "event": "map-editor.returned", "field": "editor_active", "equals": true}
+  ],
+  "timeout_seconds": 240
+}

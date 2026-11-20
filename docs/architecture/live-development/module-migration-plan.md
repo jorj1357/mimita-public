@@ -56,6 +56,13 @@ DLL. Keep one large game DLL unless measured link time or failure isolation
 proves a split is useful. Keep explicit exceptions for bootstrap/runtime,
 platform/device, transport, third-party, and build/test code.
 
+The measured 12-36 s monolith link and 42-163 s changed-build compile wall time
+now justify evaluating a split, but not a per-file DLL design. The deferred
+latency target is a stable native kernel plus a power-first hot layer and a
+small number of coarse native modules; it is specified in
+[`../../specs/hotreload/hot-layer-latency-and-language.md`](../../specs/hotreload/hot-layer-latency-and-language.md).
+Cutover-1 remains one game DLL until that target is separately approved.
+
 ## Migration order
 
 1. **Inventory the whole game.** Account for every active game `.cpp` and

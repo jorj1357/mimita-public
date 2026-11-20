@@ -17,28 +17,73 @@ For every behavior change or investigation:
 3. Add bounded diagnostics at the existing owner using `StructuredLogger`.
    Records should include the scenario/action, tick, expected state, actual
    state, difference, and reason. Do not add a second file logger.
-4. Work in your own mode 2 lane. Do not build. Ensure the lane dev-loop is
-   running and wait for it to auto-detect and publish the edit:
+4. Use the shared checkout's root dev-loop. Agents do not create lanes, invoke
+   compilers, or start a second loop. They may request an EXE or candidate
+   game-DLL build and an isolated pinned test run through the root dev-loop.
+   A saved compiler input still triggers the automatic build.
 
    ```text
-   python devscripts/agent-lane.py ensure <lane-id>
-   python devscripts/agent-lane.py status <lane-id>
+   python devscripts/dev-loop.py --status --json
+   python devscripts/dev-loop.py --ensure-running
+   python devscripts/dev-loop.py --agent-test --profile <profile> --launch-mode <mode>
    ```
 
-   For a module-only edit, launch the lane once and let its `ModuleHost` build
-   the generation. Do not run `build.py` or a build request. Only a human may
-   use `MIMITA_BUILD_OVERRIDE=1`.
+   The agent request records the agent, task/issue, permit, build ID, and run
+   ID. One EXE build runs at a time; candidate DLL builds are bounded by PC
+   resources. Every queue wait is recorded; an avoidable or over-budget wait
+   creates a build-friction issue. Use a pinned `--build-id` /
+   `--game-generation` run when you need to test an older or candidate artifact
+   while another build is pending. For a whole-game DLL edit, queue its
+   required `build-note.py --changes ... --files ...` note before saving. For
+   module-only edits, use the documented module activation path and verify its
+   generation; do not assume a DLL build includes it.
 
-5. Launch the lane's own client/server pair. The printed `EVENTS_JSONL_PATH`
-   must be the lane-local journal for that run. Record the lane ID, build ID,
-   PID, and module generations.
+5. Before launching, verify through one dev-loop status/journal read that the
+   published artifact's source generation matches the edited source
+   generation and the build state is current. If stale, pending, building, or
+   failed, do not use its gameplay as evidence for the edit. A failed
+   generation leaves the prior artifact runnable, but that artifact is
+   explicitly stale. After current publication, launch the selected mode with
+   the root dev-loop, for example TDM mode 41:
+
+   ```text
+   python devscripts/dev-loop.py --launch-mode 41 --start-server
+   python devscripts/dev-loop.py --list-instances
+   ```
+
+   For a second player, add a client with `--start-client --server server-01`.
+   Record the immutable artifact ID/SHA-256, executable path, source
+   generation, PID, run ID, mode/map, and each instance's exact
+   `EVENTS_JSONL_PATH`. Never infer the journal path from an older run.
+   If another session must stay open, launch an isolated pair through the
+   root CLI instead of replacing the primary run:
+
+   ```text
+   python devscripts/dev-loop.py --start-test-run --test-profile tdm-validation --test-launch-mode 41
+   python devscripts/dev-loop.py --list-test-runs
+   ```
+
+   Use the returned run ID for `--run-id <id> --client client-01 --command
+   "..."`, and stop only that run with `--stop-test-run <id>`. These runs pin
+   the same published EXE and have separate manifests and per-process
+   journals; they do not build a separate executable.
 6. Run the actual game or a bounded runtime scenario using the same command,
-   input, simulation, network, and presentation owners as normal play.
-7. Inspect the lane journal live and after completion. Confirm that the changed
-   path was reached and locate the first expected/actual mismatch. Correlate
-   server and client journals only within that lane/run.
-8. Adjust only the responsible owner; the dev-loop rebuilds automatically.
-   Rerun the same scenario and evidence. For collision replay, preserve
+   input, simulation, network, and presentation owners as normal play. Use
+   `--ai-match` for a bounded AI-controlled live TDM match, or send normal
+   gameplay input to a specific client through dev-loop `--command` (for
+   example `agent.move`, `agent.aim`, or `agent.hold primary <ticks>`). Record
+   command delivery and gameplay-owner acceptance; command submission alone
+   is not proof of action.
+7. Inspect the exact client and server journals named by the run manifest,
+   live when practical and after the action. Confirm the changed path was
+   reached and locate the first expected/actual mismatch. For networked
+   outcomes, compare both sides by run, instance, actor, and tick; a client
+   prediction is not a server-confirmed hit until authoritative damage agrees.
+   A journal from a different executable, build ID, or run cannot prove this
+   change.
+8. Adjust only the responsible owner; the root dev-loop rebuilds automatically.
+   Once the matching source generation is published, launch that artifact and
+   rerun the same scenario. For collision replay, preserve
    divergence evidence through the next human bookmark, then restore the full
    checkpoint and continue; divergence alone is not a stop condition.
 
@@ -151,6 +196,11 @@ Always separate:
 - JSONL records and first divergence or success condition; and
 - human visual/multiplayer acceptance, if required.
 
+Runtime evidence is valid for the edit only when the launched server and
+client identities match the newly published artifact for the edited source
+generation. State `NOT_TESTED` when the build failed or only a stale artifact
+could be launched; never relabel an old executable's journal as a pass.
+
 ## Record and replay player input
 
 For movement, dash, edge, and weapon-collision investigations, record the real
@@ -251,3 +301,38 @@ human-versus-NPC run alone. The validation matrix must cover:
 and the configured weapon families under local and bad-connection profiles.
 Each client records its own journal. The scenario passes only when every client
 and the server agree on the authoritative outcome.
+
+## Fast agent test path
+
+Use a warm pinned runtime to make repeated proof practical:
+
+1. Build the candidate EXE or game DLL once.
+2. Start a per-agent server/client runtime pinned to that artifact and game
+   generation; keep the mode active.
+3. Run bounded scenarios and event assertions against the same runtime.
+4. Activate a newer pinned candidate at the safe point when the runtime
+   supports hot activation; otherwise use a fresh isolated run.
+5. Stop only that run or runtime when the decisive event is observed.
+
+The test tool records the exact artifact, game generation/path, run ID, agent,
+scenario, and journal. Assertions may require or forbid an event, require a
+field value, or bound a metric. A timeout means the expected event did not
+arrive; it is never a pass. `--wait-event`/`--require-event` and the existing
+scenario command surface should be the normal completion mechanism rather than
+fixed sleeps.
+
+Fast evidence is not weaker evidence: it still uses the real fixed-tick path,
+the real network path, and the exact pinned executable's journal. A build or
+unit test cannot replace it.
+
+## Evidence classes
+
+| Change | Required proof |
+|---|---|
+| Gameplay or network behavior | pinned client/server `events.jsonl` showing the expected event, fields, and absence of forbidden behavior |
+| Config/hot-reload behavior | config apply event plus the owning runtime event |
+| Build/test tooling | focused tooling test and one real run of the new path |
+| Documentation only | diff/doc check and links; no fabricated gameplay event |
+
+Build success is compilation and linking only. Human visual or feel acceptance
+is a separate claim.
