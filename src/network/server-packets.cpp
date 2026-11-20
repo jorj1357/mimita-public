@@ -2776,7 +2776,20 @@ ServerPacketProcessResult processServerPacket(
         // physical-melee batch.  Keep the old single-request format intact for
         // existing weapons, but route the fixed-size knife batch through its
         // historical validation and shared authoritative damage path.
-        if (bytes == (int)sizeof(SpyKnifeContactBatchPacket))
+        const bool meleeBatch = bytes >= (int)sizeof(SpyKnifeContactBatchPacket);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "melee.contact.batch.dispatch",
+            std::to_string(header->playerId),
+            meleeBatch ? "routed NPC damage request to melee batch"
+                       : "routed NPC damage request to legacy handler",
+            tick,
+            nlohmann::json{{"player_id", header->playerId},
+                           {"bytes", bytes},
+                           {"expected_batch_bytes",
+                            (int)sizeof(SpyKnifeContactBatchPacket)},
+                           {"melee_batch", meleeBatch}});
+        if (meleeBatch)
         {
             Debug::warn(Debug::Category::Weapons,
                 "[SPYKNIFE_NET] DISPATCH batch=1 bytes=%d player=%u serverTick=%u",

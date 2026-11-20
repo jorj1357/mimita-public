@@ -91,6 +91,54 @@ def resolve_game_dll(generation: int = 0, dll: str = "") -> Path | None:
     return path if path.is_file() else None
 
 
+def resolve_pointer(agent: str, cohort: str = "") -> tuple[int, Path | None]:
+    names = []
+    if agent:
+        names.append(("agents", agent))
+    if cohort:
+        names.append(("cohorts", cohort))
+    for group, name in names:
+        path = ROOT / "build" / "game" / group / name / "current.json"
+        value = read_json(path)
+        generation = int(value.get("generation") or 0)
+        dll = str(value.get("dll_path") or "")
+        if generation > 0 and dll:
+            candidate = Path(dll)
+            if not candidate.is_absolute():
+                candidate = ROOT / candidate
+            if candidate.is_file():
+                return generation, candidate
+    return 0, None
+
+
+def register_runtime(state: dict) -> None:
+    try:
+        sys.path.insert(0, str(ROOT))
+        from devscripts.agent_coord import CoordStore
+        store = CoordStore(publish_docs=False)
+        try:
+            store.runtime_register(
+                str(state.get("agent") or "agent-runtime"),
+                str(state.get("runtime_id") or ""),
+                cohort=str(state.get("cohort") or ""),
+                issue_id=str(state.get("issue") or ""),
+                generation=int(state.get("game_generation") or 0),
+                dll_path=str(state.get("game_dll") or ""),
+                dll_sha256=str(state.get("game_dll_sha256") or ""),
+                run_id=str(state.get("run_id") or ""),
+                server_pid=int(state.get("pid") or 0),
+                client_pids=[int(state.get("client_pid") or 0)]
+                if state.get("client_pid") else [],
+                server_journal=str(state.get("journal") or ""),
+                client_journals=[str(state.get("client_journal") or "")]
+                if state.get("client_journal") else [],
+                state="running" if int(state.get("pid") or 0) else "starting")
+        finally:
+            store.close()
+    except Exception:
+        pass
+
+
 def dll_identity(path: Path | None) -> dict:
     if path is None:
         return {}
@@ -180,6 +228,12 @@ def start(args: argparse.Namespace) -> int:
     profile = load_profile(args.profile)
     launch_mode = load_launch_mode(args.launch_mode)
     exe = resolve_executable()
+    if args.pointer:
+        pointer_generation, pointer_dll = resolve_pointer(
+            args.agent, args.cohort)
+        if pointer_generation <= 0 or pointer_dll is None:
+            raise SystemExit("current agent/cohort DLL pointer was not found")
+        args.game_generation = pointer_generation
     dll = resolve_game_dll(args.game_generation, args.dll)
     if dll is None:
         raise SystemExit("requested game DLL was not found")
@@ -203,6 +257,8 @@ def start(args: argparse.Namespace) -> int:
         "executable": str(exe),
         "game_dll": str(dll),
         "agent": args.agent,
+        "cohort": args.cohort,
+        "issue": args.issue,
         **dll_identity(dll),
         "started_utc": utc_now(),
     }
@@ -286,6 +342,18 @@ def stop(args: argparse.Namespace) -> int:
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(target)],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        sys.path.insert(0, str(ROOT))
+        from devscripts.agent_coord import CoordStore
+        store = CoordStore(publish_docs=False)
+        try:
+            store.runtime_update(
+                str(state.get("agent") or "agent-runtime"),
+                str(args.runtime_id), "stopped")
+        finally:
+            store.close()
+    except Exception:
+        pass
     state_path.unlink(missing_ok=True)
     print(f"runtime={args.runtime_id} pid={pid} stopped")
     return 0
@@ -334,6 +402,12 @@ def main(argv: list[str] | None = None) -> int:
     start_p.add_argument("--ready-timeout", type=float, default=45.0)
     start_p.add_argument("--agent", default="",
                          help="agent/cohort tag for this runtime")
+    start_p.add_argument("--cohort", default="",
+                         help="cohort tag for this runtime")
+    start_p.add_argument("--issue", default="",
+                         help="issue linked to this runtime")
+    start_p.add_argument("--pointer", action="store_true",
+                         help="resolve the agent/cohort current pointer")
     start_p.add_argument("--game-generation", type=int, default=0,
                          help="pin a game DLL generation")
     start_p.add_argument("--dll", default="",
@@ -353,5 +427,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-

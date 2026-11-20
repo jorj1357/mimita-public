@@ -7,6 +7,7 @@ import ctypes
 import json
 import os
 import queue
+import re
 import threading
 import time
 from collections import deque
@@ -152,6 +153,24 @@ def _utc_now_iso() -> str:
         "+00:00", "Z")
 
 
+def _age_text(value: str) -> str:
+    try:
+        then = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        seconds = max(0, int((datetime.now(timezone.utc) - then).total_seconds()))
+    except (TypeError, ValueError):
+        return "unknown"
+    if seconds < 60:
+        return f"{seconds}s ago"
+    if seconds < 3600:
+        return f"{seconds // 60}m ago"
+    return f"{seconds // 3600}h ago"
+
+
+def _short_text(value: object, limit: int = 160) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
     """Read the root dev-loop's live whole-game DLL progress and identity."""
     if not checkout:
@@ -165,9 +184,15 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
         except (OSError, json.JSONDecodeError):
             return {}
 
-    progress = read_json(root / "build" / "game" / "progress.json")
+    progress_path = root / "build" / "game" / "progress.json"
+    progress = read_json(progress_path)
     current = read_json(root / "build" / "game" / "current.json")
+    state_data = read_json(root / ".dev" / "state.json")
     change_report = read_json(root / "build" / "hot-reload" / "change-report.json")
+    try:
+        progress_age_s = max(0.0, time.time() - progress_path.stat().st_mtime)
+    except OSError:
+        progress_age_s = None
     pending_notes = []
     for path in sorted((root / ".dev" / "build-notes" / "pending").glob("*.json"))[-8:]:
         note = read_json(path)
@@ -178,35 +203,65 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
                 "Waiting for root dev-loop game build",
                 {"pending_notes": pending_notes})
 
-    phase = str(progress.get("phase") or progress.get("status") or "unknown").upper()
+    progress_status = str(progress.get("status") or "").lower()
+    phase = str(progress.get("phase") or progress_status or "unknown").upper()
+    scan_phase = str(progress.get("scan_phase") or "").lower()
+    active = progress_status in ("preparing", "running")
     elapsed = progress.get("elapsed_s", progress.get("total_s"))
     elapsed_text = f"{float(elapsed):.1f}s elapsed" if isinstance(elapsed, (int, float)) else "elapsed unavailable"
     revision = str(progress.get("revision") or "—")
     current_revision = str(current.get("revision") or "")
     source_count = int(progress.get("total") or 0)
     completed = int(progress.get("completed") or 0)
+    scan_parsed = int(progress.get("scan_parsed") or 0)
+    scan_total = int(progress.get("scan_total") or 0)
+    progress_age_text = ("unknown" if progress_age_s is None
+                         else f"{progress_age_s:.0f}s")
+    if not active:
+        health = "FAILED" if progress_status == "failed" else "PUBLISHED"
+    elif progress_age_s is not None and progress_age_s >= 120:
+        health = "NO PROGRESS " + progress_age_text
+    elif progress_age_s is not None and progress_age_s >= 30:
+        health = "SLOW " + progress_age_text
+    else:
+        health = "LIVE"
     if (current_revision == revision and current.get("source_count") is not None
-            and str(progress.get("status") or "").lower() not in ("preparing", "running")):
+            and not active):
         source_count = int(current.get("source_count") or source_count)
         completed = max(completed, source_count)
     percent = min(100, round(completed * 100 / source_count)) if source_count > 0 else None
-    if progress.get("no_op") or str(progress.get("status") or "").lower() == "no_op":
+    if progress.get("no_op") or progress_status == "no_op":
         headline = f"Game DLL: NO-OP · published generation reused  ·  {elapsed_text}"
-    elif str(progress.get("phase") or "").lower() == "compile" and percent is not None:
-        headline = f"Game DLL: COMPILE {completed}/{source_count} ({percent}%)  ·  {elapsed_text}"
+    elif scan_phase == "dependency_prepass":
+        parsed_text = f"{scan_parsed}/{scan_total}" if scan_total else str(scan_parsed)
+        headline = (f"Game DLL: DEPENDENCY PREPASS {parsed_text}  ·  "
+                    f"{health}  ·  {elapsed_text}")
+    elif active and percent is not None:
+        headline = f"Game DLL: {phase} {completed}/{source_count} ({percent}%)  ·  {health}"
     else:
-        headline = f"Game DLL: {phase}  ·  {elapsed_text}"
+        headline = f"Game DLL: {phase}  ·  {health}  ·  {elapsed_text}"
 
-    details = [f"revision {revision[:12]}"]
+    details = [
+        f"live: {health} · last progress {progress_age_text} ago",
+        f"source gen {progress.get('source_generation') or state_data.get('source_generation') or '—'}"
+        f" · published gen {current.get('generation') or '—'}",
+        f"revision {revision[:12]}",
+    ]
     if isinstance(progress.get("worker_elapsed_s"), (int, float)):
         details.append(f"worker elapsed {float(progress['worker_elapsed_s']):.3f}s")
-    active = progress.get("active_sources")
-    if isinstance(active, list) and active:
-        details.append("compiling: " + ", ".join(str(item) for item in active[:3]))
+    active_sources = progress.get("active_sources")
+    if isinstance(active_sources, list) and active_sources:
+        details.append("compiling: " + ", ".join(str(item) for item in active_sources[:3]))
+    elif progress.get("scan_current"):
+        details.append("prepass current: " + str(progress["scan_current"]))
     elif progress.get("current"):
         details.append("current: " + str(progress["current"]))
     if progress.get("compiled") is not None or progress.get("skipped") is not None:
         details.append(f"CXX {int(progress.get('compiled') or 0)}  ·  SKIP {int(progress.get('skipped') or 0)}")
+    if scan_phase == "dependency_prepass":
+        details.append(
+            f"dependency prepass {scan_parsed}/{scan_total or '?'} sourced files"
+            f"  ·  {float(progress.get('scan_prepass_elapsed_s') or 0):.1f}s")
     if isinstance(progress.get("object_scan_s"), (int, float)):
         scan_detail = f"scan {float(progress['object_scan_s']):.3f}s"
         if isinstance(progress.get("scan_unique_dependencies"), int):
@@ -246,6 +301,10 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
     progress["latest_change_report"] = change_report
     progress["published_generation"] = current.get("generation")
     progress["pending_notes"] = pending_notes
+    progress["build_health"] = health
+    progress["progress_age_s"] = progress_age_s
+    progress["source_generation"] = (
+        progress.get("source_generation") or state_data.get("source_generation"))
     return headline, "\n".join(details), progress
 
 
@@ -259,8 +318,19 @@ def _game_dll_queue_view(model: dict, progress: dict) -> tuple[str, str, str, fl
         "preparing", "running") else 0
     queue_summary = f"{active} active DLL build  ·  {queued} queued generation"
     generation = progress.get("generation") or game_build.get("generation")
+    health = str(progress.get("build_health") or "").upper()
+    scan_phase = str(progress.get("scan_phase") or "").lower()
+    progress_age = progress.get("progress_age_s")
+    age_text = (f"{float(progress_age):.0f}s" if isinstance(progress_age, (int, float))
+                else "unknown")
     if active:
         job_title = f"BUILDING game-g{generation}.dll" if generation else "BUILDING game DLL · selecting generation"
+        if scan_phase == "dependency_prepass":
+            job_title += "  ·  DEPENDENCY PREPASS"
+        if health.startswith("NO PROGRESS"):
+            job_title += f"  ·  NO PROGRESS {age_text}"
+        elif health.startswith("SLOW"):
+            job_title += f"  ·  SLOW {age_text}"
     elif queued:
         job_title = "QUEUED · edits coalesce into the next game DLL generation"
     elif daemon_status == "failed" or progress_status == "failed":
@@ -273,12 +343,22 @@ def _game_dll_queue_view(model: dict, progress: dict) -> tuple[str, str, str, fl
     phase = str(progress.get("phase") or daemon_status or "idle").replace("_", " ").upper()
     elapsed = progress.get("elapsed_s")
     elapsed_text = f"{float(elapsed):.1f}s elapsed" if isinstance(elapsed, (int, float)) else "elapsed unavailable"
-    updated = str(progress.get("updated_utc") or model.get("updated_at") or "unknown")
-    stamp = f"as of {updated}  ·  phase {phase}  ·  {elapsed_text}"
+    updated = str(progress.get("last_progress_utc")
+                  or progress.get("updated_utc")
+                  or model.get("updated_at") or "unknown")
+    stamp = (f"as of {updated}  ·  progress age {age_text}  ·  "
+             f"health {health or 'UNKNOWN'}  ·  phase {phase}")
     total = int(progress.get("total") or 0)
     completed = int(progress.get("completed") or 0)
+    scan_parsed = int(progress.get("scan_parsed") or 0)
+    scan_total = int(progress.get("scan_total") or 0)
     ratio = None
-    if active and total > 0 and phase in ("OBJECT CACHE SCAN", "COMPILE"):
+    if active and scan_phase == "dependency_prepass":
+        ratio = (min(1.0, max(0.0, scan_parsed / scan_total))
+                 if scan_total else None)
+        text = (f"DEPENDENCY PREPASS  ·  {scan_parsed}/{scan_total or '?'} depfiles"
+                f"  ·  no completion percentage until object checks")
+    elif active and total > 0 and phase in ("OBJECT CACHE SCAN", "COMPILE"):
         ratio = min(1.0, max(0.0, completed / total))
         text = f"{phase}  ·  {completed}/{total} source units  ·  {round(ratio * 100)}%"
     elif active:
@@ -312,12 +392,16 @@ def run(status_provider: Callable[[], dict],
 
     font_library = _private_font()
     family = "MingLiU" if font_library else "Courier New"
+    saved_ui_state = _load_ui_state()
+    saved_geometry = str(saved_ui_state.get("geometry") or "")
+    if not re.fullmatch(r"\d+x\d+[+-]\d+[+-]\d+", saved_geometry):
+        saved_geometry = "880x760"
     root = tk.Tk()
     root.title(title)
     root.overrideredirect(True)
     root.resizable(True, True)
     root.minsize(MIN_WIDTH, MIN_HEIGHT)
-    root.geometry("880x760")
+    root.geometry(saved_geometry)
     root.configure(background=BLACK)
 
     state = {
@@ -326,6 +410,8 @@ def run(status_provider: Callable[[], dict],
         "hue_started": time.monotonic(),
         "maximized": False,
         "restore_geometry": None,
+        "window_geometry": saved_geometry,
+        "geometry_save_after": None,
         "drag": None,
         "resize": None,
         "compact": None,
@@ -369,8 +455,37 @@ def run(status_provider: Callable[[], dict],
         "dashboard_refresh_monotonic": 0.0,
         "dashboard_refresh_utc": "",
         "dashboard_refresh_count": 0,
-        "collapsed": dict(_load_ui_state().get("collapsed", {}) or {}),
+        "collapsed": dict(saved_ui_state.get("collapsed", {}) or {}),
+        "coordination_store": None,
+        "coordination_error": "",
+        "coordination_snapshot": {},
+        "coordination_send_status": "",
+        "coordination_recipient": "all",
+        "scroll_canvases": [],
     }
+
+    def persist_window_geometry() -> None:
+        state["geometry_save_after"] = None
+        if state["maximized"]:
+            return
+        geometry = root.geometry()
+        if not re.fullmatch(r"\d+x\d+[+-]\d+[+-]\d+", geometry):
+            return
+        state["window_geometry"] = geometry
+        _save_ui_state({"collapsed": state["collapsed"], "geometry": geometry})
+
+    def queue_geometry_save(event) -> None:
+        if event.widget is not root or state["maximized"]:
+            return
+        pending = state.get("geometry_save_after")
+        if pending:
+            try:
+                root.after_cancel(pending)
+            except tk.TclError:
+                pass
+        state["geometry_save_after"] = root.after(400, persist_window_geometry)
+
+    root.bind("<Configure>", queue_geometry_save, add="+")
 
     def control_worker() -> None:
         """Send dashboard control requests without blocking Tk's frame loop."""
@@ -397,7 +512,7 @@ def run(status_provider: Callable[[], dict],
                         highlightbackground=RED, highlightcolor=RED,
                         padx=padx, pady=pady, **kwargs)
 
-    def label(parent, text="", *, size=9, bold=False, color=RED, **kwargs):
+    def label(parent, text="", *, size=11, bold=False, color=RED, **kwargs):
         weight = "bold" if bold else "normal"
         return tk.Label(parent, text=text, bg=BLACK, fg=color,
                         font=(family, size, weight), anchor="w",
@@ -437,7 +552,7 @@ def run(status_provider: Callable[[], dict],
         header.grid(row=0, column=0, sticky="ew")
         header.grid_columnconfigure(0, weight=1)
         tk.Label(header, text=title_text, bg=BLACK, fg=RED,
-                 font=(family, 9, "bold"), anchor="w").grid(
+                 font=(family, 10, "bold"), anchor="w").grid(
             row=0, column=0, sticky="w")
         toggle_holder = {}
 
@@ -456,7 +571,8 @@ def run(status_provider: Callable[[], dict],
         def on_toggle():
             is_open[0] = not is_open[0]
             collapsed[key] = not is_open[0]
-            _save_ui_state({"collapsed": collapsed})
+            _save_ui_state({"collapsed": collapsed,
+                            "geometry": state["window_geometry"]})
             apply_state()
 
         body = tk.Frame(container, bg=BLACK)
@@ -464,7 +580,7 @@ def run(status_provider: Callable[[], dict],
         toggle = tk.Button(header, text="[-]", command=on_toggle, bg=BLACK, fg=RED,
                            activebackground="#330000", activeforeground=WHITE,
                            relief="flat", bd=0, highlightthickness=0,
-                           font=(family, 10, "bold"), padx=2, pady=0, takefocus=True)
+                           font=(family, 11, "bold"), padx=2, pady=0, takefocus=True)
         toggle.grid(row=0, column=1, sticky="e")
         toggle_holder["button"] = toggle
         apply_state()
@@ -520,7 +636,7 @@ def run(status_provider: Callable[[], dict],
                         highlightthickness=0, bd=0)
     titlebar.grid(row=0, column=0, sticky="ew")
     titlebar.grid_columnconfigure(0, weight=1)
-    app_title = label(titlebar, title, size=9, bold=True)
+    app_title = label(titlebar, title, size=10, bold=True)
     app_title.grid(row=0, column=0, sticky="w", padx=(8, 4), pady=3)
 
     content = tk.Frame(shell, bg=BLACK, padx=7, pady=5)
@@ -571,6 +687,13 @@ def run(status_provider: Callable[[], dict],
         maximize_button.configure(text="❐")
 
     def close_view():
+        persist_window_geometry()
+        pending = state.get("geometry_save_after")
+        if pending:
+            try:
+                root.after_cancel(pending)
+            except tk.TclError:
+                pass
         root.destroy()
 
     button(caption_buttons, "_", minimize, width=2).pack(side="left", padx=1)
@@ -654,9 +777,9 @@ def run(status_provider: Callable[[], dict],
         edge.bind("<ButtonRelease-1>", finish_resize)
 
     # The red labels remain fixed; only emphasized live values cycle hue.
-    heading = label(content, "MiMITA DEV LOOP", size=9, bold=True)
+    heading = label(content, "MiMITA DEV LOOP", size=10, bold=True)
     heading.grid(row=0, column=0, sticky="w", pady=(0, 4))
-    subtitle = label(content, "Connecting to the build/runtime service…", size=10)
+    subtitle = label(content, "Connecting to the build/runtime service…", size=11)
     subtitle.grid(row=1, column=0, sticky="ew", pady=(0, 4))
 
     body_shell = tk.Frame(content, bg=BLACK)
@@ -678,16 +801,65 @@ def run(status_provider: Callable[[], dict],
         scrollregion=body_canvas.bbox("all")))
     body_canvas.bind("<Configure>", lambda event: body_canvas.itemconfigure(
         body_window, width=event.width))
+    wheel_remainder = {"pixels": 0.0, "units": 0.0}
+
     def scroll_body(event):
-        left, top = body_canvas.winfo_rootx(), body_canvas.winfo_rooty()
-        right = left + body_canvas.winfo_width()
-        bottom = top + body_canvas.winfo_height()
-        if left <= event.x_root < right and top <= event.y_root < bottom:
-            body_canvas.yview_scroll(int(-event.delta / 120), "units")
+        widget = root.winfo_containing(event.x_root, event.y_root)
+        if widget is None:
+            return None
+        target = widget
+        while target is not None and target.winfo_class() != "Text":
+            target = getattr(target, "master", None)
+        delta = float(event.delta or 0)
+        if target is not None:
+            wheel_remainder["units"] += -delta / 120.0
+            amount = int(wheel_remainder["units"])
+            if amount:
+                wheel_remainder["units"] -= amount
+                target.yview_scroll(amount, "units")
             return "break"
-        return None
+        target = next((canvas for canvas in state["scroll_canvases"]
+                       if canvas.winfo_rootx() <= event.x_root
+                       < canvas.winfo_rootx() + canvas.winfo_width()
+                       and canvas.winfo_rooty() <= event.y_root
+                       < canvas.winfo_rooty() + canvas.winfo_height()), None)
+        if target is None:
+            return None
+        wheel_remainder["pixels"] += -delta * 0.25
+        pixels = int(wheel_remainder["pixels"])
+        if pixels:
+            wheel_remainder["pixels"] -= pixels
+            try:
+                _left, top, _right, bottom = target.bbox("all")
+                scroll_height = max(1, bottom - top - target.winfo_height())
+                first = target.yview()[0]
+                target.yview_moveto(max(0.0, min(1.0,
+                                                 first + pixels / scroll_height)))
+            except (TypeError, tk.TclError):
+                pass
+        return "break"
 
     body_canvas.bind_all("<MouseWheel>", scroll_body)
+
+    def set_text_content(widget, value: str, cache_key: str) -> None:
+        """Update a text view only when its contents change, retaining its viewport."""
+        if state.get(cache_key) == value:
+            return
+        first, last = widget.yview()
+        was_at_bottom = last >= 0.999
+        state[cache_key] = value
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        if value:
+            widget.insert("1.0", value)
+        widget.configure(state="disabled")
+
+        def restore():
+            try:
+                widget.yview_moveto(1.0 if was_at_bottom else first)
+            except tk.TclError:
+                pass
+        root.after_idle(restore)
 
     cards_host = collapsible_section(body, 0, "BUILD", "build")
     cards = tk.Frame(cards_host, bg=BLACK)
@@ -698,11 +870,11 @@ def run(status_provider: Callable[[], dict],
     def make_card(title_text: str):
         card = frame(cards, padx=5, pady=3)
         card.grid_columnconfigure(0, weight=1)
-        label(card, title_text.upper(), size=9, bold=True).grid(
+        label(card, title_text.upper(), size=10, bold=True).grid(
             row=0, column=0, sticky="w")
-        value = label(card, "—", size=11, bold=True, wraplength=500)
+        value = label(card, "—", size=12, bold=True, wraplength=500)
         value.grid(row=1, column=0, sticky="ew", pady=(2, 0))
-        detail = label(card, "", size=9, wraplength=500)
+        detail = label(card, "", size=10, wraplength=500)
         detail.grid(row=2, column=0, sticky="ew")
         detail.full_text = ""
         detail.short_text = ""
@@ -711,10 +883,10 @@ def run(status_provider: Callable[[], dict],
     running_card, running_value, running_detail = make_card("Running build")
     latest_card, latest_value, latest_detail = make_card("Latest published")
     activity_card, phase_value, phase_detail = make_card("Build activity")
-    game_build_value = label(activity_card, "Game DLL: —", size=9, bold=True,
+    game_build_value = label(activity_card, "Game DLL: —", size=10, bold=True,
                              wraplength=500)
     game_build_value.grid(row=3, column=0, sticky="ew", pady=(4, 0))
-    game_build_detail = label(activity_card, "", size=8, wraplength=500)
+    game_build_detail = label(activity_card, "", size=9, wraplength=500)
     game_build_detail.grid(row=4, column=0, sticky="ew")
 
     queue_host = collapsible_section(body, 1, "WHOLE-GAME DLL BUILD QUEUE", "queue")
@@ -722,12 +894,12 @@ def run(status_provider: Callable[[], dict],
     game_queue_card.grid(row=0, column=0, sticky="ew")
     game_queue_card.grid_columnconfigure(0, weight=1)
     game_queue_title = label(game_queue_card,
-                             "Queue detail", size=10, bold=True)
+                             "Queue detail", size=11, bold=True)
     game_queue_title.grid(row=0, column=0, sticky="w")
     game_queue_summary = label(game_queue_card, "Checking build queue…",
-                               size=11, bold=True)
+                               size=12, bold=True)
     game_queue_summary.grid(row=1, column=0, sticky="ew", pady=(2, 0))
-    game_queue_time = label(game_queue_card, "", size=8)
+    game_queue_time = label(game_queue_card, "", size=9)
     game_queue_time.grid(row=2, column=0, sticky="ew")
     game_queue_bar = tk.Canvas(game_queue_card, height=18, background="#180000",
                                highlightthickness=1, highlightbackground=RED, bd=0)
@@ -735,7 +907,7 @@ def run(status_provider: Callable[[], dict],
     game_queue_rows = tk.Text(
         game_queue_card, height=12, wrap="word", bg=BLACK, fg=WHITE,
         insertbackground=WHITE, relief="flat", bd=0, highlightthickness=0,
-        font=(family, 9), state="disabled", padx=3, pady=2)
+        font=(family, 10), state="disabled", padx=3, pady=2)
     game_queue_rows.grid(row=4, column=0, sticky="ew")
     game_queue_scroll = tk.Scrollbar(
         game_queue_card, orient="vertical", command=game_queue_rows.yview,
@@ -750,7 +922,7 @@ def run(status_provider: Callable[[], dict],
     checkout_card = frame(checkout_host, padx=5, pady=3)
     checkout_card.grid(row=0, column=0, sticky="ew")
     checkout_card.grid_columnconfigure(0, weight=1)
-    label(checkout_card, "Checkout detail", size=9, bold=True).grid(
+    label(checkout_card, "Checkout detail", size=10, bold=True).grid(
         row=0, column=0, sticky="w")
     checkout_canvas = tk.Canvas(checkout_card, height=126, background=BLACK,
                                 highlightthickness=0, bd=0)
@@ -776,10 +948,10 @@ def run(status_provider: Callable[[], dict],
     process_card.grid(row=0, column=0, sticky="ew")
     process_card.grid_columnconfigure(0, weight=1)
     process_card.grid_columnconfigure(1, weight=0)
-    label(process_card, "Process detail", size=9, bold=True).grid(
+    label(process_card, "Process detail", size=10, bold=True).grid(
         row=0, column=0, sticky="w")
     process_summary = label(process_card, "Checking for running MiMITA processes…",
-                            size=9, wraplength=700)
+                            size=10, wraplength=700)
     process_summary.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(1, 2))
     process_canvas = tk.Canvas(process_card, height=190, background=BLACK,
                                highlightthickness=0, bd=0)
@@ -806,7 +978,7 @@ def run(status_provider: Callable[[], dict],
     runtimes_card = frame(runtimes_host, padx=5, pady=3)
     runtimes_card.grid(row=0, column=0, sticky="ew")
     runtimes_card.grid_columnconfigure(0, weight=1)
-    runtimes_summary = label(runtimes_card, "No independent runtimes.", size=9)
+    runtimes_summary = label(runtimes_card, "No independent runtimes.", size=10)
     runtimes_summary.grid(row=0, column=0, sticky="w")
     runtimes_rows = tk.Frame(runtimes_card, bg=BLACK)
     runtimes_rows.grid(row=1, column=0, sticky="ew")
@@ -844,7 +1016,7 @@ def run(status_provider: Callable[[], dict],
                   f"map={row.get('map')} "
                   f"server={'alive' if alive else 'dead'} "
                   f"client={'alive' if client_alive else 'dead'} "
-                  f"port={row.get('port') or '-'}", size=8).grid(
+                  f"port={row.get('port') or '-'}", size=9).grid(
                 row=0, column=0, sticky="w")
             button(line, "Stop",
                    lambda rid=runtime_id: send("stop-runtime", runtime_id=rid),
@@ -852,6 +1024,256 @@ def run(status_provider: Callable[[], dict],
             button(line, "Reload",
                    lambda rid=runtime_id: send("reload-runtime", runtime_id=rid),
                    width=7).grid(row=0, column=2, padx=(4, 0))
+
+    coordination_host = collapsible_section(
+        body, 5, "COORDINATION", "coordination")
+    coordination_card = frame(coordination_host, padx=5, pady=3)
+    coordination_card.grid(row=0, column=0, sticky="ew")
+    coordination_card.grid_columnconfigure(0, weight=1)
+    coordination_summary = label(
+        coordination_card, "Checking agent coordination…", size=10, bold=True)
+    coordination_summary.grid(row=0, column=0, sticky="w")
+    coordination_focus = label(coordination_card, "", size=9, color=WHITE)
+    coordination_focus.grid(row=1, column=0, sticky="w", pady=(0, 3))
+
+    agent_canvas = tk.Canvas(coordination_card, height=120, background=BLACK,
+                             highlightthickness=0, bd=0)
+    agent_canvas.grid(row=2, column=0, sticky="ew")
+    agent_scroll = tk.Scrollbar(
+        coordination_card, orient="vertical", command=agent_canvas.yview,
+        bg=BLACK, troughcolor=BLACK, activebackground=RED,
+        highlightbackground=RED, bd=1)
+    agent_scroll.grid(row=2, column=1, sticky="ns")
+    agent_canvas.configure(yscrollcommand=agent_scroll.set)
+    agent_rows_frame = tk.Frame(agent_canvas, bg=BLACK)
+    agent_rows_window = agent_canvas.create_window(
+        (0, 0), window=agent_rows_frame, anchor="nw")
+    agent_rows_frame.bind(
+        "<Configure>", lambda _event: agent_canvas.configure(
+            scrollregion=agent_canvas.bbox("all")))
+    agent_canvas.bind(
+        "<Configure>", lambda event: agent_canvas.itemconfigure(
+            agent_rows_window, width=event.width))
+
+    label(coordination_card, "RECENT MESSAGES", size=9, bold=True).grid(
+        row=3, column=0, sticky="w", pady=(3, 1))
+    coordination_messages = tk.Text(
+        coordination_card, height=8, wrap="word", bg=BLACK, fg=WHITE,
+        insertbackground=WHITE, relief="flat", bd=0, highlightthickness=0,
+        font=(family, 9), state="disabled", padx=3, pady=2)
+    coordination_messages.grid(row=4, column=0, sticky="ew")
+    coordination_messages_scroll = tk.Scrollbar(
+        coordination_card, orient="vertical", command=coordination_messages.yview,
+        bg=BLACK, troughcolor=BLACK, activebackground=RED,
+        highlightbackground=RED, bd=1)
+    coordination_messages_scroll.grid(row=4, column=1, sticky="ns")
+    coordination_messages.configure(
+        yscrollcommand=coordination_messages_scroll.set)
+
+    label(coordination_card, "OPEN ISSUES", size=9, bold=True).grid(
+        row=5, column=0, sticky="w", pady=(3, 1))
+    coordination_issues = tk.Text(
+        coordination_card, height=5, wrap="word", bg=BLACK, fg=RED,
+        insertbackground=RED, relief="flat", bd=0, highlightthickness=0,
+        font=(family, 9), state="disabled", padx=3, pady=2)
+    coordination_issues.grid(row=6, column=0, sticky="ew")
+    coordination_issues_scroll = tk.Scrollbar(
+        coordination_card, orient="vertical", command=coordination_issues.yview,
+        bg=BLACK, troughcolor=BLACK, activebackground=RED,
+        highlightbackground=RED, bd=1)
+    coordination_issues_scroll.grid(row=6, column=1, sticky="ns")
+    coordination_issues.configure(
+        yscrollcommand=coordination_issues_scroll.set)
+    state["scroll_canvases"] = [
+        body_canvas, checkout_canvas, process_canvas, agent_canvas]
+
+    composer = tk.Frame(coordination_card, bg=BLACK)
+    composer.grid(row=7, column=0, sticky="ew", pady=(4, 0))
+    composer.grid_columnconfigure(1, weight=1)
+    label(composer, "TO", size=9, bold=True).grid(row=0, column=0, sticky="w")
+    recipient_var = tk.StringVar(value="all")
+    recipient_menu = tk.OptionMenu(composer, recipient_var, "all")
+    recipient_menu.configure(
+        bg=BLACK, fg=RED, activebackground="#330000", activeforeground=WHITE,
+        highlightthickness=1, highlightbackground=RED, relief="flat",
+        font=(family, 10), width=18)
+    recipient_menu["menu"].configure(
+        bg=BLACK, fg=RED, activebackground="#330000",
+        activeforeground=WHITE, font=(family, 10))
+    recipient_menu.grid(row=0, column=1, sticky="w", padx=(4, 8))
+    subject_entry = tk.Entry(
+        composer, bg=BLACK, fg=WHITE, insertbackground=WHITE,
+        highlightthickness=1, highlightbackground=RED, relief="flat",
+        font=(family, 10))
+    subject_entry.grid(row=0, column=2, sticky="ew", padx=(0, 4))
+    composer.grid_columnconfigure(2, weight=1)
+    message_entry = tk.Text(
+        composer, height=3, wrap="word", bg=BLACK, fg=WHITE,
+        insertbackground=WHITE, highlightthickness=1, highlightbackground=RED,
+        relief="flat", font=(family, 10), padx=3, pady=2)
+    message_entry.grid(row=1, column=0, columnspan=3, sticky="ew",
+                       pady=(4, 2))
+    composer_footer = tk.Frame(composer, bg=BLACK)
+    composer_footer.grid(row=2, column=0, columnspan=3, sticky="ew")
+    composer_footer.grid_columnconfigure(0, weight=1)
+    coordination_send_status = label(composer_footer, "", size=9, color=GREEN)
+    coordination_send_status.grid(row=0, column=0, sticky="w")
+
+    def coordination_store():
+        if state["coordination_store"] is not None:
+            return state["coordination_store"]
+        try:
+            from devscripts.agent_coord import CoordStore
+            state["coordination_store"] = CoordStore(publish_docs=False)
+        except Exception as error:  # noqa: BLE001 - dashboard must stay usable
+            state["coordination_error"] = str(error)
+        return state["coordination_store"]
+
+    def send_coordination_message():
+        store = coordination_store()
+        if store is None:
+            coordination_send_status.configure(
+                text="Coordination unavailable: " + state["coordination_error"],
+                fg=RED)
+            return
+        recipient = recipient_var.get().strip() or "all"
+        subject = subject_entry.get().strip()
+        body = message_entry.get("1.0", "end").strip()
+        if not body:
+            coordination_send_status.configure(
+                text="Message body is empty", fg=RED)
+            return
+        try:
+            result = store.send_human(recipient, subject, body)
+        except Exception as error:  # noqa: BLE001 - show the human the reason
+            coordination_send_status.configure(text=str(error), fg=RED)
+            return
+        coordination_send_status.configure(
+            text=f"Sent to {result['recipient']} · {result['message']}", fg=GREEN)
+        subject_entry.delete(0, "end")
+        message_entry.delete("1.0", "end")
+        render_coordination()
+
+    send_button = button(composer_footer, "Send", send_coordination_message,
+                         width=8)
+    send_button.grid(row=0, column=1, sticky="e")
+
+    def render_coordination() -> None:
+        store = coordination_store()
+        if store is None:
+            coordination_summary.configure(
+                text="Coordination unavailable: " + state["coordination_error"],
+                fg=RED)
+            coordination_focus.configure(text="")
+            return
+        try:
+            snapshot = store.coordination_snapshot(limit_messages=80)
+        except Exception as error:  # noqa: BLE001 - dashboard must stay usable
+            coordination_summary.configure(
+                text="Coordination unavailable: " + str(error), fg=RED)
+            return
+        snapshot_signature = dict(snapshot)
+        snapshot_signature.pop("generated_utc", None)
+        if snapshot_signature == state.get("coordination_snapshot_signature"):
+            return
+        agent_scroll_position = agent_canvas.yview()[0]
+        state["coordination_snapshot"] = snapshot
+        state["coordination_snapshot_signature"] = snapshot_signature
+        state["coordination_error"] = ""
+        agents = list(snapshot.get("agents") or [])
+        issues = list(snapshot.get("issues") or [])
+        leases = list(snapshot.get("leases") or [])
+        active = [item for item in agents if item.get("status") == "active"]
+        coordination_summary.configure(
+            text=(f"{len(active)} active · {len(issues)} open issue(s) · "
+                  f"{len(leases)} lease(s) · {snapshot.get('unread', 0)} unread"),
+            fg=GREEN if active else RED)
+        focus = snapshot.get("focus") or {}
+        if focus:
+            coordination_focus.configure(
+                text=f"FOCUS {focus.get('id')} · {focus.get('state')} · "
+                     f"{focus.get('priority')} · {_short_text(focus.get('title'))}")
+        else:
+            coordination_focus.configure(text="FOCUS none · no open issue")
+
+        names = ["all"] + [str(item.get("agent")) for item in agents
+                           if item.get("agent")]
+        current = recipient_var.get()
+        if current not in names:
+            recipient_var.set("all")
+        menu = recipient_menu["menu"]
+        menu.delete(0, "end")
+        for name in names:
+            menu.add_command(label=name,
+                             command=lambda value=name: recipient_var.set(value))
+
+        for child in agent_rows_frame.winfo_children():
+            child.destroy()
+        for item in agents:
+            activity = item.get("activity") or {}
+            status = str(item.get("status") or "unknown")
+            color = (GREEN if status == "active" else
+                     "#ffcc00" if status == "stale" else "#888888")
+            agent_name = str(item.get("agent") or "?")
+            task = _short_text(item.get("task") or activity.get("activity"), 120)
+            issue = _short_text(activity.get("issue_id") or "", 80)
+            phase = _short_text(activity.get("phase") or "", 80)
+            paths = activity.get("paths") or ""
+            try:
+                parsed_paths = json.loads(paths) if isinstance(paths, str) else paths
+                paths_text = ", ".join(str(path) for path in (parsed_paths or [])[:3])
+            except (TypeError, json.JSONDecodeError):
+                paths_text = str(paths)
+            detail = " · ".join(part for part in (
+                f"issue {issue}" if issue else "",
+                f"phase {phase}" if phase else "",
+                f"paths {paths_text}" if paths_text else "",
+                f"build {activity.get('build_id')}" if activity.get("build_id") else "",
+                f"run {activity.get('run_id')}" if activity.get("run_id") else "",
+                f"blocker {activity.get('blocker')}" if activity.get("blocker") else "",
+                f"wait {activity.get('wait_reason')}" if activity.get("wait_reason") else "",
+                f"next {activity.get('next_step')}" if activity.get("next_step") else "",
+            ) if part)
+            row = tk.Frame(agent_rows_frame, bg=BLACK)
+            row.grid(sticky="ew", pady=1)
+            row.grid_columnconfigure(0, weight=1)
+            label(row, f"{agent_name}  {status.upper()}  "
+                       f"{_age_text(item.get('last_seen_utc'))}",
+                  size=9, bold=True, color=color).grid(row=0, column=0, sticky="w")
+            label(row, task, size=9, color=WHITE).grid(row=1, column=0, sticky="w")
+            if detail:
+                label(row, detail, size=8, color=color, wraplength=760).grid(
+                    row=2, column=0, sticky="w")
+
+        message_lines = []
+        for item in snapshot.get("messages") or []:
+            created = str(item.get("created_utc") or "")
+            stamp = created[11:19] if len(created) >= 19 else created
+            sender = str(item.get("sender") or "?")
+            recipient = str(item.get("recipient") or "?")
+            kind = str(item.get("kind") or "message")
+            unread = " *" if not item.get("read_at") else ""
+            header = f"{stamp} {sender} → {recipient} [{kind}]{unread}"
+            subject = str(item.get("subject") or "")
+            body = str(item.get("body") or "")
+            message_lines.append(header)
+            if subject:
+                message_lines.append(f"  {subject}")
+            if body:
+                message_lines.append("  " + body)
+            message_lines.append("")
+        set_text_content(coordination_messages, "\n".join(message_lines),
+                         "coordination_messages_text")
+
+        issue_lines = []
+        for item in issues:
+            issue_lines.extend((
+                f"{item.get('id')} {item.get('state')} {item.get('kind')} "
+                f"{item.get('priority')} owner={item.get('owner') or '-'}",
+                f"  {item.get('title') or item.get('summary') or ''}"))
+        set_text_content(coordination_issues, "\n".join(issue_lines),
+                         "coordination_issues_text")
+        root.after_idle(lambda: agent_canvas.yview_moveto(agent_scroll_position))
 
     process_buttons = tk.Frame(content, bg=BLACK)
     process_buttons.grid(row=3, column=0, sticky="ew", pady=(3, 0))
@@ -867,10 +1289,10 @@ def run(status_provider: Callable[[], dict],
     details.grid(row=0, column=0, sticky="ew")
     details.grid_columnconfigure(0, weight=1)
     label(details, "FOLLOWING LATEST",
-          size=9, bold=True).pack(anchor="w", pady=(0, 2))
-    refresh_indicator = label(details, "", size=8, color=GREEN)
+          size=10, bold=True).pack(anchor="w", pady=(0, 2))
+    refresh_indicator = label(details, "", size=9, color=GREEN)
     refresh_indicator.pack(anchor="w", pady=(0, 1))
-    source_summary = label(details, "", size=8, color=RED, wraplength=460)
+    source_summary = label(details, "", size=9, color=RED, wraplength=460)
     source_summary.pack(anchor="w", pady=(0, 2))
     output_frame = tk.Frame(details, bg=BLACK)
     output_frame.pack(fill="both", expand=True)
@@ -881,7 +1303,7 @@ def run(status_provider: Callable[[], dict],
                      background=BLACK, foreground=RED, insertbackground=RED,
                      selectbackground="#660000", selectforeground=WHITE,
                      relief="flat", bd=0, highlightthickness=0,
-                     font=(family, 10), padx=1, pady=1)
+                     font=(family, 11), padx=1, pady=1)
     output.pack(side="left", fill="both", expand=True)
     output_scroll = tk.Scrollbar(output_frame, orient="vertical", command=output.yview,
                                  bg=BLACK, troughcolor=BLACK, activebackground=RED,
@@ -900,7 +1322,7 @@ def run(status_provider: Callable[[], dict],
                 index = output.index(f"@1,{y}")
                 line_number = int(index.split(".", 1)[0])
                 gutter.create_text(25, y, text=f"{line_number:02d}", anchor="ne",
-                                   fill=RED, font=(family, 10))
+                                   fill=RED, font=(family, 11))
                 y += line_height
         except (tk.TclError, ValueError):
             pass
@@ -908,7 +1330,7 @@ def run(status_provider: Callable[[], dict],
     output.configure(yscrollcommand=update_gutter)
     output.bind("<Configure>", lambda _event: update_gutter())
 
-    action_status = label(content, "Ready", size=9)
+    action_status = label(content, "Ready", size=10)
     action_status.grid(row=5, column=0, sticky="ew", pady=(3, 1))
     if state.get("window_registration_error"):
         action_status.configure(text=state["window_registration_error"])
@@ -956,9 +1378,9 @@ def run(status_provider: Callable[[], dict],
             if widgets is None:
                 row_frame = tk.Frame(checkout_rows_frame, bg=BLACK)
                 row_frame.grid_columnconfigure(1, weight=1)
-                name = label(row_frame, size=9, bold=True)
+                name = label(row_frame, size=10, bold=True)
                 name.grid(row=0, column=0, sticky="w", padx=(2, 10))
-                detail = label(row_frame, size=9)
+                detail = label(row_frame, size=10)
                 detail.grid(row=0, column=1, sticky="ew")
                 action_frame = tk.Frame(row_frame, bg=BLACK)
                 action_frame.grid(row=0, column=2, sticky="e", padx=(6, 2))
@@ -1064,7 +1486,7 @@ def run(status_provider: Callable[[], dict],
     options_button.grid(row=0, column=2, sticky="ew", padx=(3, 0))
     options_menu = tk.Menu(root, tearoff=False, bg=BLACK, fg=RED,
                            activebackground="#330000", activeforeground=WHITE,
-                           bd=1, relief="raised", font=(family, 9))
+                           bd=1, relief="raised", font=(family, 10))
     options_menu.add_command(label="Toggle game visibility", command=lambda: send("toggle-visibility"))
     options_menu.add_command(label="Toggle auto-restart", command=lambda: send("toggle-auto-restart"))
     options_menu.add_separator()
@@ -1081,7 +1503,7 @@ def run(status_provider: Callable[[], dict],
         popup.grid_columnconfigure(0, weight=1)
         popup.grid_rowconfigure(1, weight=1)
 
-        label(popup, "SELECT LAUNCH MODE", size=9, bold=True).grid(
+        label(popup, "SELECT LAUNCH MODE", size=10, bold=True).grid(
             row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
         list_frame = tk.Frame(popup, bg=BLACK)
         list_frame.grid(row=1, column=0, sticky="nsew", padx=8, pady=4)
@@ -1092,7 +1514,7 @@ def run(status_provider: Callable[[], dict],
             selectforeground=WHITE, activestyle="none", selectmode="browse",
             exportselection=False, relief="flat", bd=0, highlightthickness=1,
             highlightbackground=RED, highlightcolor=RED,
-            font=(family, 9), height=14)
+            font=(family, 10), height=14)
         scrollbar = tk.Scrollbar(
             list_frame, orient="vertical", command=mode_list.yview,
             bg=BLACK, troughcolor=BLACK, activebackground=RED,
@@ -1378,7 +1800,7 @@ def run(status_provider: Callable[[], dict],
                     process_rows_frame, text=text, variable=variable, anchor="w",
                     bg=BLACK, fg=RED, activebackground=BLACK, activeforeground=WHITE,
                     selectcolor=BLACK, disabledforeground="#660000", relief="flat",
-                    bd=0, highlightthickness=0, font=(family, 10),
+                    bd=0, highlightthickness=0, font=(family, 11),
                     command=lambda process_key=key:
                     state.__setitem__("selected_process_key", process_key))
                 state["process_rows"][key] = {"variable": variable, "widget": widget}
@@ -1391,7 +1813,7 @@ def run(status_provider: Callable[[], dict],
             empty_text = ("Process scan unavailable" if state.get("process_scan_error")
                           else "0 running MiMITA processes found")
             if not state.get("process_empty_label"):
-                state["process_empty_label"] = label(process_rows_frame, empty_text, size=9)
+                state["process_empty_label"] = label(process_rows_frame, empty_text, size=10)
             else:
                 state["process_empty_label"].configure(text=empty_text)
             state["process_empty_label"].grid(row=0, column=0, sticky="w")
@@ -1405,7 +1827,8 @@ def run(status_provider: Callable[[], dict],
         game_build_detail.configure(text=game_detail)
         summary, job_title, stamp, ratio = _game_dll_queue_view(model, progress)
         game_queue_summary.configure(text=summary)
-        job_color = RED if "FAILED" in job_title else (GREEN if "IDLE" in job_title else WHITE)
+        job_color = RED if ("FAILED" in job_title or "NO PROGRESS" in job_title) else (
+            "#ffcc00" if "SLOW" in job_title else (GREEN if "IDLE" in job_title else WHITE))
         game_queue_title.configure(text=job_title, fg=job_color)
         game_queue_time.configure(text=stamp)
 
@@ -1419,7 +1842,7 @@ def run(status_provider: Callable[[], dict],
                                             height - 2, fill=RED, outline="")
         phase_text = stamp.split("\n")[-1]
         game_queue_bar.create_text(width // 2, height // 2, text=phase_text,
-                                   fill=WHITE, font=(family, 8, "bold"))
+                                   fill=WHITE, font=(family, 9, "bold"))
 
         lines = []
         attempt = str(progress.get("build_attempt_id") or "")
@@ -1428,6 +1851,13 @@ def run(status_provider: Callable[[], dict],
         source_generation = progress.get("source_generation")
         if source_generation is not None:
             lines.append(f"source generation {source_generation}")
+        health = str(progress.get("build_health") or "UNKNOWN")
+        age_value = progress.get("progress_age_s")
+        age_text = (f"{float(age_value):.0f}s"
+                    if isinstance(age_value, (int, float)) else "unknown")
+        lines.append(f"live health {health}  ·  progress age {age_text}")
+        if progress.get("published_generation") is not None:
+            lines.append(f"published generation {progress.get('published_generation')}")
         revision = str(progress.get("revision") or "")
         if revision:
             lines.append(f"source revision {revision}")
@@ -1542,10 +1972,8 @@ def run(status_provider: Callable[[], dict],
             lines.extend(["No active game DLL build.",
                           "Agents can annotate the next build with:",
                           "python devscripts/build-note.py --changes \"short explanation\""])
-        game_queue_rows.configure(state="normal")
-        game_queue_rows.delete("1.0", "end")
-        game_queue_rows.insert("1.0", "\n".join(lines))
-        game_queue_rows.configure(state="disabled")
+        set_text_content(game_queue_rows, "\n".join(lines),
+                         "game_queue_rows_text")
 
     def apply_control_results() -> None:
         while True:
@@ -1588,6 +2016,7 @@ def run(status_provider: Callable[[], dict],
     def refresh() -> None:
         apply_control_results()
         if not state["frozen"]:
+            dashboard_scroll_position = body_canvas.yview()[0]
             try:
                 apply_process_scan_result()
                 model = status_provider() or {}
@@ -1597,6 +2026,7 @@ def run(status_provider: Callable[[], dict],
                 state["latest_model"] = model
                 render_checkout_rows(model)
                 render_runtimes(model)
+                render_coordination()
                 request_process_scan()
                 modes = _configured_launch_modes()
                 modes_changed = modes != state["launch_modes"]
@@ -1842,11 +2272,7 @@ def run(status_provider: Callable[[], dict],
                 lines = build_lines + list(state["live_output"]) + activity_lines
                 if not lines:
                     lines = ["Waiting for build or contributor activity…"]
-                output.configure(state="normal")
-                output.delete("1.0", "end")
-                output.insert("1.0", "\n".join(lines))
-                output.configure(state="disabled")
-                output.yview_moveto(1.0)
+                set_text_content(output, "\n".join(lines), "output_text")
                 update_gutter()
                 last_control = (pending_state.get("last_control")
                                 if pending_checkout_id != "main" else model.get("last_control")) or {}
@@ -1865,6 +2291,8 @@ def run(status_provider: Callable[[], dict],
                                                  f"{last_control.get('status')}"
                                                  + (f" · {result_text}" if result_text else ""))
                     state["pending_request_id"] = ""
+                root.after_idle(lambda: body_canvas.yview_moveto(
+                    dashboard_scroll_position))
             except Exception as error:
                 action_status.configure(text=f"Status refresh failed: {error}")
         if state["after_id"] is not None:
@@ -1893,11 +2321,11 @@ def run(status_provider: Callable[[], dict],
 
     mode_map = tk.Frame(runtime_card, bg=BLACK)
     mode_map.grid(row=3, column=0, sticky="ew")
-    label(mode_map, "Mode:", size=9).grid(row=0, column=0, sticky="w")
-    mode_value = label(mode_map, "—", size=9, bold=True)
+    label(mode_map, "Mode:", size=10).grid(row=0, column=0, sticky="w")
+    mode_value = label(mode_map, "—", size=10, bold=True)
     mode_value.grid(row=0, column=1, sticky="w", padx=(3, 12))
-    label(mode_map, "Map:", size=9).grid(row=0, column=2, sticky="w")
-    map_value = label(mode_map, "—", size=9, bold=True)
+    label(mode_map, "Map:", size=10).grid(row=0, column=2, sticky="w")
+    map_value = label(mode_map, "—", size=10, bold=True)
     map_value.grid(row=0, column=3, sticky="w", padx=(3, 0))
 
     root.bind("<Configure>", reflow, add="+")
@@ -1921,6 +2349,13 @@ def run(status_provider: Callable[[], dict],
                     root.after_cancel(state[key])
                 except tk.TclError:
                     pass
+        coordination_store_value = state.get("coordination_store")
+        if coordination_store_value is not None:
+            try:
+                coordination_store_value.close()
+            except Exception:  # noqa: BLE001 - view shutdown must not raise
+                pass
+            state["coordination_store"] = None
         if font_library:
             try:
                 font_library.RemoveFontResourceExW.argtypes = [ctypes.c_wchar_p,

@@ -150,7 +150,8 @@ def _pinned_game_identity(generation: int) -> dict:
         "game_dll": str(path.resolve()),
         "game_dll_sha256": digest,
         "source_validation": {"result": "pinned_candidate_generation",
-                              "pinned": True},
+                              "pinned": True,
+                              "pinned_game_generation": number},
     }
 
 
@@ -496,7 +497,10 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
         if _wait_event(layout.server_journal, "module.host.started", server.pid, 30.0) is None:
             raise RuntimeError("test server did not report module.host.started")
         expected_generation = int(game_identity.get("generation") or 0)
-        if expected_generation and _wait_event(
+        pinned_game = bool(
+            (game_identity.get("source_validation") or {}).get(
+                "pinned_game_generation"))
+        if expected_generation and not pinned_game and _wait_event(
                 layout.server_journal, "performance.server-phase-budget", server.pid,
                 30.0, field="policy_generation", value=expected_generation) is None:
             raise RuntimeError(
@@ -562,13 +566,18 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
         if active is None:
             raise RuntimeError(f"test client {client.pid} did not observe active mode")
         generation = int(game_identity.get("generation") or 0)
-        current_game = _read_json(GAME_CURRENT)
-        ready_game = _read_json(GAME_READY)
-        if (current_game.get("generation") != generation or
-                ready_game.get("generation") != generation or
-                current_game.get("code_hash") != game_identity.get("code_hash") or
-                ready_game.get("code_hash") != game_identity.get("code_hash")):
-            raise RuntimeError("gameplay DLL changed while the isolated run was starting")
+        pinned_game = bool(
+            (game_identity.get("source_validation") or {}).get(
+                "pinned_game_generation"))
+        if not pinned_game:
+            current_game = _read_json(GAME_CURRENT)
+            ready_game = _read_json(GAME_READY)
+            if (current_game.get("generation") != generation or
+                    ready_game.get("generation") != generation or
+                    current_game.get("code_hash") != game_identity.get("code_hash") or
+                    ready_game.get("code_hash") != game_identity.get("code_hash")):
+                raise RuntimeError(
+                    "gameplay DLL changed while the isolated run was starting")
         client_info["state"] = "online"
         client_info["active_mode_tick"] = active.get("tick")
         _write_instance_record(layout, manifest, "client-01", client_info)

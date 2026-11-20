@@ -94,6 +94,7 @@ WATCH_LOG_PATH = DEV_ROOT / "dev-loop-watch.log"
 DASHBOARD_LOCK_PATH = DEV_ROOT / "dev-loop-dashboard.lock"
 DASHBOARD_START_LOCK_PATH = DEV_ROOT / "dev-loop-dashboard-start.lock"
 DASHBOARD_LOG_PATH = DEV_ROOT / "dev-loop-dashboard.log"
+DASHBOARD_POLICY_PATH = DEV_ROOT / "dashboard-policy.json"
 DAEMON_LOG_PATH = DEV_ROOT / "dev-loop-console.log"
 DAEMON_READY_TIMEOUT_SECONDS = 60.0
 DAEMON_READY_STATUS_TIMEOUT_SECONDS = 8.0
@@ -1280,6 +1281,7 @@ class DevLoop:
         self.pending_game_build_request_ids: list[str] = []
         self.active_game_build_request_ids: list[str] = []
         self.game_build_requests: dict[str, str] = {}
+        self.game_build_request_meta: dict[str, dict] = {}
         self.game_build_status = "idle"
         self.game_build_detail = ""
         self.game_build_started_utc: str | None = None
@@ -2537,13 +2539,18 @@ class DevLoop:
                 if self.active_build_generation is None:
                     self.build_status = "pending"
 
-    def queue_game_dll_request(self, request_id: str) -> bool:
+    def queue_game_dll_request(self, request_id: str,
+                               metadata: dict | None = None) -> bool:
         request_id = request_id or f"game-dll-{uuid.uuid4().hex[:12]}"
         with self.lock:
             if request_id not in self.pending_game_build_request_ids:
                 self.pending_game_build_request_ids.append(request_id)
             self.game_build_requests[request_id] = "queued"
             self.game_build_requests = dict(list(self.game_build_requests.items())[-32:])
+            if metadata:
+                self.game_build_request_meta[request_id] = dict(metadata)
+                self.game_build_request_meta = dict(
+                    list(self.game_build_request_meta.items())[-32:])
         return True
 
     def _record_game_build_output(self, line: str) -> None:
@@ -2611,13 +2618,34 @@ class DevLoop:
     def _run_game_build_worker(self, request_ids: list[str],
                                source_generation: int) -> None:
         started = time.monotonic()
+        metadata = {}
         try:
+            with self.lock:
+                for request_id in request_ids:
+                    value = self.game_build_request_meta.get(request_id)
+                    if value:
+                        metadata[request_id] = dict(value)
             result = run_game_build_worker(
                 ROOT, request_ids, self.pending_build_mode, source_generation,
                 on_output=self._record_game_build_output)
         except Exception as error:  # noqa: BLE001 - report through dev-loop state
             result = {"success": False, "error": str(error), "request_ids": request_ids}
         result["duration_seconds"] = time.monotonic() - started
+        for request_id, meta in metadata.items():
+            if not meta.get("request_id"):
+                continue
+            brain = {"request_id": request_id, **meta}
+            if result.get("success"):
+                _publish_agent_pointers(result, meta)
+                _coord_build_update(
+                    brain, "published",
+                    generation=int(result.get("generation") or 0),
+                    dll_path=str(result.get("dll") or ""),
+                    dll_sha256=str(result.get("code_hash") or ""))
+            else:
+                _coord_build_update(
+                    brain, "failed",
+                    wait_reason=str(result.get("error") or "build failed"))
         self.game_build_completions.put(result)
 
     def drain_game_build_completions(self) -> None:
@@ -2752,6 +2780,45 @@ class DevLoop:
                 self.last_message = "build request queued through dev-loop"
                 self.record_control_event(request, "accepted", self.last_message)
                 self.save_state("build_queued")
+            elif action == "agent-build":
+                build_request_id = str(request.get("build_request") or "").strip()
+                brain = _coord_build_request(build_request_id)
+                if not brain:
+                    self.last_message = "agent-build rejected: unknown build request"
+                    self.record_control_event(request, "rejected", self.last_message)
+                    self.save_state("request_rejected")
+                    continue
+                if str(brain.get("status")) != "approved":
+                    self.last_message = (
+                        f"agent-build rejected: request status is "
+                        f"{brain.get('status') or 'missing'}")
+                    self.record_control_event(request, "rejected", self.last_message)
+                    self.save_state("request_rejected")
+                    continue
+                if str(brain.get("kind") or "integration") != "integration":
+                    self.last_message = (
+                        "agent-build rejected: preview overlay builder is not "
+                        "implemented yet")
+                    _coord_build_update(brain, "rejected",
+                                        wait_reason=self.last_message)
+                    self.record_control_event(request, "rejected", self.last_message)
+                    self.save_state("request_rejected")
+                    continue
+                metadata = {
+                    "request_id": build_request_id,
+                    "agent": str(brain.get("agent") or ""),
+                    "cohort": str(brain.get("cohort") or ""),
+                    "issue_id": str(brain.get("issue_id") or ""),
+                    "kind": "integration",
+                    "base_generation": int(brain.get("base_generation") or 0),
+                }
+                self.queue_game_dll_request(build_request_id, metadata)
+                _coord_build_update(brain, "building")
+                self.start_game_build_worker()
+                self.last_message = (
+                    f"agent build {build_request_id} queued through dev-loop")
+                self.record_control_event(request, "accepted", self.last_message)
+                self.save_state("game_build_queued")
             elif action == "game-dll":
                 self.queue_game_dll_request(request_id)
                 self.start_game_build_worker()
@@ -5968,6 +6035,49 @@ def start_dashboard_detached(profile: str, launch_mode, visibility: str) -> int:
         _release_file_lock(start_lock)
 
 
+def dashboard_policy() -> dict:
+    try:
+        value = json.loads(DASHBOARD_POLICY_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        value = {}
+    if not isinstance(value, dict):
+        value = {}
+    return {
+        "required": bool(value.get("required", True)),
+        "path": str(DASHBOARD_POLICY_PATH),
+    }
+
+
+def set_dashboard_required(required: bool) -> dict:
+    payload = {
+        "required": bool(required),
+        "updated_utc": datetime.datetime.now(
+            datetime.timezone.utc).isoformat(
+                timespec="milliseconds").replace("+00:00", "Z"),
+    }
+    DASHBOARD_POLICY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temporary = DASHBOARD_POLICY_PATH.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, indent=2) + "\n",
+                         encoding="utf-8", newline="\n")
+    os.replace(temporary, DASHBOARD_POLICY_PATH)
+    return {"required": payload["required"],
+            "path": str(DASHBOARD_POLICY_PATH)}
+
+
+def ensure_dashboard(profile: str, launch_mode, visibility: str) -> int:
+    try:
+        if ROOT.resolve() != COORDINATOR_ROOT.resolve():
+            return 0
+    except OSError:
+        return 0
+    if not dashboard_policy()["required"]:
+        return 0
+    existing = dashboard_pid()
+    if existing:
+        return existing
+    return start_dashboard_detached(profile, launch_mode, visibility)
+
+
 def _acquire_file_lock(path: Path):
     """Acquire a non-blocking OS lock on a repository-local file."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -6065,9 +6175,11 @@ def ensure_running(profile: str, launch_mode, visibility: str,
             started = start_daemon_detached(profile, launch_mode, visibility)
             events.append({"action": "daemon_start", "pid": started, "ok": bool(started)})
         current = wait_for_daemon_ready(DAEMON_READY_TIMEOUT_SECONDS)
-    if open_dashboard and not dashboard_pid():
-        started = start_dashboard_detached(profile, launch_mode, visibility)
-        events.append({"action": "dashboard_start", "pid": started, "ok": bool(started)})
+    if open_dashboard:
+        started = ensure_dashboard(profile, launch_mode, visibility)
+        if started:
+            events.append({"action": "dashboard_ensure", "pid": started,
+                           "ok": True})
     return current, events
 
 
@@ -6836,6 +6948,66 @@ def _run_coord_request(args: argparse.Namespace) -> int | None:
         return error.code
 
 
+def _coord_store():
+    from devscripts.agent_coord import CoordStore
+    return CoordStore(publish_docs=False)
+
+
+def _coord_build_request(request_id: str) -> dict:
+    try:
+        store = _coord_store()
+        try:
+            row = store.conn.execute(
+                "SELECT * FROM build_requests WHERE request_id=?",
+                (request_id,)).fetchone()
+            return dict(row) if row else {}
+        finally:
+            store.close()
+    except Exception:
+        return {}
+
+
+def _coord_build_update(request: dict, status: str, **fields) -> None:
+    try:
+        store = _coord_store()
+        try:
+            store.build_update(
+                str(request.get("agent") or "dev-loop"),
+                str(request.get("request_id") or ""), status, **fields)
+        finally:
+            store.close()
+    except Exception:
+        pass
+
+
+def _publish_agent_pointers(result: dict, metadata: dict) -> None:
+    generation = int(result.get("generation") or 0)
+    dll = str(result.get("dll") or "")
+    if generation <= 0 or not dll:
+        return
+    pointer = {
+        "generation": generation,
+        "dll_path": dll,
+        "dll_sha256": str(result.get("code_hash") or ""),
+        "snapshot_revision": str(result.get("snapshot_revision")
+                                or result.get("revision") or ""),
+        "base_generation": int(metadata.get("base_generation") or 0),
+        "build_request_id": str(metadata.get("request_id") or ""),
+        "issue_id": str(metadata.get("issue_id") or ""),
+        "kind": str(metadata.get("kind") or "integration"),
+        "created_utc": utc_now(),
+    }
+    names = []
+    if metadata.get("agent"):
+        names.append(("agents", str(metadata["agent"])))
+    if metadata.get("cohort"):
+        names.append(("cohorts", str(metadata["cohort"])))
+    for group, name in names:
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("._-") or "agent"
+        write_json(ROOT / "build" / "game" / group / safe / "current.json",
+                   pointer)
+
+
 def _print_read_only_status(current: dict, as_json: bool,
                             coord: bool = True) -> None:
     brief = {}
@@ -7096,7 +7268,7 @@ def run_control_client(args: argparse.Namespace) -> int:
         # not spawn a second Python/Terminal window.
         current, ensure_events = ensure_running(
             args.profile, args.launch_mode, visibility,
-            open_dashboard=False)
+            open_dashboard=True)
         for event in ensure_events:
             print(f"[DEV CONTROL] recovery action={event.get('action')} "
                   f"pid={event.get('pid')} ok={event.get('ok')}")
@@ -7141,6 +7313,11 @@ def run_control_client(args: argparse.Namespace) -> int:
         request["hot_client"] = True
     if action == "build":
         request["build_mode"] = args.build_mode
+    if action == "agent-build":
+        request["build_request"] = getattr(args, "build_request", "") or ""
+        request["requested_by"] = (
+            getattr(args, "coord_agent", "") or
+            os.environ.get("MIMITA_AGENT_ID", "") or "ai").strip() or "ai"
     if action == "stop":
         # A CLI stop is an explicit shutdown; the watchdog must honor it.
         request["explicit_stop"] = True
@@ -7223,6 +7400,27 @@ def main() -> int:
     coord_result = _run_coord_request(args)
     if coord_result is not None:
         return coord_result
+
+    if getattr(args, "dashboard_policy", ""):
+        if args.dashboard_policy == "status":
+            policy = dashboard_policy()
+            print(f"[DEV DASHBOARD] required={str(policy['required']).lower()} path={policy['path']}")
+        else:
+            required = args.dashboard_policy == "on"
+            policy = set_dashboard_required(required)
+            print(f"[DEV DASHBOARD] required={str(policy['required']).lower()} path={policy['path']}")
+            if required:
+                pid = ensure_dashboard(args.profile, args.launch_mode, "visible")
+                print(f"[DEV DASHBOARD] pid={pid or 0}")
+        return 0
+
+    if getattr(args, "ensure_dashboard", False):
+        pid = ensure_dashboard(args.profile, args.launch_mode, "visible")
+        print(f"[DEV DASHBOARD] required={str(dashboard_policy()['required']).lower()} pid={pid or 0}")
+        return 0
+
+    if args.start_test_run or args.start_test_client:
+        ensure_dashboard(args.profile, args.launch_mode, "visible")
 
     # Isolated test runs are per-agent gameplay sessions, not build daemons.
     # They use the canonical root CLI and a pinned published artifact, while

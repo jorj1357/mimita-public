@@ -77,12 +77,49 @@ document contains a TODO that needs clarification.
      --verdict pass --body "<evidence and limitations>"
    ```
 
-8. Close only with evidence:
+8. Record proof before completion. A behavior task or issue needs a verified
+   `runtime_proven` proof or a reasoned exemption:
+
+   ```text
+   python devscripts/agent-coord.py proof task-add <task> \
+     --paths <paths> --build-id <id> --generation <n> \
+     --run-id <id> --journal <events.jsonl> \
+     --event <event> --field "<key>=<value>"
+   python devscripts/agent-coord.py proof task-verify <proof-id>
+   ```
+
+   Docs/tooling-only work uses:
+
+   ```text
+   python devscripts/agent-coord.py proof exempt <task> \
+     --paths <paths> --reason "<why runtime proof is not applicable>"
+   ```
+
+   Issue-level live evidence is recorded separately. `unit` is only for
+   genuinely isolated logic; `integration` requires a pinned generation and
+   events:
+
+   ```text
+   python devscripts/agent-coord.py proof record <issue-id> \
+     --kind integration --generation <n> --run-id <run-id> \
+     --server-journal <events.jsonl> --client-journal <events.jsonl> \
+     --event <event>
+   python devscripts/agent-coord.py proof verify <evidence-id>
+   ```
+
+   A documentation-only issue may use an explicit issue exemption:
+
+   ```text
+   python devscripts/agent-coord.py issue exempt <issue-id> \
+     --reason "<why runtime proof is not applicable>" --paths <paths>
+   ```
+
+9. Close only with proof or exemption:
 
    ```text
    python devscripts/agent-coord.py issue close <issue-id> \
      --resolution "<what changed>" \
-     --evidence "<changelog/build/run/journal>"
+     --evidence "<changelog/build/run/journal/evidence-id>"
    ```
 
 ## Board

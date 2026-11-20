@@ -102,7 +102,14 @@ def _copy_into_mirror(root: Path, mirror: Path, rels: list[str],
         try:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, temporary)
-            os.replace(temporary, destination)
+            for attempt in range(40):
+                try:
+                    os.replace(temporary, destination)
+                    break
+                except PermissionError:
+                    if attempt == 39:
+                        raise
+                    time.sleep(0.05)
         except OSError:
             try:
                 temporary.unlink()

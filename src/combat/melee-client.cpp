@@ -523,6 +523,25 @@ void tickClientMeleeContactClaims(Player& player,
         glm::vec3 volumeVelocity =
             (shape.currentB - shape.previousB) / (1.0f / 60.0f);
         bool hitFound = false;
+        bool usedBladeFallback = false;
+        auto applyBladeFallback = [&]() -> bool {
+            const glm::vec3 targetCenter = target.position + glm::vec3(0, 0, 0.9f);
+            const glm::vec3 ab = shape.currentB - shape.currentA;
+            const float abLenSq = glm::dot(ab, ab);
+            const float t = abLenSq > 0.000001f
+                ? glm::clamp(glm::dot(targetCenter - shape.currentA, ab) / abLenSq,
+                             0.0f, 1.0f)
+                : 0.0f;
+            const glm::vec3 closest = shape.currentA + ab * t;
+            const float reach = glm::length(targetCenter - closest);
+            if (reach > target.radius + shape.radius + 0.5f)
+                return false;
+            hit.hit = true;
+            hit.hitPosition = closest;
+            hit.normal = glm::length(targetCenter - closest) > 0.001f
+                ? glm::normalize(targetCenter - closest) : glm::vec3(0, 0, 1);
+            return true;
+        };
         if (!damageBoxes.empty())
         {
             const glm::vec3 targetCenter = target.position + glm::vec3(0, 0, 0.9f);
@@ -572,30 +591,20 @@ void tickClientMeleeContactClaims(Player& player,
                 }
             }
             if (!hitFound)
-                return;
+            {
+                if (!applyBladeFallback())
+                    return;
+                usedBladeFallback = true;
+            }
             hit.hit = true;
             hit.targetPlayerId = id;
             hit.targetSpawnGeneration = target.spawnGeneration;
         }
         else if (!WeaponExecution::testPhysicalContact(shape, target, hit))
         {
-            // Lenient fallback for replicas whose limb boxes are missing or a
-            // frame behind: treat the target root capsule as the contact body.
-            const glm::vec3 targetCenter = target.position + glm::vec3(0, 0, 0.9f);
-            const glm::vec3 ab = shape.currentB - shape.currentA;
-            const float abLenSq = glm::dot(ab, ab);
-            const float t = abLenSq > 0.000001f
-                ? glm::clamp(glm::dot(targetCenter - shape.currentA, ab) / abLenSq,
-                             0.0f, 1.0f)
-                : 0.0f;
-            const glm::vec3 closest = shape.currentA + ab * t;
-            const float reach = glm::length(targetCenter - closest);
-            if (reach > target.radius + shape.radius + 0.5f)
+            if (!applyBladeFallback())
                 return;
-            hit.hit = true;
-            hit.hitPosition = closest;
-            hit.normal = glm::length(targetCenter - closest) > 0.001f
-                ? glm::normalize(targetCenter - closest) : glm::vec3(0, 0, 1);
+            usedBladeFallback = true;
             hit.targetPlayerId = id;
             hit.targetSpawnGeneration = target.spawnGeneration;
         }
@@ -691,6 +700,10 @@ void tickClientMeleeContactClaims(Player& player,
                                           shape.currentB.z}},
                            {"blade_radius", shape.radius},
                            {"weapon_collision_hitbox", !damageBoxes.empty()},
+                           {"contact_source", usedBladeFallback ? "blade_fallback"
+                                                : (damageBoxes.empty() ? "blade_shape"
+                                                                       : "damage_box")},
+                           {"blade_fallback", usedBladeFallback},
                            {"box_center", {claimCenter.x, claimCenter.y, claimCenter.z}},
                            {"box_half", {claimHalf.x, claimHalf.y, claimHalf.z}},
                            {"hit", {hit.hitPosition.x, hit.hitPosition.y,

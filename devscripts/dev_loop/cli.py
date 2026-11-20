@@ -84,15 +84,22 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-map", default="")
     parser.add_argument("--no-runtime-client", action="store_true",
                         help="start the runtime server without a local client")
-    parser.add_argument("--request", choices=("launch", "build", "game-dll", "cold-link-trial", "stop-client", "stop-server", "stop", "start-runtime", "stop-runtime", "reload-runtime", "list-runtimes"),
+    parser.add_argument("--request", choices=("launch", "build", "game-dll", "agent-build", "cold-link-trial", "stop-client", "stop-server", "stop", "start-runtime", "stop-runtime", "reload-runtime", "list-runtimes"),
                         help="send a command to the already-running dev-loop daemon and exit; agents may request build/game-dll/cold-link-trial and are recorded by MIMITA_AGENT_ID")
+    parser.add_argument("--build-request", default="",
+                        help="approved coordination build request ID for --request agent-build")
     parser.add_argument("--wait-for-build", action="store_true",
                         help="wait for the requested build to finish; allowed for agent requests")
     parser.add_argument("--build-mode", choices=("debug", "release"), default="debug",
                         help="configuration for --request build")
     parser.add_argument("--build-timeout", type=float, default=36000.0,
                         help="maximum seconds to wait with --wait-for-build")
-    parser.add_argument("--ensure-running", action="store_true", help="ensure the watchdog and daemon exist and exit")
+    parser.add_argument("--ensure-running", action="store_true", help="ensure the watchdog, daemon, and required dashboard exist and exit")
+    parser.add_argument("--ensure-dashboard", action="store_true",
+                        help="ensure exactly one visible coordinator dashboard exists")
+    parser.add_argument("--dashboard-policy", choices=("on", "off", "status"),
+                        default="",
+                        help="persist whether the coordinator dashboard should be kept open")
     parser.add_argument("--no-dashboard", action="store_true",
                         help="ensure or control the dev loop without opening a dashboard")
     parser.add_argument("--daemon", action="store_true", help="run the dev-loop daemon in this process (used by the watchdog/entry point)")

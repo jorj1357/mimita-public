@@ -54,6 +54,8 @@ CURRENT_RUN_PATH = DEV_ROOT / "state.json"
 WATCH_LOCK_PATH = DEV_ROOT / "dev-loop-watch.lock"
 WATCH_STATE_PATH = DEV_ROOT / "dev-loop-watch.json"
 WATCH_LOG_PATH = DEV_ROOT / "dev-loop-watch.log"
+DASHBOARD_POLICY_PATH = DEV_ROOT / "dashboard-policy.json"
+DASHBOARD_LOCK_PATH = DEV_ROOT / "dev-loop-dashboard.lock"
 
 
 def utc_now() -> str:
@@ -111,6 +113,35 @@ def lock_pid() -> int:
         return int(LOCK_PATH.read_text(encoding="ascii").strip() or "0")
     except (OSError, ValueError):
         return 0
+
+
+def dashboard_required() -> bool:
+    value = read_json(DASHBOARD_POLICY_PATH)
+    return bool(value.get("required", True)) if isinstance(value, dict) else True
+
+
+def dashboard_present() -> bool:
+    try:
+        pid = int(DASHBOARD_LOCK_PATH.read_text(encoding="ascii").strip() or "0")
+    except (OSError, ValueError):
+        return False
+    return bool(pid and pid_alive(pid))
+
+
+def ensure_dashboard_presence(profile: str, launch_mode, visibility: str) -> None:
+    if not dashboard_required() or dashboard_present():
+        return
+    args = [sys.executable, str(DEV_LOOP_SCRIPT), "--ensure-dashboard",
+            "--profile", str(profile)]
+    if launch_mode is not None:
+        args += ["--launch-mode", str(launch_mode)]
+    try:
+        subprocess.Popen(
+            args, cwd=str(ROOT), stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except OSError as error:
+        log(f"unable to ensure dashboard: {error}")
 
 
 def append_journal_event(events_path: str, event: str, fields: dict, reason: str) -> None:
@@ -374,6 +405,8 @@ def run_watch(args: argparse.Namespace) -> int:
                            current_pid, running_hash, force=args.force_source_change)
             else:
                 deferred_hash = ""
+
+            ensure_dashboard_presence(profile, launch_mode, visibility)
 
             if args.once:
                 return 0

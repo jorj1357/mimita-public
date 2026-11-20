@@ -13,6 +13,50 @@ or a second owner for dev-loop state. In-game presentation remains governed by
 `docs/specs/gui/guiv2.md`; the dev-loop daemon and its lifetime remain governed
 by `docs/specs/dev-loop/dev-loop.md`.
 
+## Live build health
+
+The build card reads `build/game/progress.json`, `current.json`, and the
+dev-loop state directly on every refresh. It must show the latest true state,
+not a cached daemon phase:
+
+- stage and phase elapsed time;
+- dependency-prepass parsed/total files and current file;
+- object-scan/compile completed/total and percentage;
+- last progress timestamp/age;
+- health (`LIVE`, `SLOW`, `NO PROGRESS`, `FAILED`, `PUBLISHED`);
+- source generation, published generation, artifact identity, and pending notes.
+
+The worker writes progress at least twice per second, including the
+dependency-prepass phase, so a long prepass cannot look frozen at `1/642`.
+The dashboard refresh remains one second. A stale progress age is displayed as
+`SLOW` or `NO PROGRESS`; it is not hidden behind an old daemon phase. The
+dashboard must not kill or restart a build; health is visibility, and recovery
+uses the build-owner policy.
+
+## Dashboard presence policy
+
+The coordinator checkout keeps one dashboard present by default. The policy is
+persisted in `.dev/dashboard-policy.json`:
+
+```text
+python devscripts/dev-loop.py --dashboard-policy on
+python devscripts/dev-loop.py --dashboard-policy off
+python devscripts/dev-loop.py --dashboard-policy status
+python devscripts/dev-loop.py --ensure-dashboard
+```
+
+- Default: `required=true` for the coordinator checkout.
+- The watchdog checks the policy and ensures one dashboard exists when absent.
+- Mutating dev-loop commands and isolated test-run starts ensure the dashboard;
+  a pure `--status` read remains read-only and does not create a window.
+- Closing the dashboard with `X` is a temporary detachment. The watchdog or the
+  next mutating command restores it while `required=true`.
+- Only the explicit `off` policy disables automatic restoration; `on` restores
+  it and ensures one dashboard.
+- Startup is serialized and uses the existing dashboard lock/PID identity.
+  Never create a second dashboard or start one from a lane checkout.
+- Restoration must not steal focus from the user or open a per-command window.
+
 ## Python dashboard boundary
 
 - Python owns the standalone coordinator dashboard presentation, process
@@ -57,6 +101,40 @@ a section must not stop the daemon or any game process.
 The RUNTIMES section lists each independent runtime's id, launch mode, map,
 server/client liveness, port, pinned generation, and journal, with Stop and
 Reload actions and a Start runtime control.
+
+## Coordination panel
+
+The dashboard has one collapsible `COORDINATION` section in the main
+dashboard. It is a read/write view over the shared coordination brain; the
+brain remains the source of truth.
+
+The section shows:
+
+- a summary of active agents, open issues, active leases, and unread messages;
+- the current focus (highest-priority open issue);
+- each agent's name, status, last-seen age, task, issue, phase, current
+  activity, paths, build ID, game generation, run ID, blocker, wait reason, and
+  next step;
+- recent coordination messages with sender, recipient, kind, subject, body,
+  timestamp, read state, and thread;
+- open issues and recent decisions/notes.
+
+The panel must not mark messages read while rendering. Message delivery still
+occurs at the recipient's next activation or bounded `wait`; the panel must not
+claim that a displayed message was seen by an idle agent.
+
+The human may send a message to `all` or one registered agent from the panel.
+The message is written through the coordination brain with sender
+`human-dashboard` and is displayed immediately. The panel must validate the
+recipient, record the audit event, and disable sending when the brain is
+unavailable. It must not register the dashboard as an AI agent.
+
+Rendering is bounded and cached: at most 50 agents, 80 messages, 100 issues,
+30 notes, and 15 decisions per refresh. A missing or unavailable brain shows
+`coordination unavailable`; build and process controls remain usable.
+
+The section is a checkpoint view, not private chain-of-thought. It shows only
+reported activity, messages, notes, decisions, and issue state.
 
 ## Checkout and process visibility
 
@@ -218,6 +296,15 @@ launch path; discovery itself does not adopt or relabel an external process.
   when known; a process without role evidence remains unverified.
 - Daemon source changes are distinguishable by source identity after its
   controlled restart; no claim of in-place Python hot reload is made.
+- The COORDINATION section shows active agents, current task/issue/phase, files,
+  build/run, blockers, wait reasons, next steps, recent messages, and open
+  issues without blocking the dashboard.
+- Rendering the coordination section does not mark agent messages read.
+- A human can send a message to `all` or one registered agent; it is written
+  through the brain, appears immediately, and is delivered at the recipient's
+  next activation or bounded wait.
+- A missing coordination brain shows an unavailable state while build and
+  process controls remain usable.
 
 
 ## Single dashboard and explicit terminal relaunch (2026-11-15)
@@ -228,7 +315,8 @@ launch path; discovery itself does not adopt or relabel an external process.
   start Windows Terminal.
 - Before relaunching, the entry point checks for an existing dashboard PID and
   attaches/reuses it.
-- AI command/scenario calls must create no dashboard and no Python console
-  window.
+- AI command/scenario calls must not create a second dashboard or a per-command
+  console window. While `dashboard_required=true`, they ensure the one existing
+  coordinator dashboard is present and reuse it.
 - Acceptance: repeated `python devscripts/dev-loop.py --command ...` calls leave
-  the number of Python/Terminal windows unchanged.
+  exactly one dashboard and no additional Python/Terminal windows.

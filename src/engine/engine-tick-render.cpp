@@ -655,8 +655,25 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             localOutlineTeam = static_cast<int>(replicatedLocalTeam);
         if (mpContext.active) {
             MIMITA_PERF_SCOPE("Rendering::Actors::NetworkEntities");
+            const glm::mat4 remoteViewProjection =
+                camera.getProj(static_cast<float>(engine.renderer->sceneWidth),
+                               static_cast<float>(engine.renderer->sceneHeight)) *
+                camera.getView();
+            const auto remoteActorVisible = [&](const Player& actor) {
+                const glm::vec4 clip = remoteViewProjection *
+                    glm::vec4(actor.pos + glm::vec3(0.0f, 0.0f, 1.0f), 1.0f);
+                if (clip.w <= 0.0f)
+                    return false;
+                const float margin = clip.w * 0.25f;
+                return std::abs(clip.x) <= clip.w + margin &&
+                       std::abs(clip.y) <= clip.w + margin &&
+                       clip.z >= -clip.w - margin &&
+                       clip.z <= clip.w + margin;
+            };
             for (auto& kv : mpContext.remotePlayers) {
                 Perf::state().renderPerf.actorRemotePlayers++;
+                if (!remoteActorVisible(kv.second))
+                    continue;
                 int remoteTeam = kv.second.matchTeam;
                 const uint8_t replicatedTeam =
                     communityMatch.teamForActor(kv.first);
@@ -682,6 +699,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             }
             for (auto& kv : mpContext.remoteNpcs) {
                 Perf::state().renderPerf.actorRemoteNpcs++;
+                if (!remoteActorVisible(kv.second))
+                    continue;
                 int remoteTeam = kv.second.matchTeam;
                 const uint8_t replicatedTeam =
                     communityMatch.teamForActor(kv.first);
@@ -729,9 +748,6 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             if (lastNpcViewportLog == std::chrono::steady_clock::time_point{} ||
                 viewportNow - lastNpcViewportLog >= std::chrono::seconds(1)) {
                 lastNpcViewportLog = viewportNow;
-                const glm::mat4 viewProjection =
-                    camera.getProj(static_cast<float>(engine.renderer->sceneWidth),
-                                   static_cast<float>(engine.renderer->sceneHeight)) * camera.getView();
                 uint32_t inView = 0;
                 uint32_t inViewMoving = 0;
                 uint32_t alive = 0;
@@ -751,7 +767,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     if (!npc.dead) ++alive;
                     else ++dead;
                     if (npc.modelLoaded) ++modelLoaded;
-                    const glm::vec4 clip = viewProjection *
+                    const glm::vec4 clip = remoteViewProjection *
                         glm::vec4(npc.pos + glm::vec3(0.0f, 0.0f, 1.0f), 1.0f);
                     if (clip.w <= 0.0f || std::abs(clip.x) > clip.w ||
                         std::abs(clip.y) > clip.w || std::abs(clip.z) > clip.w)

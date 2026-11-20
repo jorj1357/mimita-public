@@ -74,6 +74,79 @@ Every proposal records:
 Agents may review and converge without a human. A human remains final for
 changes to the system the agents use to coordinate themselves.
 
+## Autonomy classes
+
+### Class R — reversible
+
+Examples:
+
+- reports, dashboards, diagnostics, tests
+- local helper scripts
+- documentation fixes that do not change authority or behavior
+- evidence tooling
+- issue/changelog automation
+
+Agents may propose, prototype, measure, request another agent's review, and
+apply a Class R change when evidence is green and rollback is simple. The
+change and metric effect are recorded.
+
+### Class C — critical
+
+Examples:
+
+- build authority or the build scheduler
+- `AGENTS.md`, specifications, or shared coordination policy
+- production or deployment
+- packet/wire formats, save formats, or gameplay behavior
+- access control, secrets, destructive operations, or process-kill policy
+
+Class C requires human approval, an exact diff, a small safe experiment,
+integration proof, and a rollback plan.
+
+Autonomy may increase over time only from measured trust: accepted changes,
+rollback rate, failed proofs, human overrides, incidents, and evidence latency.
+It may not increase by lowering a metric or self-approving proof.
+
+## Mandatory reflection
+
+After an issue closes, a build waits unexpectedly, proof fails, or agents
+conflict, run:
+
+```text
+agent-coord retro <issue>
+```
+
+The record includes:
+
+- observation and exact evidence
+- `change_to_evidence_ms`
+- build queue/compile/link/publish time
+- runtime startup and proof time
+- retries and failed attempts
+- duplicate work or conflicts
+- missing diagnostics/artifacts
+- a proposed improvement, metric target, and smallest safe experiment
+
+Reflection is required for a healthy loop, not optional commentary.
+
+## Improvement scanner
+
+A rotating systems agent or scheduled audit scans the brain and journals for:
+
+- top build waits and slow translation units
+- header fan-out
+- stale/unowned issues
+- failed or stale proof
+- duplicate tasks
+- idle agents
+- repeated manual commands
+- missing screenshots/audio/replay artifacts
+- unavailable evidence paths
+- regressions and repeated build-friction
+
+It opens ranked `improvement`, `capability`, or `build-friction` issues with
+evidence and metric targets. It does not edit policy or authority directly.
+
 ## Capability proposals
 
 The agent should state what it can do more powerfully than a human may assume,

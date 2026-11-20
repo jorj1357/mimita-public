@@ -57,11 +57,16 @@ Read these gates before doing anything else:
    use `issue assign`, `task dep`, `issue defer`, and `issue clarify`. Do not
    edit a spec or TODO to resolve a report without user clarification.
    When a build or test waits, record why; a wait above the measured budget or
-   an avoidable wait creates a `build-friction` issue. Agents are expected to
-   propose safe improvements to coordination, build, test, documentation, and
-   capability surfaces, with evidence and a metric target. Agents may review
-   and iterate; a human makes the final decision on changes to shared authority.
-   Read `docs/specs/dev-loop/change-to-evidence-latency.md`,
+   an avoidable wait creates a `build-friction` issue. A behavior task cannot
+   be marked done or its issue closed without a verified `runtime_proven` proof
+   or an explicit proof exemption with a reason. Use
+   `agent-coord proof task-add`, `proof task-verify`, `proof exempt`, and
+   `issue exempt`; the board must show unproven and stale changes. Agents are expected to propose safe
+   improvements to coordination, build, test, documentation, and capability
+   surfaces, with evidence and a metric target. Agents may review and iterate;
+   a human makes the final decision on changes to shared authority. Read
+   `docs/specs/dev-loop/agent-proof-and-verification.md`,
+   `docs/specs/dev-loop/change-to-evidence-latency.md`,
    `docs/specs/dev-loop/agent-self-improvement.md`, and
    `docs/workflows/issue-intake-and-triage.md`.
 

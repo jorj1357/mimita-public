@@ -48,3 +48,9 @@ Task: ogi-migration (step 0)
 ### 2026-11-20T02:05:26.464Z — coordination-v2
 
 Task: live-pinned-proof (step 0)
+
+## Task linked
+
+### 2026-11-20T02:40:48.840Z — proof-system
+
+Task: proof-gate (step 0)

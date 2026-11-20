@@ -1807,6 +1807,13 @@ status in place. If Tkinter is unavailable or the GUI cannot start, the
 terminal dashboard remains a readable fallback. Give the window a stable title
 containing the checkout name and run ID.
 
+Dashboard presence is user-controlled by
+`.dev/dashboard-policy.json`. The coordinator dashboard is required by default;
+the watchdog and mutating dev-loop commands ensure it exists when absent. A
+temporary `X` close may be restored; `--dashboard-policy off` is the explicit
+persistent opt-out, and `on` restores it. Pure `--status` remains read-only and
+does not create a dashboard. Only one coordinator dashboard may exist.
+
 Dashboard and game visibility are independent:
 
 ```text

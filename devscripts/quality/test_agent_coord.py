@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import tempfile
 import time
@@ -284,6 +285,20 @@ class AgentCoordTests(unittest.TestCase):
         self.assertIn("Review (needs-evidence)", doc)
         self.assertIn("safe seam identified", doc)
 
+    def test_issue_proof_exemption_requires_reason_and_unblocks_close(self) -> None:
+        self.begin("owner")
+        issue = self.store.issue_add(
+            "owner", "Documentation-only issue", quote="document this",
+            kind="docs", source="user")
+        with self.assertRaises(CoordError):
+            self.store.issue_exempt("owner", issue["id"], "")
+        self.store.issue_exempt(
+            "owner", issue["id"],
+            "documentation-only change; runtime event is not applicable",
+            ["docs/issues/README.md"])
+        self.store.issue_close("owner", issue["id"], "documented")
+        self.assertEqual(self.store.issue_show(issue["id"])["state"], "done")
+
     def test_integration_proof_requires_generation_and_events(self) -> None:
         self.begin("owner")
         issue = self.store.issue_add(
@@ -307,6 +322,70 @@ class AgentCoordTests(unittest.TestCase):
         self.assertEqual(trace["issue"]["state"], "done")
         self.assertEqual(trace["evidence"][0]["result"], "proven")
 
+    def test_next_work_claims_high_priority_issue(self) -> None:
+        self.begin("owner")
+        low = self.store.issue_add("owner", "low work", priority="low")
+        high = self.store.issue_add("owner", "high work", priority="high")
+        result = self.store.next_work("owner", claim=True)
+        self.assertEqual(result["issue"]["id"], high["id"])
+        self.assertEqual(result["issue"]["owner"], "owner")
+        self.assertEqual(result["next_step"], "high work")
+
+    def test_observe_bundle_contains_issue_and_evidence(self) -> None:
+        self.begin("owner")
+        issue = self.store.issue_add("owner", "observe me", source="user",
+                                     quote="watch this")
+        self.store.evidence_record("owner", issue["id"], proof_kind="unit")
+        bundle = self.store.observe_issue(issue["id"], "owner")
+        self.assertEqual(bundle["issue"]["id"], issue["id"])
+        self.assertEqual(bundle["evidence"][0]["result"], "proven")
+        self.assertTrue(bundle["build"])
+
+    def test_build_queue_and_runtime_registry(self) -> None:
+        self.begin("owner", "sub",)
+        self.begin("coordinator")
+        self.store.build_owner("coordinator")
+        request = self.store.build_request(
+            "owner", kind="preview", issue_id="I1", base_generation=7,
+            paths=["src/a.cpp"], overlay_paths=["src/a.cpp"],
+            priority="high", cohort="main")
+        self.assertEqual(request["status"], "proposed")
+        self.store.build_update("coordinator", request["request"], "approved")
+        self.store.build_wait("owner", request["request"], "slot busy", 42)
+        rows = self.store.build_list()
+        self.assertEqual(rows[0]["status"], "approved")
+        self.assertIn("slot busy", rows[0]["wait_reason"])
+        runtime = self.store.runtime_register(
+            "owner", "runtime-1", cohort="main", issue_id="I1",
+            generation=7, dll_path="build/game/generation-7/game-g7.dll",
+            dll_sha256="abc", run_id="run-1", server_pid=10,
+            client_pids=[11], server_journal="server/events.jsonl",
+            client_journals=["client/events.jsonl"], state="running")
+        self.assertEqual(runtime["state"], "running")
+        self.assertEqual(self.store.runtime_list(agent="owner")[0]["generation"], 7)
+        self.store.runtime_update("owner", "runtime-1", "stopped")
+        self.assertEqual(self.store.runtime_list(agent="owner")[0]["state"], "stopped")
+
+    def test_subagent_parent_and_cohort_columns(self) -> None:
+        self.store.begin("parent", "parent task", cohort="map")
+        self.store.begin("child", "child task", parent="parent", cohort="map")
+        row = self.store.conn.execute(
+            "SELECT parent,cohort FROM agents WHERE agent='child'").fetchone()
+        self.assertEqual(row["parent"], "parent")
+        self.assertEqual(row["cohort"], "map")
+
+    def test_wake_check_returns_actionable_and_idle_states(self) -> None:
+        self.begin("owner")
+        idle = self.store.wake_check("owner")
+        self.assertFalse(idle["wake"])
+        self.assertEqual(idle["exit_code"], 10)
+        issue = self.store.issue_add("owner", "wake me", priority="high")
+        active = self.store.wake_check("owner")
+        self.assertTrue(active["wake"])
+        self.assertEqual(active["exit_code"], 0)
+        self.assertEqual(active["issue"]["id"], issue["id"])
+        self.assertEqual(active["next_step"], "wake me")
+
     def test_issue_clarification_visible_in_status_and_board(self) -> None:
         self.begin("owner")
         issue = self.store.issue_add(
@@ -321,6 +400,42 @@ class AgentCoordTests(unittest.TestCase):
         row = next(item for item in board["issues"] if item["id"] == issue["id"])
         self.assertEqual(row["state"], "needs_clarification")
         self.assertIn("implemented or removed", row["clarification"])
+
+    def test_proof_gate_blocks_until_verified_runtime_evidence(self) -> None:
+        self.begin("owner")
+        source = self.root / "proof-source.txt"
+        source.write_text("one\n", encoding="utf-8")
+        relative = str(source.relative_to(REPO))
+        journal = self.root / "events.jsonl"
+        journal.write_text(json.dumps({
+            "event": "runtime.proven", "fields": {"npcs": 67},
+        }) + "\n", encoding="utf-8")
+        self.store.task_add("owner", "P1", "Runtime proof task", owner="owner",
+                            acceptance="event observed")
+        with self.assertRaises(CoordError) as raised:
+            self.store.task_status("owner", "P1", "done")
+        self.assertEqual(raised.exception.code, 5)
+        proof = self.store.proof_add(
+            "owner", "P1", paths=[relative], status="runtime_proven",
+            build_id="build-1", game_generation=7, run_id="run-1",
+            journal_path=str(journal.relative_to(REPO)),
+            event="runtime.proven", field_predicate="npcs=67")
+        self.store.proof_verify("owner", proof["id"])
+        self.store.task_status("owner", "P1", "done")
+        source.write_text("two\n", encoding="utf-8")
+        status = self.store.proof_status()
+        self.assertGreaterEqual(status["stale"], 1)
+
+    def test_proof_exempt_requires_reason_and_unblocks(self) -> None:
+        self.begin("owner")
+        self.store.task_add("owner", "P2", "Docs task", owner="owner")
+        with self.assertRaises(CoordError):
+            self.store.proof_exempt("owner", "P2", "")
+        self.store.proof_exempt("owner", "P2",
+                                "documentation-only change with diff check",
+                                ["AGENTS.md"])
+        self.assertGreaterEqual(self.store.proof_status()["exempt"], 1)
+        self.store.task_status("owner", "P2", "done")
 
     def test_activity_board_and_deferred_task(self) -> None:
         self.begin("owner")
@@ -338,6 +453,33 @@ class AgentCoordTests(unittest.TestCase):
         row = next(item for item in board["agents"] if item["agent"] == "owner")
         self.assertEqual(row["activity"]["build_id"], "build-1")
         self.assertEqual(row["activity"]["game_generation"], 7)
+
+    def test_coordination_snapshot_is_bounded_and_does_not_mark_read(self) -> None:
+        self.begin("owner")
+        self.store.activity_set(
+            "owner", phase="working", activity="reading the board",
+            paths=["src/gamemode/gamemode.cpp"], next_step="run pinned test")
+        issue = self.store.issue_add(
+            "owner", "Panel issue", kind="improvement", source="user")
+        sent = self.store.send_human(
+            "owner", "Dashboard report", "Please check the panel.")
+        self.assertEqual(sent["sender"], "human-dashboard")
+        snapshot = self.store.coordination_snapshot(limit_messages=10)
+        self.assertEqual(snapshot["agents"][0]["agent"], "owner")
+        self.assertEqual(snapshot["issues"][0]["id"], issue["id"])
+        message = next(row for row in snapshot["messages"]
+                       if row["msg_id"] == sent["message"])
+        self.assertEqual(message["sender_kind"], "human")
+        self.assertGreater(snapshot["unread"], 0)
+        # A dashboard read must not consume the message.
+        self.assertEqual(snapshot["unread"],
+                         self.store.coordination_snapshot()["unread"])
+        inbox = self.store.inbox("owner", unread_only=True)
+        self.assertTrue(any(row["msg_id"] == sent["message"] for row in inbox))
+
+    def test_send_human_rejects_unknown_recipient(self) -> None:
+        with self.assertRaises(CoordError):
+            self.store.send_human("missing-agent", "hello", "body")
 
 
 if __name__ == "__main__":

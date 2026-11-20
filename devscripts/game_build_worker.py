@@ -431,6 +431,20 @@ class Progress:
             })
             self.dirty = True
 
+    def scan_prepass(self, *, parsed: int, total: int, current: str,
+                     elapsed_s: float) -> None:
+        with self.lock:
+            self.data.update({
+                "phase": "object_cache_scan",
+                "scan_phase": "dependency_prepass",
+                "scan_parsed": parsed,
+                "scan_total": total,
+                "scan_current": current,
+                "scan_prepass_elapsed_s": round(elapsed_s, 3),
+                "last_progress_utc": utc_now(),
+            })
+            self.dirty = True
+
     def finish(self, status: str, **kwargs) -> None:
         with self.lock:
             now = time.monotonic()
@@ -1212,7 +1226,10 @@ def build(args: argparse.Namespace) -> int:
         stat_targets: set[str] = set()
         header_counts: Counter[str] = Counter()
         prepass_started = time.perf_counter()
-        for item, _obj, dep in scan_list:
+        last_prepass_update = prepass_started
+        progress.scan_prepass(parsed=0, total=len(scan_list), current="",
+                              elapsed_s=0.0)
+        for index, (item, _obj, dep) in enumerate(scan_list, 1):
             source_path = normalized(item["path"])
             tokens = parse_depfile(dep)
             parsed_tokens[source_path] = tokens
@@ -1224,7 +1241,16 @@ def build(args: argparse.Namespace) -> int:
                     header_counts[relative] += 1
             if source_path not in handled and tokens:
                 stat_targets.update(tokens)
+            now = time.perf_counter()
+            if index == len(scan_list) or now - last_prepass_update >= 0.5:
+                progress.scan_prepass(
+                    parsed=index, total=len(scan_list), current=source_path,
+                    elapsed_s=now - prepass_started)
+                last_prepass_update = now
         parse_ms = (time.perf_counter() - prepass_started) * 1000.0
+        progress.set(scan_phase="object_checks", scan_parsed=len(scan_list),
+                     scan_current="", scan_prepass_elapsed_s=round(
+                         (time.perf_counter() - prepass_started), 3))
         stat_prewarm_ms = 0.0
         if stat_targets:
             stat_started = time.perf_counter()

@@ -105,6 +105,67 @@ Thin executable wrapper for the module.
   `changed_header_fanout`, `header_fanout_top`, and `identity_wrapper_count`.
 - No-op attempts report `build_cause=no_op`.
 
+## Build bridge, pointers, wake contract, runtime registration
+
+- Added `agent-build` dev-loop request action with `--build-request`; the
+  daemon validates the approved brain request, queues the game DLL, and updates
+  request status.
+- Added atomic per-agent and per-cohort pointer publication on successful
+  builds (`build/game/agents|cohorts/<name>/current.json`).
+- Rejected preview requests with a concrete reason until the overlay builder
+  exists.
+- Added `agent-runtime --pointer/--cohort/--issue`; pointer resolution and
+  automatic runtime registration/stop updates.
+- Added `agent-coord wake-check` with actionable/blocked/idle exit codes.
+- Existing `agent-wake.py` adapter remains the model-agnostic wake queue.
+- Added wait/no-wait and wake policy to coordination/build specs.
+- Created/broadcast the waiting-principle issue and linked wake/wait tasks.
+
+## Build queue, runtime registry, and cohort metadata
+
+- Added `build_requests`, `build_owner`, and `runtime_registry` tables.
+- Added `agent begin --parent --cohort --capability` and agent parent/cohort/
+  capabilities columns.
+- Added `build request/list/owner/approve/reject/wait` commands with wait
+  reasons and build statuses.
+- Added `runtime register/list/update` commands for generation/DLL/run/journal
+  tracking; runtime stop remains explicit and does not kill unowned processes.
+- Added build/runtime state to coordination status and board.
+- Added tests for queues, runtime registration, and subagent cohorts.
+- Created a high-priority build-friction issue for the zero-wait principle with
+  the exact human quote, and broadcast a build/wake policy thread to other
+  agents.
+
+## Reviewable build/runtime/subagent/self-improvement specs
+
+- Added `docs/specs/dev-loop/agent-build-queue.md`: build requests, rotating
+  build owner, resource-aware concurrency, integration vs preview, per-agent/
+  cohort DLL pointers, preview overlays, ABI boundary, and wait budgets.
+- Added `docs/specs/dev-loop/agent-runtime-registry.md`: runtime identity,
+  DLL pinning, health, warm runtimes, ownership, evidence links, and cleanup.
+- Added `docs/specs/dev-loop/agent-subagents.md`: parent/cohort/subagent
+  delegation, shared pointers, budgets, nested-depth limits, and authority.
+- Extended `docs/specs/dev-loop/agent-self-improvement.md` with reversible vs
+  critical autonomy classes, mandatory retro, improvement scanner, and trust
+  growth.
+- Linked the new specs from the router and coordination spec.
+- Created issue-owned tracks for build queue, runtime registry, subagents,
+  map editor slices, and spec review.
+
+## Next work, observe bundle, and task proof gate
+
+- Added `agent-coord next --agent` with priority sorting, ownership claim, first
+  unblocked task, and blocked-issue reporting.
+- Added `agent-coord observe <issue>` returning a bounded issue/task/quote/review/
+  evidence/activity/build/runtime context bundle.
+- Added task-level proof storage and `proof task-add`, `task-verify`, `exempt`,
+  and `status`.
+- `task_status done` now requires verified proof or an explicit exemption.
+- Source hashes make verified proof stale when changed files move.
+- Created issue-owned tracks for wake/context, runtime registry, subagents,
+  map editor slices, and a risk issue for premature hot-layer migration.
+- Added the hot-reload architecture guard to the coordination spec.
+
 ## Mandatory issue proof and trace
 
 - Added `issue_evidence` storage and `proof record/verify/list`.
@@ -176,8 +237,10 @@ Thin executable wrapper for the module.
   - `devscripts/dev_loop/cli.py`
   - `devscripts/game_build_worker.py`
 - `python -m unittest devscripts.quality.test_agent_coord
+  devscripts.quality.test_game_build_snapshot
+  devscripts.quality.test_dependency_graph_gate
   devscripts.quality.test_path_containment
-  devscripts.quality.test_manual_build_guard`: 26 tests passed.
+  devscripts.quality.test_manual_build_guard`: 48 tests passed.
 - CLI smoke tests:
   - begin/announce/status
   - task/directive/method conflict
@@ -213,12 +276,6 @@ Thin executable wrapper for the module.
 - `devscripts/dev_loop/cli.py`
 - `devscripts/dev-loop.py`
 - `devscripts/game_build_worker.py`
-
-
-
-
-
-
 
 
 

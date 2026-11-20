@@ -1256,18 +1256,38 @@ static bool handleGenericMeleeContactBatch(
         const glm::vec3 hitPos(pkt.hitX, pkt.hitY, pkt.hitZ);
         const float targetRadius = targetBodyRadius + tolerance;
         const float allowedDistance = glm::length(half) + targetRadius;
+        const float bodyHeights[] = {0.35f, 0.95f, 1.55f};
+        auto targetOverlapAt = [&](const glm::vec3& pose, float& distance) {
+            bool overlap = false;
+            distance = std::numeric_limits<float>::max();
+            for (float height : bodyHeights)
+            {
+                const glm::vec3 bodyPoint = pose + glm::vec3(0.0f, 0.0f, height);
+                overlap = overlap ||
+                    spyKnifeObbSphereOverlap(center, half, axes, bodyPoint,
+                                               targetRadius);
+                distance = std::min(distance, glm::length(bodyPoint - center));
+                if (glm::length(bodyPoint - hitPos) <= targetRadius)
+                    overlap = true;
+            }
+            return overlap;
+        };
         bool contactOverlap = false;
         float contactDistance = std::numeric_limits<float>::max();
-        const float bodyHeights[] = {0.35f, 0.95f, 1.55f};
-        for (float height : bodyHeights)
+        uint32_t validationTick = contactTick;
+        bool currentPoseFallback = false;
+        contactOverlap = targetOverlapAt(targetPos, contactDistance);
+        if (!contactOverlap)
         {
-            const glm::vec3 bodyPoint = targetPos + glm::vec3(0.0f, 0.0f, height);
-            contactOverlap = contactOverlap ||
-                spyKnifeObbSphereOverlap(center, half, axes, bodyPoint, targetRadius);
-            contactDistance = std::min(contactDistance,
-                                       glm::length(bodyPoint - center));
-            if (glm::length(bodyPoint - hitPos) <= targetRadius)
+            const glm::vec3 currentPose = npc ? npc->pos : playerTarget->pos;
+            float currentDistance = std::numeric_limits<float>::max();
+            if (targetOverlapAt(currentPose, currentDistance))
+            {
                 contactOverlap = true;
+                contactDistance = currentDistance;
+                validationTick = tick;
+                currentPoseFallback = true;
+            }
         }
         if (!contactOverlap && contactDistance > allowedDistance)
         {
@@ -1290,10 +1310,21 @@ static bool handleGenericMeleeContactBatch(
         float attackerContactYaw = attacker.yaw;
         getPlayerPoseAtTick(attacker, contactTick, attackerContactPos,
                             attackerContactYaw);
-        const float reach = glm::length(hitPos - attackerContactPos);
+        float reach = glm::length(hitPos - attackerContactPos);
         const float maxReach = std::max(
             def.meleeContact.maxReachM,
             glm::length(half) + targetRadius + 2.0f);
+        bool currentReachFallback = false;
+        if (reach > maxReach)
+        {
+            const float currentReach = glm::length(hitPos - attacker.pos);
+            if (currentReach <= maxReach)
+            {
+                reach = currentReach;
+                attackerContactPos = attacker.pos;
+                currentReachFallback = true;
+            }
+        }
         if (reach > maxReach)
         {
             StructuredLogger::instance().writeEvent(
@@ -1478,6 +1509,9 @@ static bool handleGenericMeleeContactBatch(
                            {"target_generation", targetGeneration},
                            {"contact_id", pkt.contactId},
                            {"contact_tick", pkt.contactTick},
+                           {"validation_tick", validationTick},
+                           {"current_pose_fallback", currentPoseFallback},
+                           {"current_reach_fallback", currentReachFallback},
                            {"stage", "accepted"},
                            {"box_claim", boxClaim},
                            {"claimed_center", {center.x, center.y, center.z}},

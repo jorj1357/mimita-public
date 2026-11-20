@@ -67,6 +67,20 @@ At the start of every activation, run `sync`. During a long activation, check
 `dev-loop.py --status` at natural boundaries. `wait` and `ask --wait` are
 bounded blocking commands; they are not background polling loops.
 
+## Next work and observation
+
+`agent-coord next --agent <name>` returns the highest-priority unblocked issue
+or task, its next step, blocked issues, and ownership. `--claim` assigns an
+unowned issue to the agent.
+
+`agent-coord observe <issue-id>` returns a bounded context bundle: issue,
+tasks, quotes, reviews, evidence, activity, recent messages, build identity,
+and matching runtimes. It does not dump unbounded logs.
+
+A future orchestrator plugin may wake an idle agent by running `next` and
+starting one bounded activation. The repository cannot force an idle model to
+think without that external wake path.
+
 ## Optional intent
 
 Claims are not mandatory.
@@ -170,13 +184,33 @@ generated index; it is not a second hand-maintained status source.
 A TODO or ambiguous report creates a `needs_clarification` issue with the exact
 path, line, and quote. Agents do not edit the source document to resolve it.
 
+## Proof ledger and completion gate
+
+Every behavior change has a proof record. A proof links the task/issue, changed
+paths, source fingerprint, pinned EXE/build ID, game generation, run ID, exact
+journal, required event, and verification state. Unproven and stale proofs are
+shown on `board`, `status`, and the dev-loop dashboard.
+
+`task status ... done` and `issue close` require a verified `runtime_proven`
+proof or an explicit `exempt` proof with a reason. Build-only results are
+recorded as `build_only` and do not satisfy the gate. A linked path change marks
+the proof stale; history is append-only. See
+[agent proof and verification](agent-proof-and-verification.md).
+
 ## Build/test permits and self-improvement
 
 An active agent may request a build or isolated test through the root dev-loop
 without human approval. The request records the agent, task, issue, permit/build
 ID, and run ID. Requests are bounded by PC resources; one EXE build at a time.
 A pinned test run uses a specific EXE artifact and game-DLL generation/path and
-does not replace the shared runtime.
+does not replace the shared runtime. The build queue, rotating build owner,
+per-agent/cohort DLL pointers, and preview overlays are specified in
+[agent-build-queue](agent-build-queue.md). Runtime registration, health, idle
+cleanup, and proof links are specified in
+[agent-runtime-registry](agent-runtime-registry.md). Parent/subagent delegation
+and cohort pointers are specified in [agent-subagents](agent-subagents.md).
+Wake delivery and adapter safety are specified in
+[agent-wake](agent-wake.md).
 
 When a build or test waits, the request records the wait reason. An avoidable
 wait or a wait above the measured budget creates a `build-friction` issue.
@@ -188,6 +222,19 @@ coordination improvements a human may assume an AI cannot do. Any agent may
 triage, review, reproduce, and gather evidence for or against the proposal. A
 human makes the final decision on changes to shared authority. See
 [agent-self-improvement](agent-self-improvement.md).
+
+## Dashboard messages
+
+The dev-loop dashboard reads a bounded coordination snapshot and may send a
+human message. The snapshot includes agents, activity, open issues, tasks,
+recent messages, notes, decisions, active leases, and unread counts. It does
+not mark messages read.
+
+A dashboard message uses the sender `human-dashboard` and is written through the
+brain. It is not an AI agent session and must not update an agent's activity.
+Recipient `all` broadcasts at the next activation/checkpoint; a named recipient
+must exist. The message is delivered at the recipient's next activation or
+bounded `wait`, not by waking an idle agent.
 
 ## Tasks and directives
 
@@ -263,6 +310,22 @@ Rules:
 - `edit commit` validates the current file hash, then releases the lease
   immediately.
 - `edit abort` releases immediately.
+- `edit begin` never bypasses another holder based only on a region label.
+  A direct save can replace the full file and erase a logically separate
+  region's unsaved work.
+- While another agent holds the file, an agent may prepare a repository-local
+  patch and send it to the holder without editing the leased source:
+
+  ```text
+  agent-coord edit propose <path> --region <name> --patch <patch-file> \
+    --summary "what this change does"
+  ```
+
+  This stores a proposal and sends the lease holder a `shared.request` message.
+  The proposal is not applied automatically. The holder reviews it and may
+  apply it after releasing the lease; `proposal apply` checks that the patch
+  still applies cleanly. A conflict means the agents reconcile the proposal
+  rather than overwrite the current file.
 - A failed commit still releases the lease and records a conflict; the agents
   must reconcile before writing again.
 - Expired leases are marked stale and audited. They are never auto-merged or
@@ -280,8 +343,12 @@ agent-coord shared accept --agent B <shared-id>
 agent-coord edit begin --agent A --path src/x.h --region ...
 ```
 
-Regions must be disjoint. Different regions are edited sequentially under a
-file lease. If both agents need the same region, use a patch proposal.
+Regions must be disjoint. Region names are coordination labels, not enforced
+source ranges or protection against stale full-file writes. Accepted shared
+work is still applied sequentially under a file lease. An agent that cannot
+wait for the current writer can prepare and submit a patch proposal for a
+different region; the holder integrates it after releasing the lease. If both
+agents need the same region, use a patch proposal and reconcile it explicitly.
 
 If both agents already changed the same file, `shared` conflict handling freezes
 the path, shows the working-tree diff, and requires reconciliation. There is no
@@ -293,6 +360,25 @@ automatic merge.
 reject. Competing implementations remain as alternative patch options. Only the
 selected option edits shared files unless the user explicitly approves a
 feature-flagged coexistence.
+
+## Architecture change guard
+
+The human has recorded this risk:
+
+> i worry this might be the super quick to jump to hot reloda architecture issue i had beofre, where im changing every file all at once without testing the actual mimita game which lead to a code base that was un reason-about able
+
+This is a risk/watch item, not a confirmed regression. Agents must not treat
+architecture work as proven merely because a build succeeds.
+
+- Change one bounded slice at a time.
+- Compile it.
+- Run the actual game through the dev-loop.
+- Require owner events in that executable's `events.jsonl`.
+- Keep the previous behavior and spec references.
+- Do not bulk-rewrite files or migrate broad subsystems without integration
+  proof.
+- If the risk actually occurs, add a confirmed regression under
+  `docs/regressions/hotreload/`.
 
 ## Evidence and mandatory proof
 
@@ -392,6 +478,11 @@ activity; an agent’s build/test request still goes through the root dev-loop.
 - `edit commit` releases immediately.
 - A failed commit releases and records a conflict.
 - A stale lease does not silently overwrite a file.
+- A region label alone never permits concurrent direct writes to the same
+  shared working-tree file.
+- A disjoint patch can be prepared and sent to the active lease holder while
+  that lease remains active; applying it still requires a free file lease and a
+  clean patch check.
 - Conflicting directives produce one active decision without a user wait.
 - A new directive marks the affected decision stale.
 - Decision Markdown is published automatically.

@@ -337,6 +337,25 @@ class CoordStore:
                 step_order INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (issue_id, task_id)
             );
+            CREATE TABLE IF NOT EXISTS task_proofs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                proof_id TEXT NOT NULL UNIQUE,
+                task_id TEXT NOT NULL,
+                agent TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'unverified',
+                build_id TEXT NOT NULL DEFAULT '',
+                game_generation INTEGER NOT NULL DEFAULT 0,
+                run_id TEXT NOT NULL DEFAULT '',
+                journal_path TEXT NOT NULL DEFAULT '',
+                event TEXT NOT NULL DEFAULT '',
+                field_predicate TEXT NOT NULL DEFAULT '',
+                paths TEXT NOT NULL DEFAULT '[]',
+                source_hashes TEXT NOT NULL DEFAULT '{}',
+                result TEXT NOT NULL DEFAULT 'unproven',
+                reason TEXT NOT NULL DEFAULT '',
+                verified_utc TEXT NOT NULL DEFAULT '',
+                created_utc TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS issue_quotes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 issue_id TEXT NOT NULL,
@@ -390,13 +409,71 @@ class CoordStore:
                 wait_reason TEXT NOT NULL DEFAULT '',
                 updated_utc TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS build_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id TEXT NOT NULL UNIQUE,
+                agent TEXT NOT NULL,
+                cohort TEXT NOT NULL DEFAULT '',
+                issue_id TEXT NOT NULL DEFAULT '',
+                kind TEXT NOT NULL DEFAULT 'integration',
+                base_generation INTEGER NOT NULL DEFAULT 0,
+                paths TEXT NOT NULL DEFAULT '[]',
+                overlay_paths TEXT NOT NULL DEFAULT '[]',
+                priority TEXT NOT NULL DEFAULT 'normal',
+                status TEXT NOT NULL DEFAULT 'proposed',
+                wait_reason TEXT NOT NULL DEFAULT '',
+                generation INTEGER NOT NULL DEFAULT 0,
+                dll_path TEXT NOT NULL DEFAULT '',
+                dll_sha256 TEXT NOT NULL DEFAULT '',
+                build_attempt_id TEXT NOT NULL DEFAULT '',
+                created_utc TEXT NOT NULL,
+                updated_utc TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS runtime_registry (
+                runtime_id TEXT PRIMARY KEY,
+                agent TEXT NOT NULL DEFAULT '',
+                cohort TEXT NOT NULL DEFAULT '',
+                issue_id TEXT NOT NULL DEFAULT '',
+                generation INTEGER NOT NULL DEFAULT 0,
+                dll_path TEXT NOT NULL DEFAULT '',
+                dll_sha256 TEXT NOT NULL DEFAULT '',
+                run_id TEXT NOT NULL DEFAULT '',
+                server_pid INTEGER NOT NULL DEFAULT 0,
+                client_pids TEXT NOT NULL DEFAULT '[]',
+                server_journal TEXT NOT NULL DEFAULT '',
+                client_journals TEXT NOT NULL DEFAULT '[]',
+                state TEXT NOT NULL DEFAULT 'starting',
+                created_utc TEXT NOT NULL,
+                updated_utc TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS build_owner (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                agent TEXT NOT NULL DEFAULT '',
+                updated_utc TEXT NOT NULL
+            );
             """
         )
         self._ensure_task_columns()
+        self._ensure_agent_columns()
         self.conn.execute(
             "INSERT OR IGNORE INTO halt(id, active, reason, by_agent, created_utc) "
             "VALUES (1, 0, '', '', ?)", (utc_now(),))
         self.conn.commit()
+
+    def _ensure_agent_columns(self) -> None:
+        existing = {str(row[1]) for row in self.conn.execute(
+            "PRAGMA table_info(agents)")}
+        additions = {
+            "parent": "TEXT NOT NULL DEFAULT ''",
+            "cohort": "TEXT NOT NULL DEFAULT ''",
+            "capabilities": "TEXT NOT NULL DEFAULT '[]'",
+            "budget": "TEXT NOT NULL DEFAULT '{}'",
+        }
+        with self.conn:
+            for name, definition in additions.items():
+                if name not in existing:
+                    self.conn.execute(
+                        f"ALTER TABLE agents ADD COLUMN {name} {definition}")
 
     def _ensure_task_columns(self) -> None:
         existing = {str(row[1]) for row in self.conn.execute(
@@ -408,12 +485,24 @@ class CoordStore:
             "evidence": "TEXT NOT NULL DEFAULT ''",
             "deferred_reason": "TEXT NOT NULL DEFAULT ''",
             "deferred_until": "TEXT NOT NULL DEFAULT ''",
+            "proof_exempt_reason": "TEXT NOT NULL DEFAULT ''",
+            "proof_exempt_paths": "TEXT NOT NULL DEFAULT '[]'",
         }
         with self.conn:
             for name, definition in additions.items():
                 if name not in existing:
                     self.conn.execute(
                         f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
+            issue_columns = {str(row[1]) for row in self.conn.execute(
+                "PRAGMA table_info(issues)")}
+            issue_additions = {
+                "proof_exempt_reason": "TEXT NOT NULL DEFAULT ''",
+                "proof_exempt_paths": "TEXT NOT NULL DEFAULT '[]'",
+            }
+            for name, definition in issue_additions.items():
+                if name not in issue_columns:
+                    self.conn.execute(
+                        f"ALTER TABLE issues ADD COLUMN {name} {definition}")
 
     # ── audit ────────────────────────────────────────────────────────────
     def event(self, name: str, agent: str = "", **fields) -> int:
@@ -531,7 +620,8 @@ class CoordStore:
                 f"path is frozen: {path} ({frozen['reason'] or 'no reason'})", 2)
 
     # ── agents and sync ──────────────────────────────────────────────────
-    def begin(self, agent: str, task: str) -> dict:
+    def begin(self, agent: str, task: str, *, parent: str = "",
+              cohort: str = "", capabilities: list[str] | None = None) -> dict:
         if not agent.strip():
             raise CoordError("agent name is required", 2)
         now = utc_now()
@@ -539,11 +629,14 @@ class CoordStore:
         with self.conn:
             self.conn.execute(
                 "INSERT INTO agents(agent, task, status, pid, session, started_utc, "
-                "last_seen_utc, cursor) VALUES (?,?,'active',?,?,?,?,0) "
+                "last_seen_utc, cursor, parent, cohort, capabilities) "
+                "VALUES (?,?,'active',?,?,?,?,0,?,?,?) "
                 "ON CONFLICT(agent) DO UPDATE SET task=excluded.task, status='active', "
                 "pid=excluded.pid, session=excluded.session, "
-                "last_seen_utc=excluded.last_seen_utc",
-                (agent, task, os.getpid(), session, now, now))
+                "last_seen_utc=excluded.last_seen_utc, parent=excluded.parent, "
+                "cohort=excluded.cohort, capabilities=excluded.capabilities",
+                (agent, task, os.getpid(), session, now, now, parent, cohort,
+                 json.dumps(capabilities or [])))
         with self.conn:
             self.conn.execute(
                 "INSERT INTO activity(agent,task_id,phase,activity,updated_utc) "
@@ -777,8 +870,146 @@ class CoordStore:
                    method=method)
         return {"task": task_id, "method": method}
 
+    def _proof_path_hash(self, relative: str) -> str:
+        path = Path(relative)
+        if not path.is_absolute():
+            path = ROOT / path
+        return sha256_file(path)
+
+    def proof_add(self, agent: str, task_id: str, *, paths=None,
+                  status: str = "runtime_proven", build_id: str = "",
+                  game_generation: int = 0, run_id: str = "",
+                  journal_path: str = "", event: str = "",
+                  field_predicate: str = "") -> dict:
+        self.require_agent(agent)
+        proof_id = new_id("task-proof")
+        path_list = [str(item) for item in (paths or [])]
+        hashes = {path: self._proof_path_hash(path) for path in path_list}
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO task_proofs(proof_id,task_id,agent,status,build_id,"
+                "game_generation,run_id,journal_path,event,field_predicate,paths,"
+                "source_hashes,created_utc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (proof_id, task_id, agent, status, build_id,
+                 int(game_generation or 0), run_id, journal_path, event,
+                 field_predicate, json.dumps(path_list), json.dumps(hashes),
+                 utc_now()))
+        self.event("coord.task-proof.added", agent, proof=proof_id,
+                   task=task_id, build=build_id,
+                   generation=game_generation, run=run_id, session=agent)
+        return {"id": proof_id, "task": task_id, "result": "unverified"}
+
+    def proof_verify(self, agent: str, proof_id: str) -> dict:
+        self.require_agent(agent)
+        row = self.conn.execute(
+            "SELECT * FROM task_proofs WHERE proof_id=?", (proof_id,)).fetchone()
+        if row is None:
+            raise CoordError(f"unknown task proof {proof_id!r}", 2)
+        reasons: list[str] = []
+        matched = False
+        if row["journal_path"]:
+            try:
+                journal = self._artifact_path(str(row["journal_path"]))
+                text = journal.read_text(encoding="utf-8", errors="replace")
+                for line in text.splitlines():
+                    try:
+                        value = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if row["event"] and value.get("event") != row["event"]:
+                        continue
+                    fields = value.get("fields") or {}
+                    if row["field_predicate"]:
+                        key, _, expected = str(row["field_predicate"]).partition("=")
+                        actual = fields.get(key)
+                        if str(actual) != expected:
+                            continue
+                    matched = True
+                    break
+                if not matched:
+                    reasons.append("journal event predicate not found")
+            except (OSError, RuntimeError) as error:
+                reasons.append(f"journal unavailable: {error}")
+        elif row["event"]:
+            reasons.append("journal path missing")
+        result = "proven" if not reasons else "unproven"
+        with self.conn:
+            self.conn.execute(
+                "UPDATE task_proofs SET result=?, reason=?, verified_utc=? "
+                "WHERE proof_id=?",
+                (result, "; ".join(reasons), utc_now(), proof_id))
+        self.event("coord.task-proof.verified", agent, proof=proof_id,
+                   task=row["task_id"], result=result,
+                   reason="; ".join(reasons), session=agent)
+        return {"id": proof_id, "task": row["task_id"], "result": result,
+                "reason": "; ".join(reasons)}
+
+    def proof_status(self) -> dict:
+        stale = 0
+        proven = 0
+        exempt = 0
+        rows = []
+        for row in self.conn.execute("SELECT * FROM task_proofs ORDER BY id"):
+            item = dict(row)
+            if item.get("result") == "exempt":
+                exempt += 1
+            if item.get("result") == "proven":
+                hashes = json.loads(item.get("source_hashes") or "{}")
+                changed = [path for path, expected in hashes.items()
+                           if self._proof_path_hash(path) != expected]
+                if changed:
+                    stale += 1
+                    item["result"] = "stale"
+                    item["reason"] = "source changed: " + ", ".join(changed)
+                    with self.conn:
+                        self.conn.execute(
+                            "UPDATE task_proofs SET result='stale', reason=? "
+                            "WHERE proof_id=?", (item["reason"], item["id"]))
+                else:
+                    proven += 1
+            rows.append(item)
+        return {"stale": stale, "proven": proven, "exempt": exempt,
+                "proofs": rows}
+
+    def proof_exempt(self, agent: str, task_id: str, reason: str,
+                     paths=None) -> dict:
+        self.require_agent(agent)
+        reason = reason.strip()
+        if not reason:
+            raise CoordError("proof exemption requires a reason", 2)
+        path_list = [str(item) for item in (paths or [])]
+        hashes = {path: self._proof_path_hash(path) for path in path_list}
+        proof_id = new_id("task-proof")
+        now = utc_now()
+        with self.conn:
+            self.conn.execute(
+                "UPDATE tasks SET proof_exempt_reason=?, proof_exempt_paths=?, "
+                "updated_utc=? WHERE id=?",
+                (reason, json.dumps(path_list), now, task_id))
+            self.conn.execute(
+                "INSERT INTO task_proofs(proof_id,task_id,agent,status,result,"
+                "paths,source_hashes,reason,verified_utc,created_utc) "
+                "VALUES (?,?,?,'exempt','exempt',?,?,?,?,?)",
+                (proof_id, task_id, agent, json.dumps(path_list),
+                 json.dumps(hashes), reason, now, now))
+        self.event("coord.task-proof.exempt", agent, task=task_id,
+                   proof=proof_id, reason=reason, session=agent)
+        return {"task": task_id, "exempt": True, "reason": reason,
+                "id": proof_id}
+
     def task_status(self, agent: str, task_id: str, state: str) -> dict:
         self.require_agent(agent)
+        if state == "done":
+            task = self.conn.execute(
+                "SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            exempt = bool(task and task["proof_exempt_reason"]) if task else False
+            proven = self.conn.execute(
+                "SELECT 1 FROM task_proofs WHERE task_id=? AND result='proven' "
+                "LIMIT 1", (task_id,)).fetchone()
+            if not exempt and proven is None:
+                raise CoordError(
+                    "task done requires verified proof or an explicit exemption",
+                    5)
         with self.conn:
             self.conn.execute(
                 "UPDATE tasks SET state=?, updated_utc=? WHERE id=?",
@@ -1238,26 +1469,158 @@ class CoordStore:
         return {"issue": self.issue_show(issue_id),
                 "evidence": self.evidence_list(issue_id)}
 
+    def next_work(self, agent: str, *, claim: bool = False) -> dict:
+        self.require_agent(agent)
+        priority = ("high", "normal", "low")
+        rows = [dict(row) for row in self.conn.execute(
+            "SELECT * FROM issues WHERE state NOT IN ('done','cancelled') "
+            "AND (owner='' OR owner=?) ORDER BY updated_utc", (agent,))]
+        rows.sort(key=lambda row: (
+            priority.index(str(row.get("priority") or "normal"))
+            if str(row.get("priority") or "normal") in priority else 1,
+            0 if row.get("owner") == agent else 1,
+            str(row.get("updated_utc") or "")))
+        blocked = [row for row in rows
+                   if row.get("state") in ("needs_clarification", "deferred")]
+        actionable = [row for row in rows
+                      if row.get("state") not in ("needs_clarification", "deferred")]
+        if not actionable:
+            return {"agent": agent, "issue": None,
+                    "blocked": blocked, "next_step": ""}
+        issue = actionable[0]
+        if claim and not issue.get("owner"):
+            self.issue_assign(agent, issue["id"], agent)
+            issue["owner"] = agent
+        tasks = [dict(row) for row in self.conn.execute(
+            "SELECT t.* FROM issue_tasks it JOIN tasks t ON t.id=it.task_id "
+            "WHERE it.issue_id=? AND t.state NOT IN ('done','cancelled') "
+            "ORDER BY it.step_order, t.id", (issue["id"],))]
+        task = tasks[0] if tasks else None
+        next_step = ""
+        if task:
+            next_step = str(task.get("acceptance") or "")
+            if not next_step:
+                next_step = f"Advance task {task.get('id')}: {task.get('title') or ''}".strip()
+        if not next_step:
+            next_step = str(issue.get("summary") or issue.get("title") or "")
+        return {
+            "agent": agent,
+            "issue": issue,
+            "task": task,
+            "next_step": next_step,
+            "blocked": blocked,
+        }
+
+    def wake_check(self, agent: str) -> dict:
+        work = self.next_work(agent)
+        issue = work.get("issue")
+        if not issue:
+            blocked = work.get("blocked") or []
+            return {
+                "wake": False,
+                "exit_code": 2 if blocked else 10,
+                "agent": agent,
+                "reason": "blocked issues only" if blocked else "no actionable work",
+                "blocked": blocked,
+            }
+        context = self.observe_issue(issue["id"], agent)
+        return {
+            "wake": True,
+            "exit_code": 0,
+            "agent": agent,
+            "issue": issue,
+            "task": work.get("task"),
+            "next_step": work.get("next_step"),
+            "blocked": work.get("blocked") or [],
+            "context": context,
+        }
+
+    def observe_issue(self, issue_id: str, agent: str = "") -> dict:
+        issue = self.issue_show(issue_id)
+        evidence = self.evidence_list(issue_id)
+        activity = [dict(row) for row in self.conn.execute(
+            "SELECT * FROM activity WHERE issue_id=? ORDER BY agent",
+            (issue_id,))]
+        messages = [dict(row) for row in self.conn.execute(
+            "SELECT msg_id,thread,sender,recipient,kind,subject,created_utc "
+            "FROM messages ORDER BY id DESC LIMIT 15")]
+        build = {}
+        for path in (ROOT / "build" / "game" / "ready.json",
+                     ROOT / "build" / "game" / "current.json"):
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(value, dict):
+                    build[path.name] = value
+            except (OSError, json.JSONDecodeError):
+                continue
+        runtimes = []
+        runtime_root = ROOT / ".dev" / "agent-runtimes"
+        if runtime_root.is_dir():
+            for path in sorted(runtime_root.glob("*.json")):
+                try:
+                    value = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if not isinstance(value, dict):
+                    continue
+                if agent and value.get("agent") not in ("", agent):
+                    continue
+                runtimes.append(value)
+            runtimes = runtimes[-10:]
+        return {
+            "issue": issue,
+            "evidence": evidence,
+            "activity": activity,
+            "recent_messages": messages,
+            "build": build,
+            "runtimes": runtimes,
+        }
+
     def issue_close(self, agent: str, issue_id: str, resolution: str,
                     evidence: str = "") -> dict:
         self.require_agent(agent)
+        issue = self._issue_row(issue_id)
         proven = self.conn.execute(
             "SELECT * FROM issue_evidence WHERE issue_id=? AND result='proven' "
             "AND proof_kind IN ('integration','unit') ORDER BY id DESC LIMIT 1",
             (issue_id,)).fetchone()
-        if proven is None:
+        exempt = str(issue["proof_exempt_reason"] or "").strip()
+        if proven is None and not exempt:
             raise CoordError(
-                "issue close requires proven integration evidence or a unit proof",
-                2)
+                "issue close requires proven integration/unit evidence or an "
+                "explicit issue proof exemption with a reason", 5)
         with self.conn:
             self.conn.execute(
                 "UPDATE issues SET state='done', resolution=?, deferred_reason='', "
                 "deferred_until='', updated_utc=? WHERE id=?",
                 (resolution, utc_now(), issue_id))
+        if proven is None:
+            proof_text = f"Proof exemption: {exempt}"
+        else:
+            proof_text = (f"Evidence: {evidence or proven['evidence_id']} "
+                          f"({proven['proof_kind']}, {proven['result']})")
         return self._issue_append(
             agent, issue_id, "Resolution",
-            f"{resolution}\n\nEvidence: {evidence or proven['evidence_id']} "
-            f"({proven['proof_kind']}, {proven['result']})")
+            f"{resolution}\n\n{proof_text}")
+
+    def issue_exempt(self, agent: str, issue_id: str, reason: str,
+                     paths=None) -> dict:
+        self.require_agent(agent)
+        self._issue_row(issue_id)
+        reason = reason.strip()
+        if not reason:
+            raise CoordError("issue proof exemption requires a reason", 2)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE issues SET proof_exempt_reason=?, proof_exempt_paths=?, "
+                "updated_utc=? WHERE id=?",
+                (reason, json.dumps([str(item) for item in (paths or [])]),
+                 utc_now(), issue_id))
+        self.event("coord.issue-proof.exempt", agent, issue=issue_id,
+                   reason=reason, session=agent)
+        return self._issue_append(
+            agent, issue_id, "Proof exemption",
+            f"Reason: {reason}\n\nPaths: {', '.join(paths or []) or '(not specified)'}")
 
     def issue_quote(self, agent: str, issue_id: str, quote: str,
                     supports: str = "") -> dict:
@@ -1342,13 +1705,148 @@ class CoordStore:
                    run=run_id, wait_reason=wait_reason, session=agent)
         return self.board(agent=agent)
 
+    def build_request(self, agent: str, *, kind: str = "integration",
+                      issue_id: str = "", base_generation: int = 0,
+                      paths=None, overlay_paths=None,
+                      priority: str = "normal", cohort: str = "") -> dict:
+        self.require_agent(agent)
+        if kind not in ("integration", "preview"):
+            raise CoordError("build kind must be integration or preview", 2)
+        request_id = new_id("build-request")
+        now = utc_now()
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO build_requests(request_id,agent,cohort,issue_id,kind,"
+                "base_generation,paths,overlay_paths,priority,created_utc,"
+                "updated_utc) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (request_id, agent, cohort, issue_id, kind, int(base_generation),
+                 json.dumps([str(item) for item in (paths or [])]),
+                 json.dumps([str(item) for item in (overlay_paths or [])]),
+                 priority, now, now))
+        self.event("coord.build.requested", agent, request=request_id,
+                   kind=kind, issue=issue_id, base_generation=base_generation,
+                   priority=priority, session=agent)
+        return {"request": request_id, "agent": agent, "kind": kind,
+                "status": "proposed"}
+
+    def build_owner(self, agent: str = "") -> dict:
+        if agent:
+            with self.conn:
+                self.conn.execute(
+                    "INSERT INTO build_owner(id,agent,updated_utc) VALUES (1,?,?) "
+                    "ON CONFLICT(id) DO UPDATE SET agent=excluded.agent, "
+                    "updated_utc=excluded.updated_utc", (agent, utc_now()))
+            self.event("coord.build.owner", agent, owner=agent, session=agent)
+        row = self.conn.execute("SELECT * FROM build_owner WHERE id=1").fetchone()
+        return dict(row) if row else {"agent": ""}
+
+    def build_list(self, *, status: str = "") -> list[dict]:
+        if status:
+            rows = self.conn.execute(
+                "SELECT * FROM build_requests WHERE status=? ORDER BY id",
+                (status,))
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM build_requests ORDER BY id DESC LIMIT 100")
+        return [dict(row) for row in rows]
+
+    def build_update(self, agent: str, request_id: str, status: str,
+                     *, generation: int = 0, dll_path: str = "",
+                     dll_sha256: str = "", wait_reason: str = "") -> dict:
+        self.require_agent(agent)
+        if status not in ("approved", "queued", "building", "published",
+                          "failed", "rejected", "superseded", "excluded"):
+            raise CoordError("invalid build status", 2)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE build_requests SET status=?, generation=COALESCE(NULLIF(?,0),"
+                "generation), dll_path=CASE WHEN ?<>'' THEN ? ELSE dll_path END, "
+                "dll_sha256=CASE WHEN ?<>'' THEN ? ELSE dll_sha256 END, "
+                "wait_reason=?, updated_utc=? WHERE request_id=?",
+                (status, int(generation), dll_path, dll_path, dll_sha256,
+                 dll_sha256, wait_reason, utc_now(), request_id))
+        self.event("coord.build.updated", agent, request=request_id,
+                   status=status, generation=generation, wait_reason=wait_reason,
+                   session=agent)
+        return {"request": request_id, "status": status}
+
+    def build_wait(self, agent: str, request_id: str, reason: str,
+                   seconds: float = 0) -> dict:
+        self.require_agent(agent)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE build_requests SET wait_reason=?, updated_utc=? "
+                "WHERE request_id=?", (reason, utc_now(), request_id))
+        self.event("coord.build.wait", agent, request=request_id,
+                   reason=reason, seconds=seconds, session=agent)
+        return {"request": request_id, "wait_reason": reason,
+                "seconds": seconds}
+
+    def runtime_register(self, agent: str, runtime_id: str, *,
+                         cohort: str = "", issue_id: str = "",
+                         generation: int = 0, dll_path: str = "",
+                         dll_sha256: str = "", run_id: str = "",
+                         server_pid: int = 0, client_pids=None,
+                         server_journal: str = "", client_journals=None,
+                         state: str = "starting") -> dict:
+        self.require_agent(agent)
+        now = utc_now()
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO runtime_registry(runtime_id,agent,cohort,issue_id,"
+                "generation,dll_path,dll_sha256,run_id,server_pid,client_pids,"
+                "server_journal,client_journals,state,created_utc,updated_utc) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(runtime_id) DO UPDATE SET agent=excluded.agent, "
+                "cohort=excluded.cohort, issue_id=excluded.issue_id, "
+                "generation=excluded.generation, dll_path=excluded.dll_path, "
+                "dll_sha256=excluded.dll_sha256, run_id=excluded.run_id, "
+                "server_pid=excluded.server_pid, client_pids=excluded.client_pids, "
+                "server_journal=excluded.server_journal, "
+                "client_journals=excluded.client_journals, state=excluded.state, "
+                "updated_utc=excluded.updated_utc",
+                (runtime_id, agent, cohort, issue_id, int(generation), dll_path,
+                 dll_sha256, run_id, int(server_pid),
+                 json.dumps(client_pids or []), server_journal,
+                 json.dumps(client_journals or []), state, now, now))
+        self.event("coord.runtime.registered", agent, runtime=runtime_id,
+                   generation=generation, run=run_id, state=state, session=agent)
+        return {"runtime": runtime_id, "state": state}
+
+    def runtime_list(self, *, agent: str = "", state: str = "") -> list[dict]:
+        clauses = []
+        args: list[object] = []
+        if agent:
+            clauses.append("(agent=? OR cohort=?)")
+            args.extend([agent, agent])
+        if state:
+            clauses.append("state=?")
+            args.append(state)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        return [dict(row) for row in self.conn.execute(
+            "SELECT * FROM runtime_registry" + where + " ORDER BY updated_utc DESC",
+            args)]
+
+    def runtime_update(self, agent: str, runtime_id: str, state: str) -> dict:
+        self.require_agent(agent)
+        if state not in ("starting", "running", "stalled", "stopping",
+                         "stopped", "failed"):
+            raise CoordError("invalid runtime state", 2)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE runtime_registry SET state=?, updated_utc=? "
+                "WHERE runtime_id=?", (state, utc_now(), runtime_id))
+        self.event("coord.runtime.updated", agent, runtime=runtime_id,
+                   state=state, session=agent)
+        return {"runtime": runtime_id, "state": state}
+
     def board(self, *, agent: str = "") -> dict:
         self._sweep(agent)
         activity_rows = {row["agent"]: dict(row)
                          for row in self.conn.execute("SELECT * FROM activity")}
         agents = []
         for row in self.conn.execute(
-                "SELECT agent,task,status,pid,last_seen_utc FROM agents "
+                "SELECT agent,task,status,pid,last_seen_utc,parent,cohort,capabilities FROM agents "
                 "ORDER BY agent"):
             item = dict(row)
             item["activity"] = activity_rows.get(item["agent"], {})
@@ -1364,6 +1862,10 @@ class CoordStore:
             "agents": agents,
             "issues": issues,
             "tasks": tasks,
+            "proof": self.proof_status(),
+            "build_requests": self.build_list(),
+            "build_owner": self.build_owner(),
+            "runtimes": self.runtime_list(),
             "leases": [dict(row) for row in self.conn.execute(
                 "SELECT * FROM leases WHERE state='active' ORDER BY path")],
             "unread": int(self.conn.execute(
@@ -1371,6 +1873,102 @@ class CoordStore:
                 "(recipient=? OR recipient IN ('all','any'))",
                 (agent or "",)).fetchone()[0]) if agent else 0,
         }
+
+    def coordination_snapshot(self, agent: str = "", *,
+                              limit_agents: int = 50,
+                              limit_messages: int = 80,
+                              limit_issues: int = 100,
+                              limit_notes: int = 30,
+                              limit_decisions: int = 15) -> dict:
+        """Bounded read-only data for the dev-loop coordination panel."""
+        activity_rows = {row["agent"]: dict(row)
+                         for row in self.conn.execute("SELECT * FROM activity")}
+        agents = []
+        for row in self.conn.execute(
+                "SELECT agent,task,status,pid,last_seen_utc,parent,cohort,capabilities FROM agents "
+                "ORDER BY agent LIMIT ?", (max(1, int(limit_agents)),)):
+            item = dict(row)
+            item["activity"] = activity_rows.get(item["agent"], {})
+            agents.append(item)
+        agents.sort(key=lambda item: (
+            0 if item.get("status") == "active" else
+            1 if item.get("status") == "stale" else 2,
+            str(item.get("agent") or "")))
+        issues = [dict(row) for row in self.conn.execute(
+            "SELECT * FROM issues WHERE state NOT IN ('done','cancelled') "
+            "ORDER BY updated_utc DESC LIMIT ?", (max(1, int(limit_issues)),))]
+        tasks = [dict(row) for row in self.conn.execute(
+            "SELECT * FROM tasks WHERE state NOT IN ('done','cancelled') "
+            "ORDER BY updated_utc DESC LIMIT 200")]
+        message_rows = [dict(row) for row in self.conn.execute(
+            "SELECT id,msg_id,thread,sender,recipient,kind,subject,body,paths,"
+            "requires_response,created_utc,read_at,answered_at,reply_to "
+            "FROM messages ORDER BY id DESC LIMIT ?",
+            (max(1, int(limit_messages)),))]
+        message_rows.reverse()
+        for item in message_rows:
+            sender = str(item.get("sender") or "")
+            item["sender_kind"] = ("human"
+                                   if sender in {"human-dashboard", "human"}
+                                   else "agent")
+        notes = [dict(row) for row in self.conn.execute(
+            "SELECT id,agent,task_id,body,tags,created_utc FROM notes "
+            "ORDER BY id DESC LIMIT ?", (max(1, int(limit_notes)),))]
+        notes.reverse()
+        decisions = [dict(row) for row in self.conn.execute(
+            "SELECT decision_id,task_id,chosen,rationale,status,created_utc "
+            "FROM decisions ORDER BY id DESC LIMIT ?",
+            (max(1, int(limit_decisions)),))]
+        decisions.reverse()
+        leases = [dict(row) for row in self.conn.execute(
+            "SELECT * FROM leases WHERE state='active' ORDER BY path")]
+        unread = int(self.conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE read_at=''").fetchone()[0])
+        focus = issues[0] if issues else {}
+        return {
+            "generated_utc": utc_now(),
+            "focus": focus,
+            "agents": agents,
+            "issues": issues,
+            "tasks": tasks,
+            "messages": message_rows,
+            "notes": notes,
+            "decisions": decisions,
+            "leases": leases,
+            "build_requests": self.build_list(),
+            "build_owner": self.build_owner(),
+            "runtimes": self.runtime_list(),
+            "unread": unread,
+        }
+
+    def send_human(self, recipient: str, subject: str, body: str, *,
+                   kind: str = "message", thread: str = "") -> dict:
+        """Write a human-dashboard message without registering an AI agent."""
+        recipient = str(recipient or "").strip()
+        body = str(body or "").strip()
+        if not recipient:
+            raise CoordError("recipient is required", 2)
+        if not body:
+            raise CoordError("message body is required", 2)
+        if recipient not in {"all", "any"}:
+            if self._agent_row(recipient) is None:
+                raise CoordError(f"unknown recipient {recipient!r}", 2)
+        now = utc_now()
+        msg_id = new_id("msg")
+        thread_id = thread.strip() or new_id("thread")
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO messages(msg_id,thread,sender,recipient,kind,"
+                "subject,body,paths,requires_response,due_utc,created_utc,"
+                "reply_to) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (msg_id, thread_id, "human-dashboard", recipient, kind,
+                 str(subject or "").strip(), body, "[]", 0, "", now, ""))
+        self.event("coord.message.sent", "human-dashboard", message=msg_id,
+                   thread=thread_id, recipient=recipient, kind=kind,
+                   human=True)
+        return {"message": msg_id, "thread": thread_id,
+                "recipient": recipient, "sender": "human-dashboard",
+                "created_utc": now}
 
     # ── conflicts, options, votes, decisions ─────────────────────────────
     def conflict_list(self, *, open_only: bool = True) -> list[dict]:
@@ -1632,7 +2230,11 @@ class CoordStore:
         if active and active["holder"] != agent:
             raise CoordError(
                 f"{relative} is leased by {active['holder']} until "
-                f"{active['expires_utc']}", 2)
+                f"{active['expires_utc']}; direct writes to one shared file "
+                "stay serialized because a full-file save can overwrite "
+                "another region's changes. Prepare a disjoint patch and notify "
+                "the lease owner with: edit propose <path> --region <name> "
+                "--patch <repo-local-patch> --summary <intent>", 2)
         shared = self._shared_for_path(relative)
         if shared and agent not in json.loads(shared["participants"]):
             raise CoordError(
@@ -1665,6 +2267,43 @@ class CoordStore:
                    task=task_id, session=agent)
         return {"lease": lease_id, "path": relative, "expires_utc": expires,
                 "base_hash": current_hash}
+
+    def edit_propose(self, agent: str, path: str, region: str,
+                     patch: str, summary: str) -> dict:
+        """Prepare a same-file patch and notify the active lease owner."""
+        self.require_agent(agent)
+        relative = self._resolve_path(path)
+        region = region.strip()
+        summary = summary.strip()
+        if not region or not summary:
+            raise CoordError("edit proposal requires a region and summary", 2)
+        active = self._active_lease(relative)
+        if active is None:
+            raise CoordError(
+                f"{relative} has no active lease; use edit begin for a direct edit", 2)
+        if active["holder"] == agent:
+            raise CoordError(
+                f"{agent} already holds the lease for {relative}; apply the "
+                "patch within that lease instead of proposing to yourself", 2)
+        holder = str(active["holder"])
+        proposal = self.proposal_create(agent, holder, relative, patch)
+        message = self.send(
+            agent, holder,
+            f"Same-file patch request: {relative} [{region}]",
+            f"{summary}\n\nProposal {proposal['proposal']} contains a patch for "
+            f"region '{region}'. It has not been applied. Please review it and, "
+            "after your file lease is released, apply it if it still fits; the "
+            "patch apply check will reject conflicting context.",
+            kind="shared.request", paths=[relative], requires_response=True,
+            due_minutes=DEFAULT_QUESTION_MINUTES)
+        return {
+            "proposal": proposal["proposal"],
+            "message": message["message"],
+            "recipient": holder,
+            "path": relative,
+            "region": region,
+            "applied": False,
+        }
 
     def edit_commit(self, agent: str, path: str, *, new_hash: str = "") -> dict:
         self.require_agent(agent)
@@ -1868,7 +2507,7 @@ class CoordStore:
             "freezes": [dict(row) for row in self.conn.execute(
                 "SELECT * FROM freezes WHERE released_utc='' ORDER BY path")],
             "agents": [dict(row) for row in self.conn.execute(
-                "SELECT agent,task,status,pid,last_seen_utc FROM agents ORDER BY agent")],
+                "SELECT agent,task,status,pid,last_seen_utc,parent,cohort,capabilities FROM agents ORDER BY agent")],
             "leases": [dict(row) for row in self.conn.execute(
                 "SELECT * FROM leases WHERE state='active' ORDER BY path")],
             "shared": [dict(row) for row in self.conn.execute(
@@ -1883,6 +2522,10 @@ class CoordStore:
                 "SELECT id,title,kind,state,severity,priority,owner,summary,"
                 "deferred_reason,deferred_until,updated_utc FROM issues "
                 "WHERE state NOT IN ('done','cancelled') ORDER BY updated_utc DESC")],
+            "proof": self.proof_status(),
+            "build_requests": self.build_list(),
+            "build_owner": self.build_owner(),
+            "runtimes": self.runtime_list(),
             "unread": unread,
         }
 
@@ -1933,9 +2576,14 @@ def format_brief(brief: dict) -> str:
     activity = {row.get("agent"): row for row in (brief.get("activity") or [])}
     issues = brief.get("issues") or []
     agents = brief.get("agents") or []
+    proof = brief.get("proof") or {}
+    proofs = proof.get("proofs") or []
+    unproven = sum(1 for row in proofs
+                   if row.get("result") not in {"proven", "exempt"})
     line = (f"[COORD] unread={brief.get('unread', 0)} "
             f"conflicts={len(conflicts)} leases={len(leases)} "
             f"agents={len(agents)} open_issues={len(issues)} "
+            f"unproven={unproven} stale={proof.get('stale', 0)} "
             f"halt={'yes' if halt.get('active') else 'no'}")
     if decisions:
         current = decisions[0]
@@ -1959,6 +2607,12 @@ def format_brief(brief: dict) -> str:
         lines.append(f"[ISSUE] {issue.get('id')} {issue.get('state')} "
                      f"kind={issue.get('kind')} owner={issue.get('owner') or '-'} "
                      f"{issue.get('summary') or issue.get('title') or ''}")
+    for row in proofs:
+        if row.get("result") in {"proven", "exempt"}:
+            continue
+        lines.append(f"[PROOF] task={row.get('task_id')} "
+                     f"result={row.get('result')} "
+                     f"reason={row.get('reason') or '-'}")
     return "\n".join(lines)
 
 
@@ -1992,6 +2646,9 @@ def create_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("begin")
     p.add_argument("--task", default="")
+    p.add_argument("--parent", default="")
+    p.add_argument("--cohort", default="")
+    p.add_argument("--capability", action="append", default=[])
     p = sub.add_parser("end")
     p = sub.add_parser("sync")
     p.add_argument("--peek", action="store_true")
@@ -2114,6 +2771,10 @@ def create_parser() -> argparse.ArgumentParser:
     i.add_argument("issue_id")
     i.add_argument("--resolution", required=True)
     i.add_argument("--evidence", default="")
+    i = isub.add_parser("exempt")
+    i.add_argument("issue_id")
+    i.add_argument("--reason", required=True)
+    i.add_argument("--paths", nargs="*", default=[])
     i = isub.add_parser("quote")
     i.add_argument("issue_id")
     i.add_argument("quote")
@@ -2143,6 +2804,22 @@ def create_parser() -> argparse.ArgumentParser:
     q.add_argument("evidence_id")
     q = psub.add_parser("list")
     q.add_argument("--issue", default="")
+    q = psub.add_parser("task-add")
+    q.add_argument("task_id")
+    q.add_argument("--paths", nargs="*", default=[])
+    q.add_argument("--build-id", default="")
+    q.add_argument("--generation", type=int, default=0)
+    q.add_argument("--run-id", default="")
+    q.add_argument("--journal", default="")
+    q.add_argument("--event", default="")
+    q.add_argument("--field", default="")
+    q = psub.add_parser("task-verify")
+    q.add_argument("proof_id")
+    q = psub.add_parser("exempt")
+    q.add_argument("task_id")
+    q.add_argument("--reason", required=True)
+    q.add_argument("--paths", nargs="*", default=[])
+    q = psub.add_parser("status")
     p = sub.add_parser("trace")
     p.add_argument("issue_id")
 
@@ -2161,6 +2838,55 @@ def create_parser() -> argparse.ArgumentParser:
     a.add_argument("--next-step", default="")
     a.add_argument("--wait-reason", default="")
     p = sub.add_parser("board")
+    p = sub.add_parser("next")
+    p.add_argument("--claim", action="store_true")
+    p = sub.add_parser("observe")
+    p.add_argument("issue_id")
+    p = sub.add_parser("wake-check")
+    p = sub.add_parser("build")
+    bsub = p.add_subparsers(dest="build_command", required=True)
+    b = bsub.add_parser("request")
+    b.add_argument("--kind", choices=("integration", "preview"),
+                   default="integration")
+    b.add_argument("--issue", default="")
+    b.add_argument("--base-generation", type=int, default=0)
+    b.add_argument("--paths", nargs="*", default=[])
+    b.add_argument("--overlay", nargs="*", default=[])
+    b.add_argument("--priority", default="normal")
+    b.add_argument("--cohort", default="")
+    b = bsub.add_parser("list")
+    b.add_argument("--status", default="")
+    b = bsub.add_parser("owner")
+    b.add_argument("--set", default="")
+    b = bsub.add_parser("approve")
+    b.add_argument("request_id")
+    b = bsub.add_parser("reject")
+    b.add_argument("request_id")
+    b.add_argument("--reason", default="")
+    b = bsub.add_parser("wait")
+    b.add_argument("request_id")
+    b.add_argument("--reason", required=True)
+    b.add_argument("--seconds", type=float, default=0.0)
+    p = sub.add_parser("runtime")
+    rsub = p.add_subparsers(dest="runtime_command", required=True)
+    r = rsub.add_parser("register")
+    r.add_argument("runtime_id")
+    r.add_argument("--cohort", default="")
+    r.add_argument("--issue", default="")
+    r.add_argument("--generation", type=int, default=0)
+    r.add_argument("--dll", default="")
+    r.add_argument("--dll-sha", default="")
+    r.add_argument("--run-id", default="")
+    r.add_argument("--server-pid", type=int, default=0)
+    r.add_argument("--client-pids", nargs="*", type=int, default=[])
+    r.add_argument("--server-journal", default="")
+    r.add_argument("--client-journals", nargs="*", default=[])
+    r.add_argument("--state", default="starting")
+    r = rsub.add_parser("list")
+    r.add_argument("--state", default="")
+    r = rsub.add_parser("update")
+    r.add_argument("runtime_id")
+    r.add_argument("state")
 
     p = sub.add_parser("conflict")
     csub = p.add_subparsers(dest="conflict_command", required=True)
@@ -2217,6 +2943,12 @@ def create_parser() -> argparse.ArgumentParser:
     e.add_argument("--hash", default="")
     e.add_argument("--minutes", type=float, default=DEFAULT_TTL_MINUTES)
     e.add_argument("--task", default="")
+    e = esub.add_parser("propose")
+    e.add_argument("path")
+    e.add_argument("--region", required=True)
+    e.add_argument("--patch", required=True,
+                   help="repository-local patch file prepared outside the leased source file")
+    e.add_argument("--summary", required=True)
     e = esub.add_parser("commit")
     e.add_argument("path")
     e.add_argument("--hash", default="")
@@ -2267,19 +2999,27 @@ def _load_regions(value: str) -> dict[str, list[str]]:
 
 def run(args: argparse.Namespace) -> object:
     needs_agent = args.command not in {"status", "conflict", "guard", "board",
-                                      "trace"}
+                                      "trace", "observe"}
     if args.command == "decision" and args.decision_command == "list":
         needs_agent = False
-    if args.command == "proof" and args.proof_command == "list":
+    if args.command == "proof" and args.proof_command in {"list", "status"}:
         needs_agent = False
     if args.command == "issue" and args.issue_command in {"list", "show"}:
+        needs_agent = False
+    if args.command == "build" and (
+            args.build_command == "list" or
+            (args.build_command == "owner" and not args.set)):
+        needs_agent = False
+    if args.command == "runtime" and args.runtime_command == "list":
         needs_agent = False
     agent = _agent_arg(args, required=needs_agent)
     store = CoordStore(Path(args.root) if args.root else None)
     try:
         command = args.command
         if command == "begin":
-            return store.begin(agent, args.task)
+            return store.begin(agent, args.task, parent=args.parent,
+                               cohort=args.cohort,
+                               capabilities=args.capability)
         if command == "end":
             return store.end(agent)
         if command == "sync":
@@ -2374,6 +3114,9 @@ def run(args: argparse.Namespace) -> object:
             if args.issue_command == "close":
                 return store.issue_close(
                     agent, args.issue_id, args.resolution, args.evidence)
+            if args.issue_command == "exempt":
+                return store.issue_exempt(
+                    agent, args.issue_id, args.reason, args.paths)
             if args.issue_command == "quote":
                 return store.issue_quote(
                     agent, args.issue_id, args.quote, args.supports)
@@ -2392,6 +3135,19 @@ def run(args: argparse.Namespace) -> object:
                     required_events=args.event, dll_path=args.dll)
             if args.proof_command == "verify":
                 return store.evidence_verify(agent, args.evidence_id)
+            if args.proof_command == "task-add":
+                return store.proof_add(
+                    agent, args.task_id, paths=args.paths,
+                    build_id=args.build_id, game_generation=args.generation,
+                    run_id=args.run_id, journal_path=args.journal,
+                    event=args.event, field_predicate=args.field)
+            if args.proof_command == "task-verify":
+                return store.proof_verify(agent, args.proof_id)
+            if args.proof_command == "exempt":
+                return store.proof_exempt(
+                    agent, args.task_id, args.reason, args.paths)
+            if args.proof_command == "status":
+                return store.proof_status()
             return store.evidence_list(args.issue)
         if command == "trace":
             return store.issue_trace(args.issue_id)
@@ -2405,6 +3161,44 @@ def run(args: argparse.Namespace) -> object:
                 wait_reason=args.wait_reason)
         if command == "board":
             return store.board(agent=agent)
+        if command == "next":
+            return store.next_work(agent, claim=args.claim)
+        if command == "observe":
+            return store.observe_issue(args.issue_id, agent)
+        if command == "wake-check":
+            return store.wake_check(agent)
+        if command == "build":
+            if args.build_command == "request":
+                return store.build_request(
+                    agent, kind=args.kind, issue_id=args.issue,
+                    base_generation=args.base_generation, paths=args.paths,
+                    overlay_paths=args.overlay, priority=args.priority,
+                    cohort=args.cohort)
+            if args.build_command == "list":
+                return store.build_list(status=args.status)
+            if args.build_command == "owner":
+                return store.build_owner(args.set)
+            if args.build_command == "approve":
+                return store.build_update(agent, args.request_id, "approved")
+            if args.build_command == "reject":
+                return store.build_update(
+                    agent, args.request_id, "rejected",
+                    wait_reason=args.reason)
+            return store.build_wait(
+                agent, args.request_id, args.reason, args.seconds)
+        if command == "runtime":
+            if args.runtime_command == "register":
+                return store.runtime_register(
+                    agent, args.runtime_id, cohort=args.cohort,
+                    issue_id=args.issue, generation=args.generation,
+                    dll_path=args.dll, dll_sha256=args.dll_sha,
+                    run_id=args.run_id, server_pid=args.server_pid,
+                    client_pids=args.client_pids,
+                    server_journal=args.server_journal,
+                    client_journals=args.client_journals, state=args.state)
+            if args.runtime_command == "list":
+                return store.runtime_list(agent=agent, state=args.state)
+            return store.runtime_update(agent, args.runtime_id, args.state)
         if command == "conflict":
             if args.conflict_command == "list":
                 return store.conflict_list(open_only=not args.all)
@@ -2435,6 +3229,9 @@ def run(args: argparse.Namespace) -> object:
                 return store.edit_begin(
                     agent, args.path, region=args.region, known_hash=args.hash,
                     minutes=args.minutes, task_id=args.task)
+            if args.edit_command == "propose":
+                return store.edit_propose(
+                    agent, args.path, args.region, args.patch, args.summary)
             if args.edit_command == "commit":
                 return store.edit_commit(agent, args.path, new_hash=args.hash)
             return store.edit_abort(agent, args.path)
@@ -2497,6 +3294,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run(args)
         _print(result, args.json)
+        if args.command == "wake-check" and isinstance(result, dict):
+            return int(result.get("exit_code") or 0)
         return 0
     except CoordError as error:
         print(f"[AGENT COORD] {error}", file=sys.stderr)
@@ -2508,9 +3307,6 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-
 
 
 
