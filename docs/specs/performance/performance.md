@@ -63,27 +63,40 @@ devices, not total CPU utilization alone.
 
 The fixed 60 Hz gameplay simulation remains authoritative regardless of render
 rate. The working performance target is 240 FPS, about 4.167 ms per rendered
-frame. 999 FPS / about 1.00 ms is an aspirational headroom goal, not a gate, a
-support promise, or a reason to change gameplay tick rate. Record the target
-hardware, workload, frame count, and whether the measurement is CPU, GPU, or
+frame. Visible 240 FPS requires a display capable of 240 Hz; a 60 Hz display
+cannot show the result. Record the target hardware, display refresh,
+workload, frame count, and whether the measurement is CPU, GPU, or
 frame-pacing limited.
+
+999 FPS / about 1.00 ms remains an aspirational engineering target. It is not a
+current gate, support promise, or reason to change gameplay tick rate. It does
+not need to be measured for 240 FPS acceptance.
 
 ### Performance acceptance goals
 
-Client frame acceptance is per-frame:
+Client frame acceptance is per-frame and stricter than the prior p99.99 gate:
 
-- At least 99.99% of rendered frames must complete within the 240 FPS budget,
-  at or below 4.167 ms.
-- Report `p50`, `p95`, `p99`, `p99.99`, max, and the exact count and percentage
-  of frames over budget.
+- **Every rendered frame in the controlled acceptance window** must complete
+  at or below 4.167 ms. A 239 FPS frame is a failure.
+- Report `p50`, `p95`, `p99`, `p99.99`, max, every frame over budget, and the
+  exact count/percentage over budget.
+- Report frame-time jitter and spike history. Consistency is the primary
+  result; a high average must not hide a stutter.
 - Do not use an average FPS or a one-second-window average as the acceptance
-  gate. One-second `performance.fps` records remain useful diagnostics and must
-  not hide a frame spike.
-- The aspirational 1 ms budget is reported separately. It must not replace the
-  240 FPS gate or make ordinary frames look like failures before the project
-  reaches that headroom.
+  gate. One-second `performance.fps` records remain diagnostics only.
 - Do not lower visual quality to satisfy the target. If the measured hardware
   ceiling is below 240 FPS, report the ceiling and the largest measured scopes.
+- A visible 240 FPS claim is invalid on a display that cannot present 240 Hz.
+  Use a high-refresh display for visible acceptance and report a headless /
+  offscreen engineering result separately.
+- The 999 FPS aspirational target is reported separately and is not required.
+
+UI work must add per-subphase scopes for layout, text measurement, font
+rendering, draw, panels, HUD, overlays, and visible/culled widget counts. A
+single `UI` timer is not enough to identify the expensive owner.
+
+See [culling and work avoidance](culling-and-work-avoidance.md) for the
+visibility/LOD/work-avoidance backlog.
 
 Server tick acceptance is separate:
 

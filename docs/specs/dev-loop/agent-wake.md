@@ -112,6 +112,27 @@ It must not self-approve a critical Class C change; see
 `next` answers “what should be done.” Wake answers “start a turn to do it.”
 `next` is safe to call manually; wake is the automated delivery path.
 
+## Message-triggered brain checks and issue contributions
+
+`sync`, `send`, `ask`, and `reply` return a bounded `brain_check` containing
+the agent's current issue, its next suggested work, and up to five claimable
+issues. The agent reviews this result before continuing. Sending a message does
+not assign work automatically; an agent that chooses to own an unassigned issue
+uses `agent-coord next --claim`.
+
+Issue-related messages accept `--issue <id>`. When a subject or body names one
+existing issue ID, the coordinator also detects and links it automatically.
+Linked message bodies are appended to that issue's append-only discussion and
+suggestions section. Agents can add a standalone proposal with:
+
+```text
+agent-coord issue suggest <id> "<suggestion>"
+```
+
+Contributions should identify whether they are a suggestion, evidence,
+question, or objection. Agents should not append unrelated status messages or
+create duplicate issues when an existing issue fits.
+
 ## Acceptance
 
 - A human can see actionable work and the wake state.
@@ -121,3 +142,6 @@ It must not self-approve a critical Class C change; see
 - Every wake records its condition, adapter, child PID, status, and log.
 - A failed wake records why and backs off.
 - A human can stop automatic wake without stopping the dev-loop or game.
+- `sync`, `send`, `ask`, and `reply` surface current/claimable issue context.
+- Issue-linked message bodies and standalone suggestions are durably appended.
+- No issue is assigned solely because an agent viewed or discussed it.

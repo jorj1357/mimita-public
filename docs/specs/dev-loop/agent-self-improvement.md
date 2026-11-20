@@ -147,6 +147,48 @@ A rotating systems agent or scheduled audit scans the brain and journals for:
 It opens ranked `improvement`, `capability`, or `build-friction` issues with
 evidence and metric targets. It does not edit policy or authority directly.
 
+## Tech-debt and generic-owner review
+
+Every agent that touches networking, combat, contact, damage, build, launch,
+test, or coordination must perform a bounded generic-owner review before
+editing:
+
+- Is this creating a second owner for contact, damage, health, rewind, duplicate
+  suppression, or policy?
+- Is there a duplicate packet, handler, formula, event name, cache, or state
+  variable?
+- Is a value hardcoded that belongs in configuration?
+- Is a name weapon-specific where the concept is generic?
+- Could this use the shared `ContactClaim`, resolver, damage sink, test, or
+  coordination record?
+
+Findings are filed as `tech-debt` or `duplication` issues with exact evidence,
+why it is a problem, a suggested fix, risk, rollback, and expected metric/test.
+The owner and reviewers add analysis over time; no agent silently refactors a
+shared path.
+
+A periodic audit also checks:
+
+- unused source, headers, assets, configs, and generated files;
+- files that only consume disk or build time;
+- dead code and stale compatibility wrappers;
+- duplicate workflows and repeated manual commands;
+- avoidable build, launch, test, readiness, and dashboard waits;
+- stale docs/specs and misleading names.
+
+Unused claims require reference/runtime evidence and a safe removal proposal.
+Do not delete automatically. The audit opens ranked issues; humans/owners decide.
+
+`python devscripts/tech-debt-audit.py --json` is the read-only starting scan
+for duplicate special contact paths, direct health writes, weapon-name
+branches, stale TODOs, and large hand-maintained files. It reports candidates;
+it does not create issues or edit code. Agents add exact evidence and a
+suggested fix to the relevant issue before asking for review.
+
+Project knowledge is a bounded graph/subgraph, not an unbounded document dump.
+The target graph contract is in
+[`../architecture/nodes-and-connections.md`](../architecture/nodes-and-connections.md).
+
 ## Capability proposals
 
 The agent should state what it can do more powerfully than a human may assume,
@@ -171,6 +213,32 @@ boundary, evidence, and human approval needed.
 - Interpretations, evidence, reviews, deferrals, and resolutions are appended.
 - Existing specifications and TODO text are not edited to resolve a proposal
   without user clarification.
+
+## Automatic efficiency and awareness proposals
+
+The dev-loop, a reviewer, or any agent may open an `efficiency`/`performance`
+issue from measured evidence:
+
+- `PERFORMANCE_SPIKE`, frames over the 240 FPS budget, or a frame below 240;
+- a dominant UI/network/render/ragdoll/animation scope;
+- high offscreen work or unnecessary polling;
+- avoidable build/test wait or a stale issue queue;
+- a dominant work-session phase from `agent-coord work summary`, especially
+  repeated `build_wait`, `test_wait`, `review`, or `blocked` time.
+
+The issue must include the exact journal, build/generation, run, scope, frame
+counts, work-session phase totals where relevant, expected improvement, risk,
+and a pinned-run acceptance.
+
+An agent that lacks information about game state, intent, ownership, or desired
+behavior opens an `awareness`/`needs_info` issue with the exact question and its
+impact. It does not guess. Awareness gaps go through the same triage, review,
+deferral, and user-clarification loop.
+
+Agents may propose improvements for any issue or any part of the repository.
+While waiting for a build/test, they review or update these proposals; every
+issue should receive periodic progress, evidence, or a reasoned deferral rather
+than silently going stale.
 
 ## Relationship to build-friction
 

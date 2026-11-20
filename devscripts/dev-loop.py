@@ -134,6 +134,7 @@ from dev_loop.runtime import (
     utc_now as runtime_utc_now,
 )
 from dev_loop.status import duration_text as format_duration
+from dev_loop import launch_report
 from dev_loop.state import read_json, write_json
 
 
@@ -2625,9 +2626,13 @@ class DevLoop:
                     value = self.game_build_request_meta.get(request_id)
                     if value:
                         metadata[request_id] = dict(value)
+            build_metadata = next(
+                (value for value in metadata.values()
+                 if str(value.get("kind") or "") == "preview"), None)
             result = run_game_build_worker(
                 ROOT, request_ids, self.pending_build_mode, source_generation,
-                on_output=self._record_game_build_output)
+                on_output=self._record_game_build_output,
+                build_metadata=build_metadata)
         except Exception as error:  # noqa: BLE001 - report through dev-loop state
             result = {"success": False, "error": str(error), "request_ids": request_ids}
         result["duration_seconds"] = time.monotonic() - started
@@ -2795,10 +2800,18 @@ class DevLoop:
                     self.record_control_event(request, "rejected", self.last_message)
                     self.save_state("request_rejected")
                     continue
-                if str(brain.get("kind") or "integration") != "integration":
+                kind = str(brain.get("kind") or "integration")
+                try:
+                    overlay_paths = json.loads(
+                        brain.get("overlay_paths") or "[]")
+                except json.JSONDecodeError:
+                    overlay_paths = []
+                if kind == "preview" and (
+                        int(brain.get("base_generation") or 0) <= 0
+                        or not overlay_paths):
                     self.last_message = (
-                        "agent-build rejected: preview overlay builder is not "
-                        "implemented yet")
+                        "agent-build rejected: preview requires a base generation "
+                        "and overlay paths")
                     _coord_build_update(brain, "rejected",
                                         wait_reason=self.last_message)
                     self.record_control_event(request, "rejected", self.last_message)
@@ -2809,8 +2822,9 @@ class DevLoop:
                     "agent": str(brain.get("agent") or ""),
                     "cohort": str(brain.get("cohort") or ""),
                     "issue_id": str(brain.get("issue_id") or ""),
-                    "kind": "integration",
+                    "kind": kind,
                     "base_generation": int(brain.get("base_generation") or 0),
+                    "overlay_paths": overlay_paths,
                 }
                 self.queue_game_dll_request(build_request_id, metadata)
                 _coord_build_update(brain, "building")
@@ -3854,6 +3868,11 @@ class DevLoop:
         self.run_layout = None
         self._ensure_run_layout()
         self.launch_id = utc_now()
+        try:
+            launch_report.start_launch(
+                ROOT, self.launch_id, request_id=request_id, generation=0)
+        except Exception:
+            pass
         self.run_started_utc = utc_now()
         self.run_metadata = {}
         self.client_instances = {}
@@ -3868,28 +3887,38 @@ class DevLoop:
         def stage(name: str, result: str, reason: str = "",
                   stage_started: float | None = None, **details) -> None:
             now = time.monotonic()
+            payload = {
+                "stage": name,
+                "result": result,
+                "request_id": request_id,
+                "run_id": launch_run_id,
+                "build_number": (int(selected_build)
+                                 if str(selected_build or "").isdigit() else None),
+                "artifact_id": artifact_id,
+                "build_id": build_id,
+                "launch_mode": self.launch_mode_id,
+                "map": map_name,
+                "accept_latency_ms": accept_latency_ms,
+                "queue_wait_ms": queue_wait_ms,
+                "dashboard_press_epoch": dashboard_press_epoch,
+                "elapsed_ms": round((now - launch_started) * 1000.0, 1),
+                "stage_elapsed_ms": round(
+                    (now - (stage_started if stage_started is not None else launch_started))
+                    * 1000.0, 1),
+                **details,
+            }
+            try:
+                launch_report.append_stage(ROOT, self.launch_id or "", payload)
+                if name == "complete":
+                    launch_report.finish_launch(
+                        ROOT, self.launch_id or "", name, result, reason,
+                        build_id=build_id, create_issue=True,
+                        generation=(int(selected_build)
+                                    if str(selected_build or "").isdigit() else 0))
+            except Exception:
+                pass
             self.record_runtime_event(
-                "dev-loop.launch.stage",
-                {
-                    "stage": name,
-                    "result": result,
-                    "request_id": request_id,
-                    "run_id": launch_run_id,
-                    "build_number": (int(selected_build)
-                                     if str(selected_build or "").isdigit() else None),
-                    "artifact_id": artifact_id,
-                    "build_id": build_id,
-                    "launch_mode": self.launch_mode_id,
-                    "map": map_name,
-                    "accept_latency_ms": accept_latency_ms,
-                    "queue_wait_ms": queue_wait_ms,
-                    "dashboard_press_epoch": dashboard_press_epoch,
-                    "elapsed_ms": round((now - launch_started) * 1000.0, 1),
-                    "stage_elapsed_ms": round(
-                        (now - (stage_started if stage_started is not None else launch_started))
-                        * 1000.0, 1),
-                    **details,
-                },
+                "dev-loop.launch.stage", payload,
                 reason or f"dev-loop launch stage {name} {result}",
                 events_path=launch_journal_path,
                 run_id=launch_run_id,
@@ -6886,6 +6915,37 @@ def run_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_launch_report(args: argparse.Namespace) -> int | None:
+    if not (getattr(args, "launch_report", "") or
+            getattr(args, "last_launch_report", False) or
+            getattr(args, "launch_doctor", "")):
+        return None
+    from dev_loop import launch_report
+    launch_id = str(getattr(args, "launch_report", "") or
+                    getattr(args, "launch_doctor", "") or "")
+    report = launch_report.load_report(ROOT, launch_id)
+    if not report:
+        print("[LAUNCH REPORT] no matching launch report", file=sys.stderr)
+        return 2
+    if getattr(args, "launch_doctor", ""):
+        report = launch_report.probe_report(ROOT, launch_id)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        summary = report.get("launch", report)
+        print(f"[LAUNCH] id={summary.get('launch_id')} "
+              f"result={summary.get('result')} "
+              f"code={summary.get('failure_code') or '-'} "
+              f"stage={summary.get('failure_stage') or '-'}")
+        if summary.get("failure_detail"):
+            print(f"[LAUNCH] detail={summary['failure_detail']}")
+        if "stages" in report:
+            for row in report.get("stages", []):
+                print(f"  {row.get('stage')}: {row.get('result')} "
+                      f"{row.get('stage_elapsed_ms', 0)}ms")
+    return 0
+
+
 def _run_coord_request(args: argparse.Namespace) -> int | None:
     if not (getattr(args, "coord_status", False) or
             getattr(args, "coord_inbox", False) or
@@ -6981,6 +7041,8 @@ def _coord_build_update(request: dict, status: str, **fields) -> None:
 
 
 def _publish_agent_pointers(result: dict, metadata: dict) -> None:
+    if str(metadata.get("kind") or "") == "preview":
+        return
     generation = int(result.get("generation") or 0)
     dll = str(result.get("dll") or "")
     if generation <= 0 or not dll:
@@ -7397,6 +7459,9 @@ def main() -> int:
     from dev_loop.cli import create_parser
     args = create_parser().parse_args()
 
+    launch_result = _run_launch_report(args)
+    if launch_result is not None:
+        return launch_result
     coord_result = _run_coord_request(args)
     if coord_result is not None:
         return coord_result

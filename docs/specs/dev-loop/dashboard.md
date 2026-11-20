@@ -46,6 +46,13 @@ python devscripts/dev-loop.py --ensure-dashboard
 ```
 
 - Default: `required=true` for the coordinator checkout.
+- `required=true` means one dashboard process exists and is reachable from the
+  taskbar/Alt-Tab. It does **not** mean foreground, focused, maximized, or on a
+  particular monitor.
+- If a verified dashboard already exists, even if minimized, behind another
+  window, or on another monitor, leave it exactly as it is. Do not activate,
+  raise, move, resize, recreate, or open a new window.
+- Only create or restore a dashboard when no verified dashboard process exists.
 - The watchdog checks the policy and ensures one dashboard exists when absent.
 - Mutating dev-loop commands and isolated test-run starts ensure the dashboard;
   a pure `--status` read remains read-only and does not create a window.
@@ -55,7 +62,21 @@ python devscripts/dev-loop.py --ensure-dashboard
   it and ensures one dashboard.
 - Startup is serialized and uses the existing dashboard lock/PID identity.
   Never create a second dashboard or start one from a lane checkout.
-- Restoration must not steal focus from the user or open a per-command window.
+- Restoration must not steal focus, change monitor placement, or open a
+  per-command window.
+
+## Window placement and maximize
+
+- The dashboard persists its normal size and position and restores them when
+  the view is reopened.
+- Custom maximize fills the work area of the monitor nearest the dashboard
+  window. Restore returns to the prior size and position on that monitor.
+- Monitor coordinates may be negative when a display is left of or above the
+  primary display; preserve those signed offsets.
+- If Windows cannot identify the dashboard's monitor, maximize must leave the
+  window where it is. It must not fall back to primary-display bounds.
+- The keepalive may recover a truly off-screen window, but a window intersecting
+  any connected monitor must remain where the user placed it.
 
 ## Python dashboard boundary
 
@@ -115,6 +136,8 @@ The section shows:
 - each agent's name, status, last-seen age, task, issue, phase, current
   activity, paths, build ID, game generation, run ID, blocker, wait reason, and
   next step;
+- each active work session's start, current phase, elapsed milliseconds, and
+  per-phase totals where available;
 - recent coordination messages with sender, recipient, kind, subject, body,
   timestamp, read state, and thread;
 - open issues and recent decisions/notes.

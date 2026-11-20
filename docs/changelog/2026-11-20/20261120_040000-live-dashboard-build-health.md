@@ -62,11 +62,24 @@ gap, not proof that the build was dead. The active attempt continues.
 - `git diff --check` passed for the changed tooling/docs.
 - The dashboard process is alive after restart and the policy reports
   `required=true`.
-- No game runtime, 60 Hz, 240 FPS, or build-completion claim is made.
+- No 240 FPS or human acceptance claim is made.
+
+## Later live state
+
+- The build published generation `394` at `2026-11-20T04:05:30Z`; the
+  dashboard helper then reported `DONE · PUBLISHED`, source generation 59 and
+  published generation 394.
+- A pinned run `20261120_040807` (EXE `2026-11-20T02:29:08`, game generation
+  394) produced 67 NPCs and server loop `59.58 Hz` with `npc_ms` 10-29 ms.
+- The client reached `60.3 FPS` with `NetworkEntities` around `0.5-2.5 ms`;
+  the NVIDIA display is currently 60 Hz, so the visible 240 FPS target is
+  display-capped. No reconnect appeared in the observed window.
+- The 10-minute connection acceptance and 240 FPS evidence remain open.
 
 ## Remaining
 
-- The active build still needs to publish.
 - The build-owner health/watchdog brain integration from the build-queue policy
   remains to be implemented; the dashboard now exposes the truth needed for it.
-- After publication, the pinned 67-NPC and 10-minute connection tests continue.
+- The pinned 10-minute connection test continues.
+- 240 FPS requires a display/headless measurement path capable of exceeding the
+  current 60 Hz display.

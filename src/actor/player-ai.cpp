@@ -62,6 +62,8 @@ void resetRoute()
     gRoutePlanTick = 0;
 }
 
+bool worldBlocks(const World& world, const glm::vec3& from, const glm::vec3& to);
+
 struct TargetView {
     bool valid = false;
     uint32_t id = 0;
@@ -85,7 +87,15 @@ bool hostile(const Player& player, const Player& candidate)
     return mine != theirs;
 }
 
-TargetView chooseTarget(const Player& player)
+bool targetVisible(const World& world, const Player& player,
+                   const Player& candidate)
+{
+    const glm::vec3 eye = player.pos + glm::vec3(0.0f, 0.0f, 1.35f);
+    const glm::vec3 aim = candidate.pos + glm::vec3(0.0f, 0.0f, 0.85f);
+    return !worldBlocks(world, eye, aim);
+}
+
+TargetView chooseTarget(const Player& player, const World& world)
 {
     TargetView best;
     if (!gMeleeWeapon.empty() && gLatchedTargetId != 0) {
@@ -93,6 +103,10 @@ TargetView chooseTarget(const Player& player)
             auto it = map.find(gLatchedTargetId);
             if (it == map.end() || !hostile(player, it->second))
                 return false;
+            if (!targetVisible(world, player, it->second)) {
+                gLatchedTargetId = 0;
+                return false;
+            }
             best.valid = true;
             best.id = it->first;
             best.team = it->second.matchTeam;
@@ -107,15 +121,21 @@ TargetView chooseTarget(const Player& player)
             return best;
         gLatchedTargetId = 0;
     }
-    float bestScore = std::numeric_limits<float>::max();
+
+    struct Candidate {
+        const Player* actor = nullptr;
+        uint32_t id = 0;
+        float distance = 0.0f;
+        float score = 0.0f;
+    };
+    std::vector<Candidate> candidates;
+    const float maxRange = gMeleeWeapon.empty() ? 60.0f : 25.0f;
     const auto consider = [&](const Player& candidate, uint32_t id) {
+        if (id == MP_CONTEXT.localPlayerId) return;
         if (!hostile(player, candidate)) return;
         const glm::vec3 delta = candidate.pos - player.pos;
         const float distance = glm::length(delta);
-        // A melee validation run should not chase a target across the map.
-        // When no local hostile exists, the fallback spawn (and the normal
-        // match AI) can bring one into range.
-        if (!gMeleeWeapon.empty() && distance > 25.0f) return;
+        if (distance > maxRange) return;
         const glm::vec3 planar(delta.x, delta.y, 0.0f);
         const float len = glm::length(planar);
         float score = distance;
@@ -124,19 +144,31 @@ TargetView chooseTarget(const Player& player)
                                    std::sin(glm::radians(player.yaw)), 0.0f);
             score -= 0.75f * glm::dot(planar / len, facing);
         }
-        if (score < bestScore) {
-            bestScore = score;
-            best.valid = true;
-            best.id = id;
-            best.team = candidate.matchTeam;
-            best.pos = candidate.pos;
-            best.distance = distance;
-        }
+        candidates.push_back({&candidate, id, distance, score});
     };
     for (const auto& entry : MP_CONTEXT.remoteNpcs)
         consider(entry.second, entry.first);
     for (const auto& entry : MP_CONTEXT.remotePlayers)
         consider(entry.second, entry.first);
+    std::sort(candidates.begin(), candidates.end(),
+              [](const Candidate& a, const Candidate& b) {
+                  return a.score < b.score;
+              });
+
+    // Cast only against the best few candidates; the nearest actor is often
+    // behind cover and should not cause a per-tick raycast over every actor.
+    constexpr size_t kMaxVisibilityChecks = 8;
+    size_t checked = 0;
+    for (const Candidate& candidate : candidates) {
+        if (checked++ >= kMaxVisibilityChecks) break;
+        if (!targetVisible(world, player, *candidate.actor)) continue;
+        best.valid = true;
+        best.id = candidate.id;
+        best.team = candidate.actor->matchTeam;
+        best.pos = candidate.actor->pos;
+        best.distance = candidate.distance;
+        break;
+    }
     if (!gMeleeWeapon.empty())
         gLatchedTargetId = best.valid && best.distance <= 15.0f ? best.id : 0;
     return best;
@@ -491,7 +523,7 @@ InputFrame buildFrame(const Player& player, Camera& camera,
         checkPlayerFall(player, world, tick);
     if (!gActive || player.dead) return frame;
 
-    const TargetView target = chooseTarget(player);
+    const TargetView target = chooseTarget(player, world);
     const bool meleeMode = !gMeleeWeapon.empty();
     if (!meleeMode || !target.valid || target.distance <= 2.5f)
         resetRoute();

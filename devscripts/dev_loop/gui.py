@@ -46,6 +46,73 @@ def _save_ui_state(value: dict) -> None:
         pass
 
 
+def _monitor_work_area(hwnd: int) -> tuple[int, int, int, int] | None:
+    """Return the work area of the monitor containing this window."""
+    if os.name != "nt":
+        return None
+    try:
+        from ctypes import wintypes
+
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD),
+            ]
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        user32.GetAncestor.restype = wintypes.HWND
+        user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+        user32.MonitorFromWindow.restype = ctypes.c_void_p
+        user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p,
+                                           ctypes.POINTER(MONITORINFO)]
+        user32.GetMonitorInfoW.restype = wintypes.BOOL
+
+        top_level = user32.GetAncestor(hwnd, 2) or hwnd  # GA_ROOT
+        monitor = user32.MonitorFromWindow(top_level, 2)  # MONITOR_DEFAULTTONEAREST
+        if not monitor:
+            return None
+        info = MONITORINFO()
+        info.cbSize = ctypes.sizeof(info)
+        if not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+            return None
+        work = info.rcWork
+        return (work.left, work.top,
+                work.right - work.left, work.bottom - work.top)
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def _window_bounds(hwnd: int) -> tuple[int, int, int, int] | None:
+    """Return the top-level window's absolute x, y, width, and height."""
+    if os.name != "nt":
+        return None
+    try:
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        user32.GetAncestor.restype = wintypes.HWND
+        user32.GetWindowRect.argtypes = [wintypes.HWND,
+                                         ctypes.POINTER(wintypes.RECT)]
+        user32.GetWindowRect.restype = wintypes.BOOL
+        top_level = user32.GetAncestor(hwnd, 2) or hwnd  # GA_ROOT
+        rect = wintypes.RECT()
+        if not user32.GetWindowRect(top_level, ctypes.byref(rect)):
+            return None
+        return (rect.left, rect.top,
+                rect.right - rect.left, rect.bottom - rect.top)
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def _tk_geometry(width: int, height: int, x: int, y: int) -> str:
+    """Format absolute Tk coordinates, including negative virtual-screen positions."""
+    return f"{width}x{height}+{x}+{y}"
+
+
 def _configured_launch_modes() -> list[dict[str, str]]:
     path = Path(__file__).resolve().parents[2] / "devscripts" / "dev-launch-modes.json"
     try:
@@ -393,8 +460,18 @@ def run(status_provider: Callable[[], dict],
     font_library = _private_font()
     family = "MingLiU" if font_library else "Courier New"
     saved_ui_state = _load_ui_state()
+    saved_bounds = saved_ui_state.get("window_bounds")
     saved_geometry = str(saved_ui_state.get("geometry") or "")
-    if not re.fullmatch(r"\d+x\d+[+-]\d+[+-]\d+", saved_geometry):
+    if (isinstance(saved_bounds, dict)
+            and all(type(saved_bounds.get(key)) is int
+                    for key in ("x", "y", "width", "height"))
+            and saved_bounds["width"] >= MIN_WIDTH
+            and saved_bounds["height"] >= MIN_HEIGHT):
+        saved_geometry = _tk_geometry(
+            saved_bounds["width"], saved_bounds["height"],
+            saved_bounds["x"], saved_bounds["y"])
+    elif not (re.fullmatch(r"\d+x\d+\+-?\d+\+-?\d+", saved_geometry)
+              or re.fullmatch(r"\d+x\d+[+-]\d+[+-]\d+", saved_geometry)):
         saved_geometry = "880x760"
     root = tk.Tk()
     root.title(title)
@@ -411,6 +488,7 @@ def run(status_provider: Callable[[], dict],
         "maximized": False,
         "restore_geometry": None,
         "window_geometry": saved_geometry,
+        "window_bounds": saved_bounds if isinstance(saved_bounds, dict) else None,
         "geometry_save_after": None,
         "drag": None,
         "resize": None,
@@ -468,11 +546,23 @@ def run(status_provider: Callable[[], dict],
         state["geometry_save_after"] = None
         if state["maximized"]:
             return
-        geometry = root.geometry()
-        if not re.fullmatch(r"\d+x\d+[+-]\d+[+-]\d+", geometry):
-            return
+        bounds = _window_bounds(root.winfo_id())
+        if bounds:
+            x, y, width, height = bounds
+            geometry = _tk_geometry(width, height, x, y)
+            saved_bounds = {"x": x, "y": y,
+                            "width": width, "height": height}
+        else:
+            geometry = root.geometry()
+            saved_bounds = state.get("window_bounds")
+            if not (re.fullmatch(r"\d+x\d+\+-?\d+\+-?\d+", geometry)
+                    or re.fullmatch(r"\d+x\d+[+-]\d+[+-]\d+", geometry)):
+                return
         state["window_geometry"] = geometry
-        _save_ui_state({"collapsed": state["collapsed"], "geometry": geometry})
+        state["window_bounds"] = saved_bounds
+        _save_ui_state({"collapsed": state["collapsed"],
+                        "geometry": geometry,
+                        "window_bounds": saved_bounds})
 
     def queue_geometry_save(event) -> None:
         if event.widget is not root or state["maximized"]:
@@ -572,7 +662,8 @@ def run(status_provider: Callable[[], dict],
             is_open[0] = not is_open[0]
             collapsed[key] = not is_open[0]
             _save_ui_state({"collapsed": collapsed,
-                            "geometry": state["window_geometry"]})
+                            "geometry": state["window_geometry"],
+                            "window_bounds": state["window_bounds"]})
             apply_state()
 
         body = tk.Frame(container, bg=BLACK)
@@ -666,21 +757,20 @@ def run(status_provider: Callable[[], dict],
             state["maximized"] = False
             maximize_button.configure(text="□")
             return
-        state["restore_geometry"] = root.geometry()
+        bounds = _window_bounds(root.winfo_id())
+        state["restore_geometry"] = (
+            _tk_geometry(bounds[2], bounds[3], bounds[0], bounds[1])
+            if bounds else root.geometry())
         if os.name == "nt":
-            try:
-                from ctypes import wintypes
-
-                rect = wintypes.RECT()
-                user32 = ctypes.WinDLL("user32")
-                user32.SystemParametersInfoW.argtypes = [wintypes.UINT, wintypes.UINT,
-                                                         ctypes.c_void_p, wintypes.UINT]
-                user32.SystemParametersInfoW(
-                    0x0030, 0, ctypes.byref(rect), 0)
-                width, height = rect.right - rect.left, rect.bottom - rect.top
-                root.geometry(f"{width}x{height}+{rect.left}+{rect.top}")
-            except (AttributeError, OSError):
-                root.geometry(f"{root.winfo_screenwidth()}x{root.winfo_screenheight()}+0+0")
+            work_area = _monitor_work_area(root.winfo_id())
+            if work_area is None:
+                # A global screen-size fallback would jump windows on secondary
+                # monitors to the primary display. Leave position unchanged if
+                # Windows cannot identify this window's monitor.
+                state["restore_geometry"] = None
+                return
+            left, top, width, height = work_area
+            root.geometry(_tk_geometry(width, height, left, top))
         else:
             root.geometry(f"{root.winfo_screenwidth()}x{root.winfo_screenheight()}+0+0")
         state["maximized"] = True
@@ -710,7 +800,9 @@ def run(status_provider: Callable[[], dict],
     def move_window(event):
         drag = state["drag"]
         if drag:
-            root.geometry(f"+{event.x_root - drag[0]}+{event.y_root - drag[1]}")
+            root.geometry(_tk_geometry(
+                root.winfo_width(), root.winfo_height(),
+                event.x_root - drag[0], event.y_root - drag[1]))
 
     for widget in (titlebar, app_title):
         widget.bind("<ButtonPress-1>", start_move)
@@ -1183,6 +1275,10 @@ def run(status_provider: Callable[[], dict],
         agents = list(snapshot.get("agents") or [])
         issues = list(snapshot.get("issues") or [])
         leases = list(snapshot.get("leases") or [])
+        work_by_agent = {
+            str(item.get("agent")): item
+            for item in (snapshot.get("work") or [])
+            if item.get("agent")}
         active = [item for item in agents if item.get("status") == "active"]
         coordination_summary.configure(
             text=(f"{len(active)} active · {len(issues)} open issue(s) · "
@@ -1224,9 +1320,12 @@ def run(status_provider: Callable[[], dict],
                 paths_text = ", ".join(str(path) for path in (parsed_paths or [])[:3])
             except (TypeError, json.JSONDecodeError):
                 paths_text = str(paths)
+            work = work_by_agent.get(agent_name) or {}
+            work_ms = int(work.get("elapsed_ms") or 0)
             detail = " · ".join(part for part in (
                 f"issue {issue}" if issue else "",
                 f"phase {phase}" if phase else "",
+                f"work {work.get('phase')} {work_ms}ms" if work else "",
                 f"paths {paths_text}" if paths_text else "",
                 f"build {activity.get('build_id')}" if activity.get("build_id") else "",
                 f"run {activity.get('run_id')}" if activity.get("run_id") else "",

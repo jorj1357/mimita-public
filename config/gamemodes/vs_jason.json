@@ -209,6 +209,7 @@
     "freeze_during_go": true,
     "objective_only_round_wins": false,
     "destructible_body_parts": false,
+    "arcade_collision": true,
     "destructible_world": null,
     "destructible_world_reset": "round"
   },

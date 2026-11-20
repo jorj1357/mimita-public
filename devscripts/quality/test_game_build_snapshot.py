@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from devscripts.dev_loop.game_build import (  # noqa: E402
     _copy_into_mirror,
+    _create_overlay_snapshot,
     _create_source_snapshot,
 )
 from devscripts.game_build_worker import dependency_relative  # noqa: E402
@@ -50,6 +52,20 @@ class SourceSnapshotTests(unittest.TestCase):
         snapshot = _create_source_snapshot(self.root, self.mirror, "attempt-2")
         self.assertTrue((snapshot / ".snapshot.json").is_file())
 
+    def test_preview_overlay_replaces_only_named_files(self) -> None:
+        snapshot = _create_source_snapshot(self.root, self.mirror, "attempt-3")
+        source = self.root / "src"
+        source.mkdir(parents=True, exist_ok=True)
+        (source / "a.cpp").write_text("preview\n", encoding="utf-8")
+        (source / "b.cpp").write_text("new\n", encoding="utf-8")
+        overlay = _create_overlay_snapshot(
+            self.root, snapshot, ["src/a.cpp"], "attempt-4")
+        self.assertEqual((overlay / "src" / "a.cpp").read_text(), "preview\n")
+        self.assertFalse((overlay / "src" / "b.cpp").exists())
+        metadata = json.loads((overlay / ".snapshot.json").read_text())
+        self.assertEqual(metadata["base_snapshot"], str(snapshot.relative_to(self.root)))
+        self.assertEqual(metadata["overlay_paths"], ["src/a.cpp"])
+
     def test_vendor_headers_are_not_project_fanout(self) -> None:
         self.assertEqual(dependency_relative("include/glm/glm.hpp"), "")
         self.assertEqual(dependency_relative("include/GLFW/glfw3.h"), "")
@@ -59,3 +75,4 @@ class SourceSnapshotTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

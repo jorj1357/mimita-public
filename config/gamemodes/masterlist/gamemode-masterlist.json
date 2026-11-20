@@ -1121,8 +1121,8 @@
         "arcade_collision": {
           "type": "boolean",
           "required": false,
-          "default": false,
-          "description": "When true, gameplay uses capsule-only arcade collision and skips weapon collision/clash passes."
+          "default": true,
+          "description": "Defaults to true: gameplay uses capsule-only arcade collision and skips weapon collision/clash passes. Set false to opt into non-arcade limb/weapon collision."
         },
         "destructible_world": {
           "type": "boolean",

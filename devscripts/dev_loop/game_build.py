@@ -256,6 +256,69 @@ def _create_source_snapshot(root: Path, mirror: Path, attempt_id: str) -> Path:
     return destination_root
 
 
+def _base_snapshot_for_generation(root: Path, generation: int) -> Path:
+    path = (root / "build" / "game" / f"generation-{int(generation)}"
+            / "generation.json")
+    data = _read_json(path)
+    value = str(data.get("source_root") or "")
+    if value:
+        candidate = Path(value)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        if candidate.is_dir():
+            return candidate
+    raise RuntimeError(f"base snapshot for generation {generation} is missing")
+
+
+def _create_overlay_snapshot(root: Path, base: Path, overlay_paths: list[str],
+                             attempt_id: str) -> Path:
+    destination_root = _snapshot_root(root, attempt_id)
+    if not base.is_dir():
+        raise RuntimeError(f"base snapshot missing: {base}")
+    shutil.rmtree(destination_root, ignore_errors=True)
+    linked = copied = 0
+    for source in base.rglob("*"):
+        if not source.is_file():
+            continue
+        relative = source.relative_to(base)
+        destination = destination_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(source, destination)
+            linked += 1
+        except OSError:
+            shutil.copy2(source, destination)
+            copied += 1
+    root_resolved = root.resolve()
+    for value in overlay_paths:
+        relative = Path(str(value))
+        if relative.is_absolute():
+            try:
+                relative = relative.resolve().relative_to(root_resolved)
+            except ValueError as error:
+                raise RuntimeError(f"overlay path escapes repository: {value}") from error
+        else:
+            relative = Path(str(relative).replace("\\", "/"))
+        source = root / relative
+        if not source.is_file():
+            raise RuntimeError(f"overlay file missing: {relative}")
+        destination = destination_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(destination.name + ".overlay.tmp")
+        shutil.copy2(source, temporary)
+        os.replace(temporary, destination)
+        copied += 1
+    (destination_root / ".snapshot.json").write_text(json.dumps({
+        "attempt_id": attempt_id,
+        "base_snapshot": str(base.relative_to(root)),
+        "overlay_paths": overlay_paths,
+        "linked": linked,
+        "copied": copied,
+        "created_utc": _utc_now(),
+    }, indent=2) + "\n", encoding="utf-8")
+    return destination_root
+
+
 def _prune_snapshots(root: Path, keep: int = 5) -> int:
     snapshots = root / ".dev" / "build-snapshots"
     if not snapshots.is_dir():
@@ -390,7 +453,8 @@ def _run_checked(root: Path, command: list[str], on_output,
 
 def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                     source_generation: int = 0, on_output=None,
-                    attempt_id: str | None = None) -> dict:
+                    attempt_id: str | None = None,
+                    build_metadata: dict | None = None) -> dict:
     """Snapshot, validate, build, and publish one whole-game generation."""
     root = Path(root)
     attempt_id = attempt_id or f"game-dll-{uuid.uuid4().hex[:16]}"
@@ -597,9 +661,19 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
               source_count=len(manifest.get("sources", [])))
     set_stage("source_snapshot", "started")
     snapshot_started = time.monotonic()
+    metadata = build_metadata or {}
     try:
-        source_snapshot = _create_source_snapshot(root, source_mirror, attempt_id)
-    except OSError as error:
+        if (str(metadata.get("kind") or "") == "preview" and
+                metadata.get("overlay_paths")):
+            base = _base_snapshot_for_generation(
+                root, int(metadata.get("base_generation") or 0))
+            source_snapshot = _create_overlay_snapshot(
+                root, base, [str(value) for value in metadata["overlay_paths"]],
+                attempt_id)
+        else:
+            source_snapshot = _create_source_snapshot(
+                root, source_mirror, attempt_id)
+    except (OSError, RuntimeError, ValueError) as error:
         return fail_attempt(f"source snapshot failed: {error}",
                             failed_phase="source_snapshot")
     set_stage("source_snapshot", "completed",
@@ -853,7 +927,8 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
 
 
 def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
-                   source_generation: int = 0, on_output=None) -> dict:
+                   source_generation: int = 0, on_output=None,
+                   build_metadata: dict | None = None) -> dict:
     """Snapshot, validate, build, and publish one whole-game generation."""
     root = Path(root)
     stamp = datetime.now(timezone.utc)
@@ -864,7 +939,7 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     started = time.monotonic()
     try:
         return _run_game_build(root, request_ids, mode, source_generation,
-                               on_output, attempt_id)
+                               on_output, attempt_id, build_metadata)
     except Exception as error:  # noqa: BLE001 - convert to a durable failed attempt
         completed_utc = _utc_now()
         elapsed = round(time.monotonic() - started, 3)
@@ -918,3 +993,7 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
             "timing_jsonl": str(timing_path.relative_to(root)),
             "summary_json": str(summary_path.relative_to(root)),
         }
+
+
+
+

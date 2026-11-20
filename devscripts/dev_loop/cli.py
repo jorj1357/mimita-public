@@ -115,6 +115,12 @@ def create_parser() -> argparse.ArgumentParser:
                         help="render this many dashboard frames then exit (0 = run until quit)")
     parser.add_argument("--command-timeout", type=float, default=15.0,
                         help="seconds to wait for a command result from the client")
+    parser.add_argument("--launch-report", metavar="LAUNCH_ID", default="",
+                        help="show one launch timeline report and exit")
+    parser.add_argument("--last-launch-report", action="store_true",
+                        help="show the latest launch timeline report and exit")
+    parser.add_argument("--launch-doctor", metavar="LAUNCH_ID", default="",
+                        help="show bounded launch failure probes and exit")
     parser.add_argument("--coord-status", action="store_true",
                         help="show the shared agent coordination summary and exit")
     parser.add_argument("--coord-inbox", action="store_true",

@@ -79,9 +79,13 @@ def dashboard_processes() -> list[dict]:
     if os.name != "nt":
         return []
     query = (
+        "$queryPid = $PID; "
         "Get-CimInstance Win32_Process | Where-Object { "
+        "$_.ProcessId -ne $queryPid -and "
+        "$_.Name -match '^pythonw?\\.exe$' -and "
         "$_.CommandLine -match 'dev-loop.py' -and "
-        "$_.CommandLine -match '--dashboard' } | "
+        "($_.CommandLine -match '(^|\\s)--dashboard(\\s|$)' -or "
+        "$_.CommandLine -match '(^|\\s)--dev-loop-role=dashboard(\\s|$)') } | "
         "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"
     )
     try:

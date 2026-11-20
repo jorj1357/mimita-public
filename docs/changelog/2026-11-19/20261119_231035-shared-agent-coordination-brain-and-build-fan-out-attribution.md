@@ -105,6 +105,19 @@ Thin executable wrapper for the module.
   `changed_header_fanout`, `header_fanout_top`, and `identity_wrapper_count`.
 - No-op attempts report `build_cause=no_op`.
 
+## Launch feedback, diagnostic reports, and failure taxonomy
+
+- Added `devscripts/dev_loop/launch_report.py` with persisted launch timelines,
+  failure-code classification, Markdown reports, and probe data.
+- Added `dev-loop --launch-report`, `--last-launch-report`, and
+  `--launch-doctor` read-only views.
+- The dev-loop appends each launch stage to `.dev/launch-reports/<id>/` and
+  records the first failed stage/code.
+- Added the successful-launch contract (artifact identity, server/client,
+  connection, map, mode, first frame, events).
+- Added `docs/specs/dev-loop/launch-feedback.md` and router entry.
+- Added focused launch-report tests.
+
 ## Build bridge, pointers, wake contract, runtime registration
 
 - Added `agent-build` dev-loop request action with `--build-request`; the
@@ -276,7 +289,3 @@ Thin executable wrapper for the module.
 - `devscripts/dev_loop/cli.py`
 - `devscripts/dev-loop.py`
 - `devscripts/game_build_worker.py`
-
-
-
-

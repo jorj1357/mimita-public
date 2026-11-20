@@ -51,6 +51,15 @@ Read these gates before doing anything else:
    except for active edit leases, halt, and freeze. Read
    `docs/specs/dev-loop/agent-coordination.md` before relying on it.
 
+   At every activation, inspect the `brain_check` returned by `sync`. Every
+   coordination `send`, `ask`, or `reply` also returns a fresh brain check;
+   review its current issue and claimable work. When a message contains useful
+   evidence, a suggestion, question, or objection about an issue, pass
+   `--issue <id>` so it is appended to that issue's discussion. Use
+   `agent-coord issue suggest <id> "<suggestion>"` for a standalone proposal.
+   Do not create duplicate issues or append unrelated status chatter. Seeing an
+   unowned issue does not assign it; choose it with `agent-coord next --claim`.
+
 0c. ISSUES AND SELF-IMPROVEMENT: Preserve user reports verbatim in an
    append-only issue record. Use
    `agent-coord.py issue add --quote ...`; triage into owned tasks and steps;
@@ -69,6 +78,16 @@ Read these gates before doing anything else:
    `docs/specs/dev-loop/change-to-evidence-latency.md`,
    `docs/specs/dev-loop/agent-self-improvement.md`, and
    `docs/workflows/issue-intake-and-triage.md`.
+
+0d. GENERIC OWNERS AND TECH DEBT: Before editing networking, combat, contact,
+   damage, build, launch, test, or coordination code, review whether the change
+   creates a duplicate packet, handler, formula, state variable, name, or
+   workflow. Prefer the existing generic owner. File duplicate, hardcoded,
+   misleading-name, unused-file, disk/build-waste, or inefficient-workflow
+   findings as `tech-debt`/`duplication` issues with evidence and a suggested
+   fix; leave them for review. Do not silently refactor a shared path. The
+   target nodes/connections knowledge contract is
+   `docs/specs/architecture/nodes-and-connections.md`.
 
 1. ROUTER CHAIN: This file is not the complete instruction set. Read
    `docs/ROUTER.md` immediately and follow its routes to the relevant

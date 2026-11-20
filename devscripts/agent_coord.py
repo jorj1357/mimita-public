@@ -16,6 +16,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -451,10 +452,38 @@ class CoordStore:
                 agent TEXT NOT NULL DEFAULT '',
                 updated_utc TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS work_sessions (
+                session_id TEXT PRIMARY KEY,
+                agent TEXT NOT NULL,
+                task_id TEXT NOT NULL DEFAULT '',
+                issue_id TEXT NOT NULL DEFAULT '',
+                received_message_id TEXT NOT NULL DEFAULT '',
+                state TEXT NOT NULL DEFAULT 'active',
+                phase TEXT NOT NULL DEFAULT 'received',
+                resume_phase TEXT NOT NULL DEFAULT '',
+                started_utc TEXT NOT NULL,
+                ended_utc TEXT NOT NULL DEFAULT '',
+                elapsed_ms INTEGER NOT NULL DEFAULT 0,
+                notes TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS work_phases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                started_utc TEXT NOT NULL,
+                ended_utc TEXT NOT NULL DEFAULT '',
+                elapsed_ms INTEGER NOT NULL DEFAULT 0,
+                wait_reason TEXT NOT NULL DEFAULT '',
+                build_id TEXT NOT NULL DEFAULT '',
+                run_id TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                state TEXT NOT NULL DEFAULT 'active'
+            );
             """
         )
         self._ensure_task_columns()
         self._ensure_agent_columns()
+        self._ensure_work_columns()
         self.conn.execute(
             "INSERT OR IGNORE INTO halt(id, active, reason, by_agent, created_utc) "
             "VALUES (1, 0, '', '', ?)", (utc_now(),))
@@ -498,11 +527,26 @@ class CoordStore:
             issue_additions = {
                 "proof_exempt_reason": "TEXT NOT NULL DEFAULT ''",
                 "proof_exempt_paths": "TEXT NOT NULL DEFAULT '[]'",
+                "reproduction": "TEXT NOT NULL DEFAULT ''",
+                "expected_behavior": "TEXT NOT NULL DEFAULT ''",
+                "acceptance": "TEXT NOT NULL DEFAULT ''",
+                "paths": "TEXT NOT NULL DEFAULT '[]'",
+                "related_build": "TEXT NOT NULL DEFAULT ''",
+                "related_run": "TEXT NOT NULL DEFAULT ''",
             }
             for name, definition in issue_additions.items():
                 if name not in issue_columns:
                     self.conn.execute(
                         f"ALTER TABLE issues ADD COLUMN {name} {definition}")
+
+    def _ensure_work_columns(self) -> None:
+        existing = {str(row[1]) for row in self.conn.execute(
+            "PRAGMA table_info(work_sessions)")}
+        if "resume_phase" not in existing:
+            with self.conn:
+                self.conn.execute(
+                    "ALTER TABLE work_sessions ADD COLUMN resume_phase "
+                    "TEXT NOT NULL DEFAULT ''")
 
     # ── audit ────────────────────────────────────────────────────────────
     def event(self, name: str, agent: str = "", **fields) -> int:
@@ -620,6 +664,15 @@ class CoordStore:
                 f"path is frozen: {path} ({frozen['reason'] or 'no reason'})", 2)
 
     # ── agents and sync ──────────────────────────────────────────────────
+    def ensure_agent(self, agent: str, task: str = "system") -> dict:
+        if self._agent_row(agent) is None:
+            return self.begin(agent, task)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE agents SET last_seen_utc=? WHERE agent=?",
+                (utc_now(), agent))
+        return {"agent": agent, "existing": True}
+
     def begin(self, agent: str, task: str, *, parent: str = "",
               cohort: str = "", capabilities: list[str] | None = None) -> dict:
         if not agent.strip():
@@ -721,14 +774,68 @@ class CoordStore:
                 "SELECT id,title,kind,state,severity,priority,owner,summary,"
                 "deferred_reason,deferred_until,updated_utc FROM issues "
                 "WHERE state NOT IN ('done','cancelled') ORDER BY updated_utc DESC")],
+            "brain_check": self.brain_check(agent),
+        }
+
+    def brain_check(self, agent: str) -> dict:
+        """Return a bounded issue snapshot after every agent message send."""
+        self.require_agent(agent)
+        activity = self.conn.execute(
+            "SELECT issue_id FROM activity WHERE agent=?", (agent,)).fetchone()
+        current_issue_id = str(activity["issue_id"] or "") if activity else ""
+        current_issue = None
+        if current_issue_id:
+            row = self.conn.execute(
+                "SELECT id,title,kind,state,priority,owner,summary FROM issues "
+                "WHERE id=?", (current_issue_id,)).fetchone()
+            current_issue = dict(row) if row else None
+        claimable = [dict(row) for row in self.conn.execute(
+            "SELECT id,title,kind,state,priority,summary FROM issues "
+            "WHERE owner='' AND state NOT IN "
+            "('done','cancelled','deferred','needs_clarification','blocked') "
+            "ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 "
+            "WHEN 'low' THEN 2 ELSE 1 END, updated_utc LIMIT 5")]
+        work = self.next_work(agent, claim=False)
+        next_issue = work.get("issue")
+        return {
+            "current_issue": current_issue,
+            "next_work": ({
+                "issue": {key: next_issue.get(key) for key in
+                          ("id", "title", "kind", "state", "priority", "owner")},
+                "task": work.get("task"),
+                "next_step": work.get("next_step"),
+            } if next_issue else None),
+            "claimable_issues": claimable,
+            "instructions": (
+                "Claim work only when taking responsibility with `next --claim`. "
+                "A message that names one existing issue is linked automatically; "
+                "pass `--issue <id>` when it is not named or when multiple issues "
+                "are discussed. Use `issue suggest` for a separate proposal on an issue."
+            ),
         }
 
     # ── messages ─────────────────────────────────────────────────────────
     def send(self, sender: str, recipient: str, subject: str, body: str,
              *, kind: str = "message", paths: list[str] | None = None,
              requires_response: bool = False, due_minutes: float = 0,
-             reply_to: str = "", thread: str = "") -> dict:
+             reply_to: str = "", thread: str = "",
+             issue_id: str = "") -> dict:
         self.require_agent(sender)
+        issue_id = issue_id.strip()
+        if not issue_id:
+            candidates = set(re.findall(
+                r"\bissue-[A-Za-z0-9_-]+\b", f"{subject}\n{body}", re.IGNORECASE))
+            existing = [candidate for candidate in candidates
+                        if self.conn.execute(
+                            "SELECT 1 FROM issues WHERE id=?", (candidate,)
+                        ).fetchone()]
+            if len(existing) == 1:
+                issue_id = existing[0]
+        if issue_id:
+            self._issue_row(issue_id)
+            if not body.strip():
+                raise CoordError("issue-linked message body is required", 2)
+        brain = self.brain_check(sender)
         now = utc_now()
         msg_id = new_id("msg")
         thread_id = thread or new_id("thread")
@@ -748,16 +855,23 @@ class CoordStore:
                  due, now, reply_to))
         self.event("coord.message.sent", sender, message=msg_id, thread=thread_id,
                    recipient=recipient, kind=kind, session=sender)
-        return {"message": msg_id, "thread": thread_id, "due_utc": due}
+        result = {"message": msg_id, "thread": thread_id, "due_utc": due,
+                  "brain_check": brain}
+        if issue_id:
+            self.issue_discussion(sender, issue_id, body, message_id=msg_id,
+                                  subject=subject, kind=kind)
+            result["issue_discussion_appended"] = issue_id
+        return result
 
-    def reply(self, agent: str, message_id: str, body: str) -> dict:
+    def reply(self, agent: str, message_id: str, body: str,
+              issue_id: str = "") -> dict:
         parent = self.conn.execute(
             "SELECT * FROM messages WHERE msg_id=?", (message_id,)).fetchone()
         if parent is None:
             raise CoordError(f"unknown message {message_id}", 2)
         result = self.send(agent, parent["sender"], "re: " + parent["subject"],
                            body, kind="answer", reply_to=message_id,
-                           thread=parent["thread"])
+                           thread=parent["thread"], issue_id=issue_id)
         now = utc_now()
         with self.conn:
             self.conn.execute(
@@ -1241,7 +1355,99 @@ class CoordStore:
         row["quotes"] = [dict(item) for item in self.conn.execute(
             "SELECT * FROM issue_quotes WHERE issue_id=? ORDER BY id",
             (issue_id,))]
+        row["readiness"] = self.issue_readiness(issue_id)
+        occurrences = []
+        for item in self.conn.execute(
+                "SELECT seq, agent, fields, created_utc FROM events "
+                "WHERE event='coord.issue.updated' ORDER BY seq DESC LIMIT 500"):
+            try:
+                fields = json.loads(item["fields"] or "{}")
+            except json.JSONDecodeError:
+                continue
+            if fields.get("issue") != issue_id or fields.get("change") != "occurrence":
+                continue
+            occurrences.append({
+                "seq": item["seq"], "agent": item["agent"],
+                "created_utc": item["created_utc"],
+                "body": fields.get("occurrence", ""),
+                "evidence": fields.get("evidence", {}),
+            })
+        row["occurrences"] = list(reversed(occurrences))
         return row
+
+    def issue_brief(self, issue_id: str) -> dict:
+        issue = self.issue_show(issue_id)
+        try:
+            paths = [str(item) for item in json.loads(issue.get("paths") or "[]")]
+        except json.JSONDecodeError:
+            paths = []
+        tasks = []
+        for task in issue.get("tasks", []):
+            proof = self.conn.execute(
+                "SELECT * FROM task_proofs WHERE task_id=? "
+                "ORDER BY id DESC LIMIT 1", (task["id"],)).fetchone()
+            tasks.append({**task, "latest_proof": dict(proof) if proof else None})
+        task_ids = [task["id"] for task in tasks]
+        leases = []
+        if paths:
+            placeholders = ",".join("?" for _ in paths)
+            leases = [dict(row) for row in self.conn.execute(
+                "SELECT * FROM leases WHERE state='active' AND path IN (" +
+                placeholders + ") ORDER BY path", paths)]
+        builds = [dict(row) for row in self.conn.execute(
+            "SELECT * FROM build_requests WHERE issue_id=? ORDER BY id DESC",
+            (issue_id,))]
+        runtimes = [dict(row) for row in self.conn.execute(
+            "SELECT * FROM runtime_registry WHERE issue_id=? "
+            "ORDER BY updated_utc DESC", (issue_id,))]
+        decisions = []
+        if task_ids:
+            placeholders = ",".join("?" for _ in task_ids)
+            decisions = [dict(row) for row in self.conn.execute(
+                "SELECT * FROM decisions WHERE task_id IN (" + placeholders +
+                ") ORDER BY id", task_ids)]
+        blockers = [{"task": task["id"], "state": task.get("state"),
+                     "owner": task.get("owner")}
+                    for task in tasks if task.get("state") == "blocked"]
+        next_task = next(
+            (task for task in tasks
+             if task.get("state") != "done" and
+             (not task.get("latest_proof") or
+              task["latest_proof"].get("result") != "proven")),
+            None)
+        causality = []
+        for item in self.conn.execute(
+                "SELECT seq, event, agent, fields, created_utc FROM events "
+                "ORDER BY seq DESC LIMIT 500"):
+            try:
+                fields = json.loads(item["fields"] or "{}")
+            except json.JSONDecodeError:
+                continue
+            if issue_id in json.dumps(fields, sort_keys=True):
+                causality.append({"seq": item["seq"], "event": item["event"],
+                                  "agent": item["agent"],
+                                  "fields": fields,
+                                  "created_utc": item["created_utc"]})
+            if len(causality) >= 20:
+                break
+        missing = [name for name in ("title", "summary", "source")
+                   if not issue.get(name)]
+        return {
+            "issue": issue,
+            "paths": paths,
+            "tasks": tasks,
+            "leases": leases,
+            "builds": builds,
+            "runs": runtimes,
+            "decisions": decisions,
+            "blockers": blockers,
+            "next": ({"action": "claim_task", "task": next_task["id"]}
+                     if next_task else
+                     {"action": "claim_issue" if issue.get("state") == "new"
+                      else "wait", "reason": issue.get("deferred_reason") or ""}),
+            "causality": list(reversed(causality)),
+            "missing": missing,
+        }
 
     def issue_list(self, *, state: str = "", kind: str = "",
                    owner: str = "", limit: int = 100) -> list[dict]:
@@ -1622,6 +1828,32 @@ class CoordStore:
             agent, issue_id, "Proof exemption",
             f"Reason: {reason}\n\nPaths: {', '.join(paths or []) or '(not specified)'}")
 
+    def issue_occurrence(self, agent: str, issue_id: str, body: str,
+                         evidence: object = None) -> dict:
+        self.require_agent(agent)
+        return self._issue_append(
+            agent, issue_id, "Occurrence",
+            f"{body}\n\nEvidence: {json.dumps(evidence or {}, sort_keys=True)}",
+            occurrence=body, evidence=evidence or {})
+
+    def issue_discussion(self, agent: str, issue_id: str, body: str, *,
+                         message_id: str, subject: str, kind: str) -> dict:
+        self.require_agent(agent)
+        self._issue_row(issue_id)
+        if not body.strip():
+            raise CoordError("issue-linked message body is required", 2)
+        return self._issue_append(
+            agent, issue_id, "Agent discussion and suggestions",
+            f"Message: `{message_id}` ({kind})\n\n"
+            f"Subject: {subject or '(no subject)'}\n\n{body.strip()}")
+
+    def issue_suggest(self, agent: str, issue_id: str, body: str) -> dict:
+        self.require_agent(agent)
+        self._issue_row(issue_id)
+        if not body.strip():
+            raise CoordError("issue suggestion is required", 2)
+        return self._issue_append(agent, issue_id, "Agent suggestion", body.strip())
+
     def issue_quote(self, agent: str, issue_id: str, quote: str,
                     supports: str = "") -> dict:
         self.require_agent(agent)
@@ -1675,6 +1907,266 @@ class CoordStore:
                 "UPDATE tasks SET issue_id=? WHERE id=?", (issue_id, task_id))
         return self._issue_append(agent, issue_id, "Task linked",
                                   f"Task: {task_id} (step {int(step_order)})")
+
+    def issue_context(self, agent: str, issue_id: str, *,
+                      reproduction: str | None = None,
+                      expected_behavior: str | None = None,
+                      acceptance: str | None = None,
+                      paths: list[str] | None = None,
+                      related_build: str | None = None,
+                      related_run: str | None = None,
+                      evidence: object | None = None) -> dict:
+        self.require_agent(agent)
+        self._issue_row(issue_id)
+        updates: dict[str, object] = {}
+        fields: dict[str, object] = {}
+        if reproduction is not None:
+            updates["reproduction"] = reproduction
+            fields["reproduction"] = reproduction
+        if expected_behavior is not None:
+            updates["expected_behavior"] = expected_behavior
+            fields["expected_behavior"] = expected_behavior
+        if acceptance is not None:
+            updates["acceptance"] = acceptance
+            fields["acceptance"] = acceptance
+        if paths is not None:
+            updates["paths"] = json.dumps(paths)
+            fields["paths"] = paths
+        if related_build is not None:
+            updates["related_build"] = related_build
+            fields["related_build"] = related_build
+        if related_run is not None:
+            updates["related_run"] = related_run
+            fields["related_run"] = related_run
+        if evidence is not None:
+            updates["evidence"] = json.dumps(evidence, sort_keys=True)
+            fields["evidence"] = evidence
+        if not updates:
+            return self.issue_show(issue_id)
+        now = utc_now()
+        with self.conn:
+            assignments = ", ".join(f"{key}=?" for key in updates)
+            self.conn.execute(
+                f"UPDATE issues SET {assignments}, updated_utc=? WHERE id=?",
+                [*updates.values(), now, issue_id])
+        return self._issue_append(
+            agent, issue_id, "Context",
+            "\n".join(f"{key}: {value}" for key, value in fields.items()))
+
+    def issue_readiness(self, issue_id: str) -> dict:
+        row = self._issue_row(issue_id)
+        quotes = self.conn.execute(
+            "SELECT COUNT(*) FROM issue_quotes WHERE issue_id=?",
+            (issue_id,)).fetchone()[0]
+        tasks = self.conn.execute(
+            "SELECT COUNT(*) FROM issue_tasks WHERE issue_id=?",
+            (issue_id,)).fetchone()[0]
+        paths = json.loads(row["paths"] or "[]")
+        evidence = json.loads(row["evidence"] or "{}")
+        required = {
+            "human_quote": bool(str(row["human_quote"] or "").strip() or quotes),
+            "reproduction": bool(str(row["reproduction"] or "").strip()),
+            "expected_behavior": bool(str(row["expected_behavior"] or "").strip()),
+            "acceptance": bool(str(row["acceptance"] or "").strip()),
+            "paths": bool(paths),
+            "evidence": bool(evidence) or bool(row["related_build"]) or bool(row["related_run"]),
+        }
+        missing = [name for name, present in required.items() if not present]
+        return {
+            "issue": issue_id,
+            "ready": not missing,
+            "score": len(required) - len(missing),
+            "possible": len(required),
+            "missing": missing,
+            "tasks": int(tasks),
+            "state": row["state"],
+        }
+
+    _WAIT_PHASES = frozenset({"build_wait", "test_wait", "waiting", "blocked"})
+
+    @staticmethod
+    def _work_ms(start: str, end: str = "") -> int:
+        try:
+            finish = (datetime.datetime.fromisoformat(end.replace("Z", "+00:00"))
+                      if end else datetime.datetime.now(datetime.timezone.utc))
+            begin = datetime.datetime.fromisoformat(
+                str(start).replace("Z", "+00:00"))
+            return max(0, int((finish - begin).total_seconds() * 1000))
+        except (TypeError, ValueError):
+            return 0
+
+    def work_start(self, agent: str, *, task_id: str = "", issue_id: str = "",
+                   message_id: str = "", notes: str = "") -> dict:
+        self.require_agent(agent)
+        session_id = new_id("work")
+        now = utc_now()
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO work_sessions(session_id,agent,task_id,issue_id,"
+                "received_message_id,state,phase,started_utc,notes) "
+                "VALUES (?,?,?,?,?,'active','received',?,?)",
+                (session_id, agent, task_id, issue_id, message_id, now, notes))
+            self.conn.execute(
+                "INSERT INTO work_phases(session_id,name,started_utc,state,notes) "
+                "VALUES (?,?,?,'active',?)", (session_id, "received", now, notes))
+        self.activity_set(
+            agent, task_id=task_id, issue_id=issue_id, phase="received",
+            activity="work session started", next_step="planning")
+        self.event("coord.work.started", agent, session=session_id,
+                   task=task_id, issue=issue_id, message=message_id)
+        return self.work_status(session_id)
+
+    def _work_session_row(self, session_id: str) -> sqlite3.Row:
+        row = self.conn.execute(
+            "SELECT * FROM work_sessions WHERE session_id=?", (session_id,)).fetchone()
+        if row is None:
+            raise CoordError(f"unknown work session {session_id!r}", 2)
+        return row
+
+    def _active_work_session(self, agent: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT * FROM work_sessions WHERE agent=? AND state='active' "
+            "ORDER BY started_utc DESC LIMIT 1", (agent,)).fetchone()
+
+    def _close_active_work_phase(self, session_id: str, now: str) -> None:
+        phase = self.conn.execute(
+            "SELECT * FROM work_phases WHERE session_id=? AND state='active' "
+            "ORDER BY id DESC LIMIT 1", (session_id,)).fetchone()
+        if phase is None:
+            return
+        try:
+            elapsed = max(0, int((datetime.datetime.fromisoformat(
+                now.replace("Z", "+00:00")) - datetime.datetime.fromisoformat(
+                str(phase["started_utc"]).replace("Z", "+00:00"))).total_seconds() * 1000))
+        except ValueError:
+            elapsed = 0
+        self.conn.execute(
+            "UPDATE work_phases SET ended_utc=?, elapsed_ms=?, state='done' "
+            "WHERE id=?", (now, elapsed, phase["id"]))
+
+    def work_phase(self, agent: str, session_id: str, name: str, *,
+                   wait_reason: str = "", build_id: str = "",
+                   run_id: str = "", notes: str = "") -> dict:
+        self.require_agent(agent)
+        row = self._work_session_row(session_id)
+        if row["agent"] != agent:
+            raise CoordError("work session belongs to another agent", 2)
+        if row["state"] != "active":
+            raise CoordError("work session is not active", 2)
+        name = name.strip()
+        if not name:
+            raise CoordError("work phase name is required", 2)
+        now = utc_now()
+        with self.conn:
+            self._close_active_work_phase(session_id, now)
+            self.conn.execute(
+                "INSERT INTO work_phases(session_id,name,started_utc,state,"
+                "wait_reason,build_id,run_id,notes) VALUES (?,?,?,'active',?,?,?,?)",
+                (session_id, name, now, wait_reason, build_id, run_id, notes))
+            self.conn.execute(
+                "UPDATE work_sessions SET phase=?, notes=CASE WHEN ?<>'' "
+                "THEN ? ELSE notes END WHERE session_id=?",
+                (name, notes, notes, session_id))
+        self.activity_set(
+            agent, task_id=str(row["task_id"]), issue_id=str(row["issue_id"]),
+            phase=name, activity=name, wait_reason=wait_reason,
+            build_id=build_id, run_id=run_id,
+            blocker=wait_reason, next_step=notes)
+        self.event("coord.work.phase", agent, session=session_id, phase=name,
+                   wait_reason=wait_reason, build=build_id, run=run_id)
+        return self.work_status(session_id)
+
+    def work_end(self, agent: str, session_id: str, *, state: str = "done",
+                 notes: str = "") -> dict:
+        self.require_agent(agent)
+        row = self._work_session_row(session_id)
+        if row["agent"] != agent:
+            raise CoordError("work session belongs to another agent", 2)
+        now = utc_now()
+        with self.conn:
+            self._close_active_work_phase(session_id, now)
+            try:
+                elapsed = max(0, int((datetime.datetime.fromisoformat(
+                    now.replace("Z", "+00:00")) - datetime.datetime.fromisoformat(
+                    str(row["started_utc"]).replace("Z", "+00:00"))).total_seconds() * 1000))
+            except ValueError:
+                elapsed = 0
+            self.conn.execute(
+                "UPDATE work_sessions SET state=?, phase='done', ended_utc=?, "
+                "elapsed_ms=?, notes=CASE WHEN ?<>'' THEN ? ELSE notes END "
+                "WHERE session_id=?",
+                (state, now, elapsed, notes, notes, session_id))
+        self.activity_set(
+            agent, task_id=str(row["task_id"]), issue_id=str(row["issue_id"]),
+            phase="done", activity="work session ended", next_step=notes)
+        self.event("coord.work.ended", agent, session=session_id, state=state,
+                   elapsed_ms=elapsed)
+        return self.work_status(session_id)
+
+    def work_status(self, session_id: str) -> dict:
+        row = dict(self._work_session_row(session_id))
+        phases = [dict(item) for item in self.conn.execute(
+            "SELECT * FROM work_phases WHERE session_id=? ORDER BY id",
+            (session_id,))]
+        if row["state"] == "active":
+            row["elapsed_ms"] = self._work_ms(str(row["started_utc"]))
+            for phase in phases:
+                if phase["state"] == "active":
+                    phase["elapsed_ms"] = self._work_ms(
+                        str(phase["started_utc"]))
+        row["phases"] = phases
+        return row
+
+    def work_list(self, agent: str = "", *, active_only: bool = False) -> list[dict]:
+        clauses = []
+        args: list[object] = []
+        if agent:
+            clauses.append("agent=?")
+            args.append(agent)
+        if active_only:
+            clauses.append("state='active'")
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = []
+        for item in self.conn.execute(
+                "SELECT * FROM work_sessions" + where +
+                " ORDER BY started_utc DESC", args):
+            rows.append(self.work_status(str(item["session_id"])))
+        return rows
+
+    def work_summary(self, agent: str = "", issue_id: str = "") -> dict:
+        clauses = []
+        args: list[object] = []
+        if agent:
+            clauses.append("agent=?")
+            args.append(agent)
+        if issue_id:
+            clauses.append("issue_id=?")
+            args.append(issue_id)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        sessions = [dict(row) for row in self.conn.execute(
+            "SELECT * FROM work_sessions" + where, args)]
+        for session in sessions:
+            session["elapsed_ms"] = self._work_ms(
+                str(session["started_utc"]), str(session["ended_utc"] or ""))
+        session_ids = [str(row["session_id"]) for row in sessions]
+        phase_totals: dict[str, int] = {}
+        if session_ids:
+            placeholders = ",".join("?" for _ in session_ids)
+            for row in self.conn.execute(
+                    f"SELECT * FROM work_phases WHERE session_id IN "
+                    f"({placeholders})", session_ids):
+                name = str(row["name"])
+                milliseconds = (int(row["elapsed_ms"] or 0)
+                                if row["state"] != "active"
+                                else self._work_ms(str(row["started_utc"])))
+                phase_totals[name] = phase_totals.get(name, 0) + milliseconds
+        return {
+            "sessions": len(sessions),
+            "active": sum(1 for row in sessions if row["state"] == "active"),
+            "total_ms": sum(int(row["elapsed_ms"] or 0) for row in sessions),
+            "phases_ms": phase_totals,
+            "sessions_detail": sessions,
+        }
 
     def activity_set(self, agent: str, *, task_id: str = "", issue_id: str = "",
                      phase: str = "", activity: str = "",
@@ -1866,6 +2358,7 @@ class CoordStore:
             "build_requests": self.build_list(),
             "build_owner": self.build_owner(),
             "runtimes": self.runtime_list(),
+            "work": self.work_list(active_only=True),
             "leases": [dict(row) for row in self.conn.execute(
                 "SELECT * FROM leases WHERE state='active' ORDER BY path")],
             "unread": int(self.conn.execute(
@@ -1938,6 +2431,7 @@ class CoordStore:
             "build_requests": self.build_list(),
             "build_owner": self.build_owner(),
             "runtimes": self.runtime_list(),
+            "work": self.work_list(active_only=True),
             "unread": unread,
         }
 
@@ -2526,6 +3020,7 @@ class CoordStore:
             "build_requests": self.build_list(),
             "build_owner": self.build_owner(),
             "runtimes": self.runtime_list(),
+            "work": self.work_list(active_only=True),
             "unread": unread,
         }
 
@@ -2671,6 +3166,8 @@ def create_parser() -> argparse.ArgumentParser:
     p.add_argument("--minutes", type=float, default=0.0)
     p.add_argument("--reply-to", default="")
     p.add_argument("--thread", default="")
+    p.add_argument("--issue", default="",
+                   help="append this message to the issue discussion")
 
     p = sub.add_parser("ask")
     p.add_argument("--to", required=True)
@@ -2679,10 +3176,14 @@ def create_parser() -> argparse.ArgumentParser:
     p.add_argument("--wait", type=float, default=0.0,
                    help="bounded seconds; 0 returns immediately")
     p.add_argument("--minutes", type=float, default=DEFAULT_QUESTION_MINUTES)
+    p.add_argument("--issue", default="",
+                   help="append this question to the issue discussion")
 
     p = sub.add_parser("reply")
     p.add_argument("message_id")
     p.add_argument("body")
+    p.add_argument("--issue", default="",
+                   help="append this reply to the issue discussion")
 
     p = sub.add_parser("wait")
     p.add_argument("--timeout", type=float, default=300.0)
@@ -2752,6 +3253,8 @@ def create_parser() -> argparse.ArgumentParser:
     i.add_argument("--limit", type=int, default=100)
     i = isub.add_parser("show")
     i.add_argument("issue_id")
+    i = isub.add_parser("brief")
+    i.add_argument("issue_id")
     i = isub.add_parser("triage")
     i.add_argument("issue_id")
     i.add_argument("--summary", default="")
@@ -2779,6 +3282,9 @@ def create_parser() -> argparse.ArgumentParser:
     i.add_argument("issue_id")
     i.add_argument("quote")
     i.add_argument("--supports", default="")
+    i = isub.add_parser("suggest")
+    i.add_argument("issue_id")
+    i.add_argument("body")
     i = isub.add_parser("review")
     i.add_argument("issue_id")
     i.add_argument("--verdict", required=True)
@@ -2787,6 +3293,19 @@ def create_parser() -> argparse.ArgumentParser:
     i.add_argument("issue_id")
     i.add_argument("task_id")
     i.add_argument("--step", type=int, default=0)
+    i = isub.add_parser("context")
+    i.add_argument("issue_id")
+    i.add_argument("--reproduction", default=None)
+    i.add_argument("--expected-behavior", default=None)
+    i.add_argument("--acceptance", default=None)
+    i.add_argument("--paths", nargs="*", default=None)
+    i.add_argument("--build", default=None)
+    i.add_argument("--run", default=None)
+    i.add_argument("--evidence", default=None)
+    i = isub.add_parser("readiness")
+    i.add_argument("issue_id")
+    i = isub.add_parser("needs-info")
+    i.add_argument("--limit", type=int, default=100)
 
     p = sub.add_parser("proof")
     psub = p.add_subparsers(dest="proof_command", required=True)
@@ -2822,6 +3341,31 @@ def create_parser() -> argparse.ArgumentParser:
     q = psub.add_parser("status")
     p = sub.add_parser("trace")
     p.add_argument("issue_id")
+
+    p = sub.add_parser("work")
+    wsub = p.add_subparsers(dest="work_command", required=True)
+    w = wsub.add_parser("start")
+    w.add_argument("--task", default="")
+    w.add_argument("--issue", default="")
+    w.add_argument("--message", default="")
+    w.add_argument("--notes", default="")
+    w = wsub.add_parser("phase")
+    w.add_argument("session_id")
+    w.add_argument("name")
+    w.add_argument("--wait-reason", default="")
+    w.add_argument("--build-id", default="")
+    w.add_argument("--run-id", default="")
+    w.add_argument("--notes", default="")
+    w = wsub.add_parser("end")
+    w.add_argument("session_id")
+    w.add_argument("--state", default="done")
+    w.add_argument("--notes", default="")
+    w = wsub.add_parser("status")
+    w.add_argument("session_id")
+    w = wsub.add_parser("list")
+    w.add_argument("--active", action="store_true")
+    w = wsub.add_parser("summary")
+    w.add_argument("--issue", default="")
 
     p = sub.add_parser("activity")
     asub = p.add_subparsers(dest="activity_command", required=True)
@@ -3004,7 +3548,11 @@ def run(args: argparse.Namespace) -> object:
         needs_agent = False
     if args.command == "proof" and args.proof_command in {"list", "status"}:
         needs_agent = False
-    if args.command == "issue" and args.issue_command in {"list", "show"}:
+    if args.command == "issue" and args.issue_command in {
+            "list", "show", "readiness", "needs-info"}:
+        needs_agent = False
+    if args.command == "work" and args.work_command in {
+            "status", "list", "summary"}:
         needs_agent = False
     if args.command == "build" and (
             args.build_command == "list" or
@@ -3037,17 +3585,18 @@ def run(args: argparse.Namespace) -> object:
                               kind=args.kind, paths=_paths(args.paths),
                               requires_response=args.requires_response,
                               due_minutes=args.minutes, reply_to=args.reply_to,
-                              thread=args.thread)
+                              thread=args.thread, issue_id=args.issue)
         if command == "ask":
             sent = store.send(agent, args.to, args.subject, args.body,
                               kind="question", requires_response=True,
-                              due_minutes=args.minutes)
+                              due_minutes=args.minutes, issue_id=args.issue)
             if args.wait > 0:
                 answer = store.wait_for_answer(agent, sent["message"], args.wait)
                 return {"sent": sent, "answer": answer, "timed_out": answer is None}
             return sent
         if command == "reply":
-            return store.reply(agent, args.message_id, args.body)
+            return store.reply(agent, args.message_id, args.body,
+                               issue_id=args.issue)
         if command == "wait":
             deadline = time.monotonic() + max(0.0, args.timeout)
             while time.monotonic() < deadline:
@@ -3099,6 +3648,8 @@ def run(args: argparse.Namespace) -> object:
                     limit=args.limit)
             if args.issue_command == "show":
                 return store.issue_show(args.issue_id)
+            if args.issue_command == "brief":
+                return store.issue_brief(args.issue_id)
             if args.issue_command == "triage":
                 return store.issue_triage(
                     agent, args.issue_id, summary=args.summary,
@@ -3120,9 +3671,28 @@ def run(args: argparse.Namespace) -> object:
             if args.issue_command == "quote":
                 return store.issue_quote(
                     agent, args.issue_id, args.quote, args.supports)
+            if args.issue_command == "suggest":
+                return store.issue_suggest(agent, args.issue_id, args.body)
             if args.issue_command == "review":
                 return store.issue_review(
                     agent, args.issue_id, args.verdict, args.body)
+            if args.issue_command == "context":
+                return store.issue_context(
+                    agent, args.issue_id,
+                    reproduction=args.reproduction,
+                    expected_behavior=args.expected_behavior,
+                    acceptance=args.acceptance, paths=args.paths,
+                    related_build=args.build, related_run=args.run,
+                    evidence=(json.loads(args.evidence)
+                              if args.evidence and args.evidence.lstrip().startswith(("{", "["))
+                              else ({"text": args.evidence} if args.evidence else None)))
+            if args.issue_command == "readiness":
+                return store.issue_readiness(args.issue_id)
+            if args.issue_command == "needs-info":
+                return [
+                    store.issue_readiness(row["id"])
+                    for row in store.issue_list(limit=args.limit)
+                    if not store.issue_readiness(row["id"])["ready"]]
             return store.issue_link_task(
                 agent, args.issue_id, args.task_id, args.step)
         if command == "proof":
@@ -3159,6 +3729,24 @@ def run(args: argparse.Namespace) -> object:
                 game_generation=args.game_generation, run_id=args.run_id,
                 blocker=args.blocker, next_step=args.next_step,
                 wait_reason=args.wait_reason)
+        if command == "work":
+            if args.work_command == "start":
+                return store.work_start(
+                    agent, task_id=args.task, issue_id=args.issue,
+                    message_id=args.message, notes=args.notes)
+            if args.work_command == "phase":
+                return store.work_phase(
+                    agent, args.session_id, args.name,
+                    wait_reason=args.wait_reason, build_id=args.build_id,
+                    run_id=args.run_id, notes=args.notes)
+            if args.work_command == "end":
+                return store.work_end(
+                    agent, args.session_id, state=args.state, notes=args.notes)
+            if args.work_command == "status":
+                return store.work_status(args.session_id)
+            if args.work_command == "list":
+                return store.work_list(agent=agent, active_only=args.active)
+            return store.work_summary(agent=agent, issue_id=args.issue)
         if command == "board":
             return store.board(agent=agent)
         if command == "next":
@@ -3307,6 +3895,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-

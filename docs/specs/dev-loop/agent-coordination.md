@@ -67,6 +67,33 @@ At the start of every activation, run `sync`. During a long activation, check
 `dev-loop.py --status` at natural boundaries. `wait` and `ask --wait` are
 bounded blocking commands; they are not background polling loops.
 
+## Work-time and phase latency
+
+Every activation that performs work opens one work session:
+
+```text
+agent-coord work start --agent <name> --task <id> --issue <id> \
+  --message <received-message-id> --notes "received request"
+agent-coord work phase <session> planning
+agent-coord work phase <session> editing
+agent-coord work phase <session> build_wait --wait-reason "build queue" --build-id <id>
+agent-coord work phase <session> test_wait --wait-reason "pinned run" --run-id <id>
+agent-coord work phase <session> review
+agent-coord work end <session> --state done
+```
+
+The session measures wall-clock milliseconds from the received user message to
+done and records every phase independently. The default phases are `received`,
+`planning`, `editing`, `build_wait`, `test_wait`, `review`, `blocked`, and
+`done`; a phase may be split when it becomes a measurable bottleneck. `work
+summary` groups elapsed milliseconds by phase and agent, and `work list
+--active` shows sessions that have not ended. The board includes active
+sessions so a wait is visible, not hidden inside one long total.
+
+The measurement is observational, not a performance target by itself. A phase
+that is consistently large becomes an efficiency or build-friction issue with
+the measured evidence and a proposed reduction.
+
 ## Next work and observation
 
 `agent-coord next --agent <name>` returns the highest-priority unblocked issue
@@ -80,6 +107,53 @@ and matching runtimes. It does not dump unbounded logs.
 A future orchestrator plugin may wake an idle agent by running `next` and
 starting one bounded activation. The repository cannot force an idle model to
 think without that external wake path.
+
+## Review while waiting
+
+When an agent waits for a build or test, it records the wait reason in activity
+and asks for review work:
+
+```text
+agent-coord activity set --phase waiting --wait-reason "build queue"
+agent-coord next --agent <name> --mode waiting
+```
+
+The waiting queue returns review-only tasks and issues that:
+
+- need a second reviewer;
+- have stale or missing evidence;
+- link to file paths the waiting agent is not editing;
+- can be reviewed without acquiring the build/test artifact.
+
+Review findings are appended with `issue review` or `note`; the waiting agent
+never edits a path owned by another agent. If the build/test completes, the
+agent resumes its original task. If no review work exists, it records that and
+continues non-conflicting work.
+
+## Issue context and awareness gaps
+
+An issue is ready to work only when it has the quote, reproduction, expected
+behavior, evidence links, acceptance, file paths/owners, dependencies, risks,
+and proof expectation. Missing required context makes it `needs_info`.
+
+`issue context` records the durable fields; `issue readiness` reports the
+exact missing fields; `issue needs-info` lists every open issue that is not
+ready. A bare title plus a summary is not actionable context.
+
+```text
+agent-coord issue context <issue-id> \
+  --reproduction "exact input and steps" \
+  --expected-behavior "observable correct result" \
+  --acceptance "measurable pass condition" \
+  --paths path/one path/two \
+  --run <run-id> --evidence '{"journal":"..."}'
+agent-coord issue readiness <issue-id>
+```
+
+An agent that lacks knowledge of game state, intent, ownership, or expected
+behavior files an `awareness`/`needs_info` issue with the exact missing
+question and impact. It does not silently assume the answer. The issue stays
+visible on the board until the user or owner clarifies.
 
 ## Optional intent
 

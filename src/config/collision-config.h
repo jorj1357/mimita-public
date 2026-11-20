@@ -66,7 +66,9 @@ public:
 
     // Set by the active gamemode. Arcade collision uses a capsule for every
     // actor (world and actor pairs) and classifies damage from limb hitboxes
-    // only. Not a config.json value; the server/client tick sets it.
+    // only. Not a config.json value; the server/client tick sets it. Defaults
+    // on so modes opt into non-arcade collision with
+    // features.arcade_collision=false.
     bool arcadeCollision() const {
         return mArcadeCollision.load(std::memory_order_relaxed);
     }
@@ -118,7 +120,7 @@ private:
     int mLimbBounceMode = 2;
     bool mBodyMeshCollision = true;
     bool mActorTriangleSolver = false;
-    std::atomic<bool> mArcadeCollision{false};
+    std::atomic<bool> mArcadeCollision{true};
     bool mActorCollisionAccelerated = true;
     bool mActorCollisionComparison = false;
     float mCollisionSkin = 0.05f;

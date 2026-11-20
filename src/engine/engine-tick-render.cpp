@@ -16,6 +16,7 @@
 #include "mapeditor/map-editor.h"
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <cmath>
 #include <chrono>
 #include <memory>
@@ -1237,5 +1238,22 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
 
     if (DebugVis::enabled()) {
         NpcSelectionManager::instance().drawSelection(npcSystem, camera);
+    }
+
+    static bool firstFrameLogged = false;
+    if (!firstFrameLogged && worldPassRan) {
+        firstFrameLogged = true;
+        const char* launchId = std::getenv("MIMITA_LAUNCH_ID");
+        const char* runId = std::getenv("MIMITA_RUN_ID");
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "client.first-frame", "launch-first-frame",
+            "first rendered world frame for launch timing", 0,
+            {{"frame_index", 1},
+             {"elapsed_s", static_cast<double>(glfwGetTime())},
+             {"launch_id", launchId ? launchId : ""},
+             {"run_id", runId ? runId : ""},
+             {"map_loaded", true}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 }

@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 29
+Entries: 30
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -225,3 +225,10 @@ correction in the detail file.
 - Lean-scan evidence (2026-11-19): an intermediate generation 352 publish measured a 14.22 s scan (3.95 s parse, 9.03 s stat, 1,496 unique dependencies) versus 315-1716 s earlier.
 - Verified (2026-11-19): a live generation 353 warm no-op completed in 0.403 s worker time with a 0.096 s marker scan, 642 skips, no compile/link/publish, and a 36.346 s complete request-to-result interval. The batched scan and worker clock are live-verified.
 - Repeated (2026-11-19): a second warm no-op measured 0.290 s worker time, 0.052 s scan, 642 skips, and 9.927 s complete request-to-result. Worker-boundary latency is verified and repeatable; codegen/manifest snapshot remain the dominant complete-interval stages.
+
+## Entry 30 — Dashboard maximize and restart snapped to the primary monitor
+
+- Recorded: 2026-11-20
+- Status: FIXED — three live close/reopen cycles and maximize/restore retained the left secondary monitor; saved coordinates and keepalive window rectangles matched.
+- Summary: `devscripts/dev_loop/gui.py`, `devscripts/dashboard-keepalive.py`
+- Detail: [dashboard-monitor-snap-REG-2026-11-20.md](dashboard-monitor-snap-REG-2026-11-20.md)

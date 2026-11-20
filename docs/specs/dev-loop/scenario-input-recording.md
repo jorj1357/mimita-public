@@ -713,3 +713,15 @@ The dev-loop must support one server and N clients. Each client has its own:
 The runner waits for all clients to become ready, synchronizes start, and
 collects per-client and server results separately. Matrix scenarios live under
 `devscripts/scenarios/matrix/`.
+
+## Screenshot proof at an exact tick
+
+Scenario and agent commands may request `screenshot_at_tick <tick> [name]`.
+The image is captured after the UI pass at the requested client simulation tick
+and written under the client run directory with a JSON sidecar containing
+build/generation/run/tick/actor/camera/UI identity and SHA-256.
+
+A missed tick writes `result=missed` with the actual nearest tick; it is never
+labelled exact. A screenshot is visual evidence only and must be paired with the
+related `events.jsonl` event; it does not prove server authority or gameplay by
+itself. See [visual proof screenshots](visual-proof-screenshots.md).

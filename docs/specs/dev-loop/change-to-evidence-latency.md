@@ -44,6 +44,14 @@ Record these monotonic stage boundaries:
 Report both `intent_to_evidence_ms` and `edit_to_evidence_ms`. Build time is one
 stage, not the whole metric.
 
+For agent work-time measurement, record observable wall-clock boundaries for
+message/intent receipt, activation and task phases, tool calls, and completion.
+Report tool, build/test wait, and other external wait intervals separately so
+they are not attributed to agent work. Do not label elapsed activation time as
+model thinking time: internal inference duration is recorded only when the
+platform exposes a reliable measurement. Use the phase data to find and remove
+avoidable work over time.
+
 ## Change classes
 
 Measure classes separately so an unavoidable cold link is not hidden inside a
@@ -98,6 +106,17 @@ Rules:
 - Record every wait, including waits below budget. Auto-create an issue for an
   avoidable wait or a wait above budget. An agent may also create an issue for
   any wait it considers unnecessary.
+- When an agent estimates or observes that a build/test wait will exceed 60
+  seconds, treat it as an immediate investigation trigger: record the elapsed
+  wait or estimate, current phase, blocker, and evidence; create or link a
+  `build-friction` issue; and inspect why the queue/worker is waiting rather
+  than only promising to wait. Continue independent review while the wait is
+  investigated.
+- Before creating an issue or starting work from a repeated user report, search
+  open issues for the same request, build/run, or root cause. If one already
+  exists, append the new quote/evidence and continue its existing open tasks;
+  do not create a duplicate issue or repeat completed work. Create a separate
+  issue only for a distinct cause or independently actionable work.
 - Auto-created issues begin in `needs_triage`, not `done`. They contain the
   exact build/run IDs and timing references.
 - `python devscripts/build_friction.py --create --agent <name>` performs the

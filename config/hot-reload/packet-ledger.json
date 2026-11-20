@@ -336,7 +336,7 @@
       "server": "dll",
       "server_handler": "handleServerCommand",
       "server_inbound": true,
-      "server_line": 2797,
+      "server_line": 2810,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -455,7 +455,7 @@
       "server": "dll",
       "server_handler": "serverTimestamp",
       "server_inbound": true,
-      "server_line": 2822,
+      "server_line": 2835,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -727,7 +727,7 @@
       "server": "dll",
       "server_handler": "handleSpawnAck",
       "server_inbound": true,
-      "server_line": 2809,
+      "server_line": 2822,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -761,7 +761,7 @@
       "server": "dll",
       "server_handler": "handleReliableEventAck",
       "server_inbound": true,
-      "server_line": 2815,
+      "server_line": 2828,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -948,7 +948,7 @@
       "server": "dll",
       "server_handler": "serverGamemodeRematchNow",
       "server_inbound": true,
-      "server_line": 2803,
+      "server_line": 2816,
       "server_owner": "game",
       "server_source": "src/network/server-packets.cpp"
     },
@@ -1346,5 +1346,5 @@
   ],
   "protocol_version": 52,
   "schema_version": 1,
-  "source_sha256": "741470e4fb2dd243080eb0d4f519ebcdb0a7951a484a820c51fe45f49df8346d"
+  "source_sha256": "b9a371bc8e62423618d3feba5f6a6e23984814429da115fad2ef8f544c063eb3"
 }

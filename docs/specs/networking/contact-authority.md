@@ -73,6 +73,92 @@ struct ContactCandidate {
 contain packet pointers, renderer state, audio state, or weapon-specific
 runtime pointers.
 
+## Contact purpose, damage kind, and one claim path (target contract)
+
+Status: **SPEC ONLY — no networking migration is authorized by this section.**
+The existing SpyKnife, Godball, NPC-damage, melee, hitscan, projectile, and
+explosion code paths remain in place until a reviewed implementation plan is
+approved.
+
+The current `ContactKind` identifies the geometry family. It is not sufficient
+to describe whether a contact is a collision, a damage event, a trigger, or a
+presentation event. Add the following target model:
+
+```cpp
+enum class ContactPurpose : uint8_t {
+    Collision    = 1 << 0,
+    Damage       = 1 << 1,
+    Trigger      = 1 << 2,
+    Presentation = 1 << 3,
+};
+
+enum class ContactKind : uint8_t {
+    Hitscan,
+    Projectile,
+    Melee,
+    Explosion,
+    Deathball,
+    WeaponClash,
+    Environment,
+};
+
+enum class DamageKind : uint8_t {
+    None,
+    Hitscan,
+    MeleePhysical,
+    ProjectileDirect,
+    Explosion,
+    Deathball,
+    Environment,
+};
+```
+
+`ContactCandidate` gains `purpose`, `kind`, and `damageKind`, plus optional
+`projectileId` and `explosionId` for causal correlation. `purpose` is a bitmask:
+a contact may be a collision and a damage event at the same time. A
+collision-only contact must not enter the damage sink. `damageKind` is only
+meaningful when `ContactPurpose::Damage` is set.
+
+### One claim path
+
+The target is one client claim queue, one wire claim batch, one server
+resolver, one damage resolver keyed by `DamageKind`, one `applyActorDamage`
+sink, and one shared event publication path.
+
+Weapon-specific code owns geometry and configuration policy only. It must not
+own a packet type, a hit-claim handler, final health, death, team policy, rewind
+policy, or duplicate policy.
+
+The following current paths are legacy during migration:
+
+- `handleSpyKnifeHitClaim` and `PACKET_SPYKNIFE_HIT_CLAIM`
+- `handleGodballHitClaim` and `PACKET_GODBALL_HIT_CLAIM`
+- `handleGenericMeleeContactBatch`
+- `handleNpcDamageRequest` and `PACKET_NPC_DAMAGE_REQUEST`
+- separate shot, projectile, and explosion claim handlers
+
+They must convert into the same `ContactCandidate`/claim contract. They are not
+new extension points.
+
+### Spec-only migration sequence
+
+1. Approve this target and record the human review.
+2. Add generic claim types and the spec-defined purpose/damage fields.
+3. Add legacy adapters that translate old packets into the generic claim.
+4. Migrate one family at a time; prove the same contact ID chain.
+5. Remove a legacy handler/packet only after its replacement is runtime-proven.
+6. Bump protocol/ABI only under the reviewed protocol-change process.
+
+No agent may implement this migration from the spec alone. The issue record
+must carry the plan, affected packet/schema files, compatibility plan, tests,
+and human approval.
+
+In the target knowledge graph, contacts, actors, weapons, claims, validations,
+damage events, tests, and evidence are nodes connected by typed edges. A
+client 2D/3D view and the server validation view are projections of the same
+contact facts, not separate sources. See
+[`../architecture/nodes-and-connections.md`](../architecture/nodes-and-connections.md).
+
 ## Canonical resolution order
 
 The shared resolver validates in this order:

@@ -461,6 +461,7 @@ class AgentCoordTests(unittest.TestCase):
             paths=["src/gamemode/gamemode.cpp"], next_step="run pinned test")
         issue = self.store.issue_add(
             "owner", "Panel issue", kind="improvement", source="user")
+        session = self.store.work_start("owner", issue_id=issue["id"])
         sent = self.store.send_human(
             "owner", "Dashboard report", "Please check the panel.")
         self.assertEqual(sent["sender"], "human-dashboard")
@@ -470,6 +471,8 @@ class AgentCoordTests(unittest.TestCase):
         message = next(row for row in snapshot["messages"]
                        if row["msg_id"] == sent["message"])
         self.assertEqual(message["sender_kind"], "human")
+        self.assertEqual(snapshot["work"][0]["session_id"],
+                         session["session_id"])
         self.assertGreater(snapshot["unread"], 0)
         # A dashboard read must not consume the message.
         self.assertEqual(snapshot["unread"],
@@ -477,13 +480,81 @@ class AgentCoordTests(unittest.TestCase):
         inbox = self.store.inbox("owner", unread_only=True)
         self.assertTrue(any(row["msg_id"] == sent["message"] for row in inbox))
 
+    def test_issue_brief_includes_tasks_and_next_action(self) -> None:
+        self.begin("owner")
+        issue = self.store.issue_add(
+            "owner", "Brief me", source="user", summary="handoff")
+        self.store.task_add(
+            "owner", "T1", "Do the work", owner="owner",
+            issue_id=issue["id"], acceptance="journal proof")
+        brief = self.store.issue_brief(issue["id"])
+        self.assertEqual(brief["issue"]["id"], issue["id"])
+        self.assertEqual(brief["tasks"][0]["id"], "T1")
+        self.assertEqual(brief["next"]["action"], "claim_task")
+        self.assertEqual(brief["missing"], [])
+
+    def test_issue_occurrence_records_recurrence(self) -> None:
+        self.store.ensure_agent("launch-doctor", "diagnosis")
+        self.store.ensure_agent("launch-doctor", "diagnosis")
+        issue = self.store.issue_add(
+            "launch-doctor", "Launch failure: timeout at server",
+            kind="launch-friction", source="dev-loop")
+        self.store.issue_occurrence(
+            "launch-doctor", issue["id"], "Failure recurred",
+            {"launch_id": "L2"})
+        shown = self.store.issue_show(issue["id"])
+        self.assertEqual(len(shown["occurrences"]), 1)
+        self.assertEqual(shown["occurrences"][0]["body"], "Failure recurred")
+
     def test_send_human_rejects_unknown_recipient(self) -> None:
         with self.assertRaises(CoordError):
             self.store.send_human("missing-agent", "hello", "body")
 
+    def test_issue_context_readiness(self) -> None:
+        self.begin("context-agent")
+        issue = self.store.issue_add(
+            "context-agent", "Screenshot is missing", quote="take a screenshot",
+            kind="bug", source="user", evidence={"text": "no PNG"})
+        initial = self.store.issue_readiness(issue["id"])
+        self.assertFalse(initial["ready"])
+        self.assertIn("reproduction", initial["missing"])
+        self.store.issue_context(
+            "context-agent", issue["id"],
+            reproduction="run screenshot_at_tick 120",
+            expected_behavior="PNG and sidecar exist",
+            acceptance="sidecar tick equals 120",
+            paths=["src/game/screenshot.cpp"])
+        ready = self.store.issue_readiness(issue["id"])
+        self.assertTrue(ready["ready"], ready)
+        self.assertEqual(ready["missing"], [])
+        self.assertEqual(ready["score"], ready["possible"])
+        self.assertEqual(self.store.issue_show(issue["id"])["acceptance"],
+                         "sidecar tick equals 120")
+
+    def test_work_sessions_measure_received_to_done(self) -> None:
+        self.begin("work-agent")
+        started = self.store.work_start(
+            "work-agent", task_id="test", issue_id="issue-1",
+            message_id="msg-1", notes="received request")
+        session = started["session_id"]
+        time.sleep(0.02)
+        self.store.work_phase("work-agent", session, "planning")
+        self.store.work_phase("work-agent", session, "editing")
+        active = self.store.work_list(agent="work-agent", active_only=True)
+        self.assertEqual(active[0]["session_id"], session)
+        finished = self.store.work_end("work-agent", session)
+        self.assertEqual(finished["state"], "done")
+        self.assertGreaterEqual(finished["elapsed_ms"], 20)
+        names = [row["name"] for row in finished["phases"]]
+        self.assertEqual(names, ["received", "planning", "editing"])
+        self.assertTrue(all(row["state"] == "done"
+                            for row in finished["phases"]))
+        summary = self.store.work_summary(agent="work-agent")
+        self.assertEqual(summary["sessions"], 1)
+        self.assertEqual(summary["active"], 0)
+        self.assertIn("planning", summary["phases_ms"])
+        self.assertGreaterEqual(summary["phases_ms"]["planning"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
-
-
-
