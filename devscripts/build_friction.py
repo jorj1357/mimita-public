@@ -266,7 +266,8 @@ def record(findings: list[dict], agent: str, task: str) -> int:
                 summary=str(finding["summary"]),
                 kind="build-friction", source="build", via_agent=agent,
                 severity="normal", priority="normal",
-                evidence=finding.get("evidence") or {},
+                evidence=(finding.get("evidence") or
+                          {"finding": str(finding.get("summary") or finding["title"])}),
                 reproduction=str(finding.get("summary") or finding["title"]),
                 expected_behavior=("The repeated build or workflow wait is "
                                    "measured and reduced."),
@@ -320,5 +321,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
 

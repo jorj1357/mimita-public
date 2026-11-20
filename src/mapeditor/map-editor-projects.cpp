@@ -280,6 +280,76 @@ bool creatorProjectClone(const std::string& sourceProjectId,
     return true;
 }
 
+bool creatorProjectForkLive(const std::string& projectId,
+                            const std::string& title,
+                            CreatorProjectResult& out)
+{
+    out = CreatorProjectResult{};
+    out.projectId = projectId;
+    out.mapId = projectId;
+    out.failedStep = "validate";
+    WorldProjectStore& store = WorldProjectStore::instance();
+    if (!WorldProjectStore::validProjectId(projectId)) {
+        out.error = "invalid fork project id";
+        return false;
+    }
+    if (gCurrentProjectId.empty()) {
+        out.error = "no active creator project; open or create one first";
+        return false;
+    }
+    if (projectId == gCurrentProjectId) {
+        out.error = "fork project id must differ from the active project";
+        return false;
+    }
+    MimitaWorldProject::WorldProjectManifest source;
+    std::string error;
+    if (!store.readManifest(gCurrentProjectId, source, &error)) {
+        out.error = error.empty() ? "active project is unavailable" : error;
+        return false;
+    }
+    MimitaWorldProject::WorldProjectManifest existing;
+    if (store.readManifest(projectId, existing, nullptr)) {
+        out.error = "project already exists: " + projectId;
+        return false;
+    }
+
+    out.failedStep = "save_source";
+    const std::string mapJson = MapConfigRegistry::instance().toJsonString();
+    std::string sourceVersion;
+    if (!store.writeWorking(gCurrentProjectId, mapJson, &error) ||
+        !store.saveVersion(gCurrentProjectId, "local", mapJson, "",
+                           &sourceVersion, &error)) {
+        out.error = error;
+        return false;
+    }
+
+    out.failedStep = "fork";
+    if (!store.fork(gCurrentProjectId, sourceVersion, projectId, "local",
+                    title.empty() ? projectId : title, "public", &error)) {
+        out.error = error;
+        return false;
+    }
+    out.failedStep = "verify";
+    if (!fillResult(projectId, title, out, error)) {
+        out.error = error;
+        out.ok = false;
+        return false;
+    }
+    out.failedStep.clear();
+    event("world-project.live-forked", projectId,
+          {{"source_project", gCurrentProjectId},
+           {"source_version", sourceVersion},
+           {"previous_head", source.head},
+           {"fork_project", projectId},
+           {"fork_version", out.initialVersion},
+           {"parent_version", sourceVersion},
+           {"owner", "local"}, {"contributor", "local"},
+           {"title", out.title}, {"visibility", "public"},
+           {"source_unchanged", true}, {"root", store.root()},
+           {"source", "live_save_fork"}});
+    return true;
+}
+
 bool creatorProjectOpen(const std::string& projectId,
                         const std::string& version,
                         CreatorProjectResult& out)
@@ -336,7 +406,7 @@ void registerWorldProjectCommands()
     terminal.registerCommand({
         "worldproject",
         "Create, open, fork, save, export, or recover native world projects",
-        "worldproject <list|status|create <id> [title]|open <id> [version]|save [title]|fork <source> <new-id> [version]|versions <id>|export <id> <dir> [version]|import <dir> [new-id]|drafts <id>|recover <id> <draft>|migrate>",
+        "worldproject <list|status|create <id> [title]|open <id> [version]|save [title]|fork <source> <new-id> [version]|fork_live <new-id> [title]|versions <id>|export <id> <dir> [version]|import <dir> [new-id]|drafts <id>|recover <id> <draft>|migrate>",
         [](const std::vector<std::string>& args) {
             WorldProjectStore& store = WorldProjectStore::instance();
             if (args.empty()) {
@@ -434,6 +504,24 @@ void registerWorldProjectCommands()
                        {"author", "local"}, {"root", store.root()}});
                 log("[WORLDPROJECT] saved " + gCurrentProjectId + " @" +
                     version.substr(0, 12));
+                return;
+            }
+
+            if (command == "fork_live" || command == "save_fork") {
+                if (args.size() < 2) {
+                    log("[WORLDPROJECT] fork_live <new-id> [title]");
+                    return;
+                }
+                CreatorProjectResult result;
+                if (!creatorProjectForkLive(
+                        args[1], args.size() >= 3 ? args[2] : "", result)) {
+                    log("[WORLDPROJECT] live fork failed at " +
+                        result.failedStep + ": " + result.error);
+                    return;
+                }
+                log("[WORLDPROJECT] saved live fork " + result.projectId +
+                    " @" + result.initialVersion.substr(0, 12) +
+                    " from " + currentWorldProjectId());
                 return;
             }
 

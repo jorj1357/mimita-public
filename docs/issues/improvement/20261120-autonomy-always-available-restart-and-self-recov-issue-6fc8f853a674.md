@@ -13,3 +13,10 @@ reproduction: Edit dev-loop Python source while the daemon is live; the daemon k
 expected_behavior: An agent can discover, perform, and verify a controlled restart of any checkout-owned stale/wedged process without asking, while preserving unrelated processes and leaving exactly one healthy dev-loop running.
 acceptance: An always-available skill document plus one-command or documented runbook covers dev-loop, daemon, watchdog, owned game/test processes, and wake adapters; it records proof of old/new PID, source hash, control endpoint, status, and preserved/relaunched game pair.
 paths: ['docs/skills', 'docs/ROUTER.md', 'docs/specs/dev-loop/dev-loop.md', 'devscripts/dev-loop.py', 'devscripts/dev-loop-watch.py']
+
+## Context
+
+### 2026-11-20T14:31:53.847Z — context-bus
+
+risk: Restarting an unrelated or healthy process could destroy evidence or user work; authority is limited to checkout-owned processes.
+proof_expectation: Recorded old/new PID, combined source hash, live control endpoint, status, and preserved/relaunched game pair.

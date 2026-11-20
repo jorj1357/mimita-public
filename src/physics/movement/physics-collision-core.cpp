@@ -223,6 +223,21 @@ void applyCollisionContact(
                    "[CONTACT] label=%s tri=%d normal=(%.3f %.3f %.3f) penetration=%.4f\n",
                    label, triangleIndex, normal.x, normal.y, normal.z, penetration);
 
+    // Static-world contacts delivered here by the legacy capsule pipeline
+    // must use the same configured impact response as the actor-triangle path.
+    // The stable contact kind plus triangle ID dedupes multiple reports of one
+    // surface this tick without suppressing a distinct wall/corner impact.
+    static constexpr char kRootCapsuleContact[] = "root_capsule";
+    const bool groundedSupport =
+        (p.ground.onGround || p.ground.stableOnGround || groundedThisFrame) &&
+        normal.z >= MAX_WALKABLE_SLOPE_DOT;
+    if (groundedSupport)
+        projectVelocityAgainstNormal(p, normal);
+    else
+        respondVelocityAgainstNormal(
+            p, normal, glm::vec3(0.0f), false, penetration,
+            kRootCapsuleContact, triangleIndex);
+
     const PlayerSettings& cfg = GetPlayerSettings();
 
     p.ground.realWorldContactThisFrame = true;

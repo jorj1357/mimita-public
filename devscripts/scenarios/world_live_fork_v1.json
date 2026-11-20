@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "world_live_fork_v1",
+  "description": "Create a live creator project, edit a block, save the current authored map as a source version, and fork it without replacing the active live project.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "funworld3",
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "steps": [
+    {"id": "create", "command": "mapeditor_create", "args": ["world_live_fork_probe", "live fork probe"], "delay_ms_after": 2500},
+    {"id": "add_block", "command": "mapeditor", "args": ["add", "block", "live_fork_block"], "delay_ms_after": 500},
+    {"id": "save", "command": "worldproject", "args": ["save", "live fork source"], "delay_ms_after": 1000},
+    {"id": "fork_live", "command": "worldproject", "args": ["fork_live", "world_live_fork_child", "live fork child"], "delay_ms_after": 1500}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "world-project.created", "where": {"project_id": "world_live_fork_probe"}},
+    {"type": "event_present", "event": "world-project.version-saved", "where": {"project": "world_live_fork_probe"}},
+    {"type": "event_present", "event": "world-project.live-forked", "where": {"fork_project": "world_live_fork_child"}},
+    {"type": "event_field_equals", "event": "world-project.live-forked", "field": "source_project", "equals": "world_live_fork_probe"},
+    {"type": "event_field_equals", "event": "world-project.live-forked", "field": "source_unchanged", "equals": true}
+  ],
+  "timeout_seconds": 180
+}
+
+

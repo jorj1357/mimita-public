@@ -80,3 +80,14 @@ Avoidable validation wait measured in this continuation: dashboard test wrapper 
 ### 2026-11-20T09:59:12.250Z — launch-latest-stable-fix
 
 Metric clarification for the five-run series: launch report `accept_latency_ms` is press-to-daemon receipt; `queue_wait_ms` is additional daemon delay before processing. The table values previously called GUI acknowledgement should be read as press-to-daemon acceptance only. The actual dashboard callback round-trip was visibly 1203 ms on run 20261120_095213 (consistent with 3.3 ms accept + 1202.8 ms queue delay) but is not currently persisted as its own exact field. Add explicit end-to-end button-to-response timing alongside the existing split stages.
+
+## Agent suggestion
+
+### 2026-11-20T20:38:37.199Z — build-wait-reviewer
+
+Measured evidence from issue-191782d7d9c5 (build attempt game-dll-20261120T195523321490Z-e1b74d, run 20261120_170259, success, 853.5s total): object_cache_scan 356.1s (scan_parse_ms 326.5s over 1501 unique dependencies), changed_source_preflight 150.3s (dominated by a 149.99s cold compile of src/actor/player-ai.cpp), publish 120.2s, link 62.8s, compile 107.6s (13 compiled / 629 skipped).
+
+Findings and proposed reductions (no code claimed here; for the tracker to schedule):
+1. Dominant avoidable cost is the object-cache dependency scan, not compilation. Cache dependency-parse results keyed by dependency-file identity so a build does not re-parse 1501 dependency files (~5.4 min of a 14.2 min build).
+2. Make the wait budget stage-aware. A healthy warm build with one changed player-ai.cpp cannot finish in 60s, so the 60s crossing is a false-positive for that workload; it currently fires during codegen/manifest snapshot before the dominant stage even starts.
+3. Attribute over-budget waits to the dominant stage (object_cache_scan) rather than the coarse game_build stage, and consolidate repeated same-stage wait titles under this tracker instead of leaving each wait_id as a separate high-priority issue.

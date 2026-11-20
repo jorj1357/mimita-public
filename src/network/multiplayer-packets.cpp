@@ -2267,7 +2267,7 @@ void mpTickReconnect(MultiplayerContext& ctx)
 
 std::string mpConnectionHealthText(const MultiplayerContext& ctx)
 {
-    if (!ctx.active)
+    if (!ctx.active && ctx.connectionState == ConnectionState::Disconnected)
         return "Disconnected";
 
     const uint64_t now = nowMs();
@@ -2280,6 +2280,8 @@ std::string mpConnectionHealthText(const MultiplayerContext& ctx)
                  "Waiting for server — snapshots %.2fs old", age);
         return waiting;
     }
+    if (ctx.connectionState == ConnectionState::DisconnectPending)
+        return "Disconnecting from server";
     const bool reconnecting = ctx.connectionState == ConnectionState::Reconnecting ||
         ctx.connectionState == ConnectionState::ReconnectFailed;
     const bool ready = ctx.connected && !ctx.waitingForMapLoad &&
@@ -2291,7 +2293,18 @@ std::string mpConnectionHealthText(const MultiplayerContext& ctx)
     if (loading)
     {
         const char* step = ctx.waitingForMapLoad ? "loading map" :
-            (!ctx.connected ? connectionStateName(ctx.connectionState) :
+            (!ctx.connected ?
+                (ctx.connectionState == ConnectionState::ResolvingCode
+                    ? "finding server"
+                    : ctx.connectionState == ConnectionState::RequestingJoin
+                        ? "requesting to join"
+                        : ctx.connectionState == ConnectionState::WaitJoinAccept
+                            ? "waiting for server acceptance"
+                            : ctx.connectionState == ConnectionState::NatNegotiating
+                                ? "negotiating connection"
+                                : ctx.connectionState == ConnectionState::Connecting
+                                    ? "establishing connection"
+                                    : connectionStateName(ctx.connectionState)) :
              (!ctx.clientMapReadySent ? "synchronizing map" : "waiting for spawn"));
         const uint64_t elapsedMs = ctx.connectStartMs && now >= ctx.connectStartMs
             ? now - ctx.connectStartMs : 0;

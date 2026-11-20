@@ -38,3 +38,66 @@ paths: ['src/actor/player-ai.cpp', 'src/actor/player-ai.h', 'docs/specs/ai/playe
 related_build: 397
 related_run: 20261120_063800_01
 evidence: {'build': 'generation-397', 'build_attempt': 'game-dll-20261120T063933641878Z-848734', 'compiled': 'src/actor/player-ai.cpp', 'runtime': 'pending; active server is generation 394'}
+
+## Assignment
+
+### 2026-11-20T14:39:24.115Z — arcade-collision-elite-proof
+
+Owner: arcade-collision-elite-proof
+
+## Triage
+
+### 2026-11-20T14:40:07.199Z — arcade-collision-elite-proof
+
+Summary: Upgrade the controllable client-side AI player for high-skill, human-like play and as a repeatable stress driver for Arcade capsule collision. Preserve fair shared weapon/action rules while improving target selection, navigation recovery, fast movement abilities, team coordination, and combat execution; prove movement and combat from a pinned live run.
+Owner: arcade-collision-elite-proof
+Priority: high
+
+## Agent discussion and suggestions
+
+### 2026-11-20T14:41:55.551Z — arcade-collision-elite-proof
+
+Message: `msg-89e89eac14f4` (coordination)
+
+Subject: Local AI controller file lease coordination
+
+Please share your player-ai.cpp edit scope and release your active lease when your change is saved. I’ve taken issue-f8873319f12b and need to continue client AI improvements for the collision stress goal. I will not edit that file while your lease is active.
+
+## Context
+
+### 2026-11-20T14:45:18.758Z — arcade-collision-elite-proof
+
+expected_behavior: The client AI behaves as a strong legal player: it targets enemies using the configured information policy, navigates without corner lock, uses available jump/dash/down-dash/freeze/air-strafe actions when tactically valid, coordinates with teammates, and successfully damages and kills using every usable weapon in its resolved mode loadout. It obeys ordinary movement, collision, aim, ammo, cooldown, and damage authority; it does not force hits.
+acceptance: On a pinned local TDM run, journal evidence shows no teammate as a hostile target, no ranged fire through occluding world geometry, successful route/movement progress, legal jump/dash/down-dash/freeze/air movement when available, teammate coordination, and at least one server-confirmed kill with every usable weapon in the resolved loadout. Repeat the same AI controller on Arcade collision stress routes including the reported Dust2CyberiaV4 ramp, long cylinders, seams, walls, corners, and actor capsules; evidence shows capsule-only world contacts, no pose-driven root correction, no penetration, no unexplained velocity cancellation, smooth slide, and configured bounce on real impacts. Keep source/build/runtime/human feel evidence separate.
+paths: ['src/actor/player-ai.cpp', 'src/actor/player-ai.h', 'docs/specs/npc-behavior/npc-behavior.md', 'docs/architecture/player-npc-systems/npc-movement.md', 'src/physics/movement/physics-collision-glb-sweep-slide.cpp', 'src/physics/movement/physics-collision-core.cpp', 'src/physics/movement/actor-final-pose.cpp', 'docs/workflows/runtime-scenario-validation.md']
+risk: A stronger AI may raise local match difficulty and repeatedly stress shared collision/network paths. It must use ordinary legal actions, preserve authority and teammate safety, and stay bounded in local proof runs.
+proof_expectation: Use a fresh executable and pinned game-DLL generation through the root dev-loop. Run actual TDM AI gameplay and inspect exact client/server events.jsonl by artifact, generation, run, actor, tick, weapon, action, contact, and damage identity. Require at least one server-accepted kill per resolved weapon and observed instances of every available movement action. Replay the human-reported collision spot and perform an unscripted AI walk/fight session on the same artifact. A command or synthetic check alone is not proof.
+context_id: ctx-ebc8d9f357f9
+
+## Agent suggestion
+
+### 2026-11-20T16:42:45.209Z — arcade-collision-elite-proof
+
+Run 20261120_162116 on generation 405: 1,520 AI actions all had target_id=0 and weapon=revolver, with no dash/jump/down-dash/freeze/air-strafe flags. Client roster resolved local actor 1 as TDM team 0 with 10 participants and 9 remote NPCs; server roster contained opposing team-1 actors 200004-200008 near y=124 while the AI moved to y=-126. Source caps target acquisition at 60m and discards every occluded candidate, leaving no pursuit goal. Proposed fix: pursue the nearest replicated hostile on the map, route around occlusion, and retain LOS gates for firing.
+
+## Agent suggestion
+
+### 2026-11-20T16:42:59.564Z — arcade-collision-elite-proof
+
+Run 20261120_162116 on generation 405: 1,520 AI actions all had target_id=0 and weapon=revolver, with no dash/jump/down-dash/freeze/air-strafe flags. Client roster resolved local actor 1 as TDM team 0 with 10 participants and 9 remote NPCs; server roster contained opposing team-1 actors 200004-200008 near y=124 while the AI moved to y=-126. Source caps target acquisition at 60m and discards every occluded candidate, leaving no pursuit goal. Proposed fix: pursue the nearest replicated hostile on the map, route around occlusion, and retain LOS gates for firing.
+
+## Agent discussion and suggestions
+
+### 2026-11-20T20:46:23.880Z — arcade-collision-elite-proof
+
+Message: `msg-853f1afcfc26` (evidence)
+
+Subject: AI route plan ignored when target is occluded
+
+Static review found a direct route-navigation gap in player-ai.cpp: planRoute() runs for an occluded ranged target because its condition includes !hasLineOfSight, but followRoute() is only called inside the later if (target.valid && hasLineOfSight) block. When a known hostile is hidden, the controller therefore skips the planned route and takes the no-visible-target forward fallback. This directly undermines the existing promise to navigate around cover. Refactor target pursuit and aiming separately: keep LOS-gated facing/fire, but follow the route for any valid hostile and continue rejecting teammate/unknown-team targets. I verified current source SHA matches the latest DLL snapshots, but the coordination conflict remains open, so I did not edit player-ai.cpp.
+
+## Agent suggestion
+
+### 2026-11-20T22:43:00.840Z — arcade-collision-elite-proof
+
+Pinned baseline evidence: run 20261120_220344 on EXE 2026-11-20T20:20:51.788061Z and DLL gen416 logged 22,288 player.ai.navplan calls with points=0; current planRoute condition includes gRoute.empty() despite gRoutePlanTick=tick+30, so unsuccessful route search repeats every frame. Removed that condition; target change/movement and the existing 30-tick deadline still trigger replanning. The DLL request then failed disk_low (2031 MB free, 2048 MB required), so the patch is not built or runtime-proven yet. Baseline AI had 7,690 actions, 955 dash, 5,066 jump, 474 down-dash, 6,282 air-strafe, 292 actions near teammates; 15 authoritative kills were chainsaw 7, swordsword 6, deathball 1, mace 1, with no ranged weapon kills or freeze evidence. Full all-weapon acceptance remains open.

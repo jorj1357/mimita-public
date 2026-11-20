@@ -21,6 +21,7 @@
 #include <unordered_map>
 #include <GLFW/glfw3.h>
 #include "camera.h"
+#include "actor/player-ai.h"
 #include "entities/player.h"
 #include "npc/npc.h"
 #include "npc/npc-combat.h"
@@ -417,17 +418,23 @@ void engineTickCombat(Engine& engine, float dt)
     // for the action result; the client predicts presentation immediately.
     // The driver runs whenever the move set is equipped (even without a captured
     // cursor) so agent.melee live tests can force actions.
+    const bool aiMeleeMode = PlayerAiController::active() &&
+        !PlayerAiController::meleeWeapon().empty();
     if (meleeEquipped && !replayPlaybackActive && gameplayInputAllowed) {
         MimitaMelee::ClientInput meleeInput;
-        if (cursorCaptured) {
+        if (cursorCaptured || aiMeleeMode) {
             static bool grabPrev = false;
             const bool grabDown =
                 ScenarioInput::keyDown(engine.window(), GLFW_KEY_E);
-            meleeInput.primaryPressed = meleePrimaryPressed;
-            meleeInput.primaryHeld = mouseDown;
-            meleeInput.secondaryPressed = meleeSecondaryPressed;
-            meleeInput.secondaryHeld = rightMouseDown;
-            meleeInput.grabPressed = grabDown && !grabPrev;
+            meleeInput.primaryPressed = aiMeleeMode
+                ? (g_clientSimulationTick % 12u) == 0u
+                : meleePrimaryPressed;
+            meleeInput.primaryHeld = aiMeleeMode || mouseDown;
+            meleeInput.secondaryPressed = aiMeleeMode
+                ? false : meleeSecondaryPressed;
+            meleeInput.secondaryHeld = aiMeleeMode ? false : rightMouseDown;
+            meleeInput.grabPressed = aiMeleeMode
+                ? false : (grabDown && !grabPrev);
             meleeInput.shieldHeld =
                 ScenarioInput::keyDown(engine.window(), GLFW_KEY_Q);
             meleeInput.jumpHeld =

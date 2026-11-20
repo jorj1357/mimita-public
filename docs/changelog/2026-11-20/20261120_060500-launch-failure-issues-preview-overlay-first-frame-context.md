@@ -76,4 +76,55 @@ acceptance is claimed.
   `docs/ROUTER.md`.
 - Opened `issue-6fc8f853a674` with the user's verbatim request, readiness
   context, and five tasks for an always-available restart/self-recovery skill.
+## Shared user-context bus and strict issues
+
+- Added `user_context`, links, acknowledgements, and routing-correction records
+  to the shared brain. Exact user text is immutable and deduplicated by stable
+  source reference.
+- Added `context add/list/ack/link/move/lint`; `sync`, `brain_check`,
+  `issue brief`, status, and the dev-loop coordination summary expose context.
+- Added the OpenCode prompt plugin with V1 `chat.message` and V2 `prompt`
+  paths. Smoke-tested both paths against a temporary brain; both recorded the
+  exact text and stable source reference.
+- Normal context broadcasts to all agents as a `user-context` message and is
+  acknowledged at sync. High-priority context also queues bounded wake requests
+  for active agents.
+- Added context-routing repair: `context move` deactivates the old primary link,
+  appends a correction with reason, and notifies through the journal.
+- Enforced strict new-issue fields: quote/observation, summary, reproduction,
+  expected behavior, acceptance, paths, evidence, risk, and proof expectation.
+  Added `devscripts/agent-issue.py` as the validated front-end and `issue lint`
+  for legacy gaps.
+- Added the always-available `.opencode/skills/dev-loop-restart/SKILL.md`.
+- Created strict issues `issue-421c5be1669f` (live map/world credited forks),
+  `issue-612ce59ed73d` (replay export/video), `issue-2ecdfa48ec44`
+  (decentralized durable sharing), and `issue-22e043046cd0` (any-device input).
+  Filled readiness fields for map editor, creator, autonomy, awareness, and
+  issue-completeness issues.
+
+## Validation
+
+- 58 focused tests passed across agent coordination, launch report, snapshots,
+  dependency gate, and manual build guard.
+- Python compilation passed for changed modules.
+- No game build or runtime was requested. This work proves coordination/tooling
+  behavior only; it does not prove map/world live collaboration, replay export,
+  monster authoring, Infinite XXITY, distribution, or device support.
+## Live world save-as-fork slice
+
+- Added `creatorProjectForkLive` and terminal commands
+  `worldproject fork_live <new-id> [title]` / `save_fork`.
+- The command writes the current authored map as a new immutable source
+  version, forks that exact version into a new project with parent lineage,
+  and leaves the active live project unchanged.
+- Added `world-project.live-forked` with source/fork project and version,
+  previous source head, parent version, owner, contributor, title, visibility,
+  root, and `source_unchanged:true`.
+- Added `devscripts/scenarios/world_live_fork_v1.json` and updated
+  `world-projects` command/event docs.
+- Generation 416 includes `src/mapeditor/map-editor-projects.cpp`; the published
+  `build/game/generation-416/game-g416.dll` contains the `fork_live` command
+  strings and the compile/link succeeded. An isolated generation-416 test run
+  reached server startup but the client did not observe active mode, so the
+  terminal command was not executed. No runtime proof is claimed.
 

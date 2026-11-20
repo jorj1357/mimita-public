@@ -1,4 +1,5 @@
 #include "physics/movement/actor-final-pose.h"
+#include "config/collision-config.h"
 
 #include <algorithm>
 #include <chrono>
@@ -16,8 +17,11 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/ray-utils.h"
 #include "world/world.h"
+#include "debug/structured-log.h"
 #include "hot-reload/module-host.h"
 #include "modules/api/actor-contact-policy-api.h"
+
+#include <nlohmann/json.hpp>
 
 namespace {
 
@@ -455,6 +459,38 @@ bool containActorFinalPose(Player& actor,
     result.partCount = static_cast<int>(actor.physicalBody.parts.size());
     result.extraPartCount =
         static_cast<int>(actor.physicalBody.extraParts.size());
+
+    // Arcade mode's collision contract is root capsule versus static world.
+    // Letting animated body/weapon meshes translate the root here reintroduces
+    // pose-driven snapping after the capsule movement solve has completed.
+    if (CollisionConfig::instance().arcadeCollision())
+    {
+        result.skipReason = "arcade_capsule_world_owner";
+        acceptClearPose(actor, state);
+        static thread_local auto sLastArcadePoseSkip =
+            std::chrono::steady_clock::time_point{};
+        const auto now = std::chrono::steady_clock::now();
+        if (now - sLastArcadePoseSkip >= std::chrono::seconds(1))
+        {
+            sLastArcadePoseSkip = now;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "collision.arcade_pose_skipped", actor.username,
+                "animated body and weapon pose cannot translate Arcade actor root",
+                static_cast<uint32_t>(actor.movementSimulationTick),
+                nlohmann::json{
+                    {"stage", result.stage},
+                    {"skip_reason", result.skipReason},
+                    {"world_shape", "root_capsule"},
+                    {"root_translation", false},
+                    {"position", {actor.pos.x, actor.pos.y, actor.pos.z}},
+                    {"body_part_count", result.partCount},
+                    {"extra_part_count", result.extraPartCount}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        return true;
+    }
+
     const mimita_collision_policy::FinalPosePolicyV1 limits = finalPosePolicy();
     standoff = std::max(standoff, 0.0f);
     if (world.collisionMesh.triangles.empty())

@@ -46,6 +46,14 @@ uint32_t gLatchedTargetId = 0;
 uint64_t gLastFallLogMs = 0;
 uint64_t gLastFallbackMs = 0;
 int gFallbackSpawns = 0;
+std::string gWeaponVisit;
+uint32_t gWeaponVisitEndsTick = 0;
+uint32_t gNextProgressCheckTick = 0;
+glm::vec3 gProgressCheckPosition{0.0f};
+int gNoProgressSamples = 0;
+uint32_t gRecoveryUntilTick = 0;
+glm::vec2 gRecoveryDirection{0.0f};
+uint32_t gFreezeReleaseTick = 0;
 
 uint64_t aiNowMs()
 {
@@ -72,9 +80,16 @@ struct TargetView {
     float distance = 0.0f;
 };
 
-bool hostile(const Player& player, const Player& candidate)
+bool hostile(const Player& player, const Player& candidate,
+             uint32_t candidateId)
 {
     if (candidate.dead || candidate.currentHp <= 0) return false;
+    const std::string& mode =
+        MimitaNet::CommunityMatchClient::instance().mode();
+    const bool teamMode = mode == "tdm" || mode == "juggernaut";
+    if (!teamMode)
+        return true;
+
     int mine = player.matchTeam;
     if (mine < 0) {
         const uint8_t replicated =
@@ -82,9 +97,16 @@ bool hostile(const Player& player, const Player& candidate)
                 MP_CONTEXT.localPlayerId);
         if (replicated != 0xFF) mine = (int)replicated;
     }
-    const int theirs = candidate.matchTeam;
-    if (mine < 0 || theirs < 0) return true;
-    return mine != theirs;
+    int theirs = candidate.matchTeam;
+    if (theirs < 0) {
+        const uint8_t replicated =
+            MimitaNet::CommunityMatchClient::instance().teamForActor(
+                candidateId);
+        if (replicated != 0xFF) theirs = (int)replicated;
+    }
+    // Never guess hostility from an unknown team. In TDM an unresolved actor
+    // must not make the local AI chase or attack a teammate.
+    return mine >= 0 && theirs >= 0 && mine != theirs;
 }
 
 bool targetVisible(const World& world, const Player& player,
@@ -101,7 +123,7 @@ TargetView chooseTarget(const Player& player, const World& world)
     if (!gMeleeWeapon.empty() && gLatchedTargetId != 0) {
         const auto latch = [&](const std::unordered_map<uint32_t, Player>& map) {
             auto it = map.find(gLatchedTargetId);
-            if (it == map.end() || !hostile(player, it->second))
+            if (it == map.end() || !hostile(player, it->second, it->first))
                 return false;
             if (!targetVisible(world, player, it->second)) {
                 gLatchedTargetId = 0;
@@ -129,10 +151,12 @@ TargetView chooseTarget(const Player& player, const World& world)
         float score = 0.0f;
     };
     std::vector<Candidate> candidates;
-    const float maxRange = gMeleeWeapon.empty() ? 60.0f : 25.0f;
+    const glm::vec3 mapExtent = world.collisionMesh.boundsMax -
+                                world.collisionMesh.boundsMin;
+    const float maxRange = std::max(glm::length(mapExtent), 60.0f);
     const auto consider = [&](const Player& candidate, uint32_t id) {
         if (id == MP_CONTEXT.localPlayerId) return;
-        if (!hostile(player, candidate)) return;
+        if (!hostile(player, candidate, id)) return;
         const glm::vec3 delta = candidate.pos - player.pos;
         const float distance = glm::length(delta);
         if (distance > maxRange) return;
@@ -168,6 +192,17 @@ TargetView chooseTarget(const Player& player, const World& world)
         best.pos = candidate.actor->pos;
         best.distance = candidate.distance;
         break;
+    }
+    // Keep the nearest known hostile as a pursuit goal when all candidates
+    // are behind cover. buildFrame still blocks ranged fire until that target
+    // has a clear world ray, so occlusion changes navigation, not authority.
+    if (!best.valid && !candidates.empty()) {
+        const Candidate& pursuit = candidates.front();
+        best.valid = true;
+        best.id = pursuit.id;
+        best.team = pursuit.actor->matchTeam;
+        best.pos = pursuit.actor->pos;
+        best.distance = pursuit.distance;
     }
     if (!gMeleeWeapon.empty())
         gLatchedTargetId = best.valid && best.distance <= 15.0f ? best.id : 0;
@@ -234,8 +269,8 @@ void planRoute(const Player& player, const TargetView& target,
     const bool goalMoved =
         glm::length(glm::vec2(target.pos.x - gRouteGoal.x,
                               target.pos.y - gRouteGoal.y)) > 2.5f;
-    const bool need = gRoute.empty() || gRouteTargetId != target.id ||
-        goalMoved || tick >= gRoutePlanTick;
+    const bool need = gRouteTargetId != target.id || goalMoved ||
+        tick >= gRoutePlanTick;
     if (!need) return;
 
     const auto start = std::chrono::steady_clock::now();
@@ -382,24 +417,47 @@ std::string chooseWeapon(const Player& player, const TargetView& target)
 {
     if (!gMeleeWeapon.empty())
         return usableWeapon(player, gMeleeWeapon) ? gMeleeWeapon : std::string();
-    static const char* closeWeapons[] = {
-        "chainsaw", "swordsword", "mace", "shotgun", "revolver"};
-    static const char* midWeapons[] = {
-        "shotgun", "revolver", "rocket_launcher", "chainsaw"};
-    static const char* farWeapons[] = {
-        "revolver", "rocket_launcher", "shotgun"};
-    const char* const* list = midWeapons;
-    size_t count = sizeof(midWeapons) / sizeof(midWeapons[0]);
-    if (target.distance < 4.0f) {
-        list = closeWeapons;
-        count = sizeof(closeWeapons) / sizeof(closeWeapons[0]);
-    } else if (target.distance > 18.0f) {
-        list = farWeapons;
-        count = sizeof(farWeapons) / sizeof(farWeapons[0]);
+
+    // Visit the actor's resolved weapon runtimes rather than a hard-coded
+    // subset. The server still owns equip, ammo, cadence, and damage checks;
+    // this only ensures the AI actually tries every usable weapon in its set.
+    std::vector<std::string> available;
+    available.reserve(player.weaponRuntimes.size());
+    for (const auto& entry : player.weaponRuntimes) {
+        if (usableWeapon(player, entry.first))
+            available.push_back(entry.first);
     }
-    for (size_t i = 0; i < count; ++i)
-        if (usableWeapon(player, list[i])) return list[i];
-    return {};
+    std::sort(available.begin(), available.end());
+    if (available.empty()) {
+        gWeaponVisit.clear();
+        return {};
+    }
+
+    const uint32_t tick = static_cast<uint32_t>(player.movementSimulationTick);
+    const bool visitExpired = gWeaponVisit.empty() ||
+        tick >= gWeaponVisitEndsTick || !usableWeapon(player, gWeaponVisit);
+    if (!visitExpired)
+        return gWeaponVisit;
+
+    const auto current = std::find(available.begin(), available.end(),
+                                   player.equippedWeaponId);
+    size_t start = current == available.end()
+        ? 0u : (static_cast<size_t>(current - available.begin()) + 1u) % available.size();
+    // Prefer legal weapons that fit the current range when several are
+    // available, while continuing through the complete set over time.
+    for (size_t offset = 0; offset < available.size(); ++offset) {
+        const std::string& candidate = available[(start + offset) % available.size()];
+        const bool explosive = candidate.find("rocket") != std::string::npos ||
+                               candidate.find("grenade") != std::string::npos;
+        if (target.distance < 5.0f && explosive)
+            continue;
+        gWeaponVisit = candidate;
+        gWeaponVisitEndsTick = tick + 180u;
+        return gWeaponVisit;
+    }
+    gWeaponVisit = available[start];
+    gWeaponVisitEndsTick = tick + 180u;
+    return gWeaponVisit;
 }
 
 void maybeEquipWeapon(const Player& player, const TargetView& target)
@@ -500,6 +558,12 @@ void setActive(bool enabled)
         gMeleeWeapon.clear();
         gLatchedTargetId = 0;
         resetRoute();
+        gWeaponVisit.clear();
+        gWeaponVisitEndsTick = 0;
+        gNextProgressCheckTick = 0;
+        gNoProgressSamples = 0;
+        gRecoveryUntilTick = 0;
+        gFreezeReleaseTick = 0;
     }
 }
 
@@ -510,6 +574,8 @@ void setMeleeWeapon(const std::string& weaponId)
     resetRoute();
     gFallbackSpawns = 0;
     gLastFallbackMs = 0;
+    gWeaponVisit.clear();
+    gWeaponVisitEndsTick = 0;
 }
 
 const std::string& meleeWeapon() { return gMeleeWeapon; }
@@ -519,38 +585,53 @@ InputFrame buildFrame(const Player& player, Camera& camera,
 {
     InputFrame frame;
     const uint32_t tick = (uint32_t)player.movementSimulationTick;
+    const uint32_t playerId = MP_CONTEXT.localPlayerId;
     if (gActive)
         checkPlayerFall(player, world, tick);
     if (!gActive || player.dead) return frame;
 
     const TargetView target = chooseTarget(player, world);
-    const bool meleeMode = !gMeleeWeapon.empty();
-    if (!meleeMode || !target.valid || target.distance <= 2.5f)
+    const WeaponDefinition* equippedDefinition =
+        WeaponRegistry::instance().get(player.equippedWeaponId);
+    const bool equippedMelee = equippedDefinition &&
+        (equippedDefinition->behaviorType == WeaponBehaviorType::Melee ||
+         equippedDefinition->behaviorType == WeaponBehaviorType::Swordsword ||
+         equippedDefinition->behaviorType == WeaponBehaviorType::QuickHit ||
+         equippedDefinition->behaviorType == WeaponBehaviorType::SpyKnife);
+    const bool meleeMode = !gMeleeWeapon.empty() || equippedMelee;
+    if (!target.valid || target.distance <= 2.5f)
         resetRoute();
 
     const glm::vec3 eye = player.pos + glm::vec3(0.0f, 0.0f, 1.35f);
+    const glm::vec3 aimPoint = target.pos + glm::vec3(0.0f, 0.0f, 0.85f);
+    bool hasLineOfSight = target.valid && !worldBlocks(world, eye, aimPoint);
 
     float desiredYaw = camera.yaw;
     float desiredPitch = camera.pitch;
     glm::vec3 aimDirection(std::cos(glm::radians(camera.yaw)),
                            std::sin(glm::radians(camera.yaw)), 0.0f);
     glm::vec2 worldMove(0.0f);
-    bool hasLineOfSight = false;
     bool followingRoute = false;
     bool requestJump = false;
 
-    if (meleeMode && target.valid && target.distance > 2.5f)
+    if (target.valid && target.distance > 2.5f &&
+        (meleeMode || !hasLineOfSight))
         planRoute(player, target, world);
 
+    // Pursuit may use a known hostile position to route around cover, but the
+    // client AI should not stare at a live through-wall position. Keep its
+    // current heading until the target is visible, just as ranged fire is
+    // already gated by line of sight below.
     if (target.valid) {
-        const glm::vec3 aimPoint = target.pos + glm::vec3(0.0f, 0.0f, 0.85f);
-        glm::vec3 toTarget = aimPoint - eye;
-        if (glm::length(toTarget) > 0.001f)
-            aimDirection = glm::normalize(toTarget);
+        if (hasLineOfSight) {
+            glm::vec3 toTarget = aimPoint - eye;
+            if (glm::length(toTarget) > 0.001f)
+                aimDirection = glm::normalize(toTarget);
 
-        desiredYaw = glm::degrees(std::atan2(aimDirection.y, aimDirection.x));
-        desiredPitch = glm::degrees(std::asin(glm::clamp(aimDirection.z, -1.0f, 1.0f)));
-        desiredPitch = glm::clamp(desiredPitch, -60.0f, 60.0f);
+            desiredYaw = glm::degrees(std::atan2(aimDirection.y, aimDirection.x));
+            desiredPitch = glm::degrees(std::asin(glm::clamp(aimDirection.z, -1.0f, 1.0f)));
+            desiredPitch = glm::clamp(desiredPitch, -60.0f, 60.0f);
+        }
 
         glm::vec2 planar(target.pos.x - player.pos.x,
                          target.pos.y - player.pos.y);
@@ -580,14 +661,12 @@ InputFrame buildFrame(const Player& player, Camera& camera,
                 worldMove = glm::normalize(worldMove);
         }
 
-        if (meleeMode) {
+        if (meleeMode || !hasLineOfSight) {
             glm::vec2 routeDirection(0.0f);
             followingRoute = followRoute(player, routeDirection, requestJump);
             if (followingRoute)
                 worldMove = routeDirection;
         }
-
-        hasLineOfSight = !worldBlocks(world, eye, aimPoint);
     } else {
         // No known hostile: keep moving forward so the match keeps producing
         // contact opportunities instead of standing at spawn.
@@ -599,13 +678,134 @@ InputFrame buildFrame(const Player& player, Camera& camera,
     if (meleeMode)
         worldMove = avoidUnsafeGround(world, player, worldMove, followingRoute);
 
+    const bool airborne = !player.ground.onGround;
+    bool airStrafe = false;
+    if (airborne && target.valid) {
+        const glm::vec2 towardTarget(target.pos.x - player.pos.x,
+                                     target.pos.y - player.pos.y);
+        const float distance = glm::length(towardTarget);
+        if (distance > 0.001f) {
+            const glm::vec2 forward = towardTarget / distance;
+            const glm::vec2 side(-forward.y, forward.x);
+            const float phase = std::sin(
+                static_cast<float>(tick) * 0.045f +
+                static_cast<float>(MP_CONTEXT.localPlayerId % 7u));
+            worldMove += side * (phase >= 0.0f ? 0.8f : -0.8f);
+            if (glm::length(worldMove) > 0.001f)
+                worldMove = glm::normalize(worldMove);
+            airStrafe = true;
+        }
+    }
+
+    // Detect sustained lack of progress and deliberately break the steering
+    // symmetry that can keep the controller grinding against a corner. Every
+    // recovery direction still passes the same world and ground probes as
+    // ordinary navigation; jump/dash remain normal shared inputs.
+    if (gNextProgressCheckTick == 0) {
+        gNextProgressCheckTick = tick + 60u;
+        gProgressCheckPosition = player.pos;
+    } else if (tick >= gNextProgressCheckTick) {
+        const float progress = glm::length(glm::vec2(
+            player.pos.x - gProgressCheckPosition.x,
+            player.pos.y - gProgressCheckPosition.y));
+        if (glm::length(worldMove) > 0.1f && progress < 0.35f &&
+            !player.freeze.freezeActive)
+            ++gNoProgressSamples;
+        else
+            gNoProgressSamples = 0;
+
+        gProgressCheckPosition = player.pos;
+        gNextProgressCheckTick = tick + 60u;
+        if (gNoProgressSamples >= 2) {
+            const float angles[] = {90.0f, -90.0f, 135.0f, -135.0f, 180.0f};
+            glm::vec2 base = glm::length(worldMove) > 0.001f
+                ? glm::normalize(worldMove)
+                : glm::vec2(std::cos(glm::radians(camera.yaw)),
+                            std::sin(glm::radians(camera.yaw)));
+            bool foundEscape = false;
+            for (const float degrees : angles) {
+                const float radians = glm::radians(degrees);
+                const glm::vec2 candidate(
+                    base.x * std::cos(radians) - base.y * std::sin(radians),
+                    base.x * std::sin(radians) + base.y * std::cos(radians));
+                const glm::vec3 eye(player.pos.x, player.pos.y,
+                                    player.pos.z + 0.4f);
+                const glm::vec3 end = eye +
+                    glm::vec3(candidate.x, candidate.y, 0.0f) * 2.5f;
+                if (worldBlocks(world, eye, end))
+                    continue;
+                float groundZ = 0.0f;
+                if (player.ground.onGround &&
+                    !groundAhead(world, player, candidate, 3.0f, groundZ))
+                    continue;
+                gRecoveryDirection = candidate;
+                foundEscape = true;
+                break;
+            }
+            if (!foundEscape)
+                gRecoveryDirection = -base;
+            gRecoveryUntilTick = tick + 45u;
+            gNoProgressSamples = 0;
+            requestJump = true;
+        }
+    }
+    const bool progressRecovery = tick < gRecoveryUntilTick;
+    if (progressRecovery && glm::length(gRecoveryDirection) > 0.001f) {
+        worldMove = gRecoveryDirection;
+        followingRoute = false;
+        requestJump = true;
+    }
+
+    // Keep a little space from known teammates so they can take distinct
+    // approach lanes. This uses the replicated roster only and never assumes
+    // an actor with unknown team data is an ally or an enemy.
+    int localTeam = player.matchTeam;
+    if (localTeam < 0) {
+        const uint8_t replicated =
+            MimitaNet::CommunityMatchClient::instance().localTeam(playerId);
+        if (replicated != 0xFF)
+            localTeam = static_cast<int>(replicated);
+    }
+    glm::vec2 teammateSpacing(0.0f);
+    int nearbyTeammates = 0;
+    const auto addTeammateSpacing = [&](const Player& actor, uint32_t actorId) {
+        if (actorId == playerId || actor.dead || actor.currentHp <= 0 ||
+            localTeam < 0)
+            return;
+        int actorTeam = actor.matchTeam;
+        if (actorTeam < 0) {
+            const uint8_t replicated =
+                MimitaNet::CommunityMatchClient::instance().teamForActor(actorId);
+            if (replicated != 0xFF)
+                actorTeam = static_cast<int>(replicated);
+        }
+        if (actorTeam != localTeam)
+            return;
+        const glm::vec2 away(player.pos.x - actor.pos.x,
+                             player.pos.y - actor.pos.y);
+        const float distance = glm::length(away);
+        if (distance <= 0.001f || distance >= 3.5f)
+            return;
+        teammateSpacing += (away / distance) * ((3.5f - distance) / 3.5f);
+        ++nearbyTeammates;
+    };
+    for (const auto& entry : MP_CONTEXT.remotePlayers)
+        addTeammateSpacing(entry.second, entry.first);
+    for (const auto& entry : MP_CONTEXT.remoteNpcs)
+        addTeammateSpacing(entry.second, entry.first);
+    if (!meleeMode && nearbyTeammates > 0 && glm::length(worldMove) > 0.001f) {
+        worldMove += teammateSpacing * 0.35f;
+        if (glm::length(worldMove) > 0.001f)
+            worldMove = glm::normalize(worldMove);
+        worldMove = avoidWalls(world, player, worldMove);
+    }
+
     // The real camera is part of the player. Turn it smoothly toward the same
     // point the body/weapon is aiming at; otherwise engineTickCamera rebuilds
     // front from the stale yaw and syncPlayerYawFromCamera pulls the body back.
     if (target.valid)
         applySmoothAim(camera, desiredYaw, desiredPitch);
 
-    const uint32_t playerId = MP_CONTEXT.localPlayerId;
     if (((tick + playerId) % 60u) == 0u) {
         StructuredLogger::instance().writeEvent(
             StructuredCategory::General, StructuredLevel::Important,
@@ -650,13 +850,36 @@ InputFrame buildFrame(const Player& player, Camera& camera,
     if (meleeMode) {
         if (requestJump)
             frame.jumpPressed = true;
-        if (target.valid && target.distance > 7.0f && (tick % 83u) == 0u)
+        if (target.valid && target.distance > 7.0f &&
+            ((tick + playerId) % 83u) == 0u)
             frame.dashPressed = true;
     } else {
-        if (target.valid && target.distance < 3.0f && (tick % 47u) == 0u)
+        if (requestJump ||
+            (target.valid && target.distance < 3.0f &&
+             ((tick + playerId) % 47u) == 0u))
             frame.jumpPressed = true;
-        if (target.valid && target.distance > 7.0f && (tick % 83u) == 0u)
+        if (target.valid && target.distance > 7.0f &&
+            ((tick + playerId) % 83u) == 0u)
             frame.dashPressed = true;
+    }
+
+    if (airborne && target.valid && target.distance > 5.0f &&
+        player.vel.z < -1.0f && ((tick + playerId) % 37u) == 0u)
+        frame.downDashPressed = true;
+
+    const float planarSpeed = std::sqrt(player.vel.x * player.vel.x +
+                                        player.vel.y * player.vel.y);
+    if (gFreezeReleaseTick > tick) {
+        frame.freezeHeld = true;
+    } else if (target.valid && player.ground.onGround &&
+               planarSpeed < 2.0f && target.distance < 18.0f &&
+               player.freeze.freezeAvailable &&
+               ((tick + playerId) % 211u) == 0u) {
+        // Freeze intentionally stops motion, so only spend it while already
+        // nearly still and in a grounded firing engagement.
+        frame.freezePressed = true;
+        frame.freezeHeld = true;
+        gFreezeReleaseTick = tick + 12u;
     }
 
     float aimError = 180.0f;
@@ -685,6 +908,32 @@ InputFrame buildFrame(const Player& player, Camera& camera,
         maybeEquipWeapon(player, target);
     if (meleeMode)
         maybeRequestFallback(target, tick);
+
+    if (((tick + playerId) % 60u) == 0u || frame.jumpPressed ||
+        frame.dashPressed || frame.downDashPressed || frame.freezePressed) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "player.ai.action", "player-ai",
+            progressRecovery ? "stuck recovery" : "player-like movement and combat intent",
+            tick,
+            {{"player_id", playerId},
+             {"target_id", target.id},
+             {"weapon", player.equippedWeaponId},
+             {"move", {worldMove.x, worldMove.y}},
+             {"jump", frame.jumpPressed},
+             {"dash", frame.dashPressed},
+             {"down_dash", frame.downDashPressed},
+             {"freeze_pressed", frame.freezePressed},
+             {"freeze_held", frame.freezeHeld},
+             {"airborne", airborne},
+             {"air_strafe", airStrafe},
+             {"progress_recovery", progressRecovery},
+             {"nearby_teammates", nearbyTeammates},
+             {"target_distance", target.distance},
+             {"position", {player.pos.x, player.pos.y, player.pos.z}},
+             {"velocity", {player.vel.x, player.vel.y, player.vel.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 
     return frame;
 }

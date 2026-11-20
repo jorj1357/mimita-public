@@ -212,8 +212,12 @@ uint64_t directoryFileBytes(const std::filesystem::path& root) {
 }
 
 std::filesystem::path logRootForEventsPath(const std::string& eventsPath) {
-    const auto runDir = std::filesystem::path(eventsPath).parent_path();
-    return runDir.parent_path().parent_path();
+    auto runDir = std::filesystem::path(eventsPath).parent_path();
+    const char* activeInstance = instanceId();
+    if (activeInstance && *activeInstance &&
+        _stricmp(runDir.filename().string().c_str(), activeInstance) == 0)
+        runDir = runDir.parent_path();
+    return runDir.parent_path();
 }
 
 bool runHasJournalSegment(const std::filesystem::path& runDir);
@@ -488,15 +492,26 @@ bool reserveEventLine(FILE*& file, const std::string& eventsPath,
                       uint64_t totalTreeLimit, uint64_t& oldFileBytes,
                       bool allowPrune, DWORD lockTimeout,
                       std::atomic<uint64_t>& waitMicros,
-                      std::atomic<uint64_t>& holdMicros) {
+                      std::atomic<uint64_t>& holdMicros,
+                      bool traceStartup = false) {
     const auto root = logRootForEventsPath(eventsPath);
+    if (traceStartup)
+        std::printf("[STRUCTURED_LOG] startup append stage=quota_mutex_wait_begin\n");
     TimedNamedMutexLock quotaLock(logQuotaMutex(root), waitMicros, holdMicros);
-    if (!quotaLock.lock(lockTimeout)) return false;
+    if (!quotaLock.lock(lockTimeout)) {
+        if (traceStartup)
+            std::printf("[STRUCTURED_LOG] startup append stage=quota_mutex_failed\n");
+        return false;
+    }
+    if (traceStartup)
+        std::printf("[STRUCTURED_LOG] startup append stage=quota_mutex_acquired\n");
 
     SharedLogQuota& quota = sharedLogQuota(root);
     if (!quota.state || lineBytes > perSegmentLimit || lineBytes > totalTreeLimit)
         return false;
     initializeQuotaState(*quota.state, root);
+    if (traceStartup)
+        std::printf("[STRUCTURED_LOG] startup append stage=quota_state_ready\n");
 
     auto* entry = quotaFileEntry(*quota.state, eventsPath);
     if (segmentGeneration != quota.state->segmentGeneration) {
@@ -536,6 +551,8 @@ bool reserveEventLine(FILE*& file, const std::string& eventsPath,
     oldFileBytes = entry->bytes;
     entry->bytes += lineBytes;
     quota.state->totalBytes += lineBytes;
+    if (traceStartup)
+        std::printf("[STRUCTURED_LOG] startup append stage=quota_reserved\n");
     return true;
 }
 
@@ -1202,8 +1219,12 @@ void StructuredLogger::init() {
     createLogDir();
     traceStartup("log_dir_ready");
     const auto logRoot = logRootForEventsPath(mEventsPath);
+    const std::string activeRunLease = runLeaseName(logRoot, mRunId);
     mRunLease = CreateEventA(nullptr, TRUE, FALSE,
-        runLeaseName(logRoot, mRunId).c_str());
+        activeRunLease.c_str());
+    std::printf("[STRUCTURED_LOG] startup identity instance=%s run=%s quota_root=%s lease=%s\n",
+                instanceId(), mRunId.c_str(), logRoot.string().c_str(),
+                activeRunLease.c_str());
     traceStartup("run_lease_created");
     TimedNamedMutexLock quotaMutex(logQuotaMutex(logRoot), mMutexWaitMicroseconds,
                                    mMutexHoldMicroseconds);
@@ -1233,6 +1254,10 @@ void StructuredLogger::init() {
             traceStartup("quota_pruned");
         }
     }
+    // Journal writers acquire gEventsWriteMutex before the quota mutex. Do
+    // not carry the quota lock into the first startup writes or another
+    // logger thread can own the writer mutex while waiting for this lock.
+    quotaMutex.unlock();
 
     mEventsFile = fopen(mEventsPath.c_str(), "ab");
     if (!mEventsFile) {
@@ -1698,6 +1723,17 @@ void StructuredLogger::flushEvents()
 bool StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
 {
     if (!mEventsFile) return false;
+    const auto event = record.find("event");
+    const std::string startupEvent = event != record.end() && event->is_string()
+        ? event->get<std::string>() : std::string();
+    const bool traceStartup = startupEvent == "run.started" ||
+                              startupEvent == "logger.started";
+    const auto traceAppend = [&](const char* stage) {
+        if (traceStartup)
+            std::printf("[STRUCTURED_LOG] startup append event=%s stage=%s\n",
+                        startupEvent.c_str(), stage);
+    };
+    traceAppend("begin");
     // Serialization stays out of the shared writer lock; sequence numbers are
     // assigned under that lock so their order matches the appended rows.
     nlohmann::json outputRecord = record;
@@ -1707,32 +1743,43 @@ bool StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
     if (previouslyDropped)
         outputRecord["quota_dropped_records_before_this"] = previouslyDropped;
     const std::string serialized = outputRecord.dump();
+    traceAppend("serialized");
     if (serialized.size() + 32 > mConfig.storageLimits.perSegmentBytes ||
         serialized.size() + 32 > mConfig.storageLimits.totalLogTreeBytes) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        traceAppend("record_exceeds_quota");
         return false;
     }
+    traceAppend("writer_mutex_wait_begin");
     std::lock_guard<std::mutex> lock(gEventsWriteMutex);
+    traceAppend("writer_mutex_acquired");
     const uint64_t sequence = mSequence.fetch_add(1, std::memory_order_relaxed) + 1;
     const std::string line = serialized.substr(0, serialized.size() - 1) +
         ",\"seq\":" + std::to_string(sequence) + "}\n";
 
     TimedNamedMutexLock journalLock(eventsFileMutex(mEventsPath),
                                    mMutexWaitMicroseconds, mMutexHoldMicroseconds);
+    traceAppend("journal_mutex_wait_begin");
     if (!journalLock.lock(INFINITE)) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        traceAppend("journal_mutex_failed");
         return false;
     }
+    traceAppend("journal_mutex_acquired");
     uint64_t oldFileBytes = 0;
     if (!reserveEventLine(mEventsFile, mEventsPath, mLogDir, mSegmentGeneration,
                           line.size(), mConfig.storageLimits.perSegmentBytes,
                           mConfig.storageLimits.totalLogTreeBytes, oldFileBytes,
                           true, INFINITE, mMutexWaitMicroseconds,
-                          mMutexHoldMicroseconds)) {
+                          mMutexHoldMicroseconds, traceStartup)) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        traceAppend("quota_reservation_failed");
         return false;
     }
+    traceAppend("quota_reservation_complete");
+    traceAppend("file_append_begin");
     const size_t written = std::fwrite(line.data(), 1, line.size(), mEventsFile);
+    traceAppend("file_append_complete");
     if (written != line.size()) {
         std::fflush(mEventsFile);
         _chsize_s(_fileno(mEventsFile), oldFileBytes);
@@ -1747,6 +1794,7 @@ bool StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
     mBytesWritten.fetch_add(static_cast<uint64_t>(line.size()), std::memory_order_relaxed);
     journalLock.unlock();
     if (flush) {
+        traceAppend("flush_begin");
         const auto flushStart = std::chrono::steady_clock::now();
         std::fflush(mEventsFile);
         const auto flushEnd = std::chrono::steady_clock::now();
@@ -1755,6 +1803,7 @@ bool StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
             std::chrono::duration_cast<std::chrono::microseconds>(flushEnd - flushStart).count()),
             std::memory_order_relaxed);
     }
+    traceAppend("complete");
     return true;
 }
 

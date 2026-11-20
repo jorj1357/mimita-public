@@ -21,6 +21,7 @@
 #include "network/community-server-config.h"
 #include "network/multiplayer-context.h"
 #include "network/network-events.h"
+#include "network/avatar-transfer.h"
 #include "network/coordinator-client.h"
 #include "network/snapshot-chunks.h"
 #include "network/network-weapons.h"
@@ -2312,7 +2313,14 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     }
     const ReconnectRequestPacket* req = reinterpret_cast<const ReconnectRequestPacket*>(buffer);
     const std::string requestedToken = req->reconnectToken;
-    const std::string reconnectCorrelation = requestedToken.substr(0, 12);
+    const std::string tokenDigest = avatarSha256Hex(
+        reinterpret_cast<const uint8_t*>(requestedToken.data()),
+        requestedToken.size());
+    const size_t fingerprintChars = std::min<size_t>(
+        tokenDigest.size(),
+        (size_t)NetworkingConfig::instance().data().observability.tokenFingerprintChars);
+    const std::string tokenFingerprint = tokenDigest.substr(0, fingerprintChars);
+    const std::string reconnectCorrelation = "reconnect:" + tokenFingerprint;
     const uint64_t currentMs = nowMs();
     logJoinStage("reconnect_request_received", "started", "reconnect packet received",
                  reconnectCorrelation, tick, players.size(),
@@ -2380,10 +2388,6 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     }
     if (foundId == 0)
     {
-        const auto& reconnectCfg = NetworkingConfig::instance().data();
-        const size_t fingerprintChars = std::min<size_t>(
-            requestedToken.size(),
-            (size_t)reconnectCfg.observability.tokenFingerprintChars);
         NetworkEvents::Context context;
         context.role = "server";
         context.transport = claimedTransport && *claimedTransport != kNoServerTransport ? "ice" : "udp";
@@ -2393,7 +2397,7 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
         NetworkEvents::emit(
             context, "network.server.reconnect.rejected", "lookup", "rejected",
             "token_not_found", "network.client.reconnect.attempt", tick,
-            nlohmann::json{{"token_fingerprint", requestedToken.substr(0, fingerprintChars)},
+            nlohmann::json{{"token_fingerprint", tokenFingerprint},
                            {"token_state", "not_found"},
                            {"slot_state", "token_not_found"},
                            {"players", players.size()},
@@ -2401,8 +2405,8 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
                            {"grace_deadline_ms", 0},
                            {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
             __FILE__, __LINE__, __FUNCTION__);
-        printf("%s [SERVER RECONNECT] rejected token=%s not-found\n",
-               serverTimestamp(), requestedToken.substr(0, 12).c_str());
+        printf("%s [SERVER RECONNECT] rejected token_fingerprint=%s not-found\n",
+               serverTimestamp(), tokenFingerprint.c_str());
         logJoinStage("reconnect_lookup", "rejected", "token_not_found",
                      reconnectCorrelation, tick, players.size());
         if (claimedTransport && *claimedTransport != kNoServerTransport)
@@ -2477,10 +2481,6 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
                                 {"token_state", resendExistingAccept ? "previous" : "current"}});
     sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
 
-    const auto& reconnectCfg = NetworkingConfig::instance().data();
-    const size_t fingerprintChars = std::min<size_t>(
-        requestedToken.size(),
-        (size_t)reconnectCfg.observability.tokenFingerprintChars);
     NetworkEvents::Context context;
     context.role = "server";
     context.transport = claimedTransport && *claimedTransport != kNoServerTransport ? "ice" : "udp";
@@ -2492,7 +2492,7 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
         context, "network.server.reconnect.accepted", "accepted", "ok",
         resendExistingAccept ? "previous_token" : "current_token",
         "network.client.join.accepted", tick,
-        nlohmann::json{{"token_fingerprint", requestedToken.substr(0, fingerprintChars)},
+        nlohmann::json{{"token_fingerprint", tokenFingerprint},
                        {"token_state", resendExistingAccept ? "previous" : "current"},
                        {"slot_state", "held"},
                        {"players", players.size()},

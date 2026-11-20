@@ -305,12 +305,19 @@ void doGLBTriangleCollisions(
     // actor triangle solver. Step-up currently lives only here; either port it
     // to the triangle owner or accept dropping it (spec decision) before delete.
     // ── 2. Sweep + slide ─────────────────────────────────
+    glm::vec3 afterSweepPosition = p.pos;
     {
         Perf::ScopedTimer _st("SweepSlide");
         auto t0 = std::chrono::steady_clock::now();
         doGLBSweepSlide(p, world, groundedThisFrame, dt, totalMove, remainingMove, trace, candidates);
+        afterSweepPosition = p.pos;
         auto t1 = std::chrono::steady_clock::now();
         diag.sweepSlideMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
+
+        // The final Arcade diagnostic is emitted after recovery below. Keep
+        // this stage boundary so any root translation after the capsule sweep
+        // is measurable instead of looking like ordinary collision motion.
+        trace.finalPos = afterSweepPosition;
     }
 
     // TODO-DELETE: Phase 3 — batched root capsule depenetration. Superseded by
@@ -347,6 +354,7 @@ void doGLBTriangleCollisions(
                 static_cast<std::uint32_t>(p.spawnGeneration),
                 p.movementSimulationTick,
                 &iterMaxPen, nullptr, totalMove);
+            trace.maxPenetration = std::max(trace.maxPenetration, iterMaxPen);
 
             float corrLen = glm::length(correction);
             if (corrLen > MAX_CORRECTION)
@@ -560,6 +568,45 @@ void doGLBTriangleCollisions(
 
     trace.finalPos = p.pos;
     gLastCollisionTrace = trace;
+
+    if (arcadeCollision)
+    {
+        static thread_local auto sLastArcadeCapsuleFinal =
+            std::chrono::steady_clock::time_point{};
+        const auto now = std::chrono::steady_clock::now();
+        if ((trace.sweepHits > 0 || trace.maxRecoveryContacts > 0 ||
+             diag.emergencyTriggered) &&
+            now - sLastArcadeCapsuleFinal >= std::chrono::seconds(1))
+        {
+            sLastArcadeCapsuleFinal = now;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "collision.arcade_capsule.final", p.username,
+                "final Arcade root-capsule result after recovery and floor stages",
+                static_cast<uint32_t>(p.movementSimulationTick),
+                nlohmann::json{
+                    {"world_shape", "root_capsule"},
+                    {"actor_world_shape", "capsule"},
+                    {"start_position", {trace.startPos.x, trace.startPos.y,
+                                          trace.startPos.z}},
+                    {"after_sweep_position", {afterSweepPosition.x,
+                                                afterSweepPosition.y,
+                                                afterSweepPosition.z}},
+                    {"final_position", {p.pos.x, p.pos.y, p.pos.z}},
+                    {"post_sweep_root_correction",
+                     {p.pos.x - afterSweepPosition.x,
+                      p.pos.y - afterSweepPosition.y,
+                      p.pos.z - afterSweepPosition.z}},
+                    {"recovery_contacts", trace.maxRecoveryContacts},
+                    {"max_penetration_m", trace.maxPenetration},
+                    {"depenetration_iterations", diag.depenIterations},
+                    {"emergency_escape", diag.emergencyTriggered},
+                    {"sweep_hits", trace.sweepHits},
+                    {"slide_contacts", trace.maxSlideContacts},
+                    {"velocity", {p.vel.x, p.vel.y, p.vel.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 
     // Headless NPCs have no body-part triangles, so the requested actor-triangle
     // backend falls back to this capsule owner. Capture the actual sweep inputs

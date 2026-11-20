@@ -37,7 +37,7 @@ The dev loop must let the human and an AI answer these questions at a glance:
 - On which bind/port and room code?
 - Which client instances are running?
 - Which server is each client connected to?
-- Which instances are actually online, stale, frozen, failed, or mismatched?
+- Which instances are actually online, stale, frozen, unresponsive, failed, or mismatched?
 - Which per-executable journal belongs to each instance?
 - Where is the first divergence when one instance fails?
 
@@ -171,6 +171,7 @@ The dashboard and status JSON use these states:
 | `starting` | Process exists but no heartbeat or readiness evidence yet. |
 | `online` | Heartbeat fresh. Servers also require a live roster; clients also require advancing snapshots. |
 | `stale` | Process alive, but heartbeat or snapshot evidence is older than the configured threshold. |
+| `unresponsive` | Client process is alive, but Windows reports its visible top-level window is not processing messages. This is process health, independent of network connection state. |
 | `frozen` | Client process alive and rendering, but no authoritative snapshot for the threshold while its server has no matching player. |
 | `offline` | Instance is not running and was not intentionally stopped in this run. |
 | `stopped` | Explicitly stopped by the human or agent. |
@@ -185,9 +186,16 @@ Required evidence fields per state:
 - `last_heartbeat_utc` and `heartbeat_age_ms`.
 - `last_event_utc` and `event_age_ms`.
 - For clients: `last_snapshot_tick`, `last_snapshot_utc`, `snapshot_age_ms`.
+- For visible client windows on Windows: `window_responding`; keep the last
+  manifest state separate from the current OS observation when they disagree.
 - For servers: `roster_count`, `bind`, `room_code`.
 - `build_id` and `build_match`.
 - `exit_code` and `reason` when not online.
+
+A client marked `unresponsive` must not be presented as ready or healthy because
+an earlier join, snapshot, or run-manifest state said `online`. Do not infer
+that its network session disconnected; display process responsiveness and
+network/session state as separate facts.
 
 ## Dashboard presentation
 
@@ -203,7 +211,7 @@ and dashboard control feedback are specified in
 The dashboard is the single human heartbeat view. It must show, live:
 
 - Total server count and total client count.
-- Online/offline/frozen/failed/stale counts.
+- Online/offline/frozen/failed/stale/unresponsive counts.
 - One selectable row per server/client with PID, state, uptime, build, map/mode,
   port/room, roster, snapshot age, badconn preset, and journal.
 - A separately labeled external-process group, excluded from active-run counts
@@ -250,7 +258,7 @@ Selecting a row shows:
 - Green: `online`.
 - Yellow: `starting`, `stale`.
 - Blue: `frozen`.
-- Red: `failed`, `mismatch`.
+- Red: `failed`, `mismatch`, `unresponsive`.
 - Grey: `offline`, `stopped`.
 Color never carries meaning alone; the text state is always present.
 
@@ -262,6 +270,8 @@ Color never carries meaning alone; the text state is always present.
 - If two servers exist, the client row must name its `connected_to` instance.
 - If a client has no snapshots for the threshold, show `frozen` even when its
   process is alive and its `network.session.health` says `Connected`.
+- If a client window is unresponsive while its server is healthy, show
+  `unresponsive` for the client and retain the server's independent state.
 
 ## Start/stop contract
 
@@ -336,4 +346,8 @@ Game journals:
 - No two executables write to the same instance journal.
 - `run.json` lists every instance and its journal before and after the run.
 - The dashboard never reports a client as healthy without a recent snapshot.
-- The journal records the first divergence for each failed/frozen instance.
+- A live client whose visible Windows window is unresponsive is shown as
+  `unresponsive`, even if its manifest or last network event says `online`.
+- A client responsiveness failure never changes the server's independently
+  measured state or implies a network disconnect by itself.
+- The journal records the first divergence for each failed/frozen/unresponsive instance.

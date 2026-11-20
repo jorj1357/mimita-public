@@ -90,3 +90,58 @@ Live reproduction 20261120_083807, request dashboard-96a2e1ea, using published E
 ### 2026-11-20T09:05:19.301Z — launch-latest-stable-fix
 
 Run 20261120_085207 connects to retained server PID 12748 on matching mode/map/build but rejects its JoinAccept due server runtime run ID 20261120_084810 versus client expected 20261120_085207. Evidence: client packet route ID 21 and server identity mismatch event. Launch timed out after 45.032 s. This is a dev-loop retained-server identity/association defect, not a crash.
+
+## User quote
+
+### 2026-11-20T14:45:42.286Z — root-connection-reliability
+
+Via root-connection-reliability; supports ctx-a05309c9f2cd:
+
+> /goal can u add an issue to amkeit so  ai needs much better eyes fro the game to be able to  mkae it so regressiosn dotn happen like right now in the lvie run  the npcs aer floating up above teh cart in payload, and starting team dathmatch from the same .exe  its sas timeout connection timed out, then it conencts eventually, like if its not actully disconnected donnt show disconnected show like loading or connecning&#x20;
+adn i start a mode and i dotn connectto it, like i started tdm on duest2cyberiav4 and i didnt ever connect it just says disconnected at the top, need to ensure that every single time  i start a servre i conecnt to it, ad if not its super duper obvious why
+collaborate with other agents if tehy are awake on this  if needed or that makes ti help, the goal is that u can close, open, restart, etc, break and stress mimita.exe, but u can always start wahtevr mode u are trying to start, get into it, connect, leave, re connect, close .exe, openi t again, connect atgain to the same server, etc, do all of this consistently, and track why u cant right now,
+end goal is  that u can consistnetly connect to a server whenever u start it, never a disconnectin gissues it just works&#x20;
+and track why itsnot like that right n ow, and all discoveries and things to do better/different as result of ur disocveries ,
+
+## Context
+
+### 2026-11-20T14:46:40.106Z — root-connection-reliability
+
+reproduction: User-reported sequence: start Payload and observe NPCs floating above the cart; start Team Deathmatch on dust2cyberiav4 from the same MiMITA.exe and observe timeout/Disconnected, delayed eventual connect or no connect; leave, start another mode, reconnect; close/reopen the executable and reconnect to the same server. Exact user session is not yet reproduced. Available adjacent evidence: run 20261120_143117 launch report says launch succeeded; client-01 journal later records a connect request for dust2cyberiav4 and an applied authoritative snapshot; dev-loop journal records managed client PID 10676 exiting with code 3221225477 at 2026-11-20T14:40:11.958Z, after which dev-loop status showed the server alive and no client. Match PIDs, correlation IDs, mode, map, EXE hash, generation, and both journals on a dedicated pinned reproduction.
+expected_behavior: Every local server start automatically connects its intended client to the selected mode. Pending transport, join, map sync, spawn, and retry phases display Connecting/Loading/Reconnecting; Disconnected appears only after explicit leave or a terminal failure, with the stage and actionable reason plainly shown. Restarting or reopening MiMITA.exe can reconnect to the same running server. Payload NPCs remain correctly grounded and positioned around the cart. Agents can inspect the live game visually and correlate screenshots with exact runtime journals so visible regressions are caught and diagnosed.
+acceptance: Run a pinned, repeatable 20-cycle local matrix across Payload and Team Deathmatch on dust2cyberiav4: start server and client in the same executable, leave and start another mode, reconnect, close/reopen the executable and reconnect to the same server, and exercise one transient interruption/recovery. Each cycle either reaches the authoritative connected/ready state within the configured connection policy or ends with an explicit terminal stage/reason; no attempt is reported Disconnected while nonterminal. Record all failures and first missing event. In Payload, inspect representative live screenshots and correlated NPC/cart position or grounding diagnostics to verify NPCs are not floating above the cart. Preserve build/artifact hash, generation, run ID, paired journals, launch reports, connection correlation IDs, and visual evidence.
+paths: ['src/network/multiplayer-packets.cpp', 'src/network/multiplayer-tick.cpp', 'src/network/server-packets.cpp', 'src/engine/engine-tick-state.cpp', 'src/npc/npc.cpp', 'src/network/server-npcs.cpp', 'src/gamemode/payload-runtime.cpp', 'docs/specs/networking/networking.md', 'docs/specs/networking/network-event-contract.md', 'docs/specs/gui/guiv2.md']
+evidence: {'reported_symptoms': 'User reports Payload NPCs floating above cart; TDM same-executable timeout followed by delayed connection; separate TDM start remains Disconnected; wants reliable start/join/leave/reconnect/restart and obvious failure reason plus AI visual checking.', 'observed_run_id': '20261120_143117', 'launch_id': '2026-11-20T14:31:17.836Z', 'launch_report': 'C:\\mimita-v9\\.dev\\launch-reports\\2026-11-20T14-31-17.836Z\\launch.json: result=succeeded; reason=launch completed with matching ready server/client', 'client_journal': 'C:\\mimita-v9\\logs\\2026-11-20\\20261120_143117\\client-01\\events.jsonl', 'dev_loop_journal': 'C:\\mimita-v9\\logs\\2026-11-20\\20261120_143117\\dev-loop\\events.jsonl', 'later_client_event': 'At 2026-11-20T14:38:59.739Z client-01 logged network.client.connect.requested for dust2cyberiav4; an authoritative snapshot was applied shortly afterward. This adjacent evidence does not prove the user-reported HUD state or exact failure.', 'client_exit': 'dev-loop.instance.exited at 2026-11-20T14:40:11.958Z; client PID 10676; exit code 3221225477; server PID 3940 remained alive in subsequent status.', 'source_observation': 'src/network/multiplayer-packets.cpp::mpConnectionHealthText returns Disconnected when ctx.active is false; active nonterminal non-ready states use Loading; reconnect terminal states have explicit status text. This points to tracing the actual top-HUD owner and state transition; it does not identify the user session cause.', 'related_issues': ['issue-453d0596e294', 'issue-5873d2c2d033']}
+risk: Interleaving mode switches, reconnects, server lifetimes, and executable restarts can confuse process ownership or pair evidence from different sessions; keep tests on the loopback dev server and correlate process IDs, launch IDs, connection IDs, build IDs, generations, and run IDs. A broad status change could hide real terminal failures; only show progress states while the attempt is nonterminal. NPC/cart movement or collision fixes can create unrelated gameplay regressions, so preserve separate runtime and visual evidence and change one owner at a time.
+proof_expectation: Integration proof from the exact pinned root-dev-loop executable and game generation: paired server/client events.jsonl plus launch report for each connection cycle, correlated from connect.requested through preflight, transport, hello/join accepted or rejected, map ready, spawn, authoritative snapshot, health transition, and terminal reason; include 20-cycle matrix results and explicit forbidden-state check for premature Disconnected. Human visual acceptance of live Payload NPC/cart positioning and the connection HUD, with screenshots or video tied to run ID and timestamps. Build success alone is not proof.
+context_id: ctx-a05309c9f2cd
+
+## Agent discussion and suggestions
+
+### 2026-11-20T14:47:05.898Z — root-connection-reliability
+
+Message: `msg-2d280a734afa` (coordination)
+
+Subject: Coordinate on launch, network, and Payload issue
+
+I found your active task overlaps with the user's new high-priority report. I appended the exact report and current run evidence to existing issue issue-55bd775c8026 and completed its missing reproduction/acceptance/evidence/proof fields; context ctx-a05309c9f2cd is linked. Existing related traces are issue-453d0596e294 and deferred duplicate issue-5873d2c2d033. Current source observation: mpConnectionHealthText shows Loading for active nonterminal non-ready states but Disconnected when ctx.active is false or a terminal state, so trace the actual HUD owner/state transition. Please use issue-55bd775c8026 as the shared record for your launch/network/Payload findings and avoid creating a duplicate; add any independent AI visual inspection capability proposal separately only if your evidence supports it.
+
+## Agent discussion and suggestions
+
+### 2026-11-20T14:58:05.910Z — root-connection-reliability
+
+Message: `msg-c1f525fbef59` (coordination)
+
+Subject: Connection report linked to end-to-end umbrella
+
+Coordination notice: the current user report is now linked primarily to umbrella issue issue-cf9cd77eb056. I preserved issue-55bd775c8026 as the related detailed connection/crash trace and appended the exact new report plus current run evidence there. Please keep the specific TDM/new-mode connection trace in issue-55bd775c8026; the umbrella owns cross-mode lifecycle, visual Payload proof, and AI evidence completeness.
+
+## Agent discussion and suggestions
+
+### 2026-11-20T15:51:12.993Z — root-connection-reliability
+
+Message: `msg-58b14ba36908` (evidence)
+
+Subject: Related TDM live reconnect failure in run 152743
+
+For the detailed client-crashes-while-connecting trace: related run 20261120_152743 began with a successful same-EXE TDM join on dust2cyberiav4 (client PID34144/server PID26136; EXE sha256 9e4a6288…, game DLL gen404 361a6835…). Later, snapshots stalled for 10s while last packet age was only 336ms. Client attempted reconnect 10 times; still-running server received each request but reported players=0 and rejected token fingerprint qZ60I0KD as token_not_found. Client terminal ReconnectFailed at 15:40:34.121Z, then teardown set active=false; both process IDs remained alive at 15:47 and run manifest was still stale online. No server player-removal/timeout event was found in the scanned journal, so reason the server had no player record remains unresolved. Evidence and screenshots are saved under logs/2026-11-20/20261120_152743/ and detailed in canonical issue issue-cf9cd77eb056. This does not reproduce the exact GUI mode-switch sequence.

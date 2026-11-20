@@ -253,3 +253,13 @@ or a complete project-tree hash.
 - [IPFS privacy and encryption](https://docs.ipfs.tech/concepts/privacy-and-encryption/)
 - [Creative Commons licensing](https://creativecommons.org/share-your-work/cclicenses/)
 - [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
+## Live save-as-fork command
+
+While a creator project is active, `worldproject fork_live <new-id> [title]`
+writes the current authored map as a new immutable source version, forks that
+version into a new project with lineage, and leaves the active live project
+unchanged. `world-project.live-forked` records source/fork project and version,
+parent version, owner, contributor, title, visibility, root, and
+`source_unchanged:true`. It is the first step toward host-ordered live edit
+sessions; it does not by itself claim networked collaboration or trustless host
+behavior.

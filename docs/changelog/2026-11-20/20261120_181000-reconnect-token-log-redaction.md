@@ -1,0 +1,9 @@
+# Reconnect token log redaction
+
+- Task: Continue the end-to-end connection reliability investigation tracked by `issue-cf9cd77eb056`.
+- Evidence: Source review of `src/network/server-packets.cpp` found reconnect correlations, `token_fingerprint` journal fields, and the rejected-token printf were using a prefix of the raw reconnect token. The networking event contract requires raw tokens to stay out of logs.
+- Change: The server now derives the correlation suffix and fingerprint fields from the existing `avatarSha256Hex` helper and limits the displayed prefix to configured `tokenFingerprintChars`. The rejected-token log labels the hashed value as a fingerprint. No raw token value is recorded in this changelog or coordination message.
+- Coordination: Build note `a4f705ae5e18` was queued before saving the DLL compiler input. The source file lease was committed. The change was appended to `issue-cf9cd77eb056` and sent to the active issue owner.
+- Build: At 18:00 UTC, canonical root dev-loop attempt `game-dll-20261120T171733871137Z-338310` was still compiling source generation 23. This edit was saved after that source snapshot; a matching build and pinned runtime proof are pending. Preserve the shared server and use only the root dev-loop for build and run requests.
+- Validation: Reviewed the focused source diff and searched network source for reconnect-token usages. No runtime journal scan or live test has yet verified absence of raw tokens on the matching artifact. The ICE receive-counter change in `src/network/multiplayer-tick.cpp` also remains pending matching build/runtime evidence.
+- Scope limit: This prevents one identified token disclosure in reconnect logging. It does not explain or fix the observed reconnect packet delivery gap, establish truthful HUD connection state, prove same-EXE TDM lifecycle behavior, or resolve Payload NPC/cart grounding. Those remain open under the umbrella issue.

@@ -80,11 +80,25 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
         uiDrawText(text.c_str(), uiScaleX(el->x), uiScaleY(el->y), scale, color);
     };
 
-    // Persistent honest connection status. This NEVER lies: "Connected via ICE"
-    // is no longer shown as healthy — the text reflects actual game packet
-    // freshness via mpConnectionHealthText. Always drawn while a session is
-    // active (or attempting to connect) so a stale/weak state is visible.
-    if (mpContext.active || MimitaNet::mpIceConnectActive() || mpContext.connectFailed)
+    // Keep in-progress and terminal states visible even after transport/session
+    // teardown. The status text comes from the explicit connection state, so a
+    // pending join cannot look disconnected and a failed reconnect keeps its
+    // reason on screen until the next connection attempt.
+    const auto connectionState = mpContext.connectionState;
+    const bool connectionPending =
+        connectionState == MimitaNet::ConnectionState::ResolvingCode ||
+        connectionState == MimitaNet::ConnectionState::RequestingJoin ||
+        connectionState == MimitaNet::ConnectionState::WaitJoinAccept ||
+        connectionState == MimitaNet::ConnectionState::NatNegotiating ||
+        connectionState == MimitaNet::ConnectionState::Connecting ||
+        connectionState == MimitaNet::ConnectionState::DisconnectPending;
+    const bool connectionTerminal =
+        connectionState == MimitaNet::ConnectionState::ReconnectFailed ||
+        connectionState == MimitaNet::ConnectionState::HostClosed ||
+        connectionState == MimitaNet::ConnectionState::Kicked ||
+        connectionState == MimitaNet::ConnectionState::ServerCrashed;
+    if (mpContext.active || MimitaNet::mpIceConnectActive() || mpContext.connectFailed ||
+        connectionPending || connectionTerminal)
     {
         const float boxW = 360.0f;
         const float boxX = (uiScreenW() - boxW) * 0.5f;

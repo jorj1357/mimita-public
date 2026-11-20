@@ -55,6 +55,12 @@ bool creatorProjectClone(const std::string& sourceProjectId,
                          const std::string& title,
                          CreatorProjectResult& out);
 
+// Save the live authored map as a new version of the active project and fork
+// that version into a new project. Leaves the active live project unchanged.
+bool creatorProjectForkLive(const std::string& projectId,
+                            const std::string& title,
+                            CreatorProjectResult& out);
+
 // Load a project's working map into the live MapConfigRegistry and make it the
 // active creator project. Does not load a world or activate the editor.
 bool creatorProjectOpen(const std::string& projectId,

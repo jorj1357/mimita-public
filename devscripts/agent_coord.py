@@ -1807,7 +1807,7 @@ class CoordStore:
                          source_ref: str = "", priority: str = "normal",
                          tags: list[str] | None = None,
                          issue_id: str = "") -> dict:
-        self.require_agent(agent)
+        self.ensure_agent(agent, "user context relay")
         quote = str(quote or "").strip()
         if not quote:
             raise CoordError("user context quote is required", 2)
@@ -1855,7 +1855,7 @@ class CoordStore:
         agents = [str(row["agent"]) for row in self.conn.execute(
             "SELECT agent FROM agents WHERE status='active' AND agent<>?",
             (source_agent,))]
-        for target in agents[:8]:
+        for target in agents[:3]:
             prompt = (f"New high-priority user context {context_id}.\n\n"
                       f"{quote}\n\nRun `agent-coord context list --high "
                       f"--agent {target}` and review its linked issue. "
@@ -4521,9 +4521,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-
-
-
 

@@ -10,6 +10,7 @@
 
 #include "network/server.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "config/networking-config.h"
 #if defined(MIMITA_GAME_DLL)
 #include "game/session-events-bridge-module.h"
@@ -19,6 +20,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <nlohmann/json.hpp>
 
 namespace MimitaNet {
 namespace {
@@ -106,6 +108,38 @@ void markReliableConnectionUnhealthy(std::unordered_map<uint32_t, ServerPlayer>&
                                      uint8_t packetType,
                                      uint32_t eventId)
 {
+    const ServerPlayer& player = it->second;
+    const uint64_t removalTimeMs = reliableNowMs();
+    const size_t playersBefore = players.size();
+    const uint32_t lastAcceptedServerTick = player.lastAcceptedServerTick;
+    const char* failureTrigger = trigger ? trigger : "unspecified";
+    const uint64_t silentMs = removalTimeMs >= player.lastHeardMs
+        ? removalTimeMs - player.lastHeardMs : 0;
+
+    // This branch erases the session without passing through the normal
+    // timeout/disconnect owner. Record the delivery failure and common removal
+    // transition before the reconnect token and player slot are discarded.
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.server.reliable-event.connection-failed",
+        "player:" + std::to_string(player.id) + ":event:" + std::to_string(eventId),
+        failureTrigger, lastAcceptedServerTick,
+        nlohmann::json{{"player_id", player.id},
+                       {"failure_trigger", failureTrigger},
+                       {"packet_type", (unsigned)packetType},
+                       {"event_id", eventId},
+                       {"event_session_id", player.reliableEventSessionId},
+                       {"pending_reliable_events", player.pendingReliableEvents.size()},
+                       {"last_accepted_server_tick", lastAcceptedServerTick},
+                       {"tick_basis", "last_accepted_server_tick"},
+                       {"last_heard_ms", player.lastHeardMs},
+                       {"silent_ms", silentMs},
+                       {"connection_stale", player.connectionStale},
+                       {"players_before", playersBefore},
+                       {"players_after", playersBefore > 0 ? playersBefore - 1 : 0}},
+        __FILE__, __LINE__, __FUNCTION__);
+    serverLogPlayerSessionRemoval(player, "reliable_event_failure",
+                                  removalTimeMs, lastAcceptedServerTick, playersBefore);
     logReliableFailureAggregate(trigger, it->second, packetType, eventId);
     it = players.erase(it);
 }

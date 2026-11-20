@@ -6929,14 +6929,16 @@ def run_dashboard(args: argparse.Namespace) -> int:
         return response
 
     def snapshot() -> dict:
-        return request_daemon_status(current, timeout=0.25) if current else None
+        return request_daemon_status(current, timeout=0.25) if isinstance(current, dict) and current else None
 
     checkout_states: dict[str, dict] = {"main": current or {}}
 
     def collect_checkout_states() -> list[dict]:
         """Read the coordinator and lane snapshots without waking lane daemons."""
         nonlocal current
-        current = request_daemon_status(current, timeout=0.25) or read_current_run() or current or {}
+        prior = current if isinstance(current, dict) else {}
+        current = ((request_daemon_status(prior, timeout=0.25) if prior else None)
+                   or read_current_run() or prior)
         checkout_states.clear()
         checkout_states["main"] = current
         rows = [{"checkout_id": "main", "name": "Main checkout",

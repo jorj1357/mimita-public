@@ -152,3 +152,11 @@ create duplicate issues when an existing issue fits.
 - `sync`, `send`, `ask`, and `reply` surface current/claimable issue context.
 - Issue-linked message bodies and standalone suggestions are durably appended.
 - No issue is assigned solely because an agent viewed or discussed it.
+## High-priority user context
+
+A high-priority `user_context` record may queue one manual wake request for each
+active agent, excluding the source agent. The wake prompt names the context and
+asks the agent to review the linked issue, acknowledge the context, or repair
+its routing. Normal user context does not wake an idle agent; it is delivered at
+the next `sync`/activation. All context is also broadcast as a `user-context`
+message, so waking is an urgency mechanism, not the only delivery path.

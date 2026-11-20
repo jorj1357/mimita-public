@@ -658,4 +658,3 @@ reproduction, expected behavior, acceptance, paths, evidence, risk, proof
 expectation, and any dependencies/context. `issue add` rejects incomplete
 records. `devscripts/agent-issue.py` is the validated front-end; it calls the
 same brain and does not create a second issue system.
-

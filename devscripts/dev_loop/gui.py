@@ -484,6 +484,11 @@ def run(status_provider: Callable[[], dict],
     state = {
         "frozen": False,
         "after_id": None,
+        "refresh_after_id": None,
+        "reflow_after_id": None,
+        "last_reflow_size": None,
+        "last_reflow_wrap": None,
+        "closing": False,
         "hue_started": time.monotonic(),
         "maximized": False,
         "restore_geometry": None,
@@ -517,9 +522,18 @@ def run(status_provider: Callable[[], dict],
         "launch_modes": [],
         "active_mode": "",
         "latest_model": {},
+        "status_refresh_queue": queue.SimpleQueue(),
+        "status_refresh_in_flight": False,
+        "status_refresh_last_started": 0.0,
+        "status_refresh_error": "",
+        "provider_control_lock": threading.RLock(),
+        "last_ui_heartbeat": None,
+        "last_ui_stall_log": 0.0,
+        "last_slow_refresh_log": 0.0,
         "processes": [],
         "live_output": deque(maxlen=300),
         "last_live_message": "",
+        "gutter_signature": None,
         "process_rows": {},
         "rendered_processes": [],
         "selected_process_key": "",
@@ -537,10 +551,124 @@ def run(status_provider: Callable[[], dict],
         "coordination_store": None,
         "coordination_error": "",
         "coordination_snapshot": {},
+        "coordination_agent_rows": {},
+        "coordination_recipient_names": (),
+        "coordination_request_queue": queue.Queue(maxsize=1),
+        "coordination_result_queue": queue.SimpleQueue(),
+        "coordination_reader_started": False,
+        "coordination_snapshot_in_flight": False,
+        "coordination_request_last_monotonic": 0.0,
+        "coordination_render_in_progress": False,
+        "coordination_render_after_id": None,
+        "checkout_render_in_progress": False,
+        "checkout_render_after_id": None,
+        "checkout_render_generation": 0,
+        "last_coordination_log": 0.0,
         "coordination_send_status": "",
         "coordination_recipient": "all",
         "scroll_canvases": [],
     }
+
+    def log_dashboard_event(event: str, fields: dict, *, cooldown_key: str = "",
+                            cooldown_seconds: float = 1.0) -> None:
+        now = time.monotonic()
+        if cooldown_key:
+            last = float(state.get(cooldown_key) or 0.0)
+            if now - last < cooldown_seconds:
+                return
+            state[cooldown_key] = now
+        record = {
+            "category": "DASHBOARD",
+            "event": event,
+            "fields": fields,
+            "pid": os.getpid(),
+            "wall_time": datetime.now(timezone.utc).isoformat(
+                timespec="milliseconds").replace("+00:00", "Z"),
+        }
+        try:
+            print(json.dumps(record, separators=(",", ":")), flush=True)
+        except (OSError, TypeError, ValueError):
+            pass
+
+    def measure_ui_stage(name: str, operation):
+        started = time.perf_counter()
+        try:
+            return operation()
+        finally:
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 1)
+            if elapsed_ms >= 50.0:
+                log_dashboard_event(
+                    "dashboard.stage.slow",
+                    {"stage": name, "duration_ms": elapsed_ms,
+                     "refresh_number": state["dashboard_refresh_count"]},
+                    cooldown_key=f"last_stage_log_{name}",
+                    cooldown_seconds=2.0)
+
+    def request_status_refresh() -> None:
+        if state["status_refresh_in_flight"] or state["closing"]:
+            return
+        state["status_refresh_in_flight"] = True
+        started = time.monotonic()
+        state["status_refresh_last_started"] = started
+
+        def read_status() -> None:
+            model = {}
+            error_text = ""
+            try:
+                with state["provider_control_lock"]:
+                    value = status_provider() or {}
+                model = value if isinstance(value, dict) else {}
+                try:
+                    headline, detail, progress = _game_dll_progress(
+                        str(model.get("checkout") or ""))
+                    summary, job_title, stamp, ratio = _game_dll_queue_view(
+                        model, progress)
+                    model["_game_queue_snapshot"] = {
+                        "headline": headline, "detail": detail, "progress": progress,
+                        "summary": summary, "job_title": job_title,
+                        "stamp": stamp, "ratio": ratio,
+                    }
+                except Exception as error:  # noqa: BLE001 - game progress is ancillary
+                    model["_game_queue_snapshot"] = {
+                        "headline": "Game DLL: progress unavailable",
+                        "detail": str(error)[:160], "progress": {},
+                        "summary": "Build queue status unavailable",
+                        "job_title": "Queue read failed", "stamp": "", "ratio": None,
+                    }
+            except Exception as error:  # noqa: BLE001 - surface without blocking Tk
+                error_text = str(error)
+            finished = time.monotonic()
+            state["status_refresh_queue"].put(
+                (model, error_text, started, finished))
+
+        threading.Thread(target=read_status, name="dashboard-status-read",
+                         daemon=True).start()
+
+    def apply_status_refresh() -> None:
+        try:
+            model, error_text, started, finished = state["status_refresh_queue"].get_nowait()
+        except queue.Empty:
+            return
+        state["status_refresh_in_flight"] = False
+        elapsed_ms = round(max(0.0, finished - started) * 1000.0, 1)
+        if error_text:
+            state["status_refresh_error"] = error_text
+            log_dashboard_event(
+                "dashboard.status.failed", {"duration_ms": elapsed_ms,
+                                             "error": error_text[:240]},
+                cooldown_key="last_status_error_log")
+            return
+        state["status_refresh_error"] = ""
+        state["latest_model"] = model
+        state["dashboard_refresh_monotonic"] = finished
+        state["dashboard_refresh_count"] += 1
+        state["dashboard_refresh_utc"] = _utc_now_iso()
+        if elapsed_ms >= 100.0:
+            log_dashboard_event(
+                "dashboard.status.slow",
+                {"duration_ms": elapsed_ms,
+                 "refresh_number": state["dashboard_refresh_count"]},
+                cooldown_key="last_status_slow_log", cooldown_seconds=10.0)
 
     def persist_window_geometry() -> None:
         state["geometry_save_after"] = None
@@ -587,7 +715,8 @@ def run(status_provider: Callable[[], dict],
             response = None
             error = ""
             try:
-                response = control(action, **fields)
+                with state["provider_control_lock"]:
+                    response = control(action, **fields)
             except Exception as exc:  # noqa: BLE001 - surfaced in the status line
                 error = str(exc)
             state["control_results"].put(
@@ -777,6 +906,7 @@ def run(status_provider: Callable[[], dict],
         maximize_button.configure(text="❐")
 
     def close_view():
+        state["closing"] = True
         persist_window_geometry()
         pending = state.get("geometry_save_after")
         if pending:
@@ -784,6 +914,21 @@ def run(status_provider: Callable[[], dict],
                 root.after_cancel(pending)
             except tk.TclError:
                 pass
+        for key in ("after_id", "refresh_after_id", "reflow_after_id",
+                    "coordination_render_after_id", "checkout_render_after_id",
+                    "animation_id"):
+            pending = state.get(key)
+            if pending:
+                try:
+                    root.after_cancel(pending)
+                except tk.TclError:
+                    pass
+                state[key] = None
+        try:
+            state["coordination_request_queue"].put_nowait(None)
+        except queue.Full:
+            pass
+        state["control_queue"].put(None)
         root.destroy()
 
     button(caption_buttons, "_", minimize, width=2).pack(side="left", padx=1)
@@ -1221,6 +1366,53 @@ def run(status_provider: Callable[[], dict],
             state["coordination_error"] = str(error)
         return state["coordination_store"]
 
+    def start_coordination_reader() -> None:
+        if state["coordination_reader_started"]:
+            return
+        state["coordination_reader_started"] = True
+
+        def read_coordination() -> None:
+            reader = None
+            while True:
+                request = state["coordination_request_queue"].get()
+                if request is None:
+                    break
+                started = time.monotonic()
+                snapshot = None
+                error_text = ""
+                try:
+                    if reader is None:
+                        from devscripts.agent_coord import CoordStore
+                        reader = CoordStore(publish_docs=False)
+                    snapshot = reader.coordination_snapshot(limit_messages=80)
+                except Exception as error:  # noqa: BLE001 - dashboard stays responsive
+                    error_text = str(error)
+                finished = time.monotonic()
+                state["coordination_result_queue"].put(
+                    (snapshot, error_text, started, finished))
+            if reader is not None:
+                try:
+                    reader.close()
+                except Exception:
+                    pass
+
+        threading.Thread(target=read_coordination,
+                         name="dashboard-coordination-read", daemon=True).start()
+
+    def request_coordination_snapshot() -> None:
+        if state["coordination_snapshot_in_flight"] or state["closing"]:
+            return
+        now = time.monotonic()
+        if now - state["coordination_request_last_monotonic"] < 2.0:
+            return
+        start_coordination_reader()
+        try:
+            state["coordination_request_queue"].put_nowait(True)
+        except queue.Full:
+            return
+        state["coordination_request_last_monotonic"] = now
+        state["coordination_snapshot_in_flight"] = True
+
     def send_coordination_message():
         store = coordination_store()
         if store is None:
@@ -1250,23 +1442,168 @@ def run(status_provider: Callable[[], dict],
                          width=8)
     send_button.grid(row=0, column=1, sticky="e")
 
+    def finish_coordination_render(snapshot, agent_scroll_position):
+        if state["closing"]:
+            return
+        message_lines = []
+        for item in snapshot.get("messages") or []:
+            created = str(item.get("created_utc") or "")
+            stamp = created[11:19] if len(created) >= 19 else created
+            sender = str(item.get("sender") or "?")
+            recipient = str(item.get("recipient") or "?")
+            kind = str(item.get("kind") or "message")
+            unread = " *" if not item.get("read_at") else ""
+            header = f"{stamp} {sender} → {recipient} [{kind}]{unread}"
+            subject = str(item.get("subject") or "")
+            body = str(item.get("body") or "")
+            message_lines.append(header)
+            if subject:
+                message_lines.append(f"  {subject}")
+            if body:
+                message_lines.append("  " + body)
+            message_lines.append("")
+        measure_ui_stage(
+            "coordination_messages",
+            lambda: set_text_content(coordination_messages, "\n".join(message_lines),
+                                     "coordination_messages_text"))
+        state["coordination_render_after_id"] = root.after(
+            1, lambda: finish_coordination_issues(snapshot, agent_scroll_position))
+
+    def finish_coordination_issues(snapshot, agent_scroll_position):
+        if state["closing"]:
+            return
+        issue_lines = []
+        for item in snapshot.get("issues") or []:
+            issue_lines.extend((
+                f"{item.get('id')} {item.get('state')} {item.get('kind')} "
+                f"{item.get('priority')} owner={item.get('owner') or '-'}",
+                f"  {item.get('title') or item.get('summary') or ''}"))
+        measure_ui_stage(
+            "coordination_issues",
+            lambda: set_text_content(coordination_issues, "\n".join(issue_lines),
+                                     "coordination_issues_text"))
+        state["coordination_render_after_id"] = None
+        state["coordination_render_in_progress"] = False
+        root.after_idle(lambda: agent_canvas.yview_moveto(agent_scroll_position))
+        request_coordination_snapshot()
+
+    def render_coordination_agent_chunk(snapshot, agents, work_by_agent,
+                                        index, rendered, agent_scroll_position):
+        if state["closing"]:
+            return
+        started = time.perf_counter()
+        stop = min(index + 1, len(agents))
+        try:
+            for item in agents[index:stop]:
+                activity = item.get("activity") or {}
+                status = str(item.get("status") or "unknown")
+                color = (GREEN if status == "active" else
+                         "#ffcc00" if status == "stale" else "#888888")
+                agent_name = str(item.get("agent") or "?")
+                task = _short_text(item.get("task") or activity.get("activity"), 120)
+                issue = _short_text(activity.get("issue_id") or "", 80)
+                phase = _short_text(activity.get("phase") or "", 80)
+                paths = activity.get("paths") or ""
+                try:
+                    parsed_paths = json.loads(paths) if isinstance(paths, str) else paths
+                    paths_text = ", ".join(str(path) for path in (parsed_paths or [])[:3])
+                except (TypeError, json.JSONDecodeError):
+                    paths_text = str(paths)
+                work = work_by_agent.get(agent_name) or {}
+                work_ms = int(work.get("elapsed_ms") or 0)
+                detail = " · ".join(part for part in (
+                    f"issue {issue}" if issue else "",
+                    f"phase {phase}" if phase else "",
+                    f"work {work.get('phase')} {work_ms}ms" if work else "",
+                    f"paths {paths_text}" if paths_text else "",
+                    f"build {activity.get('build_id')}" if activity.get('build_id') else "",
+                    f"run {activity.get('run_id')}" if activity.get('run_id') else "",
+                    f"blocker {activity.get('blocker')}" if activity.get('blocker') else "",
+                    f"wait {activity.get('wait_reason')}" if activity.get('wait_reason') else "",
+                    f"next {activity.get('next_step')}" if activity.get('next_step') else "",
+                ) if part)
+                rendered.add(agent_name)
+                widgets = state["coordination_agent_rows"].get(agent_name)
+                if widgets is None:
+                    row = tk.Frame(agent_rows_frame, bg=BLACK)
+                    row.grid(sticky="ew", pady=1)
+                    row.grid_columnconfigure(0, weight=1)
+                    title_widget = label(row, size=9, bold=True)
+                    title_widget.grid(row=0, column=0, sticky="w")
+                    task_widget = label(row, size=9, color=WHITE)
+                    task_widget.grid(row=1, column=0, sticky="w")
+                    detail_widget = label(row, size=8, wraplength=760)
+                    detail_widget.grid(row=2, column=0, sticky="w")
+                    widgets = {"row": row, "title": title_widget,
+                               "task": task_widget, "detail": detail_widget}
+                    state["coordination_agent_rows"][agent_name] = widgets
+                title_text = (f"{agent_name}  {status.upper()}  "
+                              f"{_age_text(item.get('last_seen_utc'))}")
+                if widgets["title"].cget("text") != title_text:
+                    widgets["title"].configure(text=title_text, fg=color)
+                if widgets["task"].cget("text") != task:
+                    widgets["task"].configure(text=task)
+                if widgets["detail"].cget("text") != detail:
+                    widgets["detail"].configure(text=detail, fg=color)
+        finally:
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 1)
+            if elapsed_ms >= 50.0:
+                log_dashboard_event(
+                    "dashboard.stage.slow",
+                    {"stage": "coordination_agent_chunk", "duration_ms": elapsed_ms,
+                     "agent_count": stop - index,
+                     "refresh_number": state["dashboard_refresh_count"]},
+                    cooldown_key="last_stage_log_coordination_agent_chunk",
+                    cooldown_seconds=2.0)
+        if stop < len(agents):
+            state["coordination_render_after_id"] = root.after(
+                1, lambda: render_coordination_agent_chunk(
+                    snapshot, agents, work_by_agent, stop, rendered,
+                    agent_scroll_position))
+            return
+        for agent_name in list(state["coordination_agent_rows"]):
+            if agent_name not in rendered:
+                state["coordination_agent_rows"].pop(agent_name)["row"].destroy()
+        state["coordination_render_after_id"] = root.after(
+            1, lambda: finish_coordination_render(snapshot, agent_scroll_position))
+
     def render_coordination() -> None:
-        store = coordination_store()
-        if store is None:
-            coordination_summary.configure(
-                text="Coordination unavailable: " + state["coordination_error"],
-                fg=RED)
-            coordination_focus.configure(text="")
+        if state["coordination_render_in_progress"]:
             return
         try:
-            snapshot = store.coordination_snapshot(limit_messages=80)
-        except Exception as error:  # noqa: BLE001 - dashboard must stay usable
+            snapshot, error_text, started, finished = (
+                state["coordination_result_queue"].get_nowait())
+        except queue.Empty:
+            snapshot = None
+            error_text = ""
+            started = finished = 0.0
+        if finished:
+            state["coordination_snapshot_in_flight"] = False
+            elapsed_ms = round(max(0.0, finished - started) * 1000.0, 1)
+            if elapsed_ms >= 100.0:
+                log_dashboard_event(
+                    "dashboard.coordination.slow", {"duration_ms": elapsed_ms},
+                    cooldown_key="last_coordination_log")
+        if error_text:
+            state["coordination_error"] = error_text
             coordination_summary.configure(
-                text="Coordination unavailable: " + str(error), fg=RED)
+                text="Coordination unavailable: " + error_text[:160], fg=RED)
+            request_coordination_snapshot()
             return
+        if snapshot is not None:
+            state["coordination_snapshot"] = snapshot
+            state["coordination_error"] = ""
+        else:
+            request_coordination_snapshot()
+            snapshot = state.get("coordination_snapshot") or {}
+            if not snapshot:
+                coordination_summary.configure(
+                    text="Loading coordination data…", fg=WHITE)
+                return
         snapshot_signature = dict(snapshot)
         snapshot_signature.pop("generated_utc", None)
         if snapshot_signature == state.get("coordination_snapshot_signature"):
+            request_coordination_snapshot()
             return
         agent_scroll_position = agent_canvas.yview()[0]
         state["coordination_snapshot"] = snapshot
@@ -1291,88 +1628,21 @@ def run(status_provider: Callable[[], dict],
                      f"{focus.get('priority')} · {_short_text(focus.get('title'))}")
         else:
             coordination_focus.configure(text="FOCUS none · no open issue")
-
         names = ["all"] + [str(item.get("agent")) for item in agents
                            if item.get("agent")]
-        current = recipient_var.get()
-        if current not in names:
+        if recipient_var.get() not in names:
             recipient_var.set("all")
-        menu = recipient_menu["menu"]
-        menu.delete(0, "end")
-        for name in names:
-            menu.add_command(label=name,
-                             command=lambda value=name: recipient_var.set(value))
-
-        for child in agent_rows_frame.winfo_children():
-            child.destroy()
-        for item in agents:
-            activity = item.get("activity") or {}
-            status = str(item.get("status") or "unknown")
-            color = (GREEN if status == "active" else
-                     "#ffcc00" if status == "stale" else "#888888")
-            agent_name = str(item.get("agent") or "?")
-            task = _short_text(item.get("task") or activity.get("activity"), 120)
-            issue = _short_text(activity.get("issue_id") or "", 80)
-            phase = _short_text(activity.get("phase") or "", 80)
-            paths = activity.get("paths") or ""
-            try:
-                parsed_paths = json.loads(paths) if isinstance(paths, str) else paths
-                paths_text = ", ".join(str(path) for path in (parsed_paths or [])[:3])
-            except (TypeError, json.JSONDecodeError):
-                paths_text = str(paths)
-            work = work_by_agent.get(agent_name) or {}
-            work_ms = int(work.get("elapsed_ms") or 0)
-            detail = " · ".join(part for part in (
-                f"issue {issue}" if issue else "",
-                f"phase {phase}" if phase else "",
-                f"work {work.get('phase')} {work_ms}ms" if work else "",
-                f"paths {paths_text}" if paths_text else "",
-                f"build {activity.get('build_id')}" if activity.get("build_id") else "",
-                f"run {activity.get('run_id')}" if activity.get("run_id") else "",
-                f"blocker {activity.get('blocker')}" if activity.get("blocker") else "",
-                f"wait {activity.get('wait_reason')}" if activity.get("wait_reason") else "",
-                f"next {activity.get('next_step')}" if activity.get("next_step") else "",
-            ) if part)
-            row = tk.Frame(agent_rows_frame, bg=BLACK)
-            row.grid(sticky="ew", pady=1)
-            row.grid_columnconfigure(0, weight=1)
-            label(row, f"{agent_name}  {status.upper()}  "
-                       f"{_age_text(item.get('last_seen_utc'))}",
-                  size=9, bold=True, color=color).grid(row=0, column=0, sticky="w")
-            label(row, task, size=9, color=WHITE).grid(row=1, column=0, sticky="w")
-            if detail:
-                label(row, detail, size=8, color=color, wraplength=760).grid(
-                    row=2, column=0, sticky="w")
-
-        message_lines = []
-        for item in snapshot.get("messages") or []:
-            created = str(item.get("created_utc") or "")
-            stamp = created[11:19] if len(created) >= 19 else created
-            sender = str(item.get("sender") or "?")
-            recipient = str(item.get("recipient") or "?")
-            kind = str(item.get("kind") or "message")
-            unread = " *" if not item.get("read_at") else ""
-            header = f"{stamp} {sender} → {recipient} [{kind}]{unread}"
-            subject = str(item.get("subject") or "")
-            body = str(item.get("body") or "")
-            message_lines.append(header)
-            if subject:
-                message_lines.append(f"  {subject}")
-            if body:
-                message_lines.append("  " + body)
-            message_lines.append("")
-        set_text_content(coordination_messages, "\n".join(message_lines),
-                         "coordination_messages_text")
-
-        issue_lines = []
-        for item in issues:
-            issue_lines.extend((
-                f"{item.get('id')} {item.get('state')} {item.get('kind')} "
-                f"{item.get('priority')} owner={item.get('owner') or '-'}",
-                f"  {item.get('title') or item.get('summary') or ''}"))
-        set_text_content(coordination_issues, "\n".join(issue_lines),
-                         "coordination_issues_text")
-        root.after_idle(lambda: agent_canvas.yview_moveto(agent_scroll_position))
+        names_signature = tuple(names)
+        if names_signature != state["coordination_recipient_names"]:
+            menu = recipient_menu["menu"]
+            menu.delete(0, "end")
+            for name in names:
+                menu.add_command(label=name,
+                                 command=lambda value=name: recipient_var.set(value))
+            state["coordination_recipient_names"] = names_signature
+        state["coordination_render_in_progress"] = True
+        render_coordination_agent_chunk(
+            snapshot, agents, work_by_agent, 0, set(), agent_scroll_position)
 
     process_buttons = tk.Frame(content, bg=BLACK)
     process_buttons.grid(row=3, column=0, sticky="ew", pady=(3, 0))
@@ -1412,21 +1682,30 @@ def run(status_provider: Callable[[], dict],
     def update_gutter(first=None, last=None):
         if first is not None:
             output_scroll.set(first, last)
-        gutter.delete("all")
         try:
             line_height = max(1, int(output.tk.call("font", "metrics", output.cget("font"), "-linespace")))
             line_height += 1
+            height = max(1, output.winfo_height())
             y = 1
-            while y < max(1, output.winfo_height()):
+            visible_lines = []
+            while y < height:
                 index = output.index(f"@1,{y}")
                 line_number = int(index.split(".", 1)[0])
-                gutter.create_text(25, y, text=f"{line_number:02d}", anchor="ne",
-                                   fill=RED, font=(family, 11))
+                visible_lines.append((line_number, y))
                 y += line_height
+            signature = (height, tuple(visible_lines))
+            if signature == state["gutter_signature"]:
+                return
+            state["gutter_signature"] = signature
+            gutter.delete("all")
+            for line_number, line_y in visible_lines:
+                gutter.create_text(25, line_y, text=f"{line_number:02d}", anchor="ne",
+                                   fill=RED, font=(family, 11))
         except (tk.TclError, ValueError):
             pass
 
-    output.configure(yscrollcommand=update_gutter)
+    output.configure(yscrollcommand=lambda first, last: measure_ui_stage(
+        "gutter", lambda: update_gutter(first, last)))
     output.bind("<Configure>", lambda _event: update_gutter())
 
     action_status = label(content, "Ready", size=10)
@@ -1467,63 +1746,100 @@ def run(status_provider: Callable[[], dict],
         state["control_queue"].put(
             (action, dict(fields), press_epoch, launch_start))
 
+    def render_checkout_row(checkout, index):
+        checkout_id = str(checkout.get("checkout_id") or "")
+        if not checkout_id:
+            return
+        widgets = state["checkout_rows"].get(checkout_id)
+        if widgets is None:
+            row_frame = tk.Frame(checkout_rows_frame, bg=BLACK)
+            row_frame.grid_columnconfigure(1, weight=1)
+            name = label(row_frame, size=10, bold=True)
+            name.grid(row=0, column=0, sticky="w", padx=(2, 10))
+            detail = label(row_frame, size=10)
+            detail.grid(row=0, column=1, sticky="ew")
+            action_frame = tk.Frame(row_frame, bg=BLACK)
+            action_frame.grid(row=0, column=2, sticky="e", padx=(6, 2))
+            for action, caption in (("build", "Build"), ("launch", "Launch"),
+                                    ("start-server", "Server"), ("start-client", "Client")):
+                button(action_frame, caption,
+                       lambda selected=checkout_id, verb=action:
+                       send(verb, checkout_id=selected), width=8).pack(side="left", padx=1)
+            widgets = {"frame": row_frame, "name": name, "detail": detail,
+                       "row": None, "name_text": None, "detail_text": None,
+                       "detail_color": None}
+            state["checkout_rows"][checkout_id] = widgets
+        status = checkout.get("state") or {}
+        if not checkout.get("available"):
+            availability = str(checkout.get("availability") or "unavailable").upper()
+            headline, color = (f"{availability} · status not available", "#888888")
+        else:
+            try:
+                updated = datetime.fromisoformat(
+                    str(status.get("updated_at") or "").replace("Z", "+00:00"))
+                age = max(0.0, (datetime.now(timezone.utc) - updated).total_seconds())
+            except (TypeError, ValueError):
+                age = None
+            if age is None or age > 6.0:
+                headline, color = "STALE · status has not refreshed", "#ffcc00"
+            else:
+                build = str(status.get("build_status") or "build unknown").upper()
+                phase = str(status.get("active_build_phase") or "").replace("_", " ")
+                elapsed = status.get("active_build_elapsed_seconds")
+                elapsed_text = f" {int(float(elapsed))}s" if elapsed is not None else ""
+                instances = status.get("instances") or []
+                servers = sum(1 for item in instances if item.get("role") == "server"
+                              and item.get("state") not in ("offline", "stopped", "failed"))
+                clients = sum(1 for item in instances if item.get("role") == "client"
+                              and item.get("state") not in ("offline", "stopped", "failed"))
+                headline = (f"{build}{(' · ' + phase) if phase else ''}{elapsed_text}"
+                            f" · {servers} server(s) / {clients} client(s)")
+                color = RED if build in ("BUILDING", "FAILED", "ERROR") else GREEN
+        name_text = str(checkout.get("name") or checkout_id)
+        if widgets["name_text"] != name_text:
+            widgets["name"].configure(text=name_text)
+            widgets["name_text"] = name_text
+        if (widgets["detail_text"], widgets["detail_color"]) != (headline, color):
+            widgets["detail"].configure(text=headline, fg=color)
+            widgets["detail_text"], widgets["detail_color"] = headline, color
+        if widgets["row"] != index:
+            widgets["frame"].grid(row=index, column=0, sticky="ew", pady=1)
+            widgets["row"] = index
+
+    def render_checkout_chunk(checkouts, index, generation):
+        if state["closing"] or generation != state["checkout_render_generation"]:
+            return
+        started = time.perf_counter()
+        if index < len(checkouts):
+            render_checkout_row(checkouts[index], index)
+        elapsed_ms = round((time.perf_counter() - started) * 1000.0, 1)
+        if elapsed_ms >= 50.0:
+            log_dashboard_event(
+                "dashboard.stage.slow",
+                {"stage": "checkout_row", "duration_ms": elapsed_ms,
+                 "refresh_number": state["dashboard_refresh_count"]},
+                cooldown_key="last_stage_log_checkout_row", cooldown_seconds=2.0)
+        next_index = index + 1
+        if next_index < len(checkouts):
+            state["checkout_render_after_id"] = root.after(
+                1, lambda: render_checkout_chunk(checkouts, next_index, generation))
+            return
+        state["checkout_render_after_id"] = None
+        state["checkout_render_in_progress"] = False
+        checkout_rows_frame.grid_columnconfigure(0, weight=1)
+
     def render_checkout_rows(model: dict) -> None:
-        checkouts = model.get("checkouts") or []
+        if state["checkout_render_in_progress"]:
+            return
+        checkouts = list(model.get("checkouts") or [])
         checkout_ids = {str(item.get("checkout_id") or "") for item in checkouts}
         for checkout_id in list(state["checkout_rows"]):
             if checkout_id not in checkout_ids:
                 state["checkout_rows"].pop(checkout_id)["frame"].destroy()
-        for index, checkout in enumerate(checkouts):
-            checkout_id = str(checkout.get("checkout_id") or "")
-            if not checkout_id:
-                continue
-            widgets = state["checkout_rows"].get(checkout_id)
-            if widgets is None:
-                row_frame = tk.Frame(checkout_rows_frame, bg=BLACK)
-                row_frame.grid_columnconfigure(1, weight=1)
-                name = label(row_frame, size=10, bold=True)
-                name.grid(row=0, column=0, sticky="w", padx=(2, 10))
-                detail = label(row_frame, size=10)
-                detail.grid(row=0, column=1, sticky="ew")
-                action_frame = tk.Frame(row_frame, bg=BLACK)
-                action_frame.grid(row=0, column=2, sticky="e", padx=(6, 2))
-                for action, caption in (("build", "Build"), ("launch", "Launch"),
-                                        ("start-server", "Server"), ("start-client", "Client")):
-                    button(action_frame, caption,
-                           lambda selected=checkout_id, verb=action:
-                           send(verb, checkout_id=selected), width=8).pack(side="left", padx=1)
-                widgets = {"frame": row_frame, "name": name, "detail": detail}
-                state["checkout_rows"][checkout_id] = widgets
-            status = checkout.get("state") or {}
-            if not checkout.get("available"):
-                availability = str(checkout.get("availability") or "unavailable").upper()
-                headline, color = (f"{availability} · status not available", "#888888")
-            else:
-                try:
-                    updated = datetime.fromisoformat(
-                        str(status.get("updated_at") or "").replace("Z", "+00:00"))
-                    age = max(0.0, (datetime.now(timezone.utc) - updated).total_seconds())
-                except (TypeError, ValueError):
-                    age = None
-                if age is None or age > 6.0:
-                    headline, color = "STALE · status has not refreshed", "#ffcc00"
-                else:
-                    build = str(status.get("build_status") or "build unknown").upper()
-                    phase = str(status.get("active_build_phase") or "").replace("_", " ")
-                    elapsed = status.get("active_build_elapsed_seconds")
-                    elapsed_text = f" {int(float(elapsed))}s" if elapsed is not None else ""
-                    instances = status.get("instances") or []
-                    servers = sum(1 for item in instances if item.get("role") == "server"
-                                  and item.get("state") not in ("offline", "stopped", "failed"))
-                    clients = sum(1 for item in instances if item.get("role") == "client"
-                                  and item.get("state") not in ("offline", "stopped", "failed"))
-                    headline = (f"{build}{(' · ' + phase) if phase else ''}{elapsed_text}"
-                                f" · {servers} server(s) / {clients} client(s)")
-                    color = RED if build in ("BUILDING", "FAILED", "ERROR") else GREEN
-            widgets["name"].configure(text=checkout.get("name") or checkout_id)
-            widgets["detail"].configure(text=headline, fg=color)
-            widgets["frame"].grid(row=index, column=0, sticky="ew", pady=1)
-            checkout_rows_frame.grid_columnconfigure(0, weight=1)
+        state["checkout_render_generation"] += 1
+        generation = state["checkout_render_generation"]
+        state["checkout_render_in_progress"] = True
+        render_checkout_chunk(checkouts, 0, generation)
 
     def selected_process() -> dict | None:
         selected_key = state.get("selected_process_key")
@@ -1707,42 +2023,85 @@ def run(status_provider: Callable[[], dict],
         value.configure(cursor="hand2")
 
     def reflow(_event=None):
-        width, height = root.winfo_width(), root.winfo_height()
-        wide = width >= 760
-        expanded = width >= 620 or height >= 650
-        layout_changed = (wide, expanded) != (state["wide"], not state["compact"])
-        state["wide"], state["compact"] = wide, not expanded
-        card_wrap = max(240, (width - 36) // (2 if wide else 1) - 16)
-        for _card, value, detail in (
-                (running_card, running_value, running_detail),
-                (latest_card, latest_value, latest_detail),
-                (activity_card, phase_value, phase_detail),
-                (runtime_card, runtime_value, runtime_detail),
-                (scenario_card, scenario_value, scenario_detail)):
-            value.configure(wraplength=card_wrap)
-            detail.configure(wraplength=card_wrap)
-        subtitle.configure(wraplength=max(240, width - 30))
-        action_status.configure(wraplength=max(240, width - 30))
-        if not layout_changed:
+        state["reflow_after_id"] = None
+        if state["closing"]:
             return
-        for card in (running_card, latest_card, activity_card, runtime_card, scenario_card):
-            card.grid_forget()
-        if wide:
-            running_card.grid(row=0, column=0, sticky="ew", padx=(0, 3), pady=(0, 3))
-            latest_card.grid(row=0, column=1, sticky="ew", padx=(3, 0), pady=(0, 3))
-            activity_card.grid(row=1, column=0, sticky="ew", padx=(0, 3), pady=(0, 3))
-            runtime_card.grid(row=1, column=1, sticky="ew", padx=(3, 0), pady=(0, 3))
-        else:
-            running_card.grid(row=0, column=0, sticky="ew", pady=(0, 3))
-            latest_card.grid(row=1, column=0, sticky="ew", pady=(0, 3))
-            activity_card.grid(row=2, column=0, sticky="ew", pady=(0, 3))
-            runtime_card.grid(row=3, column=0, sticky="ew", pady=(0, 3))
-        if expanded:
-            scenario_card.grid(row=2 if wide else 4, column=0,
-                               columnspan=2 if wide else 1, sticky="ew")
-        for detail in (running_detail, latest_detail):
-            detail.configure(text=detail.full_text if expanded else detail.short_text)
-        root.after_idle(refresh)
+        started = time.perf_counter()
+        try:
+            width, height = root.winfo_width(), root.winfo_height()
+            size = (width, height)
+            if size == state["last_reflow_size"]:
+                return
+            state["last_reflow_size"] = size
+            wide = width >= 760
+            expanded = width >= 620 or height >= 650
+            layout_changed = (wide, expanded) != (
+                state["wide"], not state["compact"])
+            state["wide"], state["compact"] = wide, not expanded
+            card_wrap = max(240, (width - 36) // (2 if wide else 1) - 16)
+            if card_wrap != state["last_reflow_wrap"]:
+                for _card, value, detail in (
+                        (running_card, running_value, running_detail),
+                        (latest_card, latest_value, latest_detail),
+                        (activity_card, phase_value, phase_detail),
+                        (runtime_card, runtime_value, runtime_detail),
+                        (scenario_card, scenario_value, scenario_detail)):
+                    value.configure(wraplength=card_wrap)
+                    detail.configure(wraplength=card_wrap)
+                state["last_reflow_wrap"] = card_wrap
+            subtitle.configure(wraplength=max(240, width - 30))
+            action_status.configure(wraplength=max(240, width - 30))
+            if not layout_changed:
+                return
+            for card in (running_card, latest_card, activity_card,
+                         runtime_card, scenario_card):
+                card.grid_forget()
+            if wide:
+                running_card.grid(row=0, column=0, sticky="ew", padx=(0, 3), pady=(0, 3))
+                latest_card.grid(row=0, column=1, sticky="ew", padx=(3, 0), pady=(0, 3))
+                activity_card.grid(row=1, column=0, sticky="ew", padx=(0, 3), pady=(0, 3))
+                runtime_card.grid(row=1, column=1, sticky="ew", padx=(3, 0), pady=(0, 3))
+            else:
+                running_card.grid(row=0, column=0, sticky="ew", pady=(0, 3))
+                latest_card.grid(row=1, column=0, sticky="ew", pady=(0, 3))
+                activity_card.grid(row=2, column=0, sticky="ew", pady=(0, 3))
+                runtime_card.grid(row=3, column=0, sticky="ew", pady=(0, 3))
+            if expanded:
+                scenario_card.grid(row=2 if wide else 4, column=0,
+                                   columnspan=2 if wide else 1, sticky="ew")
+            for detail in (running_detail, latest_detail):
+                detail.configure(text=detail.full_text if expanded else detail.short_text)
+            if state["after_id"] is not None:
+                try:
+                    root.after_cancel(state["after_id"])
+                except tk.TclError:
+                    pass
+                state["after_id"] = None
+            if state["refresh_after_id"] is None:
+                state["refresh_after_id"] = root.after_idle(refresh)
+        except tk.TclError as error:
+            log_dashboard_event("dashboard.reflow.failed", {"error": str(error)[:200]},
+                                cooldown_key="last_reflow_error_log")
+        finally:
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 1)
+            if elapsed_ms >= 50.0:
+                log_dashboard_event("dashboard.reflow.slow",
+                                    {"duration_ms": elapsed_ms, "size": state["last_reflow_size"]},
+                                    cooldown_key="last_reflow_slow_log")
+
+    def schedule_reflow(event=None):
+        if state["closing"] or (event is not None and event.widget is not root):
+            return
+        if (event is not None and
+                (int(event.width), int(event.height)) == state["last_reflow_size"]):
+            return
+        pending = state["reflow_after_id"]
+        if pending is not None:
+            try:
+                root.after_cancel(pending)
+            except tk.TclError:
+                pass
+        state["reflow_after_id"] = root.after(50, reflow)
 
     def queue_process_scan_result(processes=None, error=""):
         state["process_scan_queue"].put((processes, error))
@@ -1878,7 +2237,8 @@ def run(status_provider: Callable[[], dict],
                        f"{clients} client(s) · {unverified} unverified")
             if state.get("process_scan_in_flight"):
                 summary += " · scan in progress"
-        process_summary.configure(text=summary)
+        if process_summary.cget("text") != summary:
+            process_summary.configure(text=summary)
 
         current_keys = {row["process_key"] for row in rows}
         for key in list(state["process_rows"]):
@@ -1918,12 +2278,18 @@ def run(status_provider: Callable[[], dict],
                     bd=0, highlightthickness=0, font=(family, 11),
                     command=lambda process_key=key:
                     state.__setitem__("selected_process_key", process_key))
-                state["process_rows"][key] = {"variable": variable, "widget": widget}
+                row_state = {"variable": variable, "widget": widget,
+                             "text": text, "row": None}
+                state["process_rows"][key] = row_state
             else:
                 widget = row_state["widget"]
-                widget.configure(text=text)
-            widget.grid(row=index, column=0, sticky="ew")
-            process_rows_frame.grid_columnconfigure(0, weight=1)
+                if row_state.get("text") != text:
+                    widget.configure(text=text)
+                    row_state["text"] = text
+            if row_state.get("row") != index:
+                widget.grid(row=index, column=0, sticky="ew")
+                row_state["row"] = index
+        process_rows_frame.grid_columnconfigure(0, weight=1)
         if not rows:
             if state.get("process_scan_error"):
                 empty_text = "Process scan unavailable"
@@ -1934,17 +2300,27 @@ def run(status_provider: Callable[[], dict],
             if not state.get("process_empty_label"):
                 state["process_empty_label"] = label(process_rows_frame, empty_text, size=10)
             else:
-                state["process_empty_label"].configure(text=empty_text)
-            state["process_empty_label"].grid(row=0, column=0, sticky="w")
+                if state["process_empty_label"].cget("text") != empty_text:
+                    state["process_empty_label"].configure(text=empty_text)
+            if not state.get("process_empty_visible"):
+                state["process_empty_label"].grid(row=0, column=0, sticky="w")
+                state["process_empty_visible"] = True
         elif state.get("process_empty_label"):
-            state["process_empty_label"].grid_forget()
+            if state.get("process_empty_visible"):
+                state["process_empty_label"].grid_forget()
+                state["process_empty_visible"] = False
 
     def update_game_queue_panel(model: dict) -> None:
-        game_headline, game_detail, progress = _game_dll_progress(
-            str(model.get("checkout") or ""))
+        snapshot = model.get("_game_queue_snapshot") or {}
+        game_headline = str(snapshot.get("headline") or "Game DLL: checking…")
+        game_detail = str(snapshot.get("detail") or "Reading root dev-loop game-build state")
+        progress = snapshot.get("progress") or {}
         game_build_value.configure(text=game_headline)
         game_build_detail.configure(text=game_detail)
-        summary, job_title, stamp, ratio = _game_dll_queue_view(model, progress)
+        summary = str(snapshot.get("summary") or "Checking build queue…")
+        job_title = str(snapshot.get("job_title") or "Queue detail")
+        stamp = str(snapshot.get("stamp") or "")
+        ratio = snapshot.get("ratio")
         game_queue_summary.configure(text=summary)
         job_color = RED if ("FAILED" in job_title or "NO PROGRESS" in job_title) else (
             "#ffcc00" if "SLOW" in job_title else (GREEN if "IDLE" in job_title else WHITE))
@@ -2133,21 +2509,24 @@ def run(status_provider: Callable[[], dict],
                         message or "Launch request was not accepted")
 
     def refresh() -> None:
-        apply_control_results()
+        state["refresh_after_id"] = None
+        state["after_id"] = None
+        if state["closing"]:
+            return
+        refresh_started = time.perf_counter()
+        measure_ui_stage("control_results", apply_control_results)
         if not state["frozen"]:
+            measure_ui_stage("status_result_apply", apply_status_refresh)
+            request_status_refresh()
             dashboard_scroll_position = body_canvas.yview()[0]
             try:
-                apply_process_scan_result()
-                model = status_provider() or {}
-                state["dashboard_refresh_monotonic"] = time.monotonic()
-                state["dashboard_refresh_count"] += 1
-                state["dashboard_refresh_utc"] = _utc_now_iso()
-                state["latest_model"] = model
-                render_checkout_rows(model)
-                render_runtimes(model)
-                render_coordination()
-                request_process_scan()
-                modes = _configured_launch_modes()
+                measure_ui_stage("process_scan_apply", apply_process_scan_result)
+                model = state.get("latest_model") or {}
+                measure_ui_stage("checkout_rows", lambda: render_checkout_rows(model))
+                measure_ui_stage("runtime_rows", lambda: render_runtimes(model))
+                measure_ui_stage("coordination_render", render_coordination)
+                measure_ui_stage("process_scan_request", request_process_scan)
+                modes = measure_ui_stage("configured_modes", _configured_launch_modes)
                 modes_changed = modes != state["launch_modes"]
                 if modes_changed:
                     state["launch_modes"] = modes
@@ -2308,7 +2687,8 @@ def run(status_provider: Callable[[], dict],
                     state["phase_color_mode"] = "rainbow"
                 phase_value.configure(text=phase_text, fg=phase_color)
 
-                update_game_queue_panel(model)
+                measure_ui_stage("game_queue_panel",
+                                 lambda: update_game_queue_panel(model))
 
                 runtime_value.configure(text=model.get("runtime", "Not running"),
                                          fg=GREEN if same_build else rainbow_color())
@@ -2326,7 +2706,7 @@ def run(status_provider: Callable[[], dict],
                     f"builds {'MATCH' if same_build else 'DIFFER'}"
                     + ("\n" + "\n".join(instance_lines) if instance_lines else "")
                 ))
-                render_process_rows(model)
+                measure_ui_stage("process_rows", lambda: render_process_rows(model))
                 mode = str(model.get("mode") or "—")
                 map_name = str(model.get("map") or "—")
                 mode_value.configure(text=mode, fg=rainbow_color())
@@ -2363,7 +2743,9 @@ def run(status_provider: Callable[[], dict],
                     except (OSError, ValueError):
                         pass
                 refresh_indicator.configure(
-                    text=(f"Updated {refresh_age}s ago  ·  "
+                    text=((f"Status read failed · {state['status_refresh_error'][:100]}  ·  "
+                           if state["status_refresh_error"] else "")
+                          + f"Updated {refresh_age}s ago  ·  "
                           f"{state['dashboard_refresh_utc']}  ·  "
                           f"GUI refresh #{state['dashboard_refresh_count']:06d}"))
                 source_summary.configure(
@@ -2385,8 +2767,10 @@ def run(status_provider: Callable[[], dict],
                 lines = build_lines + list(state["live_output"]) + activity_lines
                 if not lines:
                     lines = ["Waiting for build or contributor activity…"]
-                set_text_content(output, "\n".join(lines), "output_text")
-                update_gutter()
+                measure_ui_stage(
+                    "output_text",
+                    lambda: set_text_content(output, "\n".join(lines), "output_text"))
+                measure_ui_stage("gutter", update_gutter)
                 last_control = (pending_state.get("last_control")
                                 if pending_checkout_id != "main" else model.get("last_control")) or {}
                 pending_request = state.get("pending_request_id")
@@ -2407,15 +2791,31 @@ def run(status_provider: Callable[[], dict],
                 root.after_idle(lambda: body_canvas.yview_moveto(
                     dashboard_scroll_position))
             except Exception as error:
-                action_status.configure(text=f"Status refresh failed: {error}")
-        if state["after_id"] is not None:
-            try:
-                root.after_cancel(state["after_id"])
-            except tk.TclError:
-                pass
-        state["after_id"] = root.after(1000, refresh)
+                try:
+                    action_status.configure(text=f"Status refresh failed: {error}")
+                except tk.TclError:
+                    pass
+        refresh_ms = round((time.perf_counter() - refresh_started) * 1000.0, 1)
+        if refresh_ms >= 100.0:
+            log_dashboard_event(
+                "dashboard.refresh.slow", {"duration_ms": refresh_ms,
+                                            "refresh_number": state["dashboard_refresh_count"]},
+                cooldown_key="last_slow_refresh_log")
+        if not state["closing"]:
+            state["after_id"] = root.after(1000, refresh)
 
     def animate_values():
+        if state["closing"]:
+            return
+        now = time.monotonic()
+        previous = state["last_ui_heartbeat"]
+        state["last_ui_heartbeat"] = now
+        if previous is not None:
+            gap_ms = round(max(0.0, now - previous - 0.06) * 1000.0, 1)
+            if gap_ms >= 250.0:
+                log_dashboard_event(
+                    "dashboard.ui.stall", {"event_loop_gap_ms": gap_ms},
+                    cooldown_key="last_ui_stall_log")
         if not state["frozen"] and not state["minimized"]:
             color = rainbow_color()
             identity_color = GREEN if state["identity_match"] else color
@@ -2430,7 +2830,8 @@ def run(status_provider: Callable[[], dict],
             mode_value.configure(fg=color)
             map_value.configure(fg=color)
             scenario_value.configure(fg=color)
-        state["animation_id"] = root.after(60, animate_values)
+        if not state["closing"]:
+            state["animation_id"] = root.after(120, animate_values)
 
     mode_map = tk.Frame(runtime_card, bg=BLACK)
     mode_map.grid(row=3, column=0, sticky="ew")
@@ -2441,7 +2842,7 @@ def run(status_provider: Callable[[], dict],
     map_value = label(mode_map, "—", size=10, bold=True)
     map_value.grid(row=0, column=3, sticky="w", padx=(3, 0))
 
-    root.bind("<Configure>", reflow, add="+")
+    root.bind("<Configure>", schedule_reflow, add="+")
     def on_map(_event):
         state["minimized"] = False
         if os.name == "nt":
@@ -2481,8 +2882,8 @@ def run(status_provider: Callable[[], dict],
 
     root.protocol("WM_DELETE_WINDOW", close_view)
     root.bind("<Destroy>", lambda event: cleanup() if event.widget is root else None, add="+")
-    reflow()
-    refresh()
+    schedule_reflow()
+    state["refresh_after_id"] = root.after(0, refresh)
     animate_values()
     root.mainloop()
     return 0

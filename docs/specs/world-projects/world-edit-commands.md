@@ -17,6 +17,7 @@ default (`plane: xy`); Z repetition is opt-in.
 | `worldproject open <id> [version]` | Open a project working copy or version. |
 | `worldproject save [title]` | Save working map as an immutable version. |
 | `worldproject fork <source> <new-id> [version]` | Fork a version with lineage. |
+| `worldproject fork_live <new-id> [title]` | Save the current authored map as a new source version, then fork that version without switching the active live project. |
 | `worldproject versions <id>` | List versions. |
 | `worldproject export <id> <dir> [version]` | Export a verified package. |
 | `worldproject import <dir> [new-id]` | Import and verify a package. |
@@ -25,7 +26,7 @@ default (`plane: xy`); Z repetition is opt-in.
 | `worldproject migrate` | Migrate format-1 projects. |
 
 Journal: `world-project.created`, `opened`, `version-saved`, `forked`,
-`exported`, `imported`, `recovered`, `migrated`.
+`live-forked`, `exported`, `imported`, `recovered`, `migrated`.
 
 ## `worldedit`
 

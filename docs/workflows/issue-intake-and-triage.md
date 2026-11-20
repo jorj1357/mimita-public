@@ -29,9 +29,13 @@ document contains a TODO that needs clarification.
 2. Record the issue with the exact quote:
 
    ```text
-   python devscripts/agent-coord.py issue add "<title>" \
+   python devscripts/agent-issue.py --agent <name> --title "<title>" \
      --quote "<verbatim user report>" --source user --via <name> \
-     --kind bug --severity high
+     --kind bug --severity high --summary "<scope>" \
+     --reproduction "<steps>" --expected-behavior "<observable result>" \
+     --acceptance "<measurable pass>" --paths <paths> \
+     --evidence '{"source":"user"}' --risk "<risk>" \
+     --proof-expectation "<runtime event/journal>"
    ```
 
    For a TODO scan, use `--source docs` and put the path, line, and exact text

@@ -28,6 +28,16 @@
      "field": "completed", "equals": true},
     {"type": "event_field_equals", "event": "scenario.playback.completed",
      "field": "valid", "equals": true},
+    {"type": "event_count_at_least", "event": "collision.capsule-world.solve",
+     "minimum": 1},
+    {"type": "event_field_count_at_least",
+     "event": "collision.capsule-world.solve", "field": "arcade_mode",
+     "equals": true, "minimum": 1},
+    {"type": "event_field_count_at_least",
+     "event": "collision.capsule-world.solve", "field": "world_shape",
+     "equals": "root_capsule", "minimum": 1},
+    {"type": "event_count_at_least", "event": "collision.arcade_capsule.final",
+     "minimum": 1},
     {"type": "event_absent", "event": "collision.progress.stall"}
   ],
   "timeout_seconds": 240

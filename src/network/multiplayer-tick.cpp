@@ -2995,6 +2995,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         // capacities, avoiding one heap allocation per received datagram.
         static thread_local std::vector<ReceivedPacket> pkts;
         ctx.transport->poll(pkts);
+        // Keep transport-polled (ICE) traffic in the same receive counter as
+        // raw UDP datagrams; otherwise metrics report packets_received=0 while
+        // snapshots and other packets are being processed normally.
+        ctx.packetsReceived += pkts.size();
         badconn::processIncoming(pkts);
         processList(pkts);
         pkts.clear();

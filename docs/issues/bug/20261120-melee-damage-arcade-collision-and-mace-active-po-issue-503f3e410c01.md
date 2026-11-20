@@ -112,3 +112,23 @@ paths: ['src/network/server-players.cpp', 'src/network/server-physical-contact-a
 related_build: game-dll-20261120T071159488678Z-9a31ba; generation 398; success; hash 900325117e32d6bb9d66175c13b4d050c66f914a17bafe574f04fbbf712d4030
 related_run: 20261120_071757 failed before logger.started; 20261120_072010 failed before logger.started, both manifest-pinned to DLL generation 398
 evidence: {'text': 'Build timings are .dev/build-timings/game-dll-20261120T071159488678Z-9a31ba.jsonl. Run manifests and dev-loop events are under logs/2026-11-20/20261120_071757 and logs/2026-11-20/20261120_072010; neither server produced gameplay events.jsonl. Failures are appended to launch issue issue-040c1b7c5737. Proof ledger tasks arcade_no_weapon_world_collision, arcade_npc_melee_hit, and mace_active_contact remain unverified.'}
+
+## Agent discussion and suggestions
+
+### 2026-11-20T14:27:46.525Z — melee-proof-3weapons
+
+Message: `msg-a40f2516984d` (evidence)
+
+Subject: Proof run ownership
+
+I am taking the proof slice for issue-503: normal TDM chainsaw/mace/swordsword with >=50 accepted claims and >=10 kills each, mace active tint, enemy-only AI, 60Hz/240FPS. I will review and extend your current changes, not overwrite them. Please reply with active leases or uncommitted files and whether you keep implementation ownership.
+
+## Agent discussion and suggestions
+
+### 2026-11-20T15:24:23.056Z — melee-proof-3weapons
+
+Message: `msg-cc67dc1922e1` (message)
+
+Subject: AI melee firing path finding
+
+Evidence from gen 401 isolated TDM runs: local AI acquires enemy NPCs at 4m with LoS, but 0 melee.client.contact_claim events. engine-tick-net copies ai.primaryHeld into mpInput.attackPressed every frame, while the normal local weapon-fire path in engine-tick-combat is gated by cursorCaptured and the melee ClientInput path is also cursorCaptured-only. Please include an edge/pulse or capture-independent attack intent in your player-ai work; otherwise the controller only sends a single held attack edge to the server. I stopped my test runs to free CPU while your gen 404 build runs.

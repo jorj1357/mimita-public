@@ -99,6 +99,7 @@ def _cold_compiler_changes() -> list[str]:
 
 def _append_event(layout: RunLayout, event: str, fields: dict,
                   reason: str = "") -> None:
+    layout.dev_loop_journal.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "category": "GENERAL", "event": event,
         "event_id": f"DEV_RUNTIME_{uuid.uuid4().hex}",
@@ -110,6 +111,27 @@ def _append_event(layout: RunLayout, event: str, fields: dict,
     }
     with layout.dev_loop_journal.open("a", encoding="utf-8", newline="\n") as out:
         out.write(json.dumps(record, separators=(",", ":")) + "\n")
+
+
+def _open_run_log_lease(layout: RunLayout):
+    """Reserve this run folder before a game logger can acquire its lease."""
+    root = os.path.normcase(os.path.abspath(str(layout.run_dir.parent)))
+    path_hash = 1469598103934665603
+    for byte in root.encode("utf-8"):
+        path_hash = ((path_hash ^ byte) * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+    run_id = "".join(char if char.isalnum() or char in "_-" else "_"
+                     for char in layout.run_id)
+    name = f"Local\\MiMITA_v9_log_run_{path_hash:016x}_{run_id}"
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateEventW.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                                      ctypes.c_int, ctypes.c_wchar_p]
+    kernel32.CreateEventW.restype = ctypes.c_void_p
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_int
+    handle = kernel32.CreateEventW(None, 1, 0, name)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    return kernel32, handle
 
 
 def _artifact_for_build(build_id: str) -> tuple[Path, dict]:
@@ -418,6 +440,7 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
     mode = _launch_mode(launch_mode_id)
     map_name = _map_name(profile, mode, requested_map)
     layout = create_run_layout()
+    run_lease = _open_run_log_lease(layout)
     run_id = layout.run_id
     launch_id = datetime.datetime.now(datetime.timezone.utc).isoformat(
         timespec="milliseconds").replace("+00:00", "Z")
@@ -589,6 +612,8 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
                        "server_journal_path": str(layout.server_journal),
                        "client_journal_path": str(layout.client_journal)},
                       "isolated server/client pair connected and entered active mode")
+        run_lease[0].CloseHandle(run_lease[1])
+        run_lease = None
         return {"run_id": run_id, "run_dir": str(layout.run_dir),
                 "manifest_path": str(layout.manifest_path), "status": "online",
                 "build_identity": metadata, "instances": manifest["instances"],
@@ -615,6 +640,9 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
                       {"error": str(error), "server_pid": server.pid if server else None,
                        "client_pid": client.pid if client else None},
                       "isolated test run failed during readiness")
+        if run_lease is not None:
+            run_lease[0].CloseHandle(run_lease[1])
+            run_lease = None
         raise
 
 

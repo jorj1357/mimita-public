@@ -1117,6 +1117,16 @@ static void payloadRemoveCart(ServerGamemodeState& d)
     d.payloadCartEntityId = 0;
 }
 
+static nlohmann::json payloadTransformColumns(const glm::mat4& transform)
+{
+    nlohmann::json columns = nlohmann::json::array();
+    for (int column = 0; column < 4; ++column) {
+        columns.push_back({transform[column][0], transform[column][1],
+                           transform[column][2], transform[column][3]});
+    }
+    return columns;
+}
+
 static uint32_t payloadSpawnCart(ServerGamemodeState& d)
 {
     payloadRemoveCart(d);
@@ -1154,7 +1164,12 @@ static uint32_t payloadSpawnCart(ServerGamemodeState& d)
         StructuredCategory::Duel, StructuredLevel::Important,
         "payload.cart-spawned", std::to_string(id),
         "payload cart physical entity created", d.currentServerTick,
-        nlohmann::json{{"entity", id}, {"size", {size.x, size.y, size.z}}});
+        nlohmann::json{{"entity", id}, {"size", {size.x, size.y, size.z}},
+                       {"position", {d.payloadRuntime.cartPosition.x,
+                                      d.payloadRuntime.cartPosition.y,
+                                      d.payloadRuntime.cartPosition.z}},
+                       {"transform_columns",
+                        payloadTransformColumns(d.payloadRuntime.cartTransform)}});
     return id;
 }
 
@@ -3896,6 +3911,79 @@ static void serverPayloadTick(ServerGamemodeState& d,
         }
     }
 
+    // Correlate authoritative cart geometry with the actor poses resolved
+    // against it. Rate-limit to one event per wall-clock second so even a
+    // severely slow server emits useful samples; never serialize each tick.
+    // The sampled actor list is bounded to the first 64.
+    static uint64_t lastPayloadTraceMs = 0;
+    const uint64_t payloadTraceNowMs = nowMs();
+    if (lastPayloadTraceMs == 0 || payloadTraceNowMs - lastPayloadTraceMs >= 1000) {
+        lastPayloadTraceMs = payloadTraceNowMs;
+        const nlohmann::json cartMatrix =
+            payloadTransformColumns(d.payloadRuntime.cartTransform);
+        const glm::mat4 inverseCartTransform =
+            glm::inverse(d.payloadRuntime.cartTransform);
+        nlohmann::json actors = nlohmann::json::array();
+        constexpr std::size_t kPayloadTraceActorLimit = 64;
+        std::size_t sampledActors = 0;
+        for (const Npc& npc : npcSystem.all()) {
+            if (sampledActors >= kPayloadTraceActorLimit) break;
+            ++sampledActors;
+            const glm::vec3 relative = npc.body.pos - d.payloadRuntime.cartPosition;
+            const glm::vec3 cartLocal = glm::vec3(
+                inverseCartTransform * glm::vec4(npc.body.pos, 1.0f));
+            const float actorScale = std::max(0.05f, npc.body.sizeScale);
+            actors.push_back(nlohmann::json{
+                {"id", npc.id},
+                {"role", npc.actorPresetId},
+                {"origin_position", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+                {"cart_relative_world", {relative.x, relative.y, relative.z}},
+                {"cart_local_position", {cartLocal.x, cartLocal.y, cartLocal.z}},
+                {"velocity", {npc.body.vel.x, npc.body.vel.y, npc.body.vel.z}},
+                {"size_scale", npc.body.sizeScale},
+                {"capsule_radius_m", PLAYER_RADIUS * actorScale},
+                {"capsule_height_m", PLAYER_HEIGHT * actorScale},
+                {"grounded", npc.body.ground.onGround},
+                {"stable_grounded", npc.body.ground.stableOnGround},
+                {"world_contact", npc.body.ground.hasWorldContact},
+                {"support_entity", npc.body.collision.supportEntityId},
+                {"health", npc.body.currentHp}});
+        }
+        const glm::vec3 cartVelocity = d.payloadRuntime.cartDelta * 60.0f;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "payload.cart-trace", std::to_string(d.duelId),
+            "authoritative cart transform and same-tick NPC grounding sample", tick,
+            nlohmann::json{{"map", d.mapId},
+                           {"mode", d.matchMode},
+                           {"cart_entity", d.payloadCartEntityId},
+                           {"cart_position", {d.payloadRuntime.cartPosition.x,
+                                               d.payloadRuntime.cartPosition.y,
+                                               d.payloadRuntime.cartPosition.z}},
+                           {"cart_velocity_mps", {cartVelocity.x, cartVelocity.y,
+                                                   cartVelocity.z}},
+                           {"cart_delta_this_tick", {d.payloadRuntime.cartDelta.x,
+                                                      d.payloadRuntime.cartDelta.y,
+                                                      d.payloadRuntime.cartDelta.z}},
+                           {"cart_size", {d.payloadRuntime.cartSize.x,
+                                          d.payloadRuntime.cartSize.y,
+                                          d.payloadRuntime.cartSize.z}},
+                           {"distance_travelled", d.payloadRuntime.distanceTravelled},
+                           {"advancing", d.payloadRuntime.advancing},
+                           {"blocked", d.payloadRuntime.blocked},
+                           {"rolling_back", d.payloadRuntime.rollingBack},
+                           {"waiting", d.payloadRuntime.waiting},
+                           {"attackers", d.payloadRuntime.attackers},
+                           {"defenders", d.payloadRuntime.defenders},
+                           {"cart_transform_columns", std::move(cartMatrix)},
+                           {"npc_sample_count", actors.size()},
+                           {"npc_total_count", npcSystem.all().size()},
+                           {"npc_samples_truncated",
+                            npcSystem.all().size() > kPayloadTraceActorLimit},
+                           {"npcs", std::move(actors)}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     // Apply the fixed-tick healing result through the existing health owners.
     for (uint8_t i = 0; i < result.healedCount; ++i) {
         const uint32_t id = result.healedIds[i];
@@ -3991,7 +4079,19 @@ static void serverPayloadTick(ServerGamemodeState& d,
                            {"attackers", result.attackers},
                            {"defenders", result.defenders},
                            {"distance", d.payloadRuntime.distanceTravelled},
-                           {"overtime", d.payloadRuntime.overtimeActive}});
+                           {"overtime", d.payloadRuntime.overtimeActive},
+                           {"cart_entity", d.payloadCartEntityId},
+                           {"cart_position", {d.payloadRuntime.cartPosition.x,
+                                               d.payloadRuntime.cartPosition.y,
+                                               d.payloadRuntime.cartPosition.z}},
+                           {"cart_velocity_mps", {d.payloadRuntime.cartDelta.x * 60.0f,
+                                                   d.payloadRuntime.cartDelta.y * 60.0f,
+                                                   d.payloadRuntime.cartDelta.z * 60.0f}},
+                           {"cart_size", {d.payloadRuntime.cartSize.x,
+                                          d.payloadRuntime.cartSize.y,
+                                          d.payloadRuntime.cartSize.z}},
+                           {"cart_transform_columns",
+                            payloadTransformColumns(d.payloadRuntime.cartTransform)}});
     }
 }
 

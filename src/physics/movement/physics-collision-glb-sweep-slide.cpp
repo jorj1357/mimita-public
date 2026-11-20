@@ -12,7 +12,10 @@
 #include "physics/movement/physics-collision-glb-sweep.h"
 #include "physics/movement/physics-collision-glb-sweep-slide.h"
 #include "physics/movement/physics-scratch.h"
+#include "config/collision-config.h"
+#include "debug/structured-log.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cmath>
@@ -20,6 +23,7 @@
 #include <string>
 #include <unordered_set>
 #include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
 #include "physics/config.h"
 #include "world/world.h"
 #include "entities/player.h"
@@ -76,6 +80,7 @@ void doGLBSweepSlide(
     SweepSlideDiag diag;
     auto& scratch = physicsScratch();
     auto tSweepStart = std::chrono::steady_clock::now();
+    const glm::vec3 velocityAtStart = p.vel;
     constexpr float SURFACE_SLOP = 0.01f;
     constexpr float MAX_CORRECTION = 2.0f;
 
@@ -171,6 +176,9 @@ void doGLBSweepSlide(
     trace.maxCandidates = trace.initialCandidates;
 
     remainingMove = totalMove;
+    float remainingTickSeconds = dt;
+    int bounceDisplacementContacts = 0;
+    glm::vec3 bounceDisplacement(0.0f);
 
     auto& preMoveCandidates = scratch.ints2;
     preMoveCandidates.assign(candidates.begin(), candidates.end());
@@ -181,6 +189,7 @@ void doGLBSweepSlide(
 
     for (int iter = 0; iter < 5; ++iter)
     {
+        trace.sweepIterations = iter + 1;
         toiHits.clear();
         auto tIterStart = std::chrono::steady_clock::now();
         SweepHit earliest;
@@ -193,11 +202,65 @@ void doGLBSweepSlide(
             char iterTag[64];
             std::snprintf(iterTag, sizeof(iterTag), "Player_Capsule_SweepIter_%d", iter);
             gatherGLBTriangles(candidates, world, cap, remainingMove, iterTag);
+
+            // The legacy Arcade path bypasses the actor-triangle solver, so
+            // this capsule sweep is its only pre-move wall/floor guard. Keep
+            // every earliest-time contact: a corner needs both planes to
+            // constrain the remaining move, while later contacts belong to a
+            // subsequent iteration.
+            for (const int triIndex : candidates)
+            {
+                if (triIndex < 0 ||
+                    triIndex >= static_cast<int>(world.collisionMesh.triangles.size()))
+                    continue;
+
+                SweepHit hit;
+                if (!capsuleTriangleSweep(
+                        cap, remainingMove,
+                        world.collisionMesh.triangles[triIndex], triIndex, hit) ||
+                    !std::isfinite(hit.time) || hit.time < 0.0f || hit.time > 1.0f)
+                    continue;
+
+                // Arcade bypasses the actor-triangle solver, so route its
+                // capsule TOI through the same cached smooth-seam policy.
+                // Otherwise triangle edge normals can snag the capsule and
+                // feed a false direction into both slide and bounce response.
+                if (CollisionConfig::instance().arcadeCollision())
+                {
+                    glm::vec3 seamNormal(0.0f);
+                    if (smoothSeamNormalAt(world, triIndex, hit.point, seamNormal))
+                    {
+                        if (glm::dot(seamNormal, hit.normal) < 0.0f)
+                            seamNormal = -seamNormal;
+                        if (glm::dot(remainingMove, seamNormal) < -ALMOST_ZERO)
+                            hit.normal = seamNormal;
+                    }
+                }
+
+                if (hit.time < earliest.time - TOI_EPSILON)
+                {
+                    earliest = hit;
+                    toiHits.clear();
+                    toiHits.push_back(hit);
+                }
+                else if (std::fabs(hit.time - earliest.time) <= TOI_EPSILON)
+                {
+                    const bool duplicate = std::any_of(
+                        toiHits.begin(), toiHits.end(),
+                        [&hit](const SweepHit& existing) {
+                            return existing.triangleIndex == hit.triangleIndex;
+                        });
+                    if (!duplicate)
+                        toiHits.push_back(hit);
+                }
+            }
             auto t1 = std::chrono::steady_clock::now();
             diag.sweepMs += std::chrono::duration<float, std::milli>(t1 - t0).count();
         }
 
         glm::vec3 stepMove = remainingMove * earliest.time;
+        const float nextRemainingSeconds = remainingTickSeconds *
+            std::clamp(1.0f - earliest.time, 0.0f, 1.0f);
 
         LOG_COLLISION(
             "sweep_step",
@@ -245,10 +308,37 @@ void doGLBSweepSlide(
 
         trace.sweepHits++;
         trace.maxSimultaneousTOI = std::max(trace.maxSimultaneousTOI, (int)toiHits.size());
-        for (const SweepHit& hit : toiHits)
+        for (size_t hitIndex = 0; hitIndex < toiHits.size(); ++hitIndex)
         {
+            const SweepHit& hit = toiHits[hitIndex];
             if (hit.triangleIndex < 0 || hit.triangleIndex >= (int)world.collisionMesh.triangles.size())
                 continue;
+
+            // A real swept capsule impact must reach the configured bounce
+            // response here; waiting for post-move depenetration only projects
+            // velocity on a clean TOI stop. Fold coplanar seam triangles into
+            // one impact, while retaining distinct corner planes.
+            bool duplicateSurfaceNormal = false;
+            for (size_t previousIndex = 0; previousIndex < hitIndex; ++previousIndex)
+            {
+                if (glm::dot(toiHits[previousIndex].normal, hit.normal) > 0.9995f)
+                {
+                    duplicateSurfaceNormal = true;
+                    break;
+                }
+            }
+            if (!duplicateSurfaceNormal)
+            {
+                const bool groundedSupport =
+                    (p.ground.onGround || p.ground.stableOnGround || groundedThisFrame) &&
+                    hit.normal.z > 0.995f;
+                if (groundedSupport)
+                    projectVelocityAgainstNormal(p, hit.normal);
+                else
+                    respondVelocityAgainstNormal(
+                        p, hit.normal, glm::vec3(0.0f), false, 0.0f,
+                        "root_capsule", hit.triangleIndex);
+            }
 
             const char* feature = triangleFeatureLabel(world.collisionMesh.triangles[hit.triangleIndex], hit.point);
             if (feature[0] == 'f')
@@ -308,93 +398,102 @@ void doGLBSweepSlide(
                                    originalPos.x, originalPos.y, originalPos.z);
                     p.pos = originalPos;
                     p.updateModelWorldTransforms();
-                    continue;
+                    LOG_COLLISION("step_blocked", "[STEP] fallback to slide stepH=%.3f reason=inconsistent_samples",
+                                  stepHeight);
                 }
-
-                p.pos.z += stepHeight + 0.01f;
-
-                p.updateModelWorldTransforms();
-
-                Capsule stepCap = p.getCapsule();
-
-                bool blocked = false;
-
-                for (int triIndex : candidates)
+                else
                 {
-                    const CollisionTriangle& tri =
-                        world.collisionMesh.triangles[triIndex];
+                    p.pos.z += stepHeight + 0.01f;
 
-                    Contact c;
+                    p.updateModelWorldTransforms();
 
-                    if (capsuleTriangleContact(
-                        stepCap,
-                        tri,
-                        triIndex,
-                        c))
+                    Capsule stepCap = p.getCapsule();
+
+                    bool blocked = false;
+
+                    for (int triIndex : candidates)
                     {
-                        if (c.normal.z < 0.5f)
-                        // 7 1 2026 colisions borken fixes testing again 
-                        // if (c.normal.z < 1.1f)
-                        {
-                            blocked = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-                    Debug::log(Debug::Category::Collision, "[COLL]   stepUp: blocked=%d", (int)blocked);
-
-                if (!blocked)
-                {
-                    Capsule checkCap = stepCap;
-                    checkCap.a.z -= 0.3f;
-                    checkCap.b.z -= 0.3f;
-                    bool hasFloor = false;
-                    for (int triIndex : candidates) {
                         const CollisionTriangle& tri =
                             world.collisionMesh.triangles[triIndex];
-                        Contact fc;
-                        if (capsuleTriangleContact(checkCap, tri, triIndex, fc)) {
-                            if (fc.normal.z >= MAX_WALKABLE_SLOPE_DOT) {
-                                hasFloor = true;
+
+                        Contact c;
+
+                        if (capsuleTriangleContact(
+                            stepCap,
+                            tri,
+                            triIndex,
+                            c))
+                        {
+                            if (c.normal.z < 0.5f)
+                            // 7 1 2026 colisions borken fixes testing again 
+                            // if (c.normal.z < 1.1f)
+                            {
+                                blocked = true;
                                 break;
                             }
                         }
                     }
 
                     if (DebugConfig::DEBUG_COLLISION_SYSTEM)
-                        Debug::log(Debug::Category::Collision, "[COLL]   stepUp: hasFloor=%d\n", (int)hasFloor);
+                        Debug::log(Debug::Category::Collision, "[COLL]   stepUp: blocked=%d", (int)blocked);
 
-                    if (!hasFloor) {
+                    if (!blocked)
+                    {
+                        Capsule checkCap = stepCap;
+                        checkCap.a.z -= 0.3f;
+                        checkCap.b.z -= 0.3f;
+                        bool hasFloor = false;
+                        for (int triIndex : candidates) {
+                            const CollisionTriangle& tri =
+                                world.collisionMesh.triangles[triIndex];
+                            Contact fc;
+                            if (capsuleTriangleContact(checkCap, tri, triIndex, fc)) {
+                                if (fc.normal.z >= MAX_WALKABLE_SLOPE_DOT) {
+                                    hasFloor = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (DebugConfig::DEBUG_COLLISION_SYSTEM)
+                            Debug::log(Debug::Category::Collision, "[COLL]   stepUp: hasFloor=%d\n", (int)hasFloor);
+
+                        if (!hasFloor) {
+                            LOG_COLLISION("step_blocked", "[STEP] fallback to slide stepH=%.3f reason=no_landing",
+                                          stepHeight);
+                            p.pos = originalPos;
+                            p.updateModelWorldTransforms();
+                        }
+                        else
+                        {
+                            groundedThisFrame = true;
+                            appendPlayerMovementContact(
+                                p,
+                                MovementContactKind::Step,
+                                earliest.normal,
+                                earliest.point,
+                                SURFACE_SLOP,
+                                earliest.triangleIndex);
+
+                            if (p.vel.z < 0.0f)
+                                p.vel.z = 0.0f;
+
+                            remainingMove -= stepMove;
+                            remainingTickSeconds = nextRemainingSeconds;
+
+                            LOG_COLLISION("step_success", "[STEP] succeeded stepH=%.3f remaining=(%.4f,%.4f,%.4f)",
+                                          stepHeight, remainingMove.x, remainingMove.y, remainingMove.z);
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        LOG_COLLISION("step_blocked", "[STEP] fallback to slide stepH=%.3f reason=blocked",
+                                      stepHeight);
                         p.pos = originalPos;
                         p.updateModelWorldTransforms();
-                        continue;
                     }
-
-                    groundedThisFrame = true;
-                    appendPlayerMovementContact(
-                        p,
-                        MovementContactKind::Step,
-                        earliest.normal,
-                        earliest.point,
-                        SURFACE_SLOP,
-                        earliest.triangleIndex);
-
-                    if (p.vel.z < 0.0f)
-                        p.vel.z = 0.0f;
-
-                    remainingMove -= stepMove;
-
-                    LOG_COLLISION("step_success", "[STEP] succeeded stepH=%.3f remaining=(%.4f,%.4f,%.4f)",
-                                  stepHeight, remainingMove.x, remainingMove.y, remainingMove.z);
-                    continue;
                 }
-
-                LOG_COLLISION("step_blocked", "[STEP] blocked stepH=%.3f reason=no_landing_or_blocked",
-                              stepHeight);
-                p.pos = originalPos;
-                p.updateModelWorldTransforms();
             }
         }
         // SEAM TRANSITION: when the sweep hits a non-walkable surface (edge, backface,
@@ -442,6 +541,7 @@ void doGLBSweepSlide(
                         remainingMove -= walkTri.normal * vn;
                     p.pos.z += 0.01f;
                     p.updateModelWorldTransforms();
+                    remainingTickSeconds = nextRemainingSeconds;
                     LOG_COLLISION("seam", "[SEAM] edgeTri=%d edgeN=(%.3f,%.3f,%.3f) walkTri=%d walkN=(%.3f,%.3f,%.3f)"
                                   " score=%.3f remaining=(%.4f,%.4f,%.4f) walkableCand=%d totalCand=%d",
                                   earliest.triangleIndex,
@@ -491,9 +591,33 @@ void doGLBSweepSlide(
             remainingMove -= stepMove;
             for (const SweepHit& hit : toiHits) {
                 float vn = glm::dot(remainingMove, hit.normal);
-                if (vn < 0.0f)
+                if (vn >= 0.0f)
+                    continue;
+
+                const bool groundedSupport =
+                    (p.ground.onGround || p.ground.stableOnGround || groundedThisFrame) &&
+                    hit.normal.z > 0.995f;
+                const float outwardSpeed = glm::dot(
+                    p.vel + p.externalImpulse, hit.normal);
+                if (!groundedSupport && outwardSpeed > 0.001f &&
+                    nextRemainingSeconds > 0.0f)
+                {
+                    // Keep the tangential part of the swept remainder, but
+                    // carry the configured root-capsule rebound through the
+                    // unused fraction of this fixed tick. The next sweep still
+                    // clips it against any corner plane before moving.
+                    const float reboundDistance =
+                        outwardSpeed * nextRemainingSeconds;
+                    remainingMove += hit.normal * (reboundDistance - vn);
+                    bounceDisplacement += hit.normal * reboundDistance;
+                    ++bounceDisplacementContacts;
+                }
+                else
+                {
                     remainingMove -= hit.normal * vn;
+                }
             }
+            remainingTickSeconds = nextRemainingSeconds;
             LOG_COLLISION("slide_proj", "[SLIDE] before=(%.4f,%.4f,%.4f) after=(%.4f,%.4f,%.4f) stepMove=(%.4f,%.4f,%.4f) hitNormal=(%.3f,%.3f,%.3f)",
                           beforeSlide.x, beforeSlide.y, beforeSlide.z,
                           remainingMove.x, remainingMove.y, remainingMove.z,
@@ -574,4 +698,181 @@ void doGLBSweepSlide(
         trace.sweepIterations, trace.sweepHits, trace.maxSimultaneousTOI,
         diag.stepUpAttempts, diag.seamTransitions,
         diag.broadphaseMs, diag.bodyExtraMs, diag.sweepMs);
+
+    // A bounded structured sample ties the fixed-tick input to the capsule
+    // solver's actual contacts and resulting motion. It is the runtime evidence
+    // for the Arcade path; verbose per-triangle tracing remains opt-in.
+    static thread_local auto sLastCapsuleSummary =
+        std::chrono::steady_clock::time_point{};
+    const auto now = std::chrono::steady_clock::now();
+    if ((trace.sweepHits > 0 || trace.maxSlideContacts > 0) &&
+        now - sLastCapsuleSummary >= std::chrono::seconds(1))
+    {
+        sLastCapsuleSummary = now;
+        trace.finalPos = p.pos;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Collision, StructuredLevel::Important,
+            "collision.capsule-world.solve", p.username,
+            "fixed-tick root capsule sweep and slide result",
+            static_cast<uint32_t>(p.movementSimulationTick),
+            nlohmann::json{
+                {"arcade_mode", CollisionConfig::instance().arcadeCollision()},
+                {"world_shape", "root_capsule"},
+                {"start_position", {trace.startPos.x, trace.startPos.y,
+                                      trace.startPos.z}},
+                {"final_position", {p.pos.x, p.pos.y, p.pos.z}},
+                {"input_move", {totalMove.x, totalMove.y, totalMove.z}},
+                {"velocity_before", {velocityAtStart.x, velocityAtStart.y,
+                                      velocityAtStart.z}},
+                {"velocity_after", {p.vel.x, p.vel.y, p.vel.z}},
+                {"bounce_displacement_contacts", bounceDisplacementContacts},
+                {"bounce_displacement", {bounceDisplacement.x,
+                                           bounceDisplacement.y,
+                                           bounceDisplacement.z}},
+                {"candidate_triangles", trace.maxCandidates},
+                {"sweep_iterations", trace.sweepIterations},
+                {"sweep_hits", trace.sweepHits},
+                {"simultaneous_toi_contacts", trace.maxSimultaneousTOI},
+                {"slide_contacts", trace.maxSlideContacts},
+                {"face_hits", trace.faceHits},
+                {"edge_hits", trace.edgeHits},
+                {"vertex_hits", trace.vertexHits},
+                {"solve_ms", sweepTotalMs}}
+            , __FILE__, __LINE__, __FUNCTION__);
+    }
+
+    // The legacy no-progress event was emitted only by the actor-triangle
+    // solver, which Arcade deliberately bypasses. Reuse the actor's existing
+    // collision counters here so the same stall contract covers the capsule
+    // backend and the Dust2 regression route cannot pass vacuously.
+    if (CollisionConfig::instance().arcadeCollision())
+    {
+        CollisionState& collision = p.collision;
+        const uint64_t tick = p.movementSimulationTick;
+        const float requestedH =
+            glm::length(glm::vec2(totalMove.x, totalMove.y));
+        const float achievedH = glm::length(glm::vec2(
+            p.pos.x - trace.startPos.x, p.pos.y - trace.startPos.y));
+        const float horizontalSpeed = glm::length(glm::vec2(p.vel.x, p.vel.y));
+        const bool wantsMove = glm::length(p.inputWishMove) > 0.1f;
+        const bool supported = groundedThisFrame || p.ground.onGround;
+        const bool hasWorldContact = trace.sweepHits > 0 ||
+                                     trace.maxRecoveryContacts > 0;
+
+        if (tick != collision.progressStallLastTick)
+        {
+            collision.progressStallLastTick = tick;
+            if (wantsMove && supported && hasWorldContact &&
+                horizontalSpeed < 0.5f && requestedH > 0.01f &&
+                achievedH < 0.002f)
+            {
+                if (collision.progressStallTicks == 0)
+                {
+                    collision.progressStallStartTick = tick;
+                    collision.progressStallAnchor = trace.startPos;
+                }
+                ++collision.progressStallTicks;
+            }
+            else if (collision.progressStallTicks > 0)
+            {
+                if (collision.progressStallTicks >= 10)
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Collision, StructuredLevel::Important,
+                        "collision.progress.stall.end", "arcade-capsule",
+                        "Arcade capsule resumed horizontal progress",
+                        static_cast<uint32_t>(tick),
+                        {{"actor", p.username},
+                         {"stalled_ticks", collision.progressStallTicks},
+                         {"stall_start_tick", collision.progressStallStartTick},
+                         {"stall_anchor", {collision.progressStallAnchor.x,
+                                            collision.progressStallAnchor.y,
+                                            collision.progressStallAnchor.z}},
+                         {"position", {p.pos.x, p.pos.y, p.pos.z}},
+                         {"velocity", {p.vel.x, p.vel.y, p.vel.z}}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+                collision.progressStallTicks = 0;
+            }
+        }
+
+        if (collision.progressStallTicks >= 10 &&
+            (collision.progressStallTicks == 10 ||
+             tick - collision.progressStallLastLogTick >= 60))
+        {
+            collision.progressStallLastLogTick = tick;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "collision.progress.stall", "arcade-capsule",
+                "input held but Arcade root capsule made no horizontal progress",
+                static_cast<uint32_t>(tick),
+                {{"actor", p.username},
+                 {"equipped_weapon", p.equippedWeaponId},
+                 {"arcade_mode", true},
+                 {"world_shape", "root_capsule"},
+                 {"stalled_ticks", collision.progressStallTicks},
+                 {"stall_start_tick", collision.progressStallStartTick},
+                 {"stall_anchor", {collision.progressStallAnchor.x,
+                                    collision.progressStallAnchor.y,
+                                    collision.progressStallAnchor.z}},
+                 {"position", {p.pos.x, p.pos.y, p.pos.z}},
+                 {"velocity", {p.vel.x, p.vel.y, p.vel.z}},
+                 {"wish", {p.inputWishMove.x, p.inputWishMove.y}},
+                 {"requested_horizontal_m", requestedH},
+                 {"achieved_horizontal_m", achievedH},
+                 {"grounded", supported},
+                 {"contact_count", trace.maxRecoveryContacts},
+                 {"sweep_hits", trace.sweepHits},
+                 {"simultaneous_toi_contacts", trace.maxSimultaneousTOI},
+                 {"slide_contacts", trace.maxSlideContacts},
+                 {"likely_corner_stop", trace.maxSimultaneousTOI >= 2 ||
+                                            trace.maxSlideContacts >= 2}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+
+        const glm::vec3 velocityBefore = velocityAtStart + p.externalImpulse;
+        const glm::vec3 velocityAfter = p.vel + p.externalImpulse;
+        const float speedBefore = glm::length(velocityBefore);
+        const float speedAfter = glm::length(velocityAfter);
+        const float horizontalSpeedBefore = glm::length(
+            glm::vec2(velocityBefore.x, velocityBefore.y));
+        const bool speedCollapsed = hasWorldContact &&
+            !p.freeze.freezeActive && speedBefore > 1.0f &&
+            speedAfter < speedBefore * 0.1f;
+        if (!speedCollapsed)
+        {
+            collision.speedCollapseEpisodeActive = false;
+        }
+        else if (!collision.speedCollapseEpisodeActive ||
+                 tick - collision.speedCollapseLastLogTick >= 30)
+        {
+            collision.speedCollapseEpisodeActive = true;
+            collision.speedCollapseLastLogTick = tick;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "collision.speed_collapse", "arcade-capsule",
+                "Arcade capsule speed dropped by more than 90 percent in one fixed tick",
+                static_cast<uint32_t>(tick),
+                {{"actor", p.username},
+                 {"position", {p.pos.x, p.pos.y, p.pos.z}},
+                 {"velocity_before", {velocityBefore.x, velocityBefore.y,
+                                       velocityBefore.z}},
+                 {"velocity_after", {velocityAfter.x, velocityAfter.y,
+                                      velocityAfter.z}},
+                 {"speed_before", speedBefore},
+                 {"speed_after", speedAfter},
+                 {"horizontal_speed_before", horizontalSpeedBefore},
+                 {"horizontal_speed_after", glm::length(glm::vec2(
+                      velocityAfter.x, velocityAfter.y))},
+                 {"wish", {p.inputWishMove.x, p.inputWishMove.y}},
+                 {"grounded", supported},
+                 {"likely_corner_stop", trace.maxSimultaneousTOI >= 2 ||
+                                            trace.maxSlideContacts >= 2},
+                 {"simultaneous_toi_contacts", trace.maxSimultaneousTOI},
+                 {"slide_contacts", trace.maxSlideContacts},
+                 {"sweep_hits", trace.sweepHits},
+                 {"recovery_contacts", trace.maxRecoveryContacts}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 }
