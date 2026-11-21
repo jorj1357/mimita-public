@@ -536,6 +536,15 @@ The editor exposes two property groups with units and actual runtime meaning:
   distinction between generated, collision-loaded, and visually represented
   radii; they are not one interchangeable distance.
 
+Selecting a generation zone also exposes its origin, cell size, stream radius,
+and repeat axes in the property panel. Origin and cell size are in meters. The
+radius label follows spacing mode (`m` for connector spacing, cells for center
+spacing); `0` means the world streaming default. X/Y/Z repeat toggles update
+the map zone and its matching worldgen profile together. For Infinite XXITY,
+Z means stacked street or district levels. A Z-repeating zone needs compatible
+up/down chunk connectors and authored geometry that gives players a traversable
+route between levels; enablement alone must not imply a connected city.
+
 The Infinite XXITY acceptance profile uses a 1,000 m horizontal world radius
 and a 1,000 m/s fast-travel stress segment with at least one live NPC. It must
 not attempt to keep every 10 m city chunk at full detail inside that entire

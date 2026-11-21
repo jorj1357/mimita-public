@@ -234,6 +234,43 @@ def _age_text(value: str) -> str:
     return f"{seconds // 3600}h ago"
 
 
+def _timestamp_elapsed(value: object, now: datetime | None = None) -> float | None:
+    """Return live seconds since an ISO UTC timestamp, or None if unavailable."""
+    try:
+        then = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if then.tzinfo is None:
+            then = then.replace(tzinfo=timezone.utc)
+        return max(0.0, ((now or datetime.now(timezone.utc)) - then).total_seconds())
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_duration(seconds: float) -> str:
+    tenths = max(0, int(float(seconds) * 10))
+    hours, remainder = divmod(tenths, 36_000)
+    minutes, remainder = divmod(remainder, 600)
+    whole, decimal = divmod(remainder, 10)
+    return (f"{hours:02d}:{minutes:02d}:{whole:02d}.{decimal}"
+            if hours else f"{minutes:02d}:{whole:02d}.{decimal}")
+
+
+def _timeline_stage_start(progress: dict, phase: str) -> str | None:
+    timeline = progress.get("timeline")
+    if not isinstance(timeline, list):
+        return None
+    for item in reversed(timeline):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("phase") or item.get("stage") or "").lower()
+        event = str(item.get("event") or "").lower()
+        state = str(item.get("state") or "").lower()
+        if name == phase and (state == "started" or event.endswith(".started")):
+            stamp = item.get("time_utc") or item.get("started_utc")
+            if stamp:
+                return str(stamp)
+    return None
+
+
 def _short_text(value: object, limit: int = 160) -> str:
     text = " ".join(str(value or "").split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
@@ -415,8 +452,6 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
     phase = str(progress.get("phase") or progress_status or "unknown").upper()
     scan_phase = str(progress.get("scan_phase") or "").lower()
     active = progress_status in ("preparing", "running")
-    elapsed = progress.get("elapsed_s", progress.get("total_s"))
-    elapsed_text = f"{float(elapsed):.1f}s elapsed" if isinstance(elapsed, (int, float)) else "elapsed unavailable"
     revision = str(progress.get("revision") or "—")
     current_revision = str(current.get("revision") or "")
     source_count = int(progress.get("total") or 0)
@@ -439,15 +474,14 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
         completed = max(completed, source_count)
     percent = min(100, round(completed * 100 / source_count)) if source_count > 0 else None
     if progress.get("no_op") or progress_status == "no_op":
-        headline = f"Game DLL: NO-OP · published generation reused  ·  {elapsed_text}"
+        headline = "Game DLL: NO-OP · published generation reused"
     elif scan_phase == "dependency_prepass":
         parsed_text = f"{scan_parsed}/{scan_total}" if scan_total else str(scan_parsed)
-        headline = (f"Game DLL: DEPENDENCY PREPASS {parsed_text}  ·  "
-                    f"{health}  ·  {elapsed_text}")
+        headline = f"Game DLL: DEPENDENCY PREPASS {parsed_text}  ·  {health}"
     elif active and percent is not None:
         headline = f"Game DLL: {phase} {completed}/{source_count} ({percent}%)  ·  {health}"
     else:
-        headline = f"Game DLL: {phase}  ·  {health}  ·  {elapsed_text}"
+        headline = f"Game DLL: {phase}  ·  {health}"
 
     details = [
         f"live: {health} · last progress {progress_age_text} ago",
@@ -564,12 +598,36 @@ def _game_dll_queue_view(model: dict, progress: dict) -> tuple[str, str, str, fl
 
     phase = str(progress.get("phase") or daemon_status or "idle").replace("_", " ").upper()
     elapsed = progress.get("elapsed_s")
-    elapsed_text = f"{float(elapsed):.1f}s elapsed" if isinstance(elapsed, (int, float)) else "elapsed unavailable"
-    total = elapsed if isinstance(elapsed, (int, float)) else game_build.get("last_duration_seconds")
-    timer = (f"G{generation}  ·  {float(total):.1f}s  ·  {'RUNNING' if active else 'TOTAL'}"
-             if generation and isinstance(total, (int, float))
-             else f"G{generation}  ·  {elapsed_text}" if generation
-             else f"DLL build  ·  {elapsed_text}")
+    now = datetime.now(timezone.utc)
+    total = _timestamp_elapsed(progress.get("started_utc"), now) if active else None
+    if total is None and isinstance(elapsed, (int, float)):
+        total = float(elapsed)
+        if active:
+            total += _timestamp_elapsed(progress.get("updated_utc"), now) or 0.0
+    if total is None:
+        total = game_build.get("last_duration_seconds")
+    total_text = (_format_duration(float(total)) if isinstance(total, (int, float))
+                  else "unavailable")
+
+    phase_started = (progress.get("phase_started_utc")
+                     or _timeline_stage_start(progress, str(progress.get("phase") or "").lower()))
+    phase_elapsed = _timestamp_elapsed(phase_started, now) if active else None
+    if phase_elapsed is None and isinstance(progress.get("phase_elapsed_ms"), (int, float)):
+        phase_elapsed = float(progress["phase_elapsed_ms"]) / 1000.0
+    phase_text = _format_duration(phase_elapsed) if phase_elapsed is not None else "not reported"
+    subphase = str(progress.get("subphase") or "").strip()
+    subphase_elapsed = (_timestamp_elapsed(progress.get("subphase_started_utc"), now)
+                        if active and subphase else None)
+    if subphase_elapsed is None and subphase and isinstance(
+            progress.get("subphase_elapsed_ms"), (int, float)):
+        subphase_elapsed = float(progress["subphase_elapsed_ms"]) / 1000.0
+    timer = (f"G{generation}  ·  ATTEMPT {total_text}  ·  {'RUNNING' if active else 'TOTAL'}"
+             if generation else f"DLL build  ·  ATTEMPT {total_text}  ·  {'RUNNING' if active else 'TOTAL'}")
+    timer += f"\nPHASE {phase} {phase_text}"
+    if subphase:
+        subphase_text = (_format_duration(subphase_elapsed)
+                         if subphase_elapsed is not None else "duration not reported")
+        timer += f"  ·  SUBPHASE {subphase} {subphase_text}"
     updated = str(progress.get("last_progress_utc")
                   or progress.get("updated_utc")
                   or model.get("updated_at") or "unknown")
@@ -590,7 +648,7 @@ def _game_dll_queue_view(model: dict, progress: dict) -> tuple[str, str, str, fl
         ratio = min(1.0, max(0.0, completed / total))
         text = f"{phase}  ·  {completed}/{total} source units  ·  {round(ratio * 100)}%"
     elif active:
-        text = f"{phase}  ·  elapsed {elapsed_text}  ·  no completion percentage for this phase"
+        text = f"{phase}  ·  no completion percentage for this phase"
     else:
         text = job_title
     return queue_summary, job_title, stamp + "\n" + text, ratio, timer

@@ -179,6 +179,14 @@ public:
     bool setSelectedScale(const glm::vec3& scale);
     bool setSelectedChunkConnectorField(const std::string& field,
                                         const std::string& value);
+    bool setGenerationZoneOrigin(const std::string& zoneId,
+                                 const glm::vec3& origin);
+    bool setGenerationZoneCellSize(const std::string& zoneId,
+                                   const glm::vec3& cellSize);
+    bool setGenerationZoneStreamRadius(const std::string& zoneId,
+                                      const glm::ivec3& radius);
+    bool setGenerationZoneRepeatAxes(const std::string& zoneId,
+                                     const glm::ivec3& repeatAxes);
     bool setSelectedRouteCheckpoint(bool checkpoint);
     bool setSelectedRouteFinal(bool final);
     bool setSelectedRouteEnabled(bool enabled);

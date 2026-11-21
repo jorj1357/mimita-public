@@ -26,8 +26,10 @@ import hashlib
 import json
 import os
 import sys
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -235,14 +237,41 @@ class OwnerResolver:
 
 
 def build_manifest(root: Path, resolver: OwnerResolver | None = None,
-                   hash_cache: dict | None = None) -> dict:
+                   hash_cache: dict | None = None,
+                   progress_callback: Callable[[dict], None] | None = None) -> dict:
+    def report(name: str, state: str, started: float, **fields) -> None:
+        if progress_callback is None:
+            return
+        event = {
+            "subphase": name,
+            "state": state,
+            "elapsed_ms": round((time.perf_counter() - started) * 1000.0, 3),
+            **fields,
+        }
+        try:
+            progress_callback(event)
+        except Exception:
+            # Diagnostics must never make a valid source snapshot fail.
+            pass
+
     root = Path(root).resolve()
-    resolver = resolver or OwnerResolver(root)
+    stats = {"cache_hits": 0, "cache_misses": 0, "files_hashed": 0,
+             "bytes_hashed": 0, "stat_ms": 0.0, "hash_ms": 0.0,
+             "owner_resolve_ms": 0.0}
+    if resolver is None:
+        phase_started = time.perf_counter()
+        report("owner_resolver", "started", phase_started)
+        resolver = OwnerResolver(root)
+        report("owner_resolver", "completed", phase_started,
+               source_rule_count=len(resolver.rule_assignments),
+               module_owner_count=len(resolver.module_owners))
     used_cache: dict[str, dict] = {}
 
     def digest_for(rel: str) -> tuple[str, int, int]:
         path = root / rel
+        stat_started = time.perf_counter()
         stat = path.stat()
+        stats["stat_ms"] += (time.perf_counter() - stat_started) * 1000.0
         if hash_cache is not None:
             cached = hash_cache.get(rel)
             if isinstance(cached, dict) and cached.get("sha256"):
@@ -253,17 +282,33 @@ def build_manifest(root: Path, resolver: OwnerResolver | None = None,
                     cached_size = cached_mtime = -1
                 if (cached_size == stat.st_size
                         and cached_mtime == stat.st_mtime_ns):
+                    stats["cache_hits"] += 1
                     used_cache[rel] = cached
                     return str(cached["sha256"]), stat.st_size, stat.st_mtime_ns
+        stats["cache_misses"] += 1
+        hash_started = time.perf_counter()
         digest, size, mtime_ns = stamped_sha256(path)
+        stats["hash_ms"] += (time.perf_counter() - hash_started) * 1000.0
+        stats["files_hashed"] += 1
+        stats["bytes_hashed"] += size
         if hash_cache is not None:
             used_cache[rel] = {"sha256": digest, "size": size,
                                "mtime_ns": mtime_ns}
         return digest, size, mtime_ns
 
+    phase_started = time.perf_counter()
+    report("enumerate_cpp", "started", phase_started)
+    cpp_paths = enumerate_repository_cpp(root)
+    report("enumerate_cpp", "completed", phase_started, files_total=len(cpp_paths))
+
     sources: list[dict] = []
-    for rel in enumerate_repository_cpp(root):
+    phase_started = time.perf_counter()
+    report("source_ownership_and_digest", "started", phase_started,
+           files_total=len(cpp_paths))
+    for index, rel in enumerate(cpp_paths, 1):
+        owner_started = time.perf_counter()
         owner, reason = resolver.resolve(rel)
+        stats["owner_resolve_ms"] += (time.perf_counter() - owner_started) * 1000.0
         digest, size, mtime_ns = digest_for(rel)
         sources.append({
             "path": rel,
@@ -274,20 +319,44 @@ def build_manifest(root: Path, resolver: OwnerResolver | None = None,
             "owner_reason": reason,
             "active_in_manifest": owner not in ("unresolved", "vendor"),
         })
+        if index % 64 == 0 or index == len(cpp_paths):
+            report("source_ownership_and_digest", "progress", phase_started,
+                   files_completed=index, files_total=len(cpp_paths), **stats)
+    report("source_ownership_and_digest", "completed", phase_started,
+           files_completed=len(cpp_paths), files_total=len(cpp_paths), **stats)
 
     lines = [f"{item['path']}:{item['sha256']}" for item in sources]
     headers: list[dict] = []
-    for rel in enumerate_repository_headers(root):
+    phase_started = time.perf_counter()
+    report("enumerate_headers", "started", phase_started)
+    header_paths = enumerate_repository_headers(root)
+    report("enumerate_headers", "completed", phase_started,
+           files_total=len(header_paths))
+
+    phase_started = time.perf_counter()
+    report("header_digest", "started", phase_started,
+           files_total=len(header_paths))
+    for index, rel in enumerate(header_paths, 1):
         digest, size, mtime_ns = digest_for(rel)
         headers.append({"path": rel, "sha256": digest,
                         "size": size, "mtime_ns": mtime_ns})
+        if index % 64 == 0 or index == len(header_paths):
+            report("header_digest", "progress", phase_started,
+                   files_completed=index, files_total=len(header_paths), **stats)
+    report("header_digest", "completed", phase_started,
+           files_completed=len(header_paths), files_total=len(header_paths), **stats)
     if hash_cache is not None:
         hash_cache.clear()
         hash_cache.update(used_cache)
     lines.extend(f"header:{item['path']}:{item['sha256']}" for item in headers)
+    phase_started = time.perf_counter()
+    report("config_hash_and_revision", "started", phase_started)
     config_hashes = resolver.config_hashes()
     lines.extend(f"config:{name}:{value}" for name, value in config_hashes.items())
     revision = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+    report("config_hash_and_revision", "completed", phase_started,
+           config_count=len(config_hashes), source_count=len(sources),
+           header_count=len(headers), **stats)
 
     counts = Counter(item["owner"] for item in sources)
     return {

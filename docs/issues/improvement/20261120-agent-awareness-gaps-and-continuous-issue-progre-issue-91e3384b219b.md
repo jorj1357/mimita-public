@@ -341,3 +341,35 @@ Proposal: make the isolated-run stop path preserve evidence and compare identity
 Measurable target: on the next 5 isolated TDM starts/stops, 100 percent either stop the owned PIDs or emit a structured mismatch with both timestamps at full precision, with zero false mismatches where only sub-millisecond precision differs; 100 percent of stopped/failed runs retain run.json plus both journals and leave no manifest `state=online` entry whose PID is absent; a reviewer links each task proof to a run/journal in under 5 minutes. Also require proof listing to label or reject `status=runtime_proven` when `result!=proven` or `verified_utc` is empty.
 
 Smallest experiment: one pinned isolated TDM run. Capture the raw manifest and fresh identity timestamps before stop, run `--stop-test-run` once, and list the run directory before/after. Add only the precision normalization assertion and a mismatch event with both timestamps; do not change retention, networking, or gameplay behavior in this experiment. Cross-links: issue-cf9cd77eb056, issue-4e3ef676ba20, issue-3f776ce60511, issue-58ecf44ac956. Reviewed read-only by issue-review-sweeper; no code, build, or runtime change performed.
+
+## Agent suggestion
+
+### 2026-11-21T22:28:15.917Z — issue-review-sweeper
+
+Process proposal from the bounded wake review of issue-6907072bb155 (issue-review-sweeper, wake-d9b6ea26317c, 2026-11-21T22:27Z).
+
+Evidence: `.dev/agent-wake/events.jsonl` has 901 events with 181 queued, 166 `wake.failed`, and 64 `wake.retry`; since 2026-11-21T21:00Z there were 10 queued, 19 claimed, 19 launched, 10 retry, 7 failed, and 2 cancelled. `wake-6b7994156e83` carries attempts=2. `wake-466b0e0174e4` launched at 22:15:39Z and was reconciled failed at 22:19:39Z even though that agent had already produced a coordination context message at 21:55:19Z. Cause in `devscripts/agent-wake.py`: `launch` (`:355-395`) discards the `Popen` handle after recording the PID, and `run_once`/`reconcile_launched` (`:398-424`, `:456-485`) treat any non-alive child PID as `adapter process exited` with no exit code or completion marker. This creates avoidable fallback launches, duplicate agent sessions, and noisy proof evidence; it also makes it impossible to tell normal completion from a crash.
+
+Measurable target: over 20 consecutive generic exit-0 probe wakes, record 20/20 terminal `wake.completed` with exit_code=0 and 0 spurious `wake.retry`/`wake.failed`; genuine non-zero exits still retry/fail. Acceptance: a reader can tell success from failure for every wake from events alone, and duplicate launches per successful wake drop to 0.
+
+Smallest experiment: (1) add a waiter or periodic `child.poll()` that records `returncode` and emits `wake.completed`/`wake.failed`; (2) run 10 wakes with adapter `generic` and `--command 'cmd /c exit 0'` plus 10 with `--command 'cmd /c exit 3'`; require 10/10 success classification and 0/10 success classification respectively; (3) observe the next 20 real wakes for duplicate launches. Keep `issue-62ab3daa615d` separate: full in-band prompt delivery is an independent defect.
+
+## Agent suggestion
+
+### 2026-11-21T22:59:14.439Z — live-build-gap-closure
+
+Cross-agent closure rule requested (2026-11-21): when an investigation discovers a material evidence, instrumentation, capability, or implementation gap, the agent must convert it into an owned issue/task with evidence, a concrete next action, and an acceptance/proof condition, then continue safe work until it is fixed or reduced to a clearly evidenced external/user decision blocker. A report must distinguish gaps that were closed from open blockers; do not leave a known actionable gap as an untracked final recommendation. For shared build/runtime authority or risky architecture decisions, prepare a reviewable proposal and evidence rather than changing the authority unilaterally. Prefer reliable Python/API/CLI probes over UI automation when they provide the needed evidence.
+
+## Agent suggestion
+
+### 2026-11-21T23:08:55.356Z — issue-review-sweeper
+
+Process proposal from bounded independent review of issue-394f2607b148 (issue-review-sweeper, wake-af48c2657e0b, 2026-11-21T23:08Z). No source edit, build, or fix claimed.
+
+Observed: agent-self-improvement.md lines 164-184 label `agent-coord retro <issue>` mandatory after a close, unexpected build wait, or proof failure, but `agent-coord retro` is rejected as an invalid choice and no retro command exists in devscripts/agent_coord.py. agent-runtime-registry.md lines 140-150 document `agent-coord runtime list|show|start|stop|health`, while the CLI exposes register|list|update and a separate devscripts/agent-runtime.py exposes start|stop|status|list. agent-build-queue.md documents build/game/cohorts/<cohort>/current.json, but build/game/cohorts/ does not exist. A cold agent following the specs hits an invalid-choice error or a missing path, and issue-394f2607b148 has sat new with 0/8 readiness fields for about 44h. This is documentation/CLI drift and lost time, not a gameplay defect.
+
+Proposal: add a read-only documentation/CLI conformance check. `devscripts/doc-command-check.py` scans routed dev-loop specs for `agent-coord <group> <verb>` and `devscripts/<tool>.py <verb>` tokens inside code fences, resolves each against that tool's --help, and reports `path:line token -> unknown` with a nonzero exit. Optional --json output for issue intake.
+
+Measurable target: within the four reviewed specs, 0 documented commands that fail to resolve, with each either implemented or explicitly marked proposed/not implemented; a cold agent detects a stale mandatory command in under 2 minutes; the check runs in under 5 seconds with no build.
+
+Smallest experiment: implement the scanner for only the four reviewed specs, run it on the current working tree, and confirm it reports the known `retro` and `runtime show|start|stop|health` mismatches; then implement or mark those sections. Keep it read-only and limit matching to explicit agent-coord/devscripts tokens inside code fences to avoid prose false positives. Class R local evidence tooling; no doctrine or authority change. Cross-link: issue-394f2607b148.

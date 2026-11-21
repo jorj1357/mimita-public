@@ -287,3 +287,161 @@ G432 stage plan (2026-11-21): warm leaf latency is dominated by avoidable traver
 ### 2026-11-21T21:44:56.517Z — live-build-optimization-trial
 
 Observed optimization result, 2026-11-21: worker change memoizes classification/path resolution per distinct dependency token, then memoizes stat lookup per token. G432 baseline game-dll-20261121T201417234689Z-2d9df4: object scan 98.861s, prepass 85.309s, path/fanout 84.749s, freshness 13.274s. Forced scan after first memoization (game-dll-20261121T213722107270Z-52f7a2) reached 32.248s because freshness checks remained ~30.4s. Second forced scan after stat memoization (game-dll-20261121T214024518362Z-449ec0) checked 642 cached objects, found none stale, compiled 0, and completed scan in 1.033s (prepass .669s, path/fanout .475s, dependency check sum .164s, 1,698 unique dependency tokens). That is ~98.95% faster than G432 scan. Both passes restored a valid cache marker and left generation 432 unchanged. Limits: no C++ compile or link ran, and no runtime behavior proof; the scan result is measured but not a full edit-to-activation comparison. The same attempt took 98.919s at dev-loop boundary, with 48.146s manifest snapshot, 24.252s source snapshot, and roughly 20.7s of pre-worker interval not assigned to named stage timers. Next discriminator: instrument resource/process-tree activity and optimize manifest/mirror/source-snapshot preparation; then run a controlled single-.cpp edit to measure compile, wrapper fan-out, full link, publication, activation. Full report: docs/reports/20261121_214300-warm-dll-cache-scan-optimization-results.md.
+
+## Scheduled independent review
+
+### 2026-11-21T21:55:06.002Z — infinite-city-scale-fog-editor
+
+A bounded independent review was queued as wake wake-466b0e0174e4 after 178 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Agent suggestion
+
+### 2026-11-21T21:56:26.696Z — build-wait-reviewer
+
+Recurrence evidence from build-friction issue-2235461bb31b (wait game-dll-build:2026-11-21T21:33:20.879Z). Attempt game-dll-20261121T213320985628Z-1a2692 was a no-op (gen 432 unchanged, 0 compiled) yet took 116.420s: packet_registry codegen 30.888s, manifest_snapshot 29.110s, source_snapshot 35.666s, worker no-op 0.003s. The 60s wait budget therefore fires during pre-worker staging, not compile. The issue cannot name this attempt: its stage is the flat game_build, generation is null, and build_id is the EXE artifact 2026-11-21T02:26:50.306117Z. Also, .dev/build-timings/<attempt>.json for 1a2692, 52f7a2, and 449ec0 still carries worker_metrics from the earlier 2d9df4 build (total_seconds 170.04, compiled 12, compile_seconds 32.645, object_scan 98.848, link 10.942) while no_op=true, compile_sum_ms=0, changed_paths=[], and top-level worker_total_seconds is 0.426/32.786/1.211. Suggested minimal changes under this issue: write per-attempt worker_metrics (do not carry over), add the active attempt id plus true pipeline stage and target generation to wait evidence, and append the terminal result to the existing wait issue. No source edited by the reviewer.
+
+## Agent suggestion
+
+### 2026-11-21T21:59:07.104Z — build-wait-reviewer
+
+From build-wait-reviewer while reviewing wait issue-c632de44f8d6 (duplicate symptom of this root cause).
+
+New per-stage evidence for current generations, from .dev/build-timings:
+- game-dll-20261121T214024518362Z-449ec0 (G432, no-op, 0 compiled): wall 98.895s; manifest_snapshot 48,146ms; source_snapshot 24,252ms; packet_registry codegen 3,458ms; object_cache_scan 1,062ms. A no-op build never gets under the 60s wait budget.
+- game-dll-20261121T215015817067Z-d501fb (G433, 12 compiled): wall 395.54s; manifest_snapshot 137,377ms; source_snapshot 26,382ms; changed_source_preflight 36,386ms; compile 40,592ms; link 61,980ms; publish 29,101ms; plus a 43.4s gap between source_snapshot completion (169,849ms) and worker_input_validation start (213,176ms).
+- Two attribution defects relevant to the stage-accounting task: (a) in the no-op attempt, worker_metrics still reports the prior compile's values (compile_seconds 32.645, compiled 12, worker_total_seconds 143.658, total_seconds 170.04 vs actual 98.895s and 0 compiled); (b) in d501fb, dev-loop publish phase is 29,101ms while worker_metrics.publish_seconds is 0.497. Both should be reconciled before claiming a complete phase map.
+No source files touched; reviewer wake only.
+
+## Review (evidence-gap)
+
+### 2026-11-21T22:03:38.746Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Bounded independent review 2026-11-21T22:0xZ by issue-review-sweeper (wake-466b0e0174e4). Read-only: no source edit, no build requested by this agent, no fix or close claimed. Examined issue brief/readiness (ready, score 8, triaged, 4 tasks), proof records (issue has no task-proof rows; task build-scan-path-memo-g432 shows result=unproven reason="journal event predicate not found"), .dev/build-timings, the live root dev-loop --status, build/game/progress.json, and the run journal. A one-source attempt happened to complete during the review, so this records real evidence rather than restating older rows.
+
+OBSERVED FACTS - attempt game-dll-20261121T215015817067Z-d501fb (explicit request 2026-11-21T21:50:15.046Z-84e61847, change note 59b04f6eb844, only src/effects/zombie-tower-effects.cpp, revision d2ca2333f75538a8f795e19cdc4f493e4ba76323db39d1aab1114fd8f89a5e83)
+- SUCCESS, generation 433, build.completed 21:56:51.386Z, total 395.540s. Per-attempt JSON/summary: .dev/build-timings/game-dll-20261121T215015817067Z-d501fb.{json,jsonl}.
+- Pre-worker: resident_state codegen 0.752s; packet_registry codegen 3.608s; manifest_snapshot 137.377s (source_count 1008); source_snapshot 26.382s. Then an unmeasured 43.600s gap between source_snapshot completion (21:53:05.666Z) and changed_source_preflight start (21:53:49.265Z). Named pre-worker stages total 168.119s; 213.449s elapsed before preflight.
+- Worker phases: changed_source_preflight 36.386s; object_cache_scan 4.903s; vendor_compile 0.028s; compile 40.592s; link 61.980s (link.gnu_linker 61.718s; 642 inputs, 480,254,152 object bytes); coherence_validation 1.103s; publish 29.101s (rename+hash 1.142s, external_dependency_manifest 27.793s, cache_marker 0.024s). Worker phases total 174.658s.
+- Post-publish to build.completed: 7.433s (result handler 1.528s + output handler 0.215s measured; ~5.7s not yet attributed).
+- Reconciliation: 213.449 pre-worker + 174.658 worker + 7.433 post = 395.540s exactly. The 43.600s handoff is the only fully unmeasured block; ~5.7s after publish is partly unmeasured.
+- SCAN OPTIMIZATION CONFIRMED IN A REAL COMPILE+LINK ATTEMPT: object_cache_scan 4.836s vs G432 (game-dll-20261121T201417234689Z-2d9df4) 98.861s (-95.1%); prepass 3.604s vs 85.309s (-95.8%). Sub-timers now name the work: path_and_fanout 2.427s, path_normalization 2.280s, index_load 0.580s, index_save 0.255s, stat_prewarm 0.391s, freshness checks 0.781s, 1513 unique deps, 641 per-TU checks avg 1.04ms/max 84.0ms.
+- COMPILE SET: 12 compiled / 630 skipped. All 11 non-changed compiles are root module wrappers whose cache_invalidations reason is "dependency newer than object: build/game/identity/module-identity.h". This closes the earlier "no per-TU stale reason" gap for this attempt. compile_sum_ms 363,714 across 12 TUs but parallel wall only 40.592s; changed TU src/effects/zombie-tower-effects.cpp 36.304s vs G432 player-ai 14.177s.
+- END-TO-END DID NOT IMPROVE IN THIS SAMPLE: 395.540s vs G432 172.333s (+223.2s). The scan win was outweighed by manifest_snapshot 137.377s vs 11.581s, link 61.980s vs 11.022s, external_dependency_manifest 27.793s vs 1.102s, preflight 36.386s vs 14.230s, compile wall 40.592s vs 18.425s.
+
+RUNTIME EVIDENCE (separate claim, not implied by build success): run 20261121_215237 server-01 PID 34328 and client-01 PID 21044 each emit game.generation.activated generation 433 at 2026-11-21T21:56:51.702Z (old_generation 1, reason "candidate committed", source src/host/host-runtime.cpp); server also emits game.transport.path generation 433 migrated=true and game.hotness.summary runtime_revision=2, violations=0. Activation was 0.316s after build.completed, 395.885s after attempt start, and ~419.7s after the changed file mtime 21:49:52Z. This proves DLL activation, not the intended behavior effect of the comment-only edit.
+
+DUPLICATE BUILD (avoidable retry): attempt game-dll-20261121T215653845698Z-0e52c1 has request_ids ["auto-1"], source_generation 1, and started 21:56:53.845Z, 2.46s after generation 433 activated, for the SAME unchanged revision (file mtime stayed 21:49:52Z; no second edit, git shows only M src/effects/zombie-tower-effects.cpp). Mechanism is visible in devscripts/dev-loop.py:3297-3331: record_source_change() queues f"auto-{generation}" for a game save, while the separate explicit request was served first, so the queued auto request ran as a second full build. Cost already observed in 0e52c1: resident_state codegen 8.390s (11.2x d501fb), packet_registry codegen 102.887s (28.5x), manifest_snapshot 148.233s (vs 137.377s), source_snapshot starting 22:01:28.782Z - i.e. >4.3 min spent re-preparing an already-published revision, and the attempt was still running at review time.
+
+INFERENCE / UNCERTAINTY
+- For a warm one-source edit the object-cache scan appears effectively solved; the remaining latency is pre-worker preparation (213.4s, 54%), link (62.0s, 16%), compile (40.6s, 10%), and publish (29.1s, 7%). Confidence high for the stage numbers.
+- manifest_snapshot 137.377s and 148.233s are reproducible back-to-back on the same revision, so this is not random noise. The first attempt's manifest ran 21:50:21-21:52:39, before the game pair launched at 21:52:37, so game-process CPU cannot explain most of it. Likely candidates are cold OS/AV file scanning, mirror enumeration/hash volume, or a recent manifest-scope change; unproven. Confidence medium.
+- link 61.718s and external_dependency_manifest 27.793s ran while the new game server+client were live; contention is plausible but not proven (G432 linked in 11.022s).
+- Eliminating identity-wrapper fan-out would remove ~327.4s of compiler CPU, but because those 11 compiles overlap, wall saving in the compile phase is likely only ~5-10s; the larger effect may be removing contention from the changed TU (36.3s here vs 14.2s in G432). Confidence medium.
+- Low-confidence observability anomaly: while d501fb was in flight, dev-loop --status printed elapsed 5330.509s for that attempt although its own JSONL was ~300s old; progress.json later read consistently for 0e52c1 (117.56s). Do not treat as proven until the status/progress writer source is checked.
+
+CONTRARY EVIDENCE
+- The prior "98.95% faster scan" headline came from a no-compile forced pass (449ec0, 1.033s). In this real attempt the scan is 4.836s, so the direction holds (-95.1%) but the extreme percentage does not generalize.
+- This attempt contradicts any claim that the memoization change improves end-to-end edit-to-active latency by itself; the earlier report was careful to say scan-only, and this review confirms that limitation with a completed build.
+- No regression in correctness was observed: build succeeded, publication revision matched, and activation matched generation 433.
+
+NEXT DISCRIMINATING CHECKS (ordered)
+1. Read 0e52c1's terminal summary when it finishes and compare its manifest/source/preflight/scan/compile/link/publish stages with d501fb (same revision). This quantifies duplicate-build cost and tests whether ~140s manifest is the new steady state.
+2. Add named substeps for the 43.600s source_snapshot->preflight handoff; also account for the ~5.7s after publish. These are the only remaining unmeasured intervals in d501fb.
+3. Emit a bounded progress/heartbeat row inside manifest_snapshot and object_cache_scan. During 0e52c1's 148.233s manifest_snapshot the JSONL has only stage.started and stage.completed (4 events total before 22:01:28), which is exactly the "unknown stage" the issue exists to remove and is why the 60s wait fires.
+4. Capture attempt-keyed host CPU/RAM/disk and process-tree samples (including the running game processes and AV/scan activity), then repeat the same one-file edit with the game pair stopped to test the contention hypothesis for link/publish/codegen.
+5. Add manifest_snapshot substage counters (enumerated files, hashed bytes, mirror copies/updates, cache hits/misses) so 137-148s has an internal owner. source_count is 1008 in both recent attempts; compare against the mirror-manifest scope.
+6. Suppress/merge an auto request for a revision that was already published (see the separate process proposal appended to this issue).
+
+This review changes no task state and claims no fix. The issue remains open and high priority; scan optimization is proven for the scan stage only.
+
+## Agent suggestion
+
+### 2026-11-21T22:04:04.561Z — issue-review-sweeper
+
+Process improvement proposal from the same bounded review (evidence: same-save duplicate build). Measured: one save of src/effects/zombie-tower-effects.cpp at 21:49:52Z produced the explicit request 84e61847 (attempt d501fb) and also queued auto-1 (attempt 0e52c1). The explicit attempt published generation 433 and activated it at 21:56:51.702Z; the auto request then ran as a second full build of the identical revision via devscripts/dev-loop.py:3297-3331 record_source_change() -> queue f"auto-{generation}". Before this review ended, the duplicate had spent 8.390s + 102.887s in codegen and 148.233s in manifest_snapshot (>4.3 min) with no new source, and it was still running. This is a repeated avoidable-retry class: any agent or human that saves and then sends an explicit build request can double the wait and add CPU/disk contention to the build being measured.
+
+Measurable target: at most one non-no_op build attempt per distinct source revision that publishes a generation; zero duplicate non-no_op attempts for an already-published revision over a 2-hour soak containing >=5 explicit-request-plus-save events. Secondary metrics: duplicate-attempt minutes avoided and count of suppressed requests.
+
+Smallest experiment (no change to compilation behavior): record source revision and request origin (explicit vs auto) on each queued request; at dequeue compare revision to the last published revision for the same target, and when equal mark the request succeeded/no_op with reason "already_published_revision" and skip pre-worker staging, worker spawn, compile, link, and publish. Emit a "game-dll.request.deduplicated" event and increment a counter. Run one controlled save + explicit-request cycle and confirm exactly one non-no_op attempt plus one suppressed request. Keep build evidence separate from behavior proof. Risk: a legitimate rebuild of the same revision (for example cache-corruption recovery) must remain forceable via an explicit flag, and dedupe must key on target, revision, build mode, flags/toolchain identity, and cache generation so a stale artifact is never served.
+
+Confidence: high that two full builds occurred for one unchanged revision (file mtime, request_ids, start times, and code path all agree); medium on the preferred mechanism (merge the pending auto request with the explicit one vs cancel one of them). No source was edited by this review; implementation needs owner approval.
+
+## Agent suggestion
+
+### 2026-11-21T22:04:26.943Z — build-wait-reviewer
+
+Additional pinned evidence from wait issue-1b08300935ae (attempt game-dll-20261121T215015817067Z-d501fb, healthy, gen 433 published ok, total 359.611s): manifest_snapshot 137.38s (1008 sources) is where the flat 60s wait tripped; plus an unexplained 43.33s gap between source_snapshot completion (21:53:05.666) and worker_input_validation start (21:53:48.993). Two attribution defects recur: (1) the wait issue records flat stage 'game_build', stale generation 432, and the EXE build_id instead of the waiting DLL attempt; (2) publish is 29.10s in the attempt but worker publish_seconds is ~1.15s, leaving publish.external_dependency_manifest (27.79s) unattributed in the summary. Also ~40+ duplicate 'game-dll-build at game_build' issues; recommend one rolling occurrence issue per (kind,stage) or linking new waits to this issue. No code changed by this review.
+
+## Agent suggestion
+
+### 2026-11-21T22:06:12.943Z — live-cpp-compile-link-trial
+
+One-source compile/link trial completed 2026-11-21: behavior-neutral comment in 158-byte src/effects/zombie-tower-effects.cpp forced attempt game-dll-20261121T215015817067Z-d501fb, request 2026-11-21T21:50:15.046Z-84e61847. G433 succeeded, 12 compiled (edited TU + 11 identity wrappers), 630 skipped, scan 4.903s, edit TU 36.304s, compile batch 40.592s, GNU link 61.718s, publish phase 29.101s including 27.793s reparsing 642 depfiles; outer attempt 395.540s. Compared with G432: scan 98.861s, compile preflight14.230s + wrapper batch18.425s, link11.022s, preworker26.383s, total172.333s. G433 resource sample during manifest showed CPU 98.4% and 1.27GB available RAM; it was not aligned to compiler/link so overload is a likely confound, not proven sole cause. Named preworker manifest snapshot137.377s + source snapshot26.382s; about45.046s unassigned. Timer defect: worker publish_seconds1.152s vs actual publish phase29.101s and worker total_seconds359.611s vs outer395.540s. After explicit build, watcher also queued auto-1 at same revision and ran a no-op for 377.503s: codegen8.390/102.887s, manifest148.233s, snapshot66.961s, generation433 unchanged. Proposals: reuse scan external-dependency set during publish, reconcile timers, coalesce manual/watcher requests by revision, measure process-tree CPU/RAM/disk during each stage, rerun low-load one-source build. Full report docs/reports/20261121_220437-one-source-compile-link-trial.md.
+
+## Agent suggestion
+
+### 2026-11-21T22:06:40.556Z — build-wait-reviewer
+
+Concrete no-op datapoint from issue-c3ecfab72cba (game-dll-build wait 21:37:21.900Z): attempt game-dll-20261121T213722107270Z-52f7a2 was a true no-op (changed_paths=[], 0 compile events, scanned=642 skipped=642 stale=0) yet took 111.683 s. Measured: manifest_snapshot 29.806 s, source_snapshot 17.142 s, a 24.03 s unmeasured gap before worker_input_validation, then object_cache_scan 32.481 s. So >60 s is spent before and during scanning with zero compilation. Also: no-op attempt summaries inherit a stale worker_metrics block from the prior real build (this one reports compiled=12, compile_seconds=32.645, object_scan_seconds=98.848 while its own JSONL shows no compiles and scan phase 32.48 s; attempt 449ec0 shows the same inherited values with its own scan phase 1.033 s). Recommend (1) measure/close the pre-worker gap, (2) make no-op summaries report their own worker metrics or explicitly mark worker metrics as not applicable, and (3) add build_attempt_id plus a clean current-phase string to over-budget wait records instead of a truncated GAME_STAGE fragment. Evidence: .dev/build-timings/game-dll-20261121T213722107270Z-52f7a2.json and .jsonl.
+
+## Agent suggestion
+
+### 2026-11-21T22:27:36.580Z — build-wait-reviewer
+
+Wait-budget evidence from issue-585ca55b5bb8 (reviewed): the fixed WAIT_ISSUE_SECONDS=60 (devscripts/dev-loop.py:108) is below normal game-DLL build time, so nearly every build emits a same-titled over-budget issue (46 open today: 17 new, 29 in_review). Example attempt game-dll-20261121T221437598388Z-a59f5e started 22:14:37.598Z, succeeded 22:21:44.414Z, total_seconds=426.708 (preflight 103.1s, compile 124.4s, link 46.3s, publish 38.6s). Suggest a measured/class-aware game-dll-build budget and grouping repeated wait occurrences, subject to human approval of the budget change.
+
+## Agent suggestion
+
+### 2026-11-21T22:28:40.044Z — build-wait-reviewer
+
+Cross-link (occurrence) from build-wait review issue-a1eebc340521: wait game-dll-build:2026-11-21T22:09:14.345Z (elapsed 60.195s, budget 60s) fired during attempt game-dll-20261121T220914705908Z-729a42 while source_snapshot was actively running (started 22:09:58.043Z, completed 22:10:43.829Z, 45.4s), not a hang. Attempt total was 321.428s (failed link 26.3s; undefined refs to new MapEditor::setGenerationZone* methods from a partially-applied in-flight edit). The immediately following attempt a59f5e succeeded as generation 435 in 426.708s, so the link failure was transient and is not a separate defect. Two evidence points for this issue: (1) the flat WAIT_ISSUE_SECONDS=60 at dev-loop.py:108-109 vs 300-430s builds plus the per-attempt wait_id at dev-loop.py:3396 means every attempt over 60s opens a new build-friction issue and reviewer wake; (2) the wait evidence at dev-loop.py:3403-3406 still records the stale EXE build_id 2026-11-21T02:26:50.306117Z and previous generation 433 instead of the in-flight attempt id and target generation. Recommending stage-aware or inactivity-based budget plus per-attempt coalescing and true attempt identity. No source edited by the reviewer.
+
+## Agent suggestion
+
+### 2026-11-21T22:35:01.570Z — live-build-gui-timer-resource-audit
+
+Fresh evidence: attempt game-dll-20261121T222152398558Z-ad2cd0 (run 20261121_215237) took 409.415s in manifest_snapshot for 1,008 C++ entries (0 retries), then 111.612s in source_snapshot hardlinking 2,899 files (0 copies); validation was 0.289s. At observation, changed_source_preflight was still compiling 3 TUs after 54.7s. The manifest timer currently wraps build_manifest, cache JSON write, and _update_source_mirror as one opaque operation (game_build.py:627-652); build_manifest enumerates all C++/headers and stats/hashes entries (source_manifest.py:102-130,237-296), while _update_source_mirror has no per-path timing. Cache hit rate, hashed bytes, mirror delta/copy/verify time remain unknown. Dashboard root phase had no heartbeat for 409s; corrected UI now shows separate ticking attempt and phase/subphase clocks. During a live 5s sample, system CPU was 100% across 12 logical CPUs; 3 mimita.exe processes used 348.8%,101.2%,55.1% of one core (~42.1% aggregate machine capacity), so host contention is real but not enough to attribute remaining CPU or exact build delay. Recommend instrumenting counters/subphase heartbeats first, then watcher-maintained manifest + immutable incremental snapshot; preserve full fallback on watcher overflow and toolchain/config/header changes. See docs/reports/20261121_222900-live-build-timer-and-resource-audit.md.
+
+## Agent suggestion
+
+### 2026-11-21T22:49:06.993Z — live-build-gui-timer-resource-audit
+
+Completed auto-attempt game-dll-20261121T222152398558Z-ad2cd0 published gen436 (build.completed 903.413s), but run journal had no game.generation.activated event. Measured manifest_snapshot 409.415s (1008 sources), source_snapshot 111.612s/2899 hardlinks, object_cache_scan 7.403s, changed_source_preflight 148.014s for 3 changed TUs, compile phase 77.711s for 11 identity wrappers, GNU linker 30.683s/642 objects/480,309,960 object bytes/665 args, publish 8.633s including external_dependency_manifest 6.246s. All 11 wrapper invalidations cite dependency newer than build/game/identity/module-identity.h. Existing architecture note confirms this header embeds generation and full revision; safe fix is runtime identity service for folded modules, not bypassing dependency validation. Unmeasured gaps: 32.855s between source snapshot completion and worker validation; nested worker_metrics total_seconds and result event report 886.724s vs top-level 903.413s (16.689s mismatch). Later 15s after build completed, current Payload run 224058 had 85.3% system CPU and three MiMITA processes at 20.27%,10.53%,12.56% machine CPU; client maxFrames=999/vsync=false while recent FPS 36-71. Exact CPU owner still unknown; CPU issue ed3ac775283d created. Detailed report: docs/reports/20261121_222900-live-build-timer-and-resource-audit.md.
+
+## Agent suggestion
+
+### 2026-11-21T22:59:14.776Z — live-build-gap-closure
+
+Fresh measured G436 evidence (attempt game-dll-20261121T222152398558Z-ad2cd0): manifest snapshot 409.415s/1008 sources/1217 headers; source snapshot 111.612s/2899 hardlinks; worker-input/launch gap 32.855s; changed-source preflight 148.014s for three TUs (per-TU 96-148s, parallel wall); object scan 7.403s; wrapper/remaining compile wall 77.711s, including 11 wrappers invalidated by generation-changing identity header; GNU link 30.683s over 642 objects/480,309,960 object bytes to a 242.6MB DLL; publish 8.633s, including 6.246s dependency-manifest generation. Whole attempt 903.413s vs nested worker 886.724s (16.689s mismatch). First focus: instrument manifest internals (enumeration, stats, hashing/cache hit/miss, owner resolution, mirror diff/copy/retry), source snapshot file/byte/link/verification costs and post-snapshot setup gap; determine why a warm cache still takes 409s and 2,225 cached hashes still require a full tree walk/stat. Then replace per-attempt exhaustive discovery with a persistent change journal/filesystem watcher plus targeted hash verification and periodic full audit; preserve correct new/deleted/header/dependency/toolchain invalidation. Address generation-only module wrapper fanout by moving generation identity to runtime for folded modules, under review. Profile the three preflight TU compiles and reduce include/PCH/template work only with compiler timings. Benchmark a compatible faster linker/incremental strategy and partition/hot-function path; do not claim full 642-object DLL linking under 1s without measured proof. Record end-to-end monotonic spans and explain the 16.689s accounting mismatch. Compare matched warm no-op, one .cpp body edit, and header edit while a single existing game pair runs; keep source/build/publish/load/same-process-activation distinct. Do not delete invalidation checks without correctness proof.
+
+## Agent suggestion
+
+### 2026-11-21T23:20:35.463Z — cpp-latency-pressure-opt
+
+Fresh path walk diagnosis and partial fix (2026-11-21): the DLL hash cache does reuse a digest when size+mtime_ns match, but devscripts/source_manifest.py:102/117 still walks the repository for every .cpp/header on every attempt and stats each path; the .source-hash-cache.json is not a file-list cache. Separately, devscripts/dev_loop/game_build.py:_create_source_snapshot still rglob-walks the entire persistent mirror and makes a hardlink per file each generation; _update_source_mirror already copies only changed paths. In the root EXE watcher, DirectoryChangeNotifications used FindFirstChangeNotification (only a broad 'something changed' signal), and DevLoop.watch() then rebuilt the full watched file map on every notification; failed notifications fell back to a full-tree scan every 0.5s. I replaced that notification implementation with blocking ReadDirectoryChangesW filename/action events, per-file signature updates, subtree-only indexing for added directories, full rescan on buffer overflow/failure, and a 2.0s fallback interval. python -m py_compile devscripts/dev-loop.py passed; an isolated temporary-directory create/modify probe observed the exact probe.cpp path in under 1s with ull_rescan=False and clean thread shutdown. The existing daemon still has old code loaded; runtime/CPU improvement is UNVERIFIED pending a safe controlled restart and same-workload comparison. This change improves source-change detection overhead; it does not yet remove the per-attempt manifest walk or full source snapshot hardlink walk. Next safe build-system task: keep a daemon-owned persistent source/header manifest index updated from these events, hand a coherent path delta to game_build, and use an immutable incremental snapshot. A full audit remains required on watcher overflow, initial start, new unmonitored roots, ownership/config/toolchain changes, or stale-state detection. Do not claim manifest/source stages are sub-second until measured.
+
+## Agent suggestion
+
+### 2026-11-21T23:20:35.766Z — cpp-latency-pressure-opt
+
+Module identity cannot safely be made constant with a generated-header-only tweak. Current folded module descriptors embed ase->generation and ase->codeHash; src/hot-reload/module-host.cpp:870-871 stores those as active module identity, and moduleSetHash/agreement consumes them. Changing generation/hash to a stable placeholder would make runtime module identity stale and weaken multiplayer agreement. The safe proposal remains a versioned runtime identity contract (active game generation + code hash from resident host) for folded modules, with static compile-time generation/hash retained for separately loadable module DLLs; then remove generation/revision from wrapper compile inputs. Requires explicit ABI/state review and live loaded-generation/module agreement proof. No C++ module identity change made.
+
+## Agent suggestion
+
+### 2026-11-21T23:24:33.554Z — cpp-latency-pressure-opt
+
+Follow-up validation of the path-level source watcher edit: on 10 repeated temporary-file modifications using the actual ReadDirectoryChangesW implementation, every event delivered the exact .cpp path in 0.494-0.767 ms (median 0.647 ms), zero full rescans; the DevLoop.watch integration probe confirmed one initial snapshot, then one normal file event with no subtree scan; py_compile and git diff --check pass. This is only notifier-level timing under a temporary directory, not end-to-end save detection, manifest, compile, link, daemon CPU, or live game proof. Current root daemon has not loaded the edit.
+
+## Agent suggestion
+
+### 2026-11-21T23:31:15.626Z — cpp-latency-pressure-followup
+
+Follow-up exact CPU sample: over 8 seconds, the root daemon process averaged about 42.6% of one logical core across two active threads; its largest thread averaged 32.2% (2.578 CPU seconds), with another at 10.4% (0.828 CPU seconds). Dashboard process was about 7.6% across measured active threads in the same interval. The thread API does not expose Python call stacks, so this narrows daemon CPU to main/control loop plus watcher, not an exact function yet. Source locations to profile next: DevLoop.run at devscripts/dev-loop.py:5647-5680 (0.20s control/status loop) and DevLoop.watch at :3552-3635. Current daemon still runs pre-change code, so no after-change CPU comparison exists. A second safe code reduction removed full last_snapshot dict copy/diff from each Windows watcher wake; only the fixed WATCH_FILES are compared plus exact OS events, with full reconciliation retained on overflow. Restart and compare before/after before claiming impact.
+
+## Agent suggestion
+
+### 2026-11-21T23:40:40.275Z — cpp-latency-pressure-profile
+
+15-second py-spy raw profile (PID 14344, daemon, 100 Hz nonblocking) captured 810 samples with 5 stack-read errors. It repeatedly sampled DevLoop.run calling print_status() at devscripts/dev-loop.py:5516; print_status calls state(), which reaches _instance_records/_tail_records and JSON decoding. The main loop also sampled save_state() at :5519, and _write_manifest() repeats _instance_records() at :2000-2010, rereading/decoding journals already read by state(). Of 810 weighted samples, the exact DevLoop.state frame appeared in 105 (13.0%), print-status call path in 73 (9.0%), and save-state call path in 71 (8.8%); these categories overlap and are not additive. Watcher snapshot frames were rare in this sample. Implemented state snapshot reuse: print_status now consumes the most recent <=1s snapshot rather than calling state() on each 200ms loop, and save_state passes its instance rows into _write_manifest to avoid a second journal read. Python syntax and focused mocked behavior checks pass. Current daemon is stale; no runtime A/B CPU measurement yet.

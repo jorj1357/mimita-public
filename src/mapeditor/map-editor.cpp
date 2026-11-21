@@ -85,6 +85,35 @@ std::string activeMapId()
     return "zombietower1";
 }
 
+bool saveGenerationZoneProfile(const std::string& mapId,
+                              const glm::vec3* origin,
+                              const glm::vec3* cellSize,
+                              const glm::ivec3* streamRadius,
+                              const glm::ivec3* repeatAxes)
+{
+    auto& library = MimitaWorldGen::WorldGenLibrary::instance();
+    MimitaWorldGen::WorldGenMode profile;
+    std::string error;
+    if (!library.loadMode(mapId, profile, &error))
+        return false;
+    profile.id = mapId;
+    if (origin) profile.grid.origin = *origin;
+    if (cellSize) profile.grid.cellSize = *cellSize;
+    if (streamRadius) profile.grid.streamRadius = *streamRadius;
+    if (repeatAxes) profile.grid.repeatAxes = *repeatAxes;
+    return library.saveMode(profile, &error);
+}
+
+void syncGenerationZoneProfile(const MapObjectiveConfig& map)
+{
+    for (const GenerationZone& zone : map.generationZones) {
+        if (!zone.enabled || zone.modeId != "connected_world") continue;
+        saveGenerationZoneProfile(map.mapId, &zone.origin, &zone.cellSize,
+                                  &zone.streamRadius, &zone.repeatAxes);
+        return;
+    }
+}
+
 nlohmann::json editorSceneFields(const std::string& projectId,
                                  const std::string& mapId,
                                  const char* reason)
@@ -655,7 +684,7 @@ glm::vec3 MapEditor::objectPosition(const EditorObjectRef& ref) const
         for (const GenerationZone& zone :
              MapConfigRegistry::instance().current().generationZones)
             if (zone.id == ref.id)
-                return (zone.boundsMin + zone.boundsMax) * 0.5f;
+                return zone.origin;
         return glm::vec3(0.0f);
     }
     if (ref.kind == EditorObjectKind::PayloadCartOrigin)
@@ -742,6 +771,17 @@ void MapEditor::setObjectPosition(const EditorObjectRef& ref, const glm::vec3& p
             }
             reg.markChanged();
             refreshPreviewChunk();
+        }
+        return;
+    }
+    if (ref.kind == EditorObjectKind::GenerationZone) {
+        for (GenerationZone& zone : reg.generationZonesMutable()) {
+            if (zone.id != ref.id) continue;
+            zone.origin = position;
+            saveGenerationZoneProfile(reg.current().mapId, &position,
+                                      nullptr, nullptr, nullptr);
+            reg.markChanged();
+            return;
         }
         return;
     }
@@ -1507,6 +1547,8 @@ void MapEditor::undo()
     MapConfigRegistry::instance().restoreAuthored(mUndo.back());
     mUndo.pop_back();
     mUndoLabels.pop_back();
+    if (label.rfind("edit generation", 0) == 0)
+        syncGenerationZoneProfile(MapConfigRegistry::instance().current());
     mSelection.erase(std::remove_if(mSelection.begin(), mSelection.end(),
         [&](const EditorObjectRef& ref) {
             if (ref.kind == EditorObjectKind::Entity)
@@ -1538,6 +1580,8 @@ void MapEditor::redo()
     MapConfigRegistry::instance().restoreAuthored(mRedo.back());
     mRedo.pop_back();
     mRedoLabels.pop_back();
+    if (label.rfind("edit generation", 0) == 0)
+        syncGenerationZoneProfile(MapConfigRegistry::instance().current());
     applyGLBOverridesToWorld();
     if (!MapConfigRegistry::instance().blocks().empty()) {
         rebuildAuthoredRenderGeometry();
@@ -2649,6 +2693,145 @@ bool MapEditor::setSelectedChunkConnectorField(const std::string& field,
     return true;
 }
 
+bool MapEditor::setGenerationZoneOrigin(const std::string& zoneId,
+                                       const glm::vec3& origin)
+{
+    if (!std::isfinite(origin.x) || !std::isfinite(origin.y) ||
+        !std::isfinite(origin.z)) {
+        notify("generation origin must use finite meter values");
+        return false;
+    }
+    MapConfigRegistry& registry = MapConfigRegistry::instance();
+    GenerationZone* zone = nullptr;
+    for (GenerationZone& candidate : registry.generationZonesMutable())
+        if (candidate.id == zoneId) { zone = &candidate; break; }
+    if (!zone) return false;
+    if (glm::length(zone->origin - origin) <= 0.0001f) return true;
+    pushUndo("edit generation zone origin");
+    zone->origin = origin;
+    const bool profileSaved = saveGenerationZoneProfile(
+        registry.current().mapId, &origin, nullptr, nullptr, nullptr);
+    registry.markChanged();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.generation-zone.origin.apply", zoneId,
+        "generation zone origin updated in meters", 0,
+        {{"zone", zoneId}, {"map", registry.current().mapId},
+         {"origin_m", {origin.x, origin.y, origin.z}},
+         {"profile_saved", profileSaved}},
+        __FILE__, __LINE__, __func__);
+    notify(profileSaved ? "generation origin saved" :
+                          "origin changed; worldgen profile could not be saved");
+    return true;
+}
+
+bool MapEditor::setGenerationZoneCellSize(const std::string& zoneId,
+                                          const glm::vec3& cellSize)
+{
+    if (!std::isfinite(cellSize.x) || !std::isfinite(cellSize.y) ||
+        !std::isfinite(cellSize.z) ||
+        glm::any(glm::lessThanEqual(cellSize, glm::vec3(0.01f)))) {
+        notify("cell dimensions must be greater than 0.01 m");
+        return false;
+    }
+    MapConfigRegistry& registry = MapConfigRegistry::instance();
+    GenerationZone* zone = nullptr;
+    for (GenerationZone& candidate : registry.generationZonesMutable())
+        if (candidate.id == zoneId) { zone = &candidate; break; }
+    if (!zone) return false;
+
+    const glm::vec3 before = zone->cellSize;
+    if (glm::length(before - cellSize) <= 0.0001f) return true;
+    pushUndo("edit generation cell size");
+    zone->cellSize = cellSize;
+    const bool profileSaved = saveGenerationZoneProfile(
+        registry.current().mapId, nullptr, &cellSize, nullptr, nullptr);
+    registry.markChanged();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.generation-zone.cell-size.apply", zoneId,
+        "generation cell size updated in meters", 0,
+        {{"zone", zoneId}, {"map", registry.current().mapId},
+         {"before_m", {before.x, before.y, before.z}},
+         {"after_m", {cellSize.x, cellSize.y, cellSize.z}},
+         {"profile_saved", profileSaved}},
+        __FILE__, __LINE__, __func__);
+    notify(profileSaved ? "generation cell size saved" :
+                          "cell size changed; worldgen profile could not be saved");
+    return true;
+}
+
+bool MapEditor::setGenerationZoneStreamRadius(const std::string& zoneId,
+                                              const glm::ivec3& radius)
+{
+    MapConfigRegistry& registry = MapConfigRegistry::instance();
+    GenerationZone* zone = nullptr;
+    for (GenerationZone& candidate : registry.generationZonesMutable())
+        if (candidate.id == zoneId) { zone = &candidate; break; }
+    if (!zone) return false;
+    const int radiusLimit = zone->spacingMode == "connector" ? 10000 : 16;
+    if (glm::any(glm::lessThan(radius, glm::ivec3(0))) ||
+        glm::any(glm::greaterThan(radius, glm::ivec3(radiusLimit)))) {
+        notify("generation radius is outside the supported 0.." +
+               std::to_string(radiusLimit) + " range");
+        return false;
+    }
+    if (zone->streamRadius == radius) return true;
+
+    const glm::ivec3 before = zone->streamRadius;
+    const char* radiusUnits = zone->spacingMode == "connector" ? "m" : "cells";
+    pushUndo("edit generation radius");
+    zone->streamRadius = radius;
+    const bool profileSaved = saveGenerationZoneProfile(
+        registry.current().mapId, nullptr, nullptr, &radius, nullptr);
+    registry.markChanged();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.generation-zone.radius.apply", zoneId,
+        "generation stream radius updated", 0,
+        {{"zone", zoneId}, {"map", registry.current().mapId},
+         {"units", radiusUnits},
+         {"before", {before.x, before.y, before.z}},
+         {"after", {radius.x, radius.y, radius.z}},
+         {"profile_saved", profileSaved}},
+        __FILE__, __LINE__, __func__);
+    notify(profileSaved ? "generation radius saved" :
+                          "radius changed; worldgen profile could not be saved");
+    return true;
+}
+
+bool MapEditor::setGenerationZoneRepeatAxes(const std::string& zoneId,
+                                           const glm::ivec3& repeatAxes)
+{
+    for (int axis = 0; axis < 3; ++axis)
+        if (repeatAxes[axis] != 0 && repeatAxes[axis] != 1) return false;
+    MapConfigRegistry& registry = MapConfigRegistry::instance();
+    GenerationZone* zone = nullptr;
+    for (GenerationZone& candidate : registry.generationZonesMutable())
+        if (candidate.id == zoneId) { zone = &candidate; break; }
+    if (!zone) return false;
+    if (zone->repeatAxes == repeatAxes) return true;
+
+    const glm::ivec3 before = zone->repeatAxes;
+    pushUndo("edit generation repeat axes");
+    zone->repeatAxes = repeatAxes;
+    const bool profileSaved = saveGenerationZoneProfile(
+        registry.current().mapId, nullptr, nullptr, nullptr, &repeatAxes);
+    registry.markChanged();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.generation-zone.repeat-axes.apply", zoneId,
+        "generation repeat axes updated", 0,
+        {{"zone", zoneId}, {"map", registry.current().mapId},
+         {"before", {before.x, before.y, before.z}},
+         {"after", {repeatAxes.x, repeatAxes.y, repeatAxes.z}},
+         {"profile_saved", profileSaved}},
+        __FILE__, __LINE__, __func__);
+    notify(profileSaved ? "generation axes saved" :
+                          "axes changed; worldgen profile could not be saved");
+    return true;
+}
+
 bool MapEditor::handleChar(unsigned int codepoint)
 {
     if (!mActive) return false;
@@ -3007,6 +3190,16 @@ void MapEditor::syncPropertyTransformFields()
         rotation = glm::degrees(glm::eulerAngles(glm::quat_cast(rotationBasis)));
         haveRotation = true;
         haveScale = true;
+    } else if (ref.kind == EditorObjectKind::GenerationZone) {
+        for (const GenerationZone& zone :
+             MapConfigRegistry::instance().generationZones()) {
+            if (zone.id != ref.id) continue;
+            rotation = zone.cellSize;
+            scale = glm::vec3(zone.streamRadius);
+            haveRotation = true;
+            haveScale = true;
+            break;
+        }
     }
     if (!mPropertyName.focused) {
         const std::string name = objectName(ref);
@@ -3029,7 +3222,10 @@ void MapEditor::syncPropertyTransformFields()
             }
         }
         if (!mPropertyScale[i].focused) {
-            std::snprintf(value, sizeof(value), "%.3f", scale[i]);
+            if (ref.kind == EditorObjectKind::GenerationZone)
+                std::snprintf(value, sizeof(value), "%.0f", scale[i]);
+            else
+                std::snprintf(value, sizeof(value), "%.3f", scale[i]);
             if (haveScale && mPropertyScale[i].value != value) {
                 mPropertyScale[i].value = value;
                 uiTextInputResetHistory(mPropertyScale[i]);
@@ -3052,6 +3248,11 @@ void MapEditor::applyPropertyRotation()
         notify("invalid rotation value");
         return;
     }
+    if (mSelection.front().kind == EditorObjectKind::GenerationZone) {
+        setGenerationZoneCellSize(mSelection.front().id, rotation);
+        syncPropertyPositionFields();
+        return;
+    }
     if (setObjectRotation(mSelection.front(), rotation))
         notify("rotation applied");
     else
@@ -3069,6 +3270,19 @@ void MapEditor::applyPropertyScale()
                 scale[i] = std::stof(mPropertyScale[i].value);
     } catch (const std::exception&) {
         notify("invalid scale value");
+        return;
+    }
+    if (mSelection.front().kind == EditorObjectKind::GenerationZone) {
+        glm::ivec3 radius;
+        for (int i = 0; i < 3; ++i) {
+            if (scale[i] < 0.0f || scale[i] > 10000.0f) {
+                notify("generation radius must be 0..10000 m");
+                return;
+            }
+            radius[i] = static_cast<int>(std::lround(scale[i]));
+        }
+        setGenerationZoneStreamRadius(mSelection.front().id, radius);
+        syncPropertyPositionFields();
         return;
     }
     if (setObjectScale(mSelection.front(), scale))
@@ -3095,6 +3309,11 @@ void MapEditor::applyPropertyPosition()
             notify("invalid position value");
             return;
         }
+    }
+    if (mSelection.front().kind == EditorObjectKind::GenerationZone) {
+        setGenerationZoneOrigin(mSelection.front().id, position);
+        syncPropertyPositionFields();
+        return;
     }
     setSelectedPosition(position);
     syncPropertyPositionFields();
@@ -5878,9 +6097,24 @@ void MapEditor::renderUI(GLFWwindow* window)
             mPropertyName.focused = uiTextInputRenderScreen(
                 window, "mapeditor_name", field, mPropertyName, options);
         }
-        renderVec3Fields("pos", "mapeditor_pos", mPropertyPosition, propY + 56.0f);
-        renderVec3Fields("rot", "mapeditor_rot", mPropertyRotation, propY + 84.0f);
-        renderVec3Fields("scale", "mapeditor_scale", mPropertyScale, propY + 112.0f);
+        const bool generationZone =
+            ref.kind == EditorObjectKind::GenerationZone;
+        bool zoneRadiusIsMeters = false;
+        if (generationZone)
+            for (const GenerationZone& zone :
+                 MapConfigRegistry::instance().generationZones())
+                if (zone.id == ref.id) {
+                    zoneRadiusIsMeters = zone.spacingMode == "connector";
+                    break;
+                }
+        renderVec3Fields(generationZone ? "origin m" : "pos",
+                         "mapeditor_pos", mPropertyPosition, propY + 56.0f);
+        renderVec3Fields(generationZone ? "cell m" : "rot",
+                         "mapeditor_rot", mPropertyRotation, propY + 84.0f);
+        renderVec3Fields(generationZone
+                             ? (zoneRadiusIsMeters ? "radius m" : "radius cells")
+                             : "scale",
+                         "mapeditor_scale", mPropertyScale, propY + 112.0f);
 
         glm::vec3 rotation(0.0f);
         glm::vec3 scale(1.0f);
@@ -5958,7 +6192,41 @@ void MapEditor::renderUI(GLFWwindow* window)
                 " chunk=" + mChunkPreviewChunkId;
         }
         uiDrawText(details.c_str(), px + 10.0f, propY + 145.0f, cfg.rowScale, dim);
-        if (ref.kind == EditorObjectKind::ChunkPart ||
+        if (generationZone) {
+            for (GenerationZone& zone :
+                 MapConfigRegistry::instance().generationZonesMutable()) {
+                if (zone.id != ref.id) continue;
+                uiDrawText("repeat axes", px + 12.0f, propY + 171.0f,
+                           cfg.rowScale, dim);
+                const char* axisNames[3] = {"X", "Y", "Z"};
+                const float startX = px + 92.0f;
+                const float gap = 4.0f;
+                const float buttonW = std::max(42.0f,
+                    (pw - 112.0f - gap * 2.0f) / 3.0f);
+                for (int axis = 0; axis < 3; ++axis) {
+                    char label[40];
+                    std::snprintf(label, sizeof(label), "%s %s",
+                                  axisNames[axis], zone.repeatAxes[axis]
+                                      ? "ON" : "OFF");
+                    const float buttonX = startX + axis * (buttonW + gap);
+                    if (uiButton(window, label,
+                            {buttonX, propY + 166.0f, buttonW, 24.0f},
+                            zone.repeatAxes[axis]
+                                ? glm::vec4(0.17f, 0.38f, 0.24f, 1.0f)
+                                : glm::vec4(0.16f, 0.20f, 0.25f, 1.0f),
+                            "mapeditor_zone_repeat_axis", nullptr, nullptr,
+                            nullptr, nullptr, 0.22f).clicked) {
+                        glm::ivec3 axes = zone.repeatAxes;
+                        axes[axis] = axes[axis] ? 0 : 1;
+                        setGenerationZoneRepeatAxes(zone.id, axes);
+                        break;
+                    }
+                }
+                uiDrawText("0 m = world default; Z requires up/down chunk connectors",
+                           px + 12.0f, propY + 194.0f, cfg.rowScale, dim);
+                break;
+            }
+        } else if (ref.kind == EditorObjectKind::ChunkPart ||
             ref.kind == EditorObjectKind::Block) {
             uiDrawText("material", px + 12.0f, propY + 169.0f, cfg.rowScale, dim);
             UITextInputOptions materialOptions;

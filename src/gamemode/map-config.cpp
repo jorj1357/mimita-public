@@ -857,9 +857,14 @@ bool MapConfigRegistry::loadFromStream(const std::string& mapId,
                 }
                 if (item.contains("stream_radius") && item["stream_radius"].is_array() &&
                     item["stream_radius"].size() >= 3) {
+                    const std::string radiusSpacing = item.value(
+                        "spacing_mode", zone.spacingMode);
+                    const int radiusLimit = radiusSpacing == "connector"
+                        ? 10000 : 16;
                     for (int axis = 0; axis < 3; ++axis)
                         zone.streamRadius[axis] = std::clamp(
-                            item["stream_radius"][axis].get<int>(), 0, 16);
+                            item["stream_radius"][axis].get<int>(), 0,
+                            radiusLimit);
                 }
                 zone.spacingMode = item.value("spacing_mode", zone.spacingMode);
                 zone.connectorGap = std::max(0.0f, item.value("connector_gap", zone.connectorGap));

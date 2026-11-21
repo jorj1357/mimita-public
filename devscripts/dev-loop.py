@@ -29,6 +29,7 @@ import re
 import secrets
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -166,6 +167,7 @@ DEFAULT_MAP_POOL_PATH = ROOT / "config" / "gamemode-good-maps.json"
 # every source tree twice a second. The bounded poll also checks the small set
 # of standalone build/configuration inputs and is the non-Windows fallback.
 POLL_SECONDS = 0.50
+WATCH_FALLBACK_SCAN_SECONDS = 2.0
 DEBOUNCE_SECONDS = 0.20
 KEEP_BUILDS = 5
 RAINBOW_SECONDS = 5.0
@@ -596,16 +598,50 @@ def snapshot_watch_directories() -> dict[str, tuple[int, int] | None]:
     return result
 
 
+def snapshot_watch_subtree(directory: Path) -> dict[str, tuple[int, int] | None]:
+    """Index only a newly-created subtree reported by the OS watcher."""
+    result: dict[str, tuple[int, int] | None] = {}
+    if not directory.is_dir():
+        return result
+    module_sources = watched_module_source_paths()
+    for path in directory.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in WATCH_EXTENSIONS:
+            continue
+        resolved = path.resolve()
+        if resolved in module_sources:
+            continue
+        result[str(path)] = file_signature(path)
+    return result
+
+
 class DirectoryChangeNotifications:
-    """Low-cost Windows subtree notifications for build-input directories."""
+    """Path-level Windows subtree notifications for build-input directories.
+
+    FindFirstChangeNotification only says that *something* changed. The old
+    consumer responded by recursively statting every watched directory. Use
+    ReadDirectoryChangesW instead so ordinary edits update only their paths;
+    a full rescan is reserved for notification overflow or watcher failure.
+    """
 
     FILE_NOTIFY_CHANGE_FILE_NAME = 0x00000001
     FILE_NOTIFY_CHANGE_DIR_NAME = 0x00000002
     FILE_NOTIFY_CHANGE_SIZE = 0x00000008
     FILE_NOTIFY_CHANGE_LAST_WRITE = 0x00000010
+    FILE_ACTION_ADDED = 1
+    FILE_ACTION_REMOVED = 2
+    FILE_ACTION_MODIFIED = 3
+    FILE_ACTION_RENAMED_OLD_NAME = 4
+    FILE_ACTION_RENAMED_NEW_NAME = 5
     WAIT_OBJECT_0 = 0
-    WAIT_TIMEOUT = 258
     INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+    FILE_LIST_DIRECTORY = 0x0001
+    FILE_SHARE_READ = 0x0001
+    FILE_SHARE_WRITE = 0x0002
+    FILE_SHARE_DELETE = 0x0004
+    OPEN_EXISTING = 3
+    FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
+    ERROR_OPERATION_ABORTED = 995
+    ERROR_NOTIFY_ENUM_DIR = 1022
 
     def __init__(self, directories: tuple[Path, ...]):
         self.changed = threading.Event()
@@ -614,24 +650,38 @@ class DirectoryChangeNotifications:
         self.available = os.name == "nt"
         self.failed = threading.Event()
         self.directories = directories
+        self._lock = threading.Lock()
+        self._pending_paths: set[tuple[str, int]] = set()
+        self._rescan_required = False
+        self._handles: list[int] = []
+        self.failure_details: list[str] = []
 
     def start(self) -> None:
         if not self.available:
             return
         try:
             kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-            kernel32.FindFirstChangeNotificationW.argtypes = [
-                ctypes.c_wchar_p, ctypes.c_int, ctypes.c_uint32]
-            kernel32.FindFirstChangeNotificationW.restype = ctypes.c_void_p
-            kernel32.FindNextChangeNotification.argtypes = [ctypes.c_void_p]
-            kernel32.FindNextChangeNotification.restype = ctypes.c_int
-            kernel32.FindCloseChangeNotification.argtypes = [ctypes.c_void_p]
-            kernel32.FindCloseChangeNotification.restype = ctypes.c_int
-            kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
-            kernel32.WaitForSingleObject.restype = ctypes.c_uint32
+            from ctypes import wintypes
+
+            kernel32.CreateFileW.argtypes = [
+                wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                wintypes.HANDLE]
+            kernel32.CreateFileW.restype = wintypes.HANDLE
+            kernel32.ReadDirectoryChangesW.argtypes = [
+                wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+                wintypes.BOOL, wintypes.DWORD,
+                ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+                ctypes.c_void_p]
+            kernel32.ReadDirectoryChangesW.restype = wintypes.BOOL
+            kernel32.CancelIoEx.argtypes = [wintypes.HANDLE, ctypes.c_void_p]
+            kernel32.CancelIoEx.restype = wintypes.BOOL
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel32.CloseHandle.restype = wintypes.BOOL
             self.kernel32 = kernel32
-        except (AttributeError, OSError):
+        except (AttributeError, ImportError, OSError) as error:
             self.available = False
+            self.failure_details.append(f"ReadDirectoryChangesW unavailable: {error}")
             return
 
         started = 0
@@ -652,29 +702,92 @@ class DirectoryChangeNotifications:
     def _watch_directory(self, directory: Path) -> None:
         flags = (self.FILE_NOTIFY_CHANGE_FILE_NAME | self.FILE_NOTIFY_CHANGE_DIR_NAME
                  | self.FILE_NOTIFY_CHANGE_SIZE | self.FILE_NOTIFY_CHANGE_LAST_WRITE)
-        handle = self.kernel32.FindFirstChangeNotificationW(str(directory), 1, flags)
+        handle = self.kernel32.CreateFileW(
+            str(directory), self.FILE_LIST_DIRECTORY,
+            self.FILE_SHARE_READ | self.FILE_SHARE_WRITE | self.FILE_SHARE_DELETE,
+            None, self.OPEN_EXISTING, self.FILE_FLAG_BACKUP_SEMANTICS, None)
         if not handle or handle == self.INVALID_HANDLE_VALUE:
+            self.failure_details.append(
+                f"cannot watch {directory}: WinError {ctypes.get_last_error()}")
             self.failed.set()
             return
+        with self._lock:
+            self._handles.append(handle)
         try:
+            from ctypes import wintypes
+
+            buffer = ctypes.create_string_buffer(64 * 1024)
+            bytes_returned = wintypes.DWORD()
             while not self.stop_event.is_set():
-                result = self.kernel32.WaitForSingleObject(handle, 500)
-                if result == self.WAIT_TIMEOUT:
+                ok = self.kernel32.ReadDirectoryChangesW(
+                    handle, ctypes.byref(buffer), len(buffer), True, flags,
+                    ctypes.byref(bytes_returned), None, None)
+                if not ok:
+                    error = ctypes.get_last_error()
+                    if self.stop_event.is_set() or error == self.ERROR_OPERATION_ABORTED:
+                        return
+                    if error == self.ERROR_NOTIFY_ENUM_DIR:
+                        self._require_rescan()
+                        self.changed.set()
+                        continue
+                    self.failure_details.append(
+                        f"watch failed for {directory}: WinError {error}")
+                    self.failed.set()
+                    return
+                if bytes_returned.value == 0:
+                    # Windows reports a zero-byte completion when the change
+                    # buffer overflowed; reconstruct the index before building.
+                    self._require_rescan()
+                    self.changed.set()
                     continue
-                if result != self.WAIT_OBJECT_0:
-                    self.failed.set()
-                    return
+                offset = 0
+                while offset + 12 <= bytes_returned.value:
+                    next_offset, action, name_bytes = struct.unpack_from(
+                        "<III", buffer.raw, offset)
+                    if name_bytes % 2 or offset + 12 + name_bytes > bytes_returned.value:
+                        self._require_rescan()
+                        break
+                    relative_name = ctypes.wstring_at(
+                        ctypes.addressof(buffer) + offset + 12, name_bytes // 2)
+                    changed_path = str(directory / relative_name)
+                    with self._lock:
+                        self._pending_paths.add((changed_path, int(action)))
+                    if next_offset == 0:
+                        break
+                    if next_offset < 12 or offset + next_offset > bytes_returned.value:
+                        self._require_rescan()
+                        break
+                    offset += next_offset
                 self.changed.set()
-                if not self.kernel32.FindNextChangeNotification(handle):
-                    self.failed.set()
-                    return
         finally:
-            self.kernel32.FindCloseChangeNotification(handle)
+            with self._lock:
+                if handle in self._handles:
+                    self._handles.remove(handle)
+            self.kernel32.CloseHandle(handle)
+
+    def _require_rescan(self) -> None:
+        with self._lock:
+            self._rescan_required = True
+
+    def take_changes(self) -> tuple[list[tuple[str, int]], bool]:
+        with self._lock:
+            paths = sorted(self._pending_paths)
+            self._pending_paths.clear()
+            rescan = self._rescan_required
+            self._rescan_required = False
+        return paths, rescan
 
     def close(self) -> None:
         self.stop_event.set()
+        with self._lock:
+            handles = list(self._handles)
+        for handle in handles:
+            try:
+                self.kernel32.CancelIoEx(handle, None)
+            except (AttributeError, OSError):
+                pass
         for thread in self.threads:
-            thread.join(timeout=0.75)
+            thread.join(timeout=2.0)
 
 
 def find_ccache() -> str | None:
@@ -1212,6 +1325,7 @@ class DevLoop:
         # Read-only status queries reuse it instead of reporting the literal
         # query label as the build phase.
         self.last_status_value = "idle"
+        self.last_state_snapshot: dict | None = None
         self.stop_event = threading.Event()
         self.change_event = threading.Event()
         self.lock = threading.Lock()
@@ -1883,7 +1997,7 @@ class DevLoop:
             })
         return [server, *clients]
 
-    def _write_manifest(self) -> None:
+    def _write_manifest(self, snapshot: dict | None = None) -> None:
         layout = self.run_layout
         if layout is None:
             return
@@ -1893,7 +2007,11 @@ class DevLoop:
             "build_id": self.run_metadata.get("build_id"),
             "artifact_id": self.run_metadata.get("artifact_id"),
             "source_generation": self.run_metadata.get("source_generation"),
-            "instances": self._instance_records(),
+            # save_state already built the instance rows, including their
+            # latest journal events. Reuse those rows instead of rereading and
+            # decoding every journal a second time for the run manifest.
+            "instances": (snapshot.get("instances")
+                          if snapshot is not None else self._instance_records()),
         }
         try:
             write_run_manifest(layout, manifest)
@@ -2088,11 +2206,14 @@ class DevLoop:
             "daemon_started_utc": self.daemon_started_utc,
         }
 
-    def save_state(self, status: str = "idle") -> None:
+    def save_state(self, status: str = "idle", *, snapshot: dict | None = None) -> None:
         self.last_status_value = status
-        snapshot = self.state(status)
+        if snapshot is None:
+            snapshot = self.state(status)
+        self.last_state_snapshot = snapshot
         write_json(STATE_PATH, snapshot)
-        self._write_manifest()
+        self._write_manifest(snapshot)
+        self.last_state_save_monotonic = time.monotonic()
 
     def record_control_event(self, request: dict, status: str, message: str) -> None:
         """Append control-plane evidence to the active canonical journal."""
@@ -3451,24 +3572,71 @@ class DevLoop:
             record_source_change(changed_paths)
         while not self.stop_event.is_set():
             if notifications.available and not notifications.failed.is_set():
-                directory_changed = notifications.changed.wait(POLL_SECONDS)
+                notifications.changed.wait(POLL_SECONDS)
                 notifications.changed.clear()
-                before = dict(self.last_snapshot)
-                explicit = snapshot_watch_files()
-                self.last_snapshot.update(explicit)
-                if directory_changed:
-                    directories = snapshot_watch_directories()
-                    previous = {path: signature for path, signature in self.last_snapshot.items()
-                                if any(path.startswith(str(root) + os.sep)
-                                       for root in WATCH_DIRECTORIES)}
-                    for path in previous:
-                        self.last_snapshot.pop(path, None)
-                    self.last_snapshot.update(directories)
-                changed_paths = changed_input_paths(before, self.last_snapshot)
+                events, full_rescan = notifications.take_changes()
+                for path, signature in snapshot_watch_files().items():
+                    if self.last_snapshot.get(path) != signature:
+                        # WATCH_FILES is a small, fixed set outside the
+                        # directory notifications. Compare it directly instead
+                        # of copying and diffing the entire repository index on
+                        # every 500 ms watcher wake.
+                        changed_paths.append(path)
+                        self.last_snapshot[path] = signature
+                if full_rescan:
+                    current = snapshot_inputs()
+                    changed_paths = sorted(set(changed_paths) |
+                                           set(changed_input_paths(
+                                               self.last_snapshot, current)))
+                    self.last_snapshot = current
+                elif events:
+                    module_sources = watched_module_source_paths()
+                    for changed_path, action in events:
+                        path = Path(changed_path)
+                        key = str(path)
+                        prefix = key.rstrip("\\/") + os.sep
+                        if path.is_dir():
+                            # Windows can report the parent directory itself
+                            # as modified when a child file changes. The file
+                            # event below is authoritative; rescanning that
+                            # directory here would recreate the full-tree walk.
+                            if action == DirectoryChangeNotifications.FILE_ACTION_MODIFIED:
+                                continue
+                            subtree = snapshot_watch_subtree(path)
+                            existing = [name for name in self.last_snapshot
+                                        if name.startswith(prefix)]
+                            subtree_names = set(subtree)
+                            for name in existing:
+                                if name not in subtree_names:
+                                    self.last_snapshot.pop(name, None)
+                                    changed_paths.append(name)
+                            for name, signature in subtree.items():
+                                if self.last_snapshot.get(name) != signature:
+                                    changed_paths.append(name)
+                                    self.last_snapshot[name] = signature
+                        elif path.is_file() and path.suffix.lower() in WATCH_EXTENSIONS:
+                            if path.resolve() in module_sources:
+                                continue
+                            signature = file_signature(path)
+                            if self.last_snapshot.get(key) != signature:
+                                changed_paths.append(key)
+                                self.last_snapshot[key] = signature
+                        else:
+                            removed = [name for name in self.last_snapshot
+                                       if name == key or name.startswith(prefix)]
+                            for name in removed:
+                                self.last_snapshot.pop(name, None)
+                                changed_paths.append(name)
+                    changed_paths = sorted(set(changed_paths))
             else:
                 if notifications.failed.is_set():
                     notifications.available = False
-                if self.stop_event.wait(POLL_SECONDS):
+                    detail = "; ".join(notifications.failure_details[:4])
+                    print(f"[DEV WATCH] notifications unavailable; using "
+                          f"{WATCH_FALLBACK_SCAN_SECONDS:.1f}s full-scan fallback"
+                          + (f": {detail}" if detail else ""))
+                    notifications.failure_details.clear()
+                if self.stop_event.wait(WATCH_FALLBACK_SCAN_SECONDS):
                     break
                 current = snapshot_inputs()
                 changed_paths = changed_input_paths(self.last_snapshot, current)
@@ -5400,8 +5568,11 @@ class DevLoop:
         if clear_code:
             self.room_code = None
 
-    def print_status(self, force: bool = False) -> None:
-        snapshot = self.state(self.last_status_value)
+    def print_status(self, force: bool = False, *, snapshot: dict | None = None) -> None:
+        if snapshot is None:
+            snapshot = self.last_state_snapshot
+        if snapshot is None:
+            snapshot = self.state(self.last_status_value)
         status_line = (
             snapshot.get("build_status"),
             snapshot.get("active_build_phase"),
@@ -5513,10 +5684,10 @@ class DevLoop:
                     continue
                 if self.change_event.wait(0.20):
                     self.change_event.clear()
-                self.print_status()
                 if time.monotonic() - self.last_state_save_monotonic >= 1.0:
                     self.last_state_save_monotonic = time.monotonic()
                     self.save_state(self.last_status_value)
+                self.print_status(snapshot=self.last_state_snapshot)
                 self.refresh_status_animation()
         finally:
             self.stop_event.set()

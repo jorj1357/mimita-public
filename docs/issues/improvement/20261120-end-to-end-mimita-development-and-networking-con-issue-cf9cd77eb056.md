@@ -744,3 +744,71 @@ Contrary evidence
 
 Next discriminating check (one)
 Run the same pinned isolated TDM once while capturing, immediately before and after a single `--stop-test-run`: (a) the manifest's raw `process_started_utc` and the fresh identity timestamp at full precision for each PID; (b) a file listing/hash of the run directory; (c) any retention/prune marker or concurrent start request. If stop mismatches only where ms and microseconds differ and journals persist when no new run starts, identity precision is the first cause; if journals disappear without a concurrent start, retention is first cause. In parallel, one pinned Payload segment from the exact generation should either attach `payload.cart-trace` to the telemetry task proof or record the first missing sample reason.
+
+## User quote
+
+### 2026-11-21T22:48:55.448Z — reconnect-horde-consistency
+
+Via reconnect-horde-consistency; supports issue-b95574b63f29:
+
+> &#x20;an u look into why reconnectin gisuse and i have inconsistnet making a server in mimita.exe like  i open it and then i try to make juggernaut horde and then it  loads onl 1 npc and the teams are just red/blue not juggernaut and fighter like its missing some things, how to get consistent with it&#x20; we needt o measuer and trace the whole path of making a game and joingin it or &#x20; bc i do it thru the dev loop gui but thats not good alos npcs stop fighitn me/choosing me as a arget in juggernaut horde that needs to be a issue and also fixe dhow to fix that
+
+## Context
+
+### 2026-11-21T22:52:56.628Z — reconnect-horde-consistency
+
+reproduction: Through the dev-loop GUI create or join a Juggernaut Horde session, record selected mode/map/roster, observe NPC count and team/role labels, disconnect and reconnect, then compare server/client lifecycle events. The user did not provide a run ID or exact click sequence.
+expected_behavior: The selected Juggernaut Horde configuration is effective on server and client, expected Fighter/Juggernaut roles and NPC population appear consistently, and join/reconnect reaches ready state or exposes a stage-specific failure.
+acceptance: Repeated GUI create/join/reconnect attempts correlate request ID, run ID, build ID, process identity, selected/effective mode/map/roster, stage durations, and matching server/client journals; a failure identifies its first missing transition.
+paths: ['devscripts/dev_loop/gui.py', 'devscripts/dev-loop.py', 'src/gui', 'src/network', 'src/gamemode', 'config/gamemodes/jugger_horde.json']
+risk: Changing GUI or mode defaults without a matching trace could mask stale overrides, disrupt existing runtimes, or alter intended roster behavior; preserve the currently running shared session and change the first demonstrated owner only.
+proof_expectation: Pinned dev-loop GUI-created Juggernaut Horde server/client journals show selected/effective mode, roster and role assignment, reconnect transitions, and scenario completion.
+context_id: ctx-7b69ff7b24ef
+
+## Agent discussion and suggestions
+
+### 2026-11-21T22:52:57.575Z — reconnect-horde-consistency
+
+Message: `msg-1ed7c3b51aa0` (status)
+
+Subject: Shared Horde/create-join investigation findings
+
+I found the run cited in issue-b95574b63f29 is misattributed: logs/2026-11-20/20261120_232200/run.json says mode=fun counter strike, map=funworld3, so it cannot prove Horde target/fire behavior. Current shared runtime is still Payload mode (run 20261121_224058); client is stale, and I am preserving both. Static source/config: jugger_horde team_roster declares 64 Fighters + 4 Juggernauts; reconcileTeamRosterNpc should create/reconcile all capacities and emit gamemode.team-roster.resolved. I appended this evidence correction to issue-b95574b63f29 and attached the new user report to issue-cf9cd77eb056. I will avoid source/build/runtime changes while you pursue the same overall investigation; please take lead on the new GUI-created pinned Horde run or tell me which independent slice you want me to own.
+
+## Agent suggestion
+
+### 2026-11-21T22:54:58.801Z — reconnect-horde-consistency
+
+Source-path finding (observed in code, not yet tied to the user click sequence): devscripts/dev_loop/gui.py mode picker sends set-launch-mode; devscripts/dev-loop.py handles this by changing the daemon launch_mode_id/config and clearing launch overrides. The Start server action explicitly rejects when any server is already running. The Start client action calls start_client_instance, which attaches directly to the existing server room code or localhost port and does not compare that server against the newly selected launch mode. The explicit server_matches_launch_configuration check occurs in launch_latest. Therefore a mode switch followed by Start client can join the old mode; this is a plausible explanation for seeing a generic/old roster and must be tested against control-request, launch, and server journals before calling it the user root cause. For Horde launch mode ID 44, configured args are --mode jugger_horde --gamemode jugger_horde on dust2cyberiav4. The server should then emit gamemode.match.configured and team-roster resolution after the first player becomes active.
+
+## Agent discussion and suggestions
+
+### 2026-11-21T22:54:59.148Z — reconnect-horde-consistency
+
+Message: `msg-0c2bfb46b726` (status)
+
+Subject: Likely GUI mode-switch/reuse branch
+
+Additional source trace: GUI mode picker sends set-launch-mode; that updates only desired daemon config. Start server rejects if a server already runs. Start client attaches directly to current server room/port and does not check selected mode vs server args. launch_latest is where server_matches_launch_configuration can replace a mismatched server. Hypothesis: switching to Horde then using Start client can join the old mode, plausibly yielding old RED/BLUE teams and default NPC behavior. Not yet tied to user click sequence. Horde launch mode is ID 44, args --mode jugger_horde --gamemode jugger_horde, map dust2cyberiav4. Please include this control-request branch in your pinned reproduction.
+
+## Agent discussion and suggestions
+
+### 2026-11-21T23:02:13.560Z — live-build-gui-timer-resource-audit
+
+Message: `msg-43e49b83bdb6` (evidence)
+
+Subject: Evidence: in-game Juggernaut Horde 1-NPC, 64-slot identity cap, and split server identity
+
+Read-only evidence for ctx-7b69ff7b24ef from run 20261121_224058 (artifact 2026-11-21T02:26:50.306117Z sha 8b5838cbbf4c1bcda47c3f35e33583fde83bdacc89bdc52961e13980c976b871, generation 436). No code, build, or process was changed.
+
+1) In-game Juggernaut Horde launch divergences. Client PID 24192 launched child server PID 20908 for map badhouse mode jugger_horde at 22:41:48Z. network.gui-server.launch recorded client_events_jsonl and server_events_jsonl as empty, so the child server wrote into client-01/events.jsonl. server.policy.startup logged gamemode=duel and npc_count=1. Source owner: src/gui/gui-main.cpp:390-411 passes --gamemode only when settings.duelMode and always passes --npcs settings.startupNpcCount; the binding default is 1 (gui-main.cpp:266,304-307; online-menu.cpp:369-370). Community mode still set jugger_horde, so gamemode.match.configured showed fighters capacity 64 and juggernauts capacity 4.
+
+2) The 1-NPC symptom is the WAITING state before a team roster exists. At tick 60 the first mode packet had participant_count=0 and client.gamemode.local-actor-identity found=false team=-1. At tick 180 the team roster finally created 63 fighter NPCs and 4 juggernaut NPCs and removed startup NPC 1000 as unrelated. A separate server with no active human, run 20261121_215237 server PID 29912, was still at network.mode.start stage=waiting active_players=0 participants=0 npc_count=1 at tick 107694 (22:40:59Z) with npc.trace id=1000 role=empty team=-1 PATROL stuck=true total_count=1. So: no active human client on that exact server means no Fighter/Juggernaut roster, only the single generic startup NPC. The user-visible inconsistency tracks which server actually receives the client, not the mode config itself.
+
+3) Missing team identity has a concrete packet limit. src/network/schema/packet-gamemode.h:120-127 fixes participantIds/Teams/Roles/States/ActorPresets at 64. src/network/server-gamemode.cpp:2055 clamps participantCount=min(64,d.participants.size()) and participants is sorted at :3628. A full horde is 1 human + 63 fighter NPCs + 4 juggernaut NPCs = 68, so the four highest-sorted Juggernaut ids fall outside the identity window; only the local actor can be patched into slot 63 (server-gamemode.cpp:2120-2158). This is a source-level explanation for missing Juggernaut/Fighter identity and possible RED/BLUE fallback labels. The body snapshot path is separate and did send 67 NPCs (client applied 66 remote_npcs). Server-side targeting is not affected by this packet cap.
+
+4) Target loss is state-dependent, not universal. Before the human switched teams, no npc.target-changed had target_actor=1; juggernauts targeted fighter NPCs. After command team_pick 2 at tick 438, the human became team 1 role juggernaut_mode_juggernaut, and 14 npc.target-changed events then targeted actor 1 at 1.6-19.1 m (ticks 625-1130). Additional evidence is appended to issue-b95574b63f29.
+
+5) Lifecycle identity is still split. run.json names server-01 PID 27816 in payload1/payload mode while child server PID 20908 ran jugger_horde in the same run, and run.json marks client-01 stale with event_age_ms=442030 while the server was online. Reconciliation also listed retained PIDs 34328 and 29912. So the current build can have multiple server identities per run and cannot reliably answer which server the client is on.
+
+Confidence: high for items 1-3 (direct source plus journals); medium for the exact visual RED/BLUE cause because no HUD/scoreboard capture exists; high that targeting works after team_pick 2 in this run. Recommended minimal fixes for owner review, not applied: pass an effective --gamemode for all community modes (or derive it from the selected mode); omit generic --npcs for team_roster modes so the roster owns population; size the participant identity window for the largest configured roster (>=68) with a schema/AI review; and give every GUI-launched child server its own journal identity. Next discriminating check: capture the live HUD/scoreboard during a full 68-participant horde and correlate the 64-slot packet to visible labels.

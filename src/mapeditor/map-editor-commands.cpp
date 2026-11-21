@@ -2,6 +2,7 @@
 #include "mapeditor/map-editor-commands.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -910,26 +911,50 @@ void registerMapEditorCommands()
                 else if (field == "name") zone->name = args[3];
                 else if (field == "enabled") zone->enabled = std::atoi(args[3].c_str()) != 0;
                 else if (field == "radius") {
-                    zone->streamRadius = glm::ivec3(
-                        static_cast<int>(number(3)), static_cast<int>(number(4)),
-                        static_cast<int>(number(5)));
-                    // The runtime profile currently owns the effective radius;
-                    // keep it in sync so a typed zone radius applies live.
-                    std::string error;
-                    MimitaWorldGen::WorldGenMode profile;
-                    const std::string mapId =
-                        MapConfigRegistry::instance().current().mapId;
-                    if (MimitaWorldGen::WorldGenLibrary::instance().loadMode(
-                            mapId, profile, &error)) {
-                        profile.id = mapId;
-                        profile.grid.streamRadius = zone->streamRadius;
-                        MimitaWorldGen::WorldGenLibrary::instance().saveMode(
-                            profile, &error);
+                    if (args.size() < 6 || number(3) < 0.0 || number(4) < 0.0 ||
+                        number(5) < 0.0 ||
+                        number(3) > 10000.0 || number(4) > 10000.0 ||
+                        number(5) > 10000.0 || !std::isfinite(number(3)) ||
+                        !std::isfinite(number(4)) || !std::isfinite(number(5))) {
+                        Terminal::instance().addLog(
+                            "[MAPEDIT] zone radius values must be 0..10000 in the displayed units");
+                        return;
                     }
+                    if (!MapEditor::instance().setGenerationZoneStreamRadius(
+                        zone->id, glm::ivec3(static_cast<int>(number(3)),
+                                             static_cast<int>(number(4)),
+                                             static_cast<int>(number(5)))))
+                        return;
+                    return;
                 } else if (field == "cell") {
-                    zone->cellSize = glm::vec3(number(3), number(4), number(5));
+                    if (args.size() < 6 ||
+                        !MapEditor::instance().setGenerationZoneCellSize(
+                            zone->id, glm::vec3(number(3), number(4), number(5))))
+                        return;
+                    return;
+                } else if (field == "axes") {
+                    if (args.size() < 6 ||
+                        (args[3] != "0" && args[3] != "1") ||
+                        (args[4] != "0" && args[4] != "1") ||
+                        (args[5] != "0" && args[5] != "1")) {
+                        Terminal::instance().addLog(
+                            "[MAPEDIT] zone_field <zone> axes <x 0|1> <y 0|1> <z 0|1>");
+                        return;
+                    }
+                    const glm::ivec3 axes(number(3) != 0.0,
+                                          number(4) != 0.0,
+                                          number(5) != 0.0);
+                    if (!MapEditor::instance().setGenerationZoneRepeatAxes(
+                            zone->id, axes))
+                        return;
+                    return;
                 } else if (field == "origin") {
-                    zone->origin = glm::vec3(number(3), number(4), number(5));
+                    if (args.size() < 6 || !std::isfinite(number(3)) ||
+                        !std::isfinite(number(4)) || !std::isfinite(number(5)) ||
+                        !MapEditor::instance().setGenerationZoneOrigin(
+                            zone->id, glm::vec3(number(3), number(4), number(5))))
+                        return;
+                    return;
                 } else if (field == "chunk_size") {
                     zone->chunkSizeVec = glm::vec3(number(3), number(4), number(5));
                 } else if (field == "dependency") {
