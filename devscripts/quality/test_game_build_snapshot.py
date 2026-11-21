@@ -16,8 +16,13 @@ from devscripts.dev_loop.game_build import (  # noqa: E402
     _copy_into_mirror,
     _create_overlay_snapshot,
     _create_source_snapshot,
+    _prune_logs,
 )
-from devscripts.game_build_worker import dependency_relative  # noqa: E402
+from devscripts.game_build_worker import (  # noqa: E402
+    cached_dependency_tokens,
+    dependency_relative,
+    remember_dependency_tokens,
+)
 
 TEMP_ROOT = ROOT / ".dev" / "tmp"
 
@@ -66,6 +71,28 @@ class SourceSnapshotTests(unittest.TestCase):
         self.assertEqual(metadata["base_snapshot"], str(snapshot.relative_to(self.root)))
         self.assertEqual(metadata["overlay_paths"], ["src/a.cpp"])
 
+    def test_dependency_index_reuses_unchanged_depfile(self) -> None:
+        dep = self.root / "unit.d"
+        dep.write_text("src/a.cpp.o: src/a.cpp src/a.h\n", encoding="utf-8")
+        index = {}
+        self.assertTrue(remember_dependency_tokens(
+            index, "src/a.cpp", "source-hash", dep,
+            ["src/a.cpp", "src/a.h"]))
+        self.assertEqual(len(index), 1)
+        self.assertEqual(cached_dependency_tokens(
+            index, "src/a.cpp", "source-hash", dep),
+            [str(ROOT / "src/a.cpp"), str(ROOT / "src/a.h")])
+        self.assertIsNone(cached_dependency_tokens(
+            index, "src/a.cpp", "different-hash", dep))
+
+    def test_log_prune_keeps_newest_date_directories(self) -> None:
+        logs = self.root / "logs"
+        for name in ("2026-01-01", "2026-01-02", "2026-01-03"):
+            (logs / name).mkdir(parents=True)
+        self.assertEqual(_prune_logs(self.root, 2), 1)
+        self.assertFalse((logs / "2026-01-01").exists())
+        self.assertTrue((logs / "2026-01-03").exists())
+
     def test_vendor_headers_are_not_project_fanout(self) -> None:
         self.assertEqual(dependency_relative("include/glm/glm.hpp"), "")
         self.assertEqual(dependency_relative("include/GLFW/glfw3.h"), "")
@@ -75,4 +102,3 @@ class SourceSnapshotTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

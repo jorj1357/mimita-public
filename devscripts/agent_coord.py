@@ -208,6 +208,12 @@ class CoordStore:
                 answered_at TEXT NOT NULL DEFAULT '',
                 reply_to TEXT NOT NULL DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS message_receipts (
+                msg_id TEXT NOT NULL,
+                agent TEXT NOT NULL,
+                read_at TEXT NOT NULL,
+                PRIMARY KEY (msg_id, agent)
+            );
             CREATE TABLE IF NOT EXISTS leases (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 lease_id TEXT NOT NULL UNIQUE,
@@ -509,6 +515,15 @@ class CoordStore:
                 elapsed_ms INTEGER NOT NULL DEFAULT 0,
                 notes TEXT NOT NULL DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS issue_review_scheduler (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                last_completed_count INTEGER NOT NULL DEFAULT 0,
+                last_scheduled_utc TEXT NOT NULL DEFAULT '',
+                last_attempt_utc TEXT NOT NULL DEFAULT '',
+                last_issue_id TEXT NOT NULL DEFAULT '',
+                last_wake_id TEXT NOT NULL DEFAULT '',
+                last_result TEXT NOT NULL DEFAULT ''
+            );
             CREATE TABLE IF NOT EXISTS work_phases (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL,
@@ -527,10 +542,45 @@ class CoordStore:
         self._ensure_task_columns()
         self._ensure_agent_columns()
         self._ensure_work_columns()
+        self._ensure_message_receipts()
+        self._ensure_issue_review_scheduler_columns()
+        completed_sessions = int(self.conn.execute(
+            "SELECT COUNT(*) FROM work_sessions WHERE ended_utc<>''"
+        ).fetchone()[0])
+        with self.conn:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO issue_review_scheduler "
+                "(id,last_completed_count,last_scheduled_utc) VALUES (1,?,?)",
+                (completed_sessions, utc_now()))
         self.conn.execute(
             "INSERT OR IGNORE INTO halt(id, active, reason, by_agent, created_utc) "
             "VALUES (1, 0, '', '', ?)", (utc_now(),))
         self.conn.commit()
+
+    def _ensure_message_receipts(self) -> None:
+        """Upgrade legacy global reads to recipient-specific receipts."""
+        with self.conn:
+            # A legacy receipt can be attributed safely for a named recipient.
+            self.conn.execute(
+                "INSERT OR IGNORE INTO message_receipts(msg_id,agent,read_at) "
+                "SELECT msg_id,recipient,read_at FROM messages "
+                "WHERE read_at<>'' AND recipient NOT IN ('all','any')")
+            # For a legacy broadcast, infer only the agent who replied. A bare
+            # global read timestamp does not identify which recipients read it.
+            self.conn.execute(
+                "INSERT OR IGNORE INTO message_receipts(msg_id,agent,read_at) "
+                "SELECT m.msg_id,r.sender,m.read_at FROM messages m "
+                "JOIN messages r ON r.reply_to=m.msg_id "
+                "WHERE m.read_at<>'' AND m.recipient IN ('all','any') "
+                "AND r.sender<>m.sender")
+
+    def _unread_count(self, agent: str) -> int:
+        return int(self.conn.execute(
+            "SELECT COUNT(*) FROM messages m WHERE "
+            "(m.recipient=? OR m.recipient IN ('all','any')) AND "
+            "NOT EXISTS (SELECT 1 FROM message_receipts r "
+            "WHERE r.msg_id=m.msg_id AND r.agent=?)",
+            (agent, agent)).fetchone()[0])
 
     def _ensure_agent_columns(self) -> None:
         existing = {str(row[1]) for row in self.conn.execute(
@@ -546,6 +596,24 @@ class CoordStore:
                 if name not in existing:
                     self.conn.execute(
                         f"ALTER TABLE agents ADD COLUMN {name} {definition}")
+
+    def _ensure_issue_review_scheduler_columns(self) -> None:
+        existing = {str(row[1]) for row in self.conn.execute(
+            "PRAGMA table_info(issue_review_scheduler)")}
+        additions = {
+            "last_completed_count": "INTEGER NOT NULL DEFAULT 0",
+            "last_scheduled_utc": "TEXT NOT NULL DEFAULT ''",
+            "last_attempt_utc": "TEXT NOT NULL DEFAULT ''",
+            "last_issue_id": "TEXT NOT NULL DEFAULT ''",
+            "last_wake_id": "TEXT NOT NULL DEFAULT ''",
+            "last_result": "TEXT NOT NULL DEFAULT ''",
+        }
+        with self.conn:
+            for name, definition in additions.items():
+                if name not in existing:
+                    self.conn.execute(
+                        f"ALTER TABLE issue_review_scheduler ADD COLUMN "
+                        f"{name} {definition}")
 
     def _ensure_task_columns(self) -> None:
         existing = {str(row[1]) for row in self.conn.execute(
@@ -777,19 +845,309 @@ class CoordStore:
         self.event("coord.session.ended", agent, session=agent)
         return {"agent": agent, "released": len(leases)}
 
+    def _issue_review_scheduler_tick(self, agent: str, *, trigger: str) -> dict:
+        """Schedule one bounded issue review after five sessions or 30 minutes."""
+        if self.root != ROOT / ".dev" / "agent-coord":
+            return {"due": False, "scheduled": False,
+                    "reason": "custom coordination root"}
+
+        now = utc_now()
+        completed = int(self.conn.execute(
+            "SELECT COUNT(*) FROM work_sessions WHERE ended_utc<>''"
+        ).fetchone()[0])
+        state = self.conn.execute(
+            "SELECT * FROM issue_review_scheduler WHERE id=1").fetchone()
+        if state is None:
+            return {"due": False, "scheduled": False,
+                    "reason": "scheduler state missing"}
+        last_count = int(state["last_completed_count"] or 0)
+        count_delta = max(0, completed - last_count)
+        elapsed_seconds = 0.0
+        last_scheduled = str(state["last_scheduled_utc"] or "")
+        try:
+            if last_scheduled:
+                elapsed_seconds = max(0.0, (
+                    datetime.datetime.fromisoformat(now.replace("Z", "+00:00")) -
+                    datetime.datetime.fromisoformat(last_scheduled.replace("Z", "+00:00"))
+                ).total_seconds())
+        except ValueError:
+            elapsed_seconds = 0.0
+        due_by_sessions = count_delta >= 5
+        due_by_time = count_delta > 0 and elapsed_seconds >= 1800.0
+        if not due_by_sessions and not due_by_time:
+            return {"due": False, "scheduled": False,
+                    "completed_sessions": completed,
+                    "sessions_since_review": count_delta}
+
+        last_attempt = str(state["last_attempt_utc"] or "")
+        try:
+            attempt_age = (datetime.datetime.fromisoformat(now.replace("Z", "+00:00")) -
+                           datetime.datetime.fromisoformat(last_attempt.replace("Z", "+00:00"))).total_seconds()
+        except ValueError:
+            attempt_age = 60.0
+        if last_attempt and attempt_age < 60.0:
+            return {"due": True, "scheduled": False,
+                    "reason": "retry cooldown", "retry_after_s": int(60 - attempt_age)}
+
+        reviewer = "issue-review-sweeper"
+        reviewer_row = self._agent_row(reviewer)
+        if reviewer_row is not None and reviewer_row["status"] == "active":
+            try:
+                active_age = (datetime.datetime.fromisoformat(now.replace("Z", "+00:00")) -
+                              datetime.datetime.fromisoformat(
+                                  str(reviewer_row["last_seen_utc"]).replace("Z", "+00:00"))).total_seconds()
+            except ValueError:
+                active_age = 0.0
+            if active_age < 900.0:
+                return {"due": True, "scheduled": False,
+                        "reason": "review agent already active"}
+
+        wake_script = ROOT / "devscripts" / "agent-wake.py"
+        wake_root = ROOT / ".dev" / "agent-wake" / "requests"
+        for wake_path in wake_root.glob("*.json") if wake_root.exists() else ():
+            try:
+                wake = json.loads(wake_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if (wake.get("agent") != reviewer or
+                    wake.get("status") not in {"queued", "claimed", "launched"}):
+                continue
+            try:
+                wake_age = (datetime.datetime.now(datetime.timezone.utc) -
+                            datetime.datetime.fromisoformat(
+                                str(wake.get("created_utc", "")).replace("Z", "+00:00"))).total_seconds()
+            except ValueError:
+                wake_age = 0.0
+            if wake.get("status") == "launched" and wake_age >= 900.0:
+                # A wake daemon may not be running. Reconcile its child PID
+                # before treating an old launch as permanently in flight.
+                try:
+                    subprocess.run([sys.executable, str(wake_script), "reconcile"],
+                                   cwd=ROOT, capture_output=True, text=True,
+                                   check=False, timeout=8)
+                    wake = json.loads(wake_path.read_text(encoding="utf-8"))
+                except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+                    pass
+            if (wake.get("status") in {"queued", "claimed", "launched"} and
+                    (wake.get("status") == "launched" or wake_age < 900.0)):
+                return {"due": True, "scheduled": False,
+                        "reason": "review wake already pending",
+                        "wake_id": str(wake.get("id") or "")}
+            # A queued/claimed wake that never launched should not block the
+            # single reviewer slot forever. Cancel its request before retrying.
+            subprocess.run([sys.executable, str(wake_script), "cancel",
+                            str(wake.get("id") or "")], cwd=ROOT,
+                           capture_output=True, text=True, check=False,
+                           timeout=8)
+
+        # A wake may have been written just before this process exited. Reuse it
+        # by stable cadence key rather than launching duplicate reviewers.
+        sweep_key = f"issue-review-sweep-{completed}"
+        for wake_path in wake_root.glob("*.json") if wake_root.exists() else ():
+            try:
+                wake = json.loads(wake_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if (wake.get("dedupe_key") == sweep_key and
+                    wake.get("status") in {"queued", "claimed", "launched"}):
+                return {"due": True, "scheduled": True,
+                        "issue": wake.get("issue", ""),
+                        "wake_id": wake.get("id", ""),
+                        "reason": "existing review wake reused"}
+
+        cutoff = (datetime.datetime.now(datetime.timezone.utc) -
+                  datetime.timedelta(hours=24)).isoformat(
+                      timespec="milliseconds").replace("+00:00", "Z")
+        candidate = self.conn.execute(
+            "SELECT i.id,i.title,i.priority,i.state,i.owner,i.updated_utc, "
+            "CASE WHEN EXISTS (SELECT 1 FROM issue_tasks it "
+            "JOIN task_proofs tp ON tp.task_id=it.task_id "
+            "WHERE it.issue_id=i.id AND "
+            "(tp.result IN ('unproven','stale','failed') OR "
+            "tp.status IN ('unverified','stale','failed'))) OR EXISTS ("
+            "SELECT 1 FROM issue_evidence ie WHERE ie.issue_id=i.id AND "
+            "ie.result IN ('unproven','stale','failed')) THEN 0 ELSE 1 END "
+            "AS proof_rank, MAX(r.created_utc) AS last_review_utc "
+            "FROM issues i LEFT JOIN issue_reviews r ON r.issue_id=i.id "
+            "WHERE i.state IN ('new','triaged','in_review','blocked') "
+            "GROUP BY i.id HAVING last_review_utc IS NULL OR last_review_utc<? "
+            "ORDER BY proof_rank ASC, "
+            "CASE i.priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 "
+            "WHEN 'low' THEN 2 ELSE 1 END ASC, "
+            "COALESCE(last_review_utc,i.created_utc) ASC LIMIT 1",
+            (cutoff,)).fetchone()
+        if candidate is None:
+            with self.conn:
+                self.conn.execute(
+                    "UPDATE issue_review_scheduler SET last_completed_count=?, "
+                    "last_scheduled_utc=?,last_attempt_utc=?,last_issue_id='', "
+                    "last_wake_id='',last_result='no eligible issue' WHERE id=1",
+                    (completed, now, now))
+            self.event("coord.issue_review.skipped", agent,
+                       reason="no eligible open issue", trigger=trigger,
+                       completed_sessions=completed)
+            return {"due": True, "scheduled": False,
+                    "reason": "no eligible open issue",
+                    "completed_sessions": completed}
+
+        adapters = [name for name in ("opencode", "codex") if shutil.which(name)]
+        if not adapters:
+            reason = "no wake adapter available"
+            with self.conn:
+                self.conn.execute(
+                    "UPDATE issue_review_scheduler SET last_attempt_utc=?, "
+                    "last_result=? WHERE id=1", (now, reason))
+            self.event("coord.issue_review.failed", agent,
+                       issue=str(candidate["id"]), reason=reason,
+                       trigger=trigger, completed_sessions=completed)
+            self._issue_append(
+                agent, str(candidate["id"]), "Scheduled review unavailable",
+                f"Observed: review cadence was due at completed_sessions={completed}, "
+                f"but no wake adapter was available. No reviewer was launched. "
+                f"Next check: retry on the next coordination activation after the "
+                f"60-second retry cooldown. Trigger={trigger}.")
+            return {"due": True, "scheduled": False,
+                    "issue": str(candidate["id"]),
+                    "reason": reason}
+
+        prompt = (
+            f"Complete one bounded independent review of {candidate['id']}. "
+            "Start with issue brief/readiness, proof status, linked artifacts, "
+            "and the latest relevant journals. Append one evidence-grounded "
+            "issue review with observed facts, inference/uncertainty, contrary "
+            "evidence, and the next discriminating check. Do not edit source, "
+            "build, close, or claim a fix. If no new evidence is available, "
+            "record that and a concrete next step rather than inventing a claim. "
+            "Then do a short development-process review of the evidence you "
+            "used: if it demonstrates a repeated delay, missing evidence, human-only "
+            "step, avoidable retry, or safe AI capability, append one specific "
+            "proposal with a measurable target and smallest experiment to the "
+            "best existing improvement issue (use issue-91e3384b219b for general "
+            "process/self-improvement only when appropriate). If no process "
+            "improvement is supported by evidence, say none found in this sweep. "
+            "Keep claims in the issue cold-handoff-ready and preserve all prior text.")
+        command = [
+            sys.executable, str(wake_script), "add", "--agent", reviewer,
+            "--issue", str(candidate["id"]), "--when", "manual",
+            "--adapter", adapters[0], "--dedupe-key", sweep_key,
+            "--prompt", prompt,
+        ]
+        for fallback in adapters[1:]:
+            command.extend(["--fallback-adapter", fallback])
+        reservation_cutoff = (datetime.datetime.now(datetime.timezone.utc) -
+                              datetime.timedelta(seconds=60)).isoformat(
+                                  timespec="milliseconds").replace("+00:00", "Z")
+        with self.conn:
+            reservation = self.conn.execute(
+                "UPDATE issue_review_scheduler SET last_attempt_utc=?, "
+                "last_result='queueing' WHERE id=1 AND "
+                "(last_attempt_utc='' OR last_attempt_utc<?)",
+                (now, reservation_cutoff))
+        if reservation.rowcount != 1:
+            return {"due": True, "scheduled": False,
+                    "reason": "another activation reserved this review"}
+        try:
+            queued = subprocess.run(command, cwd=ROOT, capture_output=True,
+                                    text=True, check=False, timeout=12)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            reason = str(error)[:300]
+            with self.conn:
+                self.conn.execute(
+                    "UPDATE issue_review_scheduler SET last_attempt_utc=?, "
+                    "last_result=? WHERE id=1", (now, reason))
+            self.event("coord.issue_review.failed", agent,
+                       issue=str(candidate["id"]), reason=reason,
+                       trigger=trigger, completed_sessions=completed)
+            self._issue_append(
+                agent, str(candidate["id"]), "Scheduled review unavailable",
+                f"Observed: review wake creation failed: {reason}. No review is "
+                f"claimed complete. Next check: retry after the 60-second cooldown; "
+                f"trigger={trigger}, completed_sessions={completed}.")
+            return {"due": True, "scheduled": False,
+                    "issue": str(candidate["id"]),
+                    "reason": "wake request failed"}
+        if queued.returncode != 0:
+            reason = (queued.stderr or queued.stdout or "wake request failed").strip()[-300:]
+            with self.conn:
+                self.conn.execute(
+                    "UPDATE issue_review_scheduler SET last_attempt_utc=?, "
+                    "last_result=? WHERE id=1", (now, reason))
+            self.event("coord.issue_review.failed", agent,
+                       issue=str(candidate["id"]), reason=reason,
+                       trigger=trigger, completed_sessions=completed)
+            self._issue_append(
+                agent, str(candidate["id"]), "Scheduled review unavailable",
+                f"Observed: review wake creation failed: {reason}. No review is "
+                f"claimed complete. Next check: retry after the 60-second cooldown; "
+                f"trigger={trigger}, completed_sessions={completed}.")
+            return {"due": True, "scheduled": False,
+                    "issue": str(candidate["id"]), "reason": reason}
+
+        try:
+            wake = json.loads(queued.stdout)
+        except json.JSONDecodeError:
+            wake = {}
+        wake_id = str(wake.get("id") or "")
+        with self.conn:
+            self.conn.execute(
+                "UPDATE issue_review_scheduler SET last_completed_count=?, "
+                "last_scheduled_utc=?,last_attempt_utc=?,last_issue_id=?, "
+                "last_wake_id=?,last_result='queued' WHERE id=1",
+                (completed, now, now, str(candidate["id"]), wake_id))
+        self.event("coord.issue_review.scheduled", agent,
+                   issue=str(candidate["id"]), title=str(candidate["title"]),
+                   wake_id=wake_id, sweep_key=sweep_key,
+                   completed_sessions=completed, trigger=trigger,
+                   threshold_sessions=5, interval_seconds=1800)
+        self._issue_append(
+            agent, str(candidate["id"]), "Scheduled independent review",
+            f"A bounded independent review was queued as wake {wake_id} after "
+            f"{completed} completed work sessions (trigger={trigger}). The "
+            f"review is pending; this scheduling event is not evidence that the "
+            f"issue is fixed. The reviewer is instructed to append evidence, "
+            f"counterevidence, and a next check.")
+        try:
+            launched = subprocess.run(
+                [sys.executable, str(wake_script), "run", "--once"], cwd=ROOT,
+                capture_output=True, text=True, check=False, timeout=12)
+            launch_result = launched.stdout.strip()[-500:]
+            launch_error = launched.stderr.strip()[-300:]
+        except (OSError, subprocess.TimeoutExpired) as error:
+            launch_result = ""
+            launch_error = str(error)[:300]
+        if launch_error:
+            self._issue_append(
+                agent, str(candidate["id"]), "Scheduled review launch delayed",
+                f"Observed: wake {wake_id} was persisted but the one-shot wake "
+                f"runner returned an error: {launch_error}. The request remains "
+                f"queued for the wake daemon; review is still pending.")
+        return {"due": True, "scheduled": True,
+                "issue": str(candidate["id"]), "wake_id": wake_id,
+                "launch_result": launch_result,
+                "launch_error": launch_error}
+
     def sync(self, agent: str, *, mark_read: bool = True) -> dict:
         self.require_agent(agent)
         self._sweep(agent)
+        scheduled_review = self._issue_review_scheduler_tick(agent, trigger="sync")
         unread = self.conn.execute(
-            "SELECT * FROM messages WHERE read_at='' AND "
-            "(recipient=? OR recipient IN ('all','any')) ORDER BY id",
-            (agent,)).fetchall()
+            "SELECT m.* FROM messages m WHERE "
+            "(m.recipient=? OR m.recipient IN ('all','any')) AND "
+            "NOT EXISTS (SELECT 1 FROM message_receipts r "
+            "WHERE r.msg_id=m.msg_id AND r.agent=?) ORDER BY m.id",
+            (agent, agent)).fetchall()
         if mark_read and unread:
             now = utc_now()
             with self.conn:
                 for row in unread:
                     self.conn.execute(
-                        "UPDATE messages SET read_at=? WHERE id=?", (now, row["id"]))
+                        "INSERT OR IGNORE INTO message_receipts(msg_id,agent,read_at) "
+                        "VALUES (?,?,?)", (row["msg_id"], agent, now))
+        else:
+            now = ""
+        message_items = [dict(item) for item in unread]
+        for item in message_items:
+            item["read_at"] = now if mark_read else ""
         row = self._agent_row(agent)
         cursor = int(row["cursor"]) if row else 0
         events = self.conn.execute(
@@ -807,7 +1165,7 @@ class CoordStore:
             self.user_context_ack(agent)
         return {
             "agent": agent,
-            "messages": [dict(item) for item in unread],
+            "messages": message_items,
             "events": [
                 {"seq": item["seq"], "event": item["event"],
                  "agent": item["agent"],
@@ -835,6 +1193,7 @@ class CoordStore:
             "user_context": unread_context,
             "user_context_latest": latest_context,
             "brain_check": self.brain_check(agent),
+            "scheduled_issue_review": scheduled_review,
         }
 
     def brain_check(self, agent: str) -> dict:
@@ -940,9 +1299,11 @@ class CoordStore:
         now = utc_now()
         with self.conn:
             self.conn.execute(
-                "UPDATE messages SET answered_at=?, read_at=CASE WHEN read_at='' "
-                "THEN ? ELSE read_at END WHERE msg_id=?",
-                (now, now, message_id))
+                "INSERT OR IGNORE INTO message_receipts(msg_id,agent,read_at) "
+                "VALUES (?,?,?)", (message_id, agent, now))
+            self.conn.execute(
+                "UPDATE messages SET answered_at=? WHERE msg_id=?",
+                (now, message_id))
         self.event("coord.message.answered", agent, message=message_id,
                    answer=result["message"], session=agent)
         return result
@@ -965,18 +1326,29 @@ class CoordStore:
 
     def inbox(self, agent: str, *, unread_only: bool = True) -> list[dict]:
         self.require_agent(agent)
-        where = "read_at=''" if unread_only else "1=1"
+        where = (
+            "NOT EXISTS (SELECT 1 FROM message_receipts r "
+            "WHERE r.msg_id=m.msg_id AND r.agent=?)" if unread_only else "1=1")
         rows = self.conn.execute(
-            f"SELECT * FROM messages WHERE {where} AND "
-            "(recipient=? OR recipient IN ('all','any')) ORDER BY id",
-            (agent,)).fetchall()
+            "SELECT m.*, COALESCE((SELECT r.read_at FROM message_receipts r "
+            "WHERE r.msg_id=m.msg_id AND r.agent=?), '') AS agent_read_at "
+            f"FROM messages m WHERE {where} AND "
+            "(m.recipient=? OR m.recipient IN ('all','any')) ORDER BY m.id",
+            (agent, *((agent,) if unread_only else ()), agent)).fetchall()
         if rows and unread_only:
             now = utc_now()
             with self.conn:
                 for row in rows:
                     self.conn.execute(
-                        "UPDATE messages SET read_at=? WHERE id=?", (now, row["id"]))
-        return [dict(item) for item in rows]
+                        "INSERT OR IGNORE INTO message_receipts(msg_id,agent,read_at) "
+                        "VALUES (?,?,?)", (row["msg_id"], agent, now))
+        result = []
+        for item in rows:
+            value = dict(item)
+            value["read_at"] = value.pop("agent_read_at") or (
+                now if unread_only and rows else "")
+            result.append(value)
+        return result
 
     # ── tasks, directives, notes ─────────────────────────────────────────
     def task_add(self, agent: str, task_id: str, title: str = "",
@@ -2605,6 +2977,7 @@ class CoordStore:
         row = self._work_session_row(session_id)
         if row["agent"] != agent:
             raise CoordError("work session belongs to another agent", 2)
+        was_active = not bool(row["ended_utc"])
         now = utc_now()
         with self.conn:
             self._close_active_work_phase(session_id, now)
@@ -2624,7 +2997,11 @@ class CoordStore:
             phase="done", activity="work session ended", next_step=notes)
         self.event("coord.work.ended", agent, session=session_id, state=state,
                    elapsed_ms=elapsed)
-        return self.work_status(session_id)
+        result = self.work_status(session_id)
+        if was_active:
+            result["scheduled_issue_review"] = self._issue_review_scheduler_tick(
+                agent, trigger="work_end")
+        return result
 
     def work_status(self, session_id: str) -> dict:
         row = dict(self._work_session_row(session_id))
@@ -2884,10 +3261,7 @@ class CoordStore:
             "work": self.work_list(active_only=True),
             "leases": [dict(row) for row in self.conn.execute(
                 "SELECT * FROM leases WHERE state='active' ORDER BY path")],
-            "unread": int(self.conn.execute(
-                "SELECT COUNT(*) FROM messages WHERE read_at='' AND "
-                "(recipient=? OR recipient IN ('all','any'))",
-                (agent or "",)).fetchone()[0]) if agent else 0,
+            "unread": self._unread_count(agent) if agent else 0,
         }
 
     def coordination_snapshot(self, agent: str = "", *,
@@ -2918,7 +3292,7 @@ class CoordStore:
             "ORDER BY updated_utc DESC LIMIT 200")]
         message_rows = [dict(row) for row in self.conn.execute(
             "SELECT id,msg_id,thread,sender,recipient,kind,subject,body,paths,"
-            "requires_response,created_utc,read_at,answered_at,reply_to "
+            "requires_response,created_utc,answered_at,reply_to "
             "FROM messages ORDER BY id DESC LIMIT ?",
             (max(1, int(limit_messages)),))]
         message_rows.reverse()
@@ -2927,6 +3301,9 @@ class CoordStore:
             item["sender_kind"] = ("human"
                                    if sender in {"human-dashboard", "human"}
                                    else "agent")
+            item["read_receipts"] = [dict(row) for row in self.conn.execute(
+                "SELECT agent,read_at FROM message_receipts WHERE msg_id=? "
+                "ORDER BY read_at,agent", (item["msg_id"],))]
         notes = [dict(row) for row in self.conn.execute(
             "SELECT id,agent,task_id,body,tags,created_utc FROM notes "
             "ORDER BY id DESC LIMIT ?", (max(1, int(limit_notes)),))]
@@ -2938,8 +3315,8 @@ class CoordStore:
         decisions.reverse()
         leases = [dict(row) for row in self.conn.execute(
             "SELECT * FROM leases WHERE state='active' ORDER BY path")]
-        unread = int(self.conn.execute(
-            "SELECT COUNT(*) FROM messages WHERE read_at=''").fetchone()[0])
+        unread = sum(self._unread_count(str(row["agent"])) for row in
+                     self.conn.execute("SELECT agent FROM agents"))
         focus = issues[0] if issues else {}
         return {
             "generated_utc": utc_now(),
@@ -3517,9 +3894,7 @@ class CoordStore:
         halt = self._halted()
         unread = 0
         if agent:
-            unread = int(self.conn.execute(
-                "SELECT COUNT(*) FROM messages WHERE read_at='' AND "
-                "(recipient=? OR recipient IN ('all','any'))", (agent,)).fetchone()[0])
+            unread = self._unread_count(agent)
         return {
             "halt": dict(halt) if halt else None,
             "freezes": [dict(row) for row in self.conn.execute(

@@ -7,6 +7,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -109,6 +110,25 @@ def add_request(args: argparse.Namespace) -> dict:
         prompt = Path(args.prompt_file).read_text(encoding="utf-8")
     if not prompt.strip():
         raise SystemExit("a prompt or --prompt-file is required")
+    dedupe_key = str(args.dedupe_key or "").strip()
+    if dedupe_key:
+        for existing in load_requests():
+            if existing.get("dedupe_key") != dedupe_key:
+                continue
+            if existing.get("status") in {"failed", "cancelled"}:
+                existing["status"] = "queued"
+                existing["attempts"] = 0
+                existing["error"] = ""
+                existing["child_pid"] = 0
+                existing["claimed_utc"] = ""
+                existing["launched_utc"] = ""
+                existing["updated_utc"] = utc_now()
+                write_json(Path(existing["_path"]), existing)
+                append_event("wake.requeued", {
+                    "wake": existing["id"], "agent": existing.get("agent"),
+                    "issue": existing.get("issue"), "dedupe_key": dedupe_key,
+                }, "deduplicated wake retry")
+            return existing
     condition = {
         "kind": args.when,
         "journal": args.journal,
@@ -130,6 +150,7 @@ def add_request(args: argparse.Namespace) -> dict:
         "opencode_agent": args.opencode_agent,
         "command": args.adapter_command,
         "prompt": prompt,
+        "dedupe_key": dedupe_key,
         "condition": condition,
         "fallbacks": list(args.fallback_adapter or []),
         "status": "queued",
@@ -228,10 +249,37 @@ def condition_met(request: dict) -> tuple[bool, str]:
     return False, f"unknown condition {kind!r}"
 
 
+def _first_line(request: dict) -> str:
+    prompt = str(request.get("prompt") or "")
+    summary = " ".join(
+        line.strip() for line in prompt.splitlines()[:3] if line.strip())
+    summary = re.sub(r"\s+", " ", summary).strip()
+    if len(summary) > 160:
+        summary = summary[:157].rstrip() + "..."
+    parts = [f"MiMITA agent-wake {request.get('id')}",
+             f"agent {request.get('agent')}"]
+    issue = str(request.get("issue") or "")
+    if issue:
+        parts.append(f"issue {issue}")
+    else:
+        match = re.search(r"\bctx-[0-9a-f]{12}\b", prompt)
+        if match:
+            parts.append(f"context {match.group(0)}")
+    if summary:
+        parts.append(f"task: {summary}")
+    log_path = str(request.get("log_path") or "")
+    if log_path:
+        parts.append("full prompt follows; if missing read "
+                     f"{Path(log_path).with_suffix('.prompt.txt')}")
+    else:
+        parts.append("full prompt follows")
+    return " | ".join(parts)
+
+
 def _prompt(request: dict) -> str:
     issue = request.get("issue") or "(none)"
     return (
-        "You were woken by MiMITA agent-wake. This is a bounded test activation.\n\n"
+        _first_line(request) + "\n\n"
         f"Wake request: {request.get('id')}\n"
         f"Coordination agent: {request.get('agent')}\n"
         f"Issue: {issue}\n\n"
@@ -405,12 +453,45 @@ def run_once(*, dry_run: bool = False) -> list[dict]:
     return results
 
 
+def reconcile_launched() -> list[dict]:
+    """Recover launched requests whose child process has exited."""
+    results = []
+    for request in load_requests():
+        if request.get("status") != "launched":
+            continue
+        child = int(request.get("child_pid") or 0)
+        if not child or pid_alive(child):
+            continue
+        fallbacks = list(request.get("fallbacks") or [])
+        if fallbacks:
+            request["adapter"] = fallbacks.pop(0)
+            request["fallbacks"] = fallbacks
+            request["status"] = "queued"
+            request["child_pid"] = 0
+            request["updated_utc"] = utc_now()
+            write_json(Path(request["_path"]), request)
+            append_event("wake.retry", {"wake": request["id"],
+                                         "adapter": request["adapter"]},
+                         "stale launched request recovered by scheduler")
+        else:
+            request["status"] = "failed"
+            request["error"] = "adapter process exited; reconciled by scheduler"
+            request["updated_utc"] = utc_now()
+            write_json(Path(request["_path"]), request)
+            append_event("wake.failed", {"wake": request["id"],
+                                          "error": request["error"]},
+                         "stale launched request reconciled by scheduler")
+        results.append({"wake": request["id"], "status": request["status"]})
+    return results
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
     add = sub.add_parser("add")
     add.add_argument("--agent", required=True)
     add.add_argument("--issue", default="")
+    add.add_argument("--dedupe-key", default="")
     add.add_argument("--when", required=True,
                      choices=("build-published", "build-failed",
                               "journal-event", "timeout", "manual"))
@@ -432,6 +513,7 @@ def main() -> int:
     add.add_argument("--attempt-id", default="")
     add.add_argument("--timeout-seconds", type=float, default=0)
     sub.add_parser("list")
+    sub.add_parser("reconcile")
     run = sub.add_parser("run")
     run.add_argument("--once", action="store_true")
     run.add_argument("--dry-run", action="store_true")
@@ -446,6 +528,9 @@ def main() -> int:
         return 0
     if args.command == "list":
         print(json.dumps(load_requests(), indent=2, sort_keys=True))
+        return 0
+    if args.command == "reconcile":
+        print(json.dumps(reconcile_launched(), indent=2, sort_keys=True))
         return 0
     if args.command == "cancel":
         for path in request_paths():

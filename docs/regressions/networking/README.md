@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 17
+Entries: 18
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -132,3 +132,10 @@ Entries: 17
 - Status: CLIENT WHITE-SCREEN MITIGATION IN SOURCE; SERVER EXIT CAUSE UNRESOLVED; LIVE VERIFICATION PENDING
 - Summary: GUI local room creation set `GAME_STATE` to gameplay before server acceptance/map readiness; an earlier analogous run had no accepted player/map and its hosted server exited before logger initialization.
 - Detail: [gui-room-startup-white-screen-REG-2026-11-18.md](gui-room-startup-white-screen-REG-2026-11-18.md)
+
+## Entry 18 — Human melee claims used a stale server tick epoch after session replacement
+
+- Recorded: 2026-11-21
+- Status: ATTEMPTED FIX; build and pinned runtime proof pending
+- Summary: A focused human client emitted melee contact ticks far ahead of the replacement server; its authoritative future-contact validation rejected the claims before damage could apply.
+- Detail: [melee-contact-tick-epoch-REG-2026-11-21.md](melee-contact-tick-epoch-REG-2026-11-21.md)

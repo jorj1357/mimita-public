@@ -26,6 +26,7 @@ MIN_WIDTH = 500
 MIN_HEIGHT = 500
 APP_USER_MODEL_ID = "MiMITA.DevLoop.Dashboard"
 UI_STATE_PATH = Path(__file__).resolve().parents[2] / ".dev" / "dashboard-ui.json"
+_LIVE_ACTIVATION_CACHE: dict[str, dict] = {}
 
 
 def _load_ui_state() -> dict:
@@ -238,6 +239,140 @@ def _short_text(value: object, limit: int = 160) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def _latest_generation_activation(root: Path, state_data: dict) -> dict:
+    run_id = str(state_data.get("run_id") or "")
+    if len(run_id) < 8 or not run_id[:8].isdigit():
+        return {}
+    try:
+        run_day = datetime.strptime(run_id[:8], "%Y%m%d").strftime("%Y-%m-%d")
+    except ValueError:
+        return {}
+    run = {}
+    try:
+        run = json.loads((root / "logs" / run_day / run_id / "run.json")
+                         .read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    servers = [item for item in run.get("instances", [])
+               if isinstance(item, dict) and item.get("role") == "server"]
+    events = []
+    for server in servers:
+        journal = Path(str(server.get("journal_path") or ""))
+        if not journal.is_file():
+            continue
+        try:
+            key = f"{run_id}:{server.get('instance_id', '')}:{journal}"
+            cached = _LIVE_ACTIVATION_CACHE.get(key, {})
+            activation = cached.get("event") or {}
+            found = {}
+            if activation:
+                size = journal.stat().st_size
+                observed = int(cached.get("observed_current_size", 0))
+                next_observed = size
+                if size < observed:
+                    observed = 0
+                if size > observed:
+                    with journal.open("rb") as handle:
+                        handle.seek(observed)
+                        data = handle.read(size - observed)
+                    complete = data.rfind(b"\n")
+                    if complete >= 0:
+                        next_observed = observed + complete + 1
+                        data = data[:complete + 1]
+                        for raw in reversed(data.splitlines()):
+                            try:
+                                event = json.loads(raw)
+                            except (json.JSONDecodeError, UnicodeDecodeError):
+                                continue
+                            if event.get("event") == "game.generation.activated":
+                                fields = event.get("fields") if isinstance(event.get("fields"), dict) else {}
+                                found = {"generation": fields.get("generation"),
+                                         "dll": fields.get("dll", ""),
+                                         "time_utc": event.get("wall_time", ""),
+                                         "run_id": event.get("run_id", run_id),
+                                         "instance_id": event.get("instance_id", "")}
+                                break
+                _LIVE_ACTIVATION_CACHE[key] = {
+                    "event": found or activation,
+                    "observed_current_size": next_observed,
+                    "scan_path": str(cached.get("scan_path") or ""),
+                    "scan_cursor": int(cached.get("scan_cursor") or 0),
+                }
+                events.append(found or activation)
+                continue
+
+            segments = [journal]
+            segments.extend(sorted(journal.parent.glob("events-*.jsonl"),
+                                   key=lambda path: path.stat().st_mtime_ns,
+                                   reverse=True))
+            scan_path = Path(str(cached.get("scan_path") or segments[0]))
+            if scan_path not in segments:
+                scan_path = segments[0]
+            cursor = int(cached.get("scan_cursor") or scan_path.stat().st_size)
+            start = max(0, cursor - 32 * 1024 * 1024)
+            with scan_path.open("rb") as handle:
+                handle.seek(start)
+                data = handle.read(cursor - start)
+            if start > 0:
+                first_line_end = data.find(b"\n")
+                data = data[first_line_end + 1:] if first_line_end >= 0 else b""
+        except OSError:
+            continue
+        for raw in reversed(data.splitlines()):
+            try:
+                event = json.loads(raw)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            if event.get("event") != "game.generation.activated":
+                continue
+            fields = event.get("fields") if isinstance(event.get("fields"), dict) else {}
+            found = {"generation": fields.get("generation"),
+                     "dll": fields.get("dll", ""),
+                     "time_utc": event.get("wall_time", ""),
+                     "run_id": event.get("run_id", run_id),
+                     "instance_id": event.get("instance_id", "")}
+            break
+        if not found and start == 0:
+            segment_index = segments.index(scan_path) + 1
+            if segment_index < len(segments):
+                scan_path = segments[segment_index]
+                cursor = scan_path.stat().st_size
+            else:
+                cursor = 0
+        elif not found:
+            cursor = start
+        _LIVE_ACTIVATION_CACHE[key] = {
+            "event": found,
+            "observed_current_size": journal.stat().st_size,
+            "scan_path": str(scan_path),
+            "scan_cursor": cursor,
+        }
+        if found:
+            events.append(found)
+        else:
+            events.append({"scan_pending": True,
+                           "instance_id": server.get("instance_id", "")})
+    return max(events, key=lambda item: str(item.get("time_utc") or "")) if events else {}
+
+
+def _recent_game_generations(root: Path) -> list[dict]:
+    summaries = root / ".dev" / "build-timings"
+    try:
+        paths = sorted(summaries.glob("game-dll-*.json"),
+                       key=lambda path: path.stat().st_mtime_ns, reverse=True)[:8]
+    except OSError:
+        return []
+    recent = []
+    for path in paths:
+        try:
+            item = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(item, dict) and item.get("generation") is not None:
+            recent.append(item)
+    return recent[:5]
+
+
 def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
     """Read the root dev-loop's live whole-game DLL progress and identity."""
     if not checkout:
@@ -256,6 +391,12 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
     current = read_json(root / "build" / "game" / "current.json")
     state_data = read_json(root / ".dev" / "state.json")
     change_report = read_json(root / "build" / "hot-reload" / "change-report.json")
+    activation = _latest_generation_activation(root, state_data)
+    history = _recent_game_generations(root)
+    for item in history:
+        if item.get("build_attempt_id") == progress.get("build_attempt_id"):
+            item["phase_durations_ms"] = progress.get("phase_durations_ms", {})
+            item["subphase_durations_ms"] = progress.get("subphase_durations_ms", {})
     try:
         progress_age_s = max(0.0, time.time() - progress_path.stat().st_mtime)
     except OSError:
@@ -367,15 +508,29 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
     details.append("CXX = compiled  ·  SKIP = existing dependency-clean object reused")
     progress["latest_change_report"] = change_report
     progress["published_generation"] = current.get("generation")
+    progress["latest_live_activation"] = activation
+    progress["generation_history"] = history
     progress["pending_notes"] = pending_notes
     progress["build_health"] = health
     progress["progress_age_s"] = progress_age_s
     progress["source_generation"] = (
         progress.get("source_generation") or state_data.get("source_generation"))
+    if activation and activation.get("generation") is not None:
+        active_gen = activation.get("generation")
+        published_gen = current.get("generation")
+        live_text = (f"latest live activation G{active_gen} at "
+                     f"{activation.get('time_utc') or 'unknown'}")
+        if active_gen != published_gen:
+            live_text += f" · published G{published_gen} is not yet proven active"
+        details.append(live_text)
+    elif activation and activation.get("scan_pending"):
+        details.append("latest live activation: scanning server journal history")
+    else:
+        details.append("latest live activation: no game.generation.activated event found")
     return headline, "\n".join(details), progress
 
 
-def _game_dll_queue_view(model: dict, progress: dict) -> tuple[str, str, str, float | None]:
+def _game_dll_queue_view(model: dict, progress: dict) -> tuple[str, str, str, float | None, str]:
     game_build = model.get("game_build") if isinstance(model.get("game_build"), dict) else {}
     requests = game_build.get("requests") if isinstance(game_build.get("requests"), dict) else {}
     queued = 1 if any(value == "queued" for value in requests.values()) else 0
@@ -410,6 +565,11 @@ def _game_dll_queue_view(model: dict, progress: dict) -> tuple[str, str, str, fl
     phase = str(progress.get("phase") or daemon_status or "idle").replace("_", " ").upper()
     elapsed = progress.get("elapsed_s")
     elapsed_text = f"{float(elapsed):.1f}s elapsed" if isinstance(elapsed, (int, float)) else "elapsed unavailable"
+    total = elapsed if isinstance(elapsed, (int, float)) else game_build.get("last_duration_seconds")
+    timer = (f"G{generation}  ·  {float(total):.1f}s  ·  {'RUNNING' if active else 'TOTAL'}"
+             if generation and isinstance(total, (int, float))
+             else f"G{generation}  ·  {elapsed_text}" if generation
+             else f"DLL build  ·  {elapsed_text}")
     updated = str(progress.get("last_progress_utc")
                   or progress.get("updated_utc")
                   or model.get("updated_at") or "unknown")
@@ -423,8 +583,9 @@ def _game_dll_queue_view(model: dict, progress: dict) -> tuple[str, str, str, fl
     if active and scan_phase == "dependency_prepass":
         ratio = (min(1.0, max(0.0, scan_parsed / scan_total))
                  if scan_total else None)
+        percent_text = f"  ·  {round(ratio * 100)}% of depfiles" if ratio is not None else ""
         text = (f"DEPENDENCY PREPASS  ·  {scan_parsed}/{scan_total or '?'} depfiles"
-                f"  ·  no completion percentage until object checks")
+                f" parsed{percent_text}")
     elif active and total > 0 and phase in ("OBJECT CACHE SCAN", "COMPILE"):
         ratio = min(1.0, max(0.0, completed / total))
         text = f"{phase}  ·  {completed}/{total} source units  ·  {round(ratio * 100)}%"
@@ -432,7 +593,7 @@ def _game_dll_queue_view(model: dict, progress: dict) -> tuple[str, str, str, fl
         text = f"{phase}  ·  elapsed {elapsed_text}  ·  no completion percentage for this phase"
     else:
         text = job_title
-    return queue_summary, job_title, stamp + "\n" + text, ratio
+    return queue_summary, job_title, stamp + "\n" + text, ratio, timer
 def run(status_provider: Callable[[], dict],
         control: Callable[..., dict | bool],
         title: str,
@@ -621,12 +782,12 @@ def run(status_provider: Callable[[], dict],
                 try:
                     headline, detail, progress = _game_dll_progress(
                         str(model.get("checkout") or ""))
-                    summary, job_title, stamp, ratio = _game_dll_queue_view(
+                    summary, job_title, stamp, ratio, timer = _game_dll_queue_view(
                         model, progress)
                     model["_game_queue_snapshot"] = {
                         "headline": headline, "detail": detail, "progress": progress,
                         "summary": summary, "job_title": job_title,
-                        "stamp": stamp, "ratio": ratio,
+                        "stamp": stamp, "ratio": ratio, "timer": timer,
                     }
                 except Exception as error:  # noqa: BLE001 - game progress is ancillary
                     model["_game_queue_snapshot"] = {
@@ -634,6 +795,7 @@ def run(status_provider: Callable[[], dict],
                         "detail": str(error)[:160], "progress": {},
                         "summary": "Build queue status unavailable",
                         "job_title": "Queue read failed", "stamp": "", "ratio": None,
+                        "timer": "DLL build timer unavailable",
                     }
             except Exception as error:  # noqa: BLE001 - surface without blocking Tk
                 error_text = str(error)
@@ -1133,24 +1295,27 @@ def run(status_provider: Callable[[], dict],
     game_queue_title = label(game_queue_card,
                              "Queue detail", size=11, bold=True)
     game_queue_title.grid(row=0, column=0, sticky="w")
+    game_queue_timer = label(game_queue_card, "DLL build timer…",
+                             size=20, bold=True)
+    game_queue_timer.grid(row=1, column=0, sticky="ew", pady=(2, 0))
     game_queue_summary = label(game_queue_card, "Checking build queue…",
-                               size=12, bold=True)
-    game_queue_summary.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+                               size=11, bold=True)
+    game_queue_summary.grid(row=2, column=0, sticky="ew", pady=(1, 0))
     game_queue_time = label(game_queue_card, "", size=9)
-    game_queue_time.grid(row=2, column=0, sticky="ew")
+    game_queue_time.grid(row=3, column=0, sticky="ew")
     game_queue_bar = tk.Canvas(game_queue_card, height=18, background="#180000",
                                highlightthickness=1, highlightbackground=RED, bd=0)
-    game_queue_bar.grid(row=3, column=0, sticky="ew", pady=(4, 3))
+    game_queue_bar.grid(row=4, column=0, sticky="ew", pady=(4, 3))
     game_queue_rows = tk.Text(
         game_queue_card, height=12, wrap="word", bg=BLACK, fg=WHITE,
         insertbackground=WHITE, relief="flat", bd=0, highlightthickness=0,
         font=(family, 10), state="disabled", padx=3, pady=2)
-    game_queue_rows.grid(row=4, column=0, sticky="ew")
+    game_queue_rows.grid(row=5, column=0, sticky="ew")
     game_queue_scroll = tk.Scrollbar(
         game_queue_card, orient="vertical", command=game_queue_rows.yview,
         bg=BLACK, troughcolor=BLACK, activebackground=RED,
         highlightbackground=RED, bd=1)
-    game_queue_scroll.grid(row=4, column=1, sticky="ns")
+    game_queue_scroll.grid(row=5, column=1, sticky="ns")
     game_queue_rows.configure(yscrollcommand=game_queue_scroll.set)
     runtime_card, runtime_value, runtime_detail = make_card("Runtime and mode/map")
     scenario_card, scenario_value, scenario_detail = make_card("Scenario evidence")
@@ -1452,8 +1617,14 @@ def run(status_provider: Callable[[], dict],
             sender = str(item.get("sender") or "?")
             recipient = str(item.get("recipient") or "?")
             kind = str(item.get("kind") or "message")
-            unread = " *" if not item.get("read_at") else ""
-            header = f"{stamp} {sender} → {recipient} [{kind}]{unread}"
+            receipts = item.get("read_receipts") or []
+            unread = " *" if not receipts else ""
+            read_by = ", ".join(
+                f"{entry.get('agent')}@{str(entry.get('read_at') or '')[11:19]}"
+                for entry in receipts)
+            receipt_label = f" read by {read_by}" if read_by else ""
+            header = (f"{stamp} {sender} → {recipient} [{kind}]"
+                      f"{unread}{receipt_label}")
             subject = str(item.get("subject") or "")
             body = str(item.get("body") or "")
             message_lines.append(header)
@@ -2226,14 +2397,27 @@ def run(status_provider: Callable[[], dict],
         rows = live_process_rows(model)
         state["rendered_processes"] = rows
         count = len(rows)
+        daemon_count = model.get("daemon_count")
+        if daemon_count is None:
+            daemon_summary = "main dev-loop daemon count unknown"
+        else:
+            daemon_pids = model.get("daemon_pids") or []
+            pid_text = ",".join(str(pid) for pid in daemon_pids) or "none"
+            duplicate = " · DUPLICATE DAEMONS" if int(daemon_count) > 1 else ""
+            daemon_summary = (
+                f"main dev-loop daemons: {int(daemon_count)} (expected 1; PID {pid_text})"
+                f"{duplicate}")
+        daemon_error = str(model.get("daemon_inventory_error") or "")
+        if daemon_error:
+            daemon_summary += f" · daemon scan: {daemon_error[:100]}"
         if state.get("process_scan_error"):
-            summary = (f"PROCESS SCAN FAILED · showing stale list · "
+            summary = (f"{daemon_summary} · PROCESS SCAN FAILED · showing stale list · "
                        f"{state['process_scan_error'][:100]}")
         else:
             servers = sum(1 for row in rows if row.get("role") == "server")
             clients = sum(1 for row in rows if row.get("role") == "client")
             unverified = count - servers - clients
-            summary = (f"{count} live · {servers} server(s) · "
+            summary = (f"{daemon_summary} · {count} live · {servers} server(s) · "
                        f"{clients} client(s) · {unverified} unverified")
             if state.get("process_scan_in_flight"):
                 summary += " · scan in progress"
@@ -2321,6 +2505,10 @@ def run(status_provider: Callable[[], dict],
         job_title = str(snapshot.get("job_title") or "Queue detail")
         stamp = str(snapshot.get("stamp") or "")
         ratio = snapshot.get("ratio")
+        timer = str(snapshot.get("timer") or "DLL build timer unavailable")
+        timer_color = (RED if "FAILED" in job_title else
+                       ("#ffcc00" if "BUILDING" in job_title else GREEN))
+        game_queue_timer.configure(text=timer, fg=timer_color)
         game_queue_summary.configure(text=summary)
         job_color = RED if ("FAILED" in job_title or "NO PROGRESS" in job_title) else (
             "#ffcc00" if "SLOW" in job_title else (GREEN if "IDLE" in job_title else WHITE))
@@ -2353,6 +2541,18 @@ def run(status_provider: Callable[[], dict],
         lines.append(f"live health {health}  ·  progress age {age_text}")
         if progress.get("published_generation") is not None:
             lines.append(f"published generation {progress.get('published_generation')}")
+        activation = progress.get("latest_live_activation")
+        if isinstance(activation, dict) and activation.get("generation") is not None:
+            lines.append(
+                f"LATEST LIVE ACTIVATION: G{activation.get('generation')} · "
+                f"{activation.get('time_utc') or 'time unknown'} · "
+                f"{activation.get('dll') or 'DLL path unknown'}")
+            if activation.get("generation") != progress.get("published_generation"):
+                lines.append("  published generation is newer; runtime activation is not proven yet")
+        elif isinstance(activation, dict) and activation.get("scan_pending"):
+            lines.append("LATEST LIVE ACTIVATION: scanning recent server journal history…")
+        else:
+            lines.append("LATEST LIVE ACTIVATION: no activation event found in the current server journal")
         revision = str(progress.get("revision") or "")
         if revision:
             lines.append(f"source revision {revision}")
@@ -2417,6 +2617,10 @@ def run(status_provider: Callable[[], dict],
         phase = str(progress.get("phase") or "")
         phase_elapsed = float(progress.get("phase_elapsed_ms") or 0) / 1000.0
         elapsed = progress.get("elapsed_s")
+        subphase = str(progress.get("subphase") or "")
+        if subphase:
+            subphase_elapsed = float(progress.get("subphase_elapsed_ms") or 0) / 1000.0
+            lines.append(f"active substep: {subphase} · {subphase_elapsed:.2f}s")
         if phase == "no_op" or progress.get("no_op"):
             lines.append(f"NO-OP: reusing published generation "
                          f"{progress.get('generation') or '?'}; no identity, compile, link, or publish")
@@ -2453,6 +2657,48 @@ def run(status_provider: Callable[[], dict],
                 f"scan detail: parse {float(progress.get('scan_parse_ms') or 0):.1f} ms · "
                 f"stat {float(progress.get('scan_stat_ms') or 0):.1f} ms · "
                 f"{int(progress.get('scan_unique_dependencies') or 0)} unique deps")
+        if progress.get("dependency_prepass_ms") is not None:
+            lines.append(
+                "scan subtimers: prepass "
+                f"{float(progress.get('dependency_prepass_ms') or 0) / 1000:.2f}s · "
+                "path/fanout "
+                f"{float(progress.get('dependency_path_and_fanout_ms') or 0) / 1000:.2f}s · "
+                "other prepass "
+                f"{float(progress.get('dependency_prepass_other_ms') or 0) / 1000:.2f}s · "
+                "stat prewarm "
+                f"{float(progress.get('stat_prewarm_ms') or 0) / 1000:.2f}s · "
+                "object checks "
+                f"{float(progress.get('object_check_wall_ms') or 0) / 1000:.2f}s")
+        if progress.get("dependency_path_normalization_ms") is not None:
+            lines.append(
+                "dependency path normalization (includes filesystem resolve): "
+                f"{float(progress.get('dependency_path_normalization_ms') or 0) / 1000:.2f}s · "
+                "external path classification "
+                f"{float(progress.get('external_dependency_classification_ms') or 0) / 1000:.2f}s")
+        check_count = progress.get("dependency_check_count")
+        if isinstance(check_count, int) and check_count:
+            lines.append(
+                f"per-TU dependency checks: {check_count} · min "
+                f"{float(progress.get('dependency_check_min_ms') or 0):.2f} ms · "
+                f"avg {float(progress.get('dependency_check_avg_ms') or 0):.2f} ms · "
+                f"max {float(progress.get('dependency_check_max_ms') or 0):.2f} ms")
+        invalidations = progress.get("cache_invalidations")
+        if isinstance(invalidations, list) and invalidations:
+            lines.append("REBUILD REASONS:")
+            lines.extend(
+                f"  {item.get('path')}: {item.get('reason')}"
+                for item in invalidations[:12] if isinstance(item, dict))
+        compile_sum_ms = progress.get("compile_sum_ms")
+        if isinstance(compile_sum_ms, (int, float)) and compile_sum_ms:
+            lines.append(
+                f"compiler time summed across TUs {float(compile_sum_ms) / 1000:.2f}s · "
+                f"min {float(progress.get('compile_min_ms') or 0) / 1000:.2f}s · "
+                f"max {float(progress.get('compile_max_ms') or 0) / 1000:.2f}s")
+        if progress.get("object_input_count") is not None:
+            lines.append(
+                f"link inputs: {int(progress.get('object_input_count') or 0)} objects · "
+                f"{int(progress.get('linker_argument_count') or 0)} response-file entries · "
+                f"{int(progress.get('object_input_bytes') or 0) / (1024 * 1024):.1f} MiB object data")
         if progress.get("cache_record_overhead_ms") is not None:
             lines.append(f"legacy per-skip reporting sum: {float(progress['cache_record_overhead_ms']):.1f} ms")
         if progress.get("dev_loop_output_handler_ms") is not None:
@@ -2460,8 +2706,45 @@ def run(status_provider: Callable[[], dict],
         phase_durations = progress.get("phase_durations_ms")
         if isinstance(phase_durations, dict) and phase_durations:
             lines.append("phase durations:")
-            lines.extend(f"  {str(name).replace('_', ' ')}: {float(duration):.0f} ms"
+            lines.extend(f"  {str(name).replace('_', ' ')}: {float(duration) / 1000:.2f}s"
                          for name, duration in list(phase_durations.items())[-8:])
+        recent_generations = progress.get("generation_history")
+        if isinstance(recent_generations, list) and recent_generations:
+            lines.append("RECENT DLL GENERATIONS (total · preflight · scan · compile · link · publish):")
+            for item in recent_generations:
+                metrics = item.get("worker_metrics") if isinstance(item.get("worker_metrics"), dict) else {}
+                phases = item.get("phase_durations_ms") if isinstance(item.get("phase_durations_ms"), dict) else {}
+                total_seconds = float(item.get("total_seconds") or 0)
+                phase_value = lambda key: float(phases.get(key) or 0) / 1000.0
+                publish_seconds = phase_value("publish") or float(metrics.get("publish_seconds") or 0)
+                lines.append(
+                    f"  G{item.get('generation')}: {total_seconds:.1f}s · "
+                    f"{float(metrics.get('changed_source_preflight_seconds') or 0):.1f} · "
+                    f"{float(metrics.get('object_scan_seconds') or 0):.1f} · "
+                    f"{float(metrics.get('compile_seconds') or 0):.1f} · "
+                    f"{float(metrics.get('link_seconds') or 0):.1f} · {publish_seconds:.1f}s")
+                changed = item.get("changed_paths") or []
+                lines.append(
+                    f"    changed {', '.join(map(str, changed[:2])) or 'unknown'} · "
+                    f"compiled {metrics.get('compiled', '?')} / skipped {metrics.get('skipped', '?')} · "
+                    f"{item.get('build_attempt_id', '')}")
+                subphases = item.get("subphase_durations_ms")
+                if isinstance(subphases, dict) and subphases:
+                    nested = [f"{str(name).replace('_', ' ')} {float(duration) / 1000:.2f}s"
+                              for name, duration in subphases.items()
+                              if str(name).startswith(("publish.", "link."))]
+                    if nested:
+                        lines.append("    link/publish subtimers: " + " · ".join(nested))
+                invalidations = item.get("cache_invalidations")
+                if isinstance(invalidations, list) and invalidations:
+                    reason_counts: dict[str, int] = {}
+                    for invalidation in invalidations:
+                        reason = str(invalidation.get("reason") or "unknown")
+                        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+                    reasons = ", ".join(
+                        f"{count}× {reason}" for reason, count in
+                        sorted(reason_counts.items(), key=lambda pair: (-pair[1], pair[0])))
+                    lines.append(f"    stale reasons: {reasons}")
 
         if not lines:
             lines.extend(["No active game DLL build.",

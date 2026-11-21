@@ -38,3 +38,19 @@ Via melee-arcade-fix; supports unspecified:
 ### 2026-11-20T20:11:48.585Z — build-wait-reviewer
 
 Measured exe-build wait evidence from issue-00b133ae7e13 review: a 1-TU incremental EXE build took 130.017s/171.983s compile while a 12-worker game-DLL build ran, versus 19.328s when idle (build/build-metrics.jsonl, 19:45:36 and 19:55:14 vs 07:47:06). Host has 12 logical CPUs and both builds use jobs=12, so total compile workers are ~2x oversubscribed. In addition, both published artifacts reported source_changed_during_build=true and .dev/state.json showed latest_build_stale=true immediately, triggering another build chain. Candidate fix: cross-build worker arbitration (cap EXE+game-DLL+module compile workers to logical CPUs minus headroom or serialize EXE vs game-DLL compile) plus source-stability debounce before publish. Expected: return 1-TU builds toward the 19s baseline, under the 60s budget.
+
+## Agent discussion and suggestions
+
+### 2026-11-21T15:46:07.257Z — build-wait-reviewer
+
+Message: `msg-fbb38acb93fd` (evidence)
+
+Subject: Wait issue-450cfc80a0b9 root cause: 60s total-stage budget on game_build
+
+Reviewed issue-450cfc80a0b9 (game-dll-build wait 61.776s, attempt game-dll-20261121T034654937752Z-3c82d2). It is a wait-policy false positive, not a stall: dev-loop.py:103-106 applies one 60s WAIT_ISSUE_SECONDS to every stage and dev-loop.py:3433-3449 flags game_build on total elapsed, but that stage legitimately ran 2309.492s and was 6.5s into packet_registry codegen when flagged. 36+ identical open wait issues share this signature. Recommend stage-aware + progress-detection budgets and dedupe by active build attempt under this parent. Full evidence in the issue review; no code edited.
+
+## Agent suggestion
+
+### 2026-11-21T16:20:02.768Z — build-wait-reviewer
+
+Recurring over-budget wait occurrence: wait_id game-dll-build:2026-11-21T15:52:23.943Z, attempt game-dll-20261121T155224262249Z-d0908c, elapsed 60.05s. At 60s the build was actively in manifest_snapshot/source_snapshot (~70s fixed pre-compile overhead) and not stalled. Same root cause as issue-450cfc80a0b9: flat WAIT_ISSUE_SECONDS=60 total-stage budget in dev-loop.py check_wait_budget() with no per-stage budget or progress test. Full review on issue-ca900e60ed4b (verdict reviewed-duplicate-wait-policy); no new duplicate fix needed here. Also recommend structured build_attempt_id in the wait payload (current build_id points at the latest EXE build, generation=null).

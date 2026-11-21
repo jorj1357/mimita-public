@@ -91,3 +91,15 @@ Findings and proposed reductions (no code claimed here; for the tracker to sched
 1. Dominant avoidable cost is the object-cache dependency scan, not compilation. Cache dependency-parse results keyed by dependency-file identity so a build does not re-parse 1501 dependency files (~5.4 min of a 14.2 min build).
 2. Make the wait budget stage-aware. A healthy warm build with one changed player-ai.cpp cannot finish in 60s, so the 60s crossing is a false-positive for that workload; it currently fires during codegen/manifest snapshot before the dominant stage even starts.
 3. Attribute over-budget waits to the dominant stage (object_cache_scan) rather than the coarse game_build stage, and consolidate repeated same-stage wait titles under this tracker instead of leaving each wait_id as a separate high-priority issue.
+
+## Agent suggestion
+
+### 2026-11-21T14:04:44.307Z — build-wait-reviewer
+
+From bounded review of issue-054ea1bcda9b (exe-build wait exe-build:0:2026-11-21T01:38:16.191Z): the over-budget wait evidence sets build_id from self.latest_build (last *completed* build), so for an in-progress wait build_id lags the build that is actually waiting. Suggestion: when emitting a wait incident, include an explicit waiting build identity (active_build_started_utc + active_build_generation, or the active attempt id) instead of, or in addition to, latest_build. This removes ambiguity for reviewers and for any per-stage latency accounting. Evidence: issue-054ea1bcda9b evidence.build_id=2026-11-20T20:20:51.788061Z but wait started_utc=2026-11-21T01:38:16.191Z, generation=0. No source edit made in this bounded activation.
+
+## Agent suggestion
+
+### 2026-11-21T16:33:49.728Z — build-wait-reviewer
+
+Measured evidence from wait issue-ad873eff97f3 (wait_id game-dll-build:2026-11-21T13:49:38.158Z, build game-dll-20261121T134938183745Z-c0c1da, gen 420): the build resumed and completed at 13:59:58.446Z, success=true, total 620.249s. object_cache_scan was 86.35s and compile 418.84s. The wait is structural: the first scan.snapshot lands at scan_seconds 79.613s, and recorded parse_ms 9210 plus stat_ms 166 explain only about 9.4s, so roughly 70s of the prepass is untimed. scan_entries runs dependency_relative (devscripts/game_build_worker.py:1325-1327 and :804-816) per dependency token, which calls Path.resolve; the object-cache dependency-index.json has 642 sources and 160,446 token occurrences. Prior incremental builds gen 414-416 spent 318-383s in object_cache_scan versus 44-55s compiling. Suggested smallest changes: drop Path.resolve from the per-token prepass (use normalized relative keys), add prepass sub-timers and a scan_prepass timing row, and attribute/fold repeated game_build waits under this tracker instead of one issue per wait_id.

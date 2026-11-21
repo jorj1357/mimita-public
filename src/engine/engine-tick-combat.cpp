@@ -10,6 +10,7 @@
 */
 
 #include "engine/engine-tick-combat.h"
+#include "engine/engine-tick-net.h"
 #include "game/resident-state-module.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
@@ -418,8 +419,11 @@ void engineTickCombat(Engine& engine, float dt)
     // for the action result; the client predicts presentation immediately.
     // The driver runs whenever the move set is equipped (even without a captured
     // cursor) so agent.melee live tests can force actions.
+    // Use the same target-gated intent the AI sent to the server; never sweep
+    // melee unconditionally while the controller is merely active.
     const bool aiMeleeMode = PlayerAiController::active() &&
         !PlayerAiController::meleeWeapon().empty();
+    const bool aiPrimary = aiMeleeMode && lastAiInputFrame().primaryHeld;
     if (meleeEquipped && !replayPlaybackActive && gameplayInputAllowed) {
         MimitaMelee::ClientInput meleeInput;
         if (cursorCaptured || aiMeleeMode) {
@@ -427,9 +431,9 @@ void engineTickCombat(Engine& engine, float dt)
             const bool grabDown =
                 ScenarioInput::keyDown(engine.window(), GLFW_KEY_E);
             meleeInput.primaryPressed = aiMeleeMode
-                ? (g_clientSimulationTick % 12u) == 0u
+                ? (aiPrimary && (g_clientSimulationTick % 12u) == 0u)
                 : meleePrimaryPressed;
-            meleeInput.primaryHeld = aiMeleeMode || mouseDown;
+            meleeInput.primaryHeld = aiMeleeMode ? aiPrimary : mouseDown;
             meleeInput.secondaryPressed = aiMeleeMode
                 ? false : meleeSecondaryPressed;
             meleeInput.secondaryHeld = aiMeleeMode ? false : rightMouseDown;

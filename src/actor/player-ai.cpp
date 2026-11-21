@@ -2,7 +2,8 @@
 /* purpose
 * Minimal live-play AI for the real local player used by unattended TDM runs.
 * It selects a hostile replicated actor, approaches/strafes, aims, and fires
-* through the normal InputFrame/ActorIntent boundary.
+* through the normal InputFrame/ActorIntent boundary. With no hostile it
+* explores the map instead of spawning fallback NPCs.
 * Does NOT own collision, damage, weapon formulas, or server authority.
 */
 #include "actor/player-ai.h"
@@ -44,8 +45,8 @@ uint32_t gRoutePlanTick = 0;
 uint32_t gLastSpawnGeneration = 0;
 uint32_t gLatchedTargetId = 0;
 uint64_t gLastFallLogMs = 0;
-uint64_t gLastFallbackMs = 0;
-int gFallbackSpawns = 0;
+glm::vec3 gExploreGoal{0.0f};
+uint32_t gExplorePlanTick = 0;
 std::string gWeaponVisit;
 uint32_t gWeaponVisitEndsTick = 0;
 uint32_t gNextProgressCheckTick = 0;
@@ -304,6 +305,114 @@ void planRoute(const Player& player, const TargetView& target,
         __FILE__, __LINE__, __FUNCTION__);
 }
 
+bool chooseExploreGoal(const Player& player, const World& world,
+                       glm::vec3& outGoal)
+{
+    const auto& mesh = world.collisionMesh;
+    if (mesh.triangles.empty()) return false;
+    const glm::vec3 min = mesh.boundsMin;
+    const glm::vec3 max = mesh.boundsMax;
+    const float width = max.x - min.x;
+    const float depth = max.y - min.y;
+    const float height = max.z - min.z;
+    if (width <= 1.0f || depth <= 1.0f) return false;
+    const float insetX = std::clamp(width * 0.08f, 1.0f, 20.0f);
+    const float insetY = std::clamp(depth * 0.08f, 1.0f, 20.0f);
+    const glm::vec2 points[9] = {
+        {min.x + insetX, min.y + insetY},
+        {max.x - insetX, min.y + insetY},
+        {min.x + insetX, max.y - insetY},
+        {max.x - insetX, max.y - insetY},
+        {(min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f},
+        {(min.x + max.x) * 0.5f, min.y + insetY},
+        {(min.x + max.x) * 0.5f, max.y - insetY},
+        {min.x + insetX, (min.y + max.y) * 0.5f},
+        {max.x - insetX, (min.y + max.y) * 0.5f},
+    };
+    float bestDistance = 6.0f;
+    bool found = false;
+    for (const glm::vec2& point : points) {
+        const glm::vec3 probe(point.x, point.y, max.z + 10.0f);
+        const float groundZ = NpcNavigation::groundHeightAt(
+            world, probe, height + 60.0f, 2.0f);
+        if (groundZ < -1.0e5f) continue;
+        const glm::vec3 goal(point.x, point.y, groundZ + 0.1f);
+        const float distance = glm::length(goal - player.pos);
+        if (distance > bestDistance) {
+            bestDistance = distance;
+            outGoal = goal;
+            found = true;
+        }
+    }
+    return found;
+}
+
+bool planExploreRoute(const Player& player, const World& world)
+{
+    constexpr uint32_t kExploreRouteId = 0xFFFFFFFFu;
+    const uint32_t tick = (uint32_t)player.movementSimulationTick;
+    static uint32_t sLastExplorePlanTick = 0;
+    if (sLastExplorePlanTick != 0 && tick >= sLastExplorePlanTick &&
+        tick - sLastExplorePlanTick < 120u)
+        return !gRoute.empty();
+    // A plan is valid for its interval even if the route is empty. Without
+    // this hard rate limit, an unreachable goal can replan and log every tick.
+    if (gExplorePlanTick != 0 && tick < gExplorePlanTick)
+        return !gRoute.empty();
+    const bool goalReached = glm::length(player.pos - gExploreGoal) < 5.0f;
+    const bool routeConsumed = !gRoute.empty() && gRouteIndex >= gRoute.size();
+    const bool need = gRouteTargetId != kExploreRouteId ||
+        tick >= gExplorePlanTick ||
+        goalReached ||
+        routeConsumed ||
+        glm::length(gExploreGoal) < 0.001f;
+    if (!need)
+        return !gRoute.empty();
+
+    if (goalReached || glm::length(gExploreGoal) < 0.001f) {
+        glm::vec3 nextGoal{0.0f};
+        if (!chooseExploreGoal(player, world, nextGoal)) {
+            resetRoute();
+            return false;
+        }
+        gExploreGoal = nextGoal;
+    }
+
+    const auto start = std::chrono::steady_clock::now();
+    const std::vector<NpcNavRoute> routes = NpcNavGraph::instance().findRoutes(
+        world, player.pos, gExploreGoal, playerNavGraphSettings(),
+        MP_CONTEXT.localPlayerId, tick);
+    const double milliseconds = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - start).count();
+
+    gRoute.clear();
+    gRouteIndex = 0;
+    gRouteTargetId = kExploreRouteId;
+    gRouteGoal = gExploreGoal;
+    gRoutePlanTick = tick + 120u;
+    sLastExplorePlanTick = tick;
+    if (!routes.empty() && routes.front().valid()) {
+        gRoute = routes.front().points;
+        if (gRoute.size() > 1 &&
+            glm::length(glm::vec2(gRoute[0].x - player.pos.x,
+                                  gRoute[0].y - player.pos.y)) < 1.5f)
+            gRouteIndex = 1;
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "player.ai.explore", "player-ai",
+        gRoute.empty() ? "no exploration route; using local steering"
+                       : "exploration route planned",
+        tick,
+        {{"player_id", MP_CONTEXT.localPlayerId},
+         {"goal", {gExploreGoal.x, gExploreGoal.y, gExploreGoal.z}},
+         {"distance", glm::length(gExploreGoal - player.pos)},
+         {"points", gRoute.size()},
+         {"plan_ms", milliseconds}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return !gRoute.empty();
+}
+
 bool followRoute(const Player& player, glm::vec2& outDirection, bool& outJump)
 {
     while (gRouteIndex < gRoute.size()) {
@@ -520,31 +629,6 @@ void checkPlayerFall(const Player& player, const World& world, uint32_t tick)
     gLastSpawnGeneration = generation;
 }
 
-void maybeRequestFallback(const TargetView& target, uint32_t tick)
-{
-    if (gMeleeWeapon.empty() || gFallbackSpawns >= 12)
-        return;
-    if (target.valid && target.distance < 8.0f)
-        return;
-    const uint64_t now = aiNowMs();
-    if (now - gLastFallbackMs < 8000)
-        return;
-    gLastFallbackMs = now;
-    ++gFallbackSpawns;
-    Terminal::instance().execute("npc_spawn_near 1.5 2");
-    StructuredLogger::instance().writeEvent(
-        StructuredCategory::General, StructuredLevel::Important,
-        "player.ai.fallback_spawn", "player-ai",
-        "requested a controlled NPC near the player because no close target existed",
-        tick,
-        {{"player_id", MP_CONTEXT.localPlayerId},
-         {"weapon", gMeleeWeapon},
-         {"target_valid", target.valid},
-         {"target_distance", target.distance},
-         {"fallback_count", gFallbackSpawns}},
-        __FILE__, __LINE__, __FUNCTION__);
-}
-
 } // namespace
 
 namespace PlayerAiController {
@@ -564,6 +648,8 @@ void setActive(bool enabled)
         gNoProgressSamples = 0;
         gRecoveryUntilTick = 0;
         gFreezeReleaseTick = 0;
+        gExploreGoal = glm::vec3(0.0f);
+        gExplorePlanTick = 0;
     }
 }
 
@@ -572,8 +658,8 @@ void setMeleeWeapon(const std::string& weaponId)
     gMeleeWeapon = weaponId;
     gLatchedTargetId = 0;
     resetRoute();
-    gFallbackSpawns = 0;
-    gLastFallbackMs = 0;
+    gExploreGoal = glm::vec3(0.0f);
+    gExplorePlanTick = 0;
     gWeaponVisit.clear();
     gWeaponVisitEndsTick = 0;
 }
@@ -599,7 +685,7 @@ InputFrame buildFrame(const Player& player, Camera& camera,
          equippedDefinition->behaviorType == WeaponBehaviorType::QuickHit ||
          equippedDefinition->behaviorType == WeaponBehaviorType::SpyKnife);
     const bool meleeMode = !gMeleeWeapon.empty() || equippedMelee;
-    if (!target.valid || target.distance <= 2.5f)
+    if (target.valid && target.distance <= 2.5f)
         resetRoute();
 
     const glm::vec3 eye = player.pos + glm::vec3(0.0f, 0.0f, 1.35f);
@@ -668,10 +754,18 @@ InputFrame buildFrame(const Player& player, Camera& camera,
                 worldMove = routeDirection;
         }
     } else {
-        // No known hostile: keep moving forward so the match keeps producing
-        // contact opportunities instead of standing at spawn.
-        worldMove = glm::vec2(std::cos(glm::radians(camera.yaw)),
-                              std::sin(glm::radians(camera.yaw)));
+        // No known hostile: cover ground toward the farthest reachable region
+        // instead of walking into the same wall forever. This is exploration,
+        // not combat authority; weapons stay disarmed by the missing target.
+        planExploreRoute(player, world);
+        glm::vec2 routeDirection(0.0f);
+        followingRoute = followRoute(player, routeDirection, requestJump);
+        if (followingRoute) {
+            worldMove = routeDirection;
+        } else {
+            worldMove = glm::vec2(std::cos(glm::radians(camera.yaw)),
+                                  std::sin(glm::radians(camera.yaw)));
+        }
     }
 
     worldMove = avoidWalls(world, player, worldMove);
@@ -806,6 +900,8 @@ InputFrame buildFrame(const Player& player, Camera& camera,
     if (target.valid)
         applySmoothAim(camera, desiredYaw, desiredPitch);
 
+    const bool exploring = !target.valid && followingRoute;
+
     if (((tick + playerId) % 60u) == 0u) {
         StructuredLogger::instance().writeEvent(
             StructuredCategory::General, StructuredLevel::Important,
@@ -826,6 +922,8 @@ InputFrame buildFrame(const Player& player, Camera& camera,
              {"pos", {player.pos.x, player.pos.y, player.pos.z}},
              {"melee_weapon", gMeleeWeapon},
              {"following_route", followingRoute},
+             {"exploring", exploring},
+             {"explore_goal", {gExploreGoal.x, gExploreGoal.y, gExploreGoal.z}},
              {"route_nodes", gRoute.size() > gRouteIndex
                                  ? gRoute.size() - gRouteIndex : 0},
              {"on_ground", player.ground.onGround}},
@@ -863,8 +961,15 @@ InputFrame buildFrame(const Player& player, Camera& camera,
             frame.dashPressed = true;
     }
 
+    if (!target.valid && frame.movementPressed &&
+        player.dash.dashAvailable && ((tick + playerId) % 97u) == 0u)
+        frame.dashPressed = true;
+
     if (airborne && target.valid && target.distance > 5.0f &&
         player.vel.z < -1.0f && ((tick + playerId) % 37u) == 0u)
+        frame.downDashPressed = true;
+    if (!target.valid && airborne && player.vel.z < -1.0f &&
+        ((tick + playerId) % 53u) == 0u)
         frame.downDashPressed = true;
 
     const float planarSpeed = std::sqrt(player.vel.x * player.vel.x +
@@ -877,6 +982,14 @@ InputFrame buildFrame(const Player& player, Camera& camera,
                ((tick + playerId) % 211u) == 0u) {
         // Freeze intentionally stops motion, so only spend it while already
         // nearly still and in a grounded firing engagement.
+        frame.freezePressed = true;
+        frame.freezeHeld = true;
+        gFreezeReleaseTick = tick + 12u;
+    } else if (!target.valid && progressRecovery && player.ground.onGround &&
+               player.freeze.freezeAvailable &&
+               ((tick + playerId) % 251u) == 0u) {
+        // Use freeze only to break a stuck/blocked direction during
+        // exploration; it is not a movement speed boost.
         frame.freezePressed = true;
         frame.freezeHeld = true;
         gFreezeReleaseTick = tick + 12u;
@@ -906,8 +1019,6 @@ InputFrame buildFrame(const Player& player, Camera& camera,
 
     if (target.valid)
         maybeEquipWeapon(player, target);
-    if (meleeMode)
-        maybeRequestFallback(target, tick);
 
     if (((tick + playerId) % 60u) == 0u || frame.jumpPressed ||
         frame.dashPressed || frame.downDashPressed || frame.freezePressed) {
@@ -928,6 +1039,8 @@ InputFrame buildFrame(const Player& player, Camera& camera,
              {"airborne", airborne},
              {"air_strafe", airStrafe},
              {"progress_recovery", progressRecovery},
+             {"exploring", exploring},
+             {"explore_goal", {gExploreGoal.x, gExploreGoal.y, gExploreGoal.z}},
              {"nearby_teammates", nearbyTeammates},
              {"target_distance", target.distance},
              {"position", {player.pos.x, player.pos.y, player.pos.z}},

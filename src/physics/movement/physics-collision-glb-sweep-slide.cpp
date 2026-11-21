@@ -12,6 +12,7 @@
 #include "physics/movement/physics-collision-glb-sweep.h"
 #include "physics/movement/physics-collision-glb-sweep-slide.h"
 #include "physics/movement/physics-scratch.h"
+#include "physics/physical-entity.h"
 #include "config/collision-config.h"
 #include "debug/structured-log.h"
 
@@ -19,6 +20,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cmath>
+#include <limits>
 #include <vector>
 #include <string>
 #include <unordered_set>
@@ -86,6 +88,10 @@ void doGLBSweepSlide(
 
     p.updateModelWorldTransforms();
     Capsule cap = p.getCapsule();
+    const uint32_t previousSupportId = p.collision.supportEntityId;
+    const glm::vec3 previousSupportVelocity = p.collision.supportVelocity;
+    uint32_t supportId = 0;
+    glm::vec3 supportVelocity(0.0f);
 
     {
         auto t0 = std::chrono::steady_clock::now();
@@ -248,10 +254,102 @@ void doGLBSweepSlide(
                     const bool duplicate = std::any_of(
                         toiHits.begin(), toiHits.end(),
                         [&hit](const SweepHit& existing) {
-                            return existing.triangleIndex == hit.triangleIndex;
+                            return existing.entityId == hit.entityId &&
+                                   existing.triangleIndex == hit.triangleIndex;
                         });
                     if (!duplicate)
                         toiHits.push_back(hit);
+                }
+            }
+
+            // Arcade keeps root-capsule versus world collision, but dynamic
+            // physical boxes (including the Payload cart) are also solid. Use
+            // the entity owner's cached world triangles and sweep in relative
+            // motion so a slow cart cannot tunnel through a stationary actor.
+            if (CollisionConfig::instance().arcadeCollision())
+            {
+                const glm::vec3 startMin = glm::min(cap.a, cap.b);
+                const glm::vec3 startMax = glm::max(cap.a, cap.b);
+                const glm::vec3 endMin = glm::min(cap.a + remainingMove,
+                                                  cap.b + remainingMove);
+                const glm::vec3 endMax = glm::max(cap.a + remainingMove,
+                                                  cap.b + remainingMove);
+                const AABB sweepBounds{
+                    glm::min(startMin, endMin) - glm::vec3(cap.r),
+                    glm::max(startMax, endMax) + glm::vec3(cap.r)};
+                const auto& entities = PhysicalEntitySystem::instance().entities();
+                for (const PhysicalEntity& entity : entities)
+                {
+                    if (!entity.collidesWithActors ||
+                        entity.shape != PhysicalEntityShape::Box ||
+                        entity.localTriangles.empty())
+                        continue;
+
+                    const glm::vec3 half = glm::max(entity.halfExtents,
+                                                    glm::vec3(0.0f));
+                    AABB entityBounds;
+                    entityBounds.min = glm::vec3(
+                        std::numeric_limits<float>::max());
+                    entityBounds.max = glm::vec3(
+                        std::numeric_limits<float>::lowest());
+                    for (int corner = 0; corner < 8; ++corner)
+                    {
+                        const glm::vec3 local(
+                            (corner & 1) ? half.x : -half.x,
+                            (corner & 2) ? half.y : -half.y,
+                            (corner & 4) ? half.z : -half.z);
+                        const glm::vec3 point = glm::vec3(
+                            entity.transform * glm::vec4(local, 1.0f));
+                        entityBounds.min = glm::min(entityBounds.min, point);
+                        entityBounds.max = glm::max(entityBounds.max, point);
+                    }
+                    if (glm::any(glm::lessThan(sweepBounds.max,
+                                               entityBounds.min)) ||
+                        glm::any(glm::greaterThan(sweepBounds.min,
+                                                  entityBounds.max)))
+                        continue;
+
+                    const EntitySurfaceCacheView surface =
+                        cachedEntitySurface(entity);
+                    if (!surface.meshCache)
+                        continue;
+                    const glm::vec3 relativeMove = remainingMove -
+                        entity.velocity * remainingTickSeconds;
+                    for (size_t triangleIndex = 0;
+                         triangleIndex < surface.meshCache->triangles.size();
+                         ++triangleIndex)
+                    {
+                        SweepHit hit;
+                        if (!capsuleTriangleSweep(
+                                cap, relativeMove,
+                                surface.meshCache->triangles[triangleIndex],
+                                static_cast<int>(triangleIndex), hit) ||
+                            !std::isfinite(hit.time) || hit.time < 0.0f ||
+                            hit.time > 1.0f)
+                            continue;
+                        hit.entityId = entity.id;
+                        hit.surfaceVelocity = entity.velocity;
+                        hit.colliderName = "physical_entity";
+                        if (hit.time < earliest.time - TOI_EPSILON)
+                        {
+                            earliest = hit;
+                            toiHits.clear();
+                            toiHits.push_back(hit);
+                        }
+                        else if (std::fabs(hit.time - earliest.time) <=
+                                 TOI_EPSILON)
+                        {
+                            const bool duplicate = std::any_of(
+                                toiHits.begin(), toiHits.end(),
+                                [&hit](const SweepHit& existing) {
+                                    return existing.entityId == hit.entityId &&
+                                           existing.triangleIndex ==
+                                               hit.triangleIndex;
+                                });
+                            if (!duplicate)
+                                toiHits.push_back(hit);
+                        }
+                    }
                 }
             }
             auto t1 = std::chrono::steady_clock::now();
@@ -311,7 +409,9 @@ void doGLBSweepSlide(
         for (size_t hitIndex = 0; hitIndex < toiHits.size(); ++hitIndex)
         {
             const SweepHit& hit = toiHits[hitIndex];
-            if (hit.triangleIndex < 0 || hit.triangleIndex >= (int)world.collisionMesh.triangles.size())
+            if (hit.triangleIndex < 0 ||
+                (hit.entityId == 0 &&
+                 hit.triangleIndex >= (int)world.collisionMesh.triangles.size()))
                 continue;
 
             // A real swept capsule impact must reach the configured bounce
@@ -332,7 +432,18 @@ void doGLBSweepSlide(
                 const bool groundedSupport =
                     (p.ground.onGround || p.ground.stableOnGround || groundedThisFrame) &&
                     hit.normal.z > 0.995f;
-                if (groundedSupport)
+                if (hit.entityId != 0)
+                {
+                    glm::vec3* velocities[] = {&p.vel, &p.externalImpulse};
+                    for (glm::vec3* velocity : velocities)
+                    {
+                        const float into = glm::dot(
+                            *velocity - hit.surfaceVelocity, hit.normal);
+                        if (into < 0.0f)
+                            *velocity -= hit.normal * into;
+                    }
+                }
+                else if (groundedSupport)
                     projectVelocityAgainstNormal(p, hit.normal);
                 else
                     respondVelocityAgainstNormal(
@@ -340,6 +451,8 @@ void doGLBSweepSlide(
                         "root_capsule", hit.triangleIndex);
             }
 
+            if (hit.entityId != 0)
+                continue;
             const char* feature = triangleFeatureLabel(world.collisionMesh.triangles[hit.triangleIndex], hit.point);
             if (feature[0] == 'f')
                 trace.faceHits++;
@@ -349,6 +462,7 @@ void doGLBSweepSlide(
                 trace.vertexHits++;
         }
 
+        if (earliest.entityId == 0)
         {
             float feetZ = cap.a.z - cap.r;
             bool stepWall = std::fabs(earliest.normal.z) < 0.2f;
@@ -357,7 +471,8 @@ void doGLBSweepSlide(
                            (int)stepWall, feetZ, earliest.point.z, earliest.point.z - feetZ, MAX_STEP_HEIGHT);
         }
 
-        if (std::fabs(earliest.normal.z) < 0.2f)
+        if (earliest.entityId == 0 &&
+            std::fabs(earliest.normal.z) < 0.2f)
         {
             float feetZ = cap.a.z - cap.r;
 
@@ -499,6 +614,7 @@ void doGLBSweepSlide(
         // SEAM TRANSITION: when the sweep hits a non-walkable surface (edge, backface,
         // or wall at a mesh seam), check for a walkable surface ahead and project
         // movement against THAT surface instead of the blocking edge.
+        if (earliest.entityId == 0)
         {
             float feetZ = cap.a.z - cap.r;
             float horizMove = glm::length(glm::vec2(remainingMove.x, remainingMove.y));
@@ -583,16 +699,32 @@ void doGLBSweepSlide(
         {
             if (hit.triangleIndex < 0 || hit.triangleIndex >= (int)world.collisionMesh.triangles.size())
                 continue;
-            DebugVis::recordHit(hit.point, hit.normal, hit.triangleIndex, hit.colliderName.c_str());
-            DebugVis::recordTriangle(world.collisionMesh.triangles[hit.triangleIndex], hit.triangleIndex, "sweep-hit-triangle");
+                DebugVis::recordHit(hit.point, hit.normal, hit.triangleIndex, hit.colliderName.c_str());
+                if (hit.entityId == 0 && hit.triangleIndex >= 0 &&
+                    hit.triangleIndex <
+                        static_cast<int>(world.collisionMesh.triangles.size()))
+                    DebugVis::recordTriangle(
+                        world.collisionMesh.triangles[hit.triangleIndex],
+                        hit.triangleIndex, "sweep-hit-triangle");
         }
         {
             glm::vec3 beforeSlide = remainingMove;
             remainingMove -= stepMove;
             for (const SweepHit& hit : toiHits) {
-                float vn = glm::dot(remainingMove, hit.normal);
+                const glm::vec3 surfaceRemainder =
+                    hit.surfaceVelocity * nextRemainingSeconds;
+                glm::vec3 relativeRemainder =
+                    remainingMove - surfaceRemainder;
+                float vn = glm::dot(relativeRemainder, hit.normal);
                 if (vn >= 0.0f)
                     continue;
+
+                if (hit.entityId != 0)
+                {
+                    relativeRemainder -= hit.normal * vn;
+                    remainingMove = relativeRemainder + surfaceRemainder;
+                    continue;
+                }
 
                 const bool groundedSupport =
                     (p.ground.onGround || p.ground.stableOnGround || groundedThisFrame) &&
@@ -656,15 +788,64 @@ void doGLBSweepSlide(
 
         for (const SweepHit& hit : toiHits)
         {
-            applyCollisionContact(
-                p,
-                groundedThisFrame,
-                hit.normal,
-                hit.point,
-                SURFACE_SLOP,
-                hit.triangleIndex,
-                hit.colliderName.c_str()
-            );
+            if (hit.entityId == 0)
+            {
+                applyCollisionContact(
+                    p, groundedThisFrame, hit.normal, hit.point,
+                    SURFACE_SLOP, hit.triangleIndex,
+                    hit.colliderName.c_str());
+            }
+            else
+            {
+                glm::vec3* velocities[] = {&p.vel, &p.externalImpulse};
+                for (glm::vec3* velocity : velocities)
+                {
+                    const float into = glm::dot(
+                        *velocity - hit.surfaceVelocity, hit.normal);
+                    if (into < 0.0f)
+                        *velocity -= hit.normal * into;
+                }
+                if (hit.normal.z > MAX_WALKABLE_SLOPE_DOT &&
+                    hit.point.z <= p.getCapsule().a.z - p.getCapsule().r + 0.15f)
+                {
+                    groundedThisFrame = true;
+                    p.ground.onGround = true;
+                    p.ground.stableOnGround = true;
+                    p.ground.hasWorldContact = true;
+                    p.ground.realWorldContactThisFrame = true;
+                    p.ground.worldContactLostTimer = 0.033f;
+                    supportId = hit.entityId;
+                    supportVelocity = hit.surfaceVelocity;
+                    appendPlayerMovementContact(
+                        p, MovementContactKind::Ground, hit.normal, hit.point,
+                        SURFACE_SLOP, hit.triangleIndex,
+                        MovementContactSource::MovingStructure);
+                }
+            }
+
+            static thread_local auto sLastEntityContactLog =
+                std::chrono::steady_clock::time_point{};
+            const auto entityContactNow = std::chrono::steady_clock::now();
+            if (hit.entityId != 0 &&
+                entityContactNow - sLastEntityContactLog >=
+                    std::chrono::seconds(1))
+            {
+                sLastEntityContactLog = entityContactNow;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Collision, StructuredLevel::Important,
+                    "collision.arcade_entity.sweep", std::to_string(hit.entityId),
+                    "Arcade root capsule swept against moving physical box",
+                    static_cast<uint32_t>(p.movementSimulationTick),
+                    {{"actor", p.username}, {"entity_id", hit.entityId},
+                     {"time_of_impact", hit.time},
+                     {"contact_point", {hit.point.x, hit.point.y, hit.point.z}},
+                     {"contact_normal", {hit.normal.x, hit.normal.y, hit.normal.z}},
+                     {"surface_velocity", {hit.surfaceVelocity.x,
+                                             hit.surfaceVelocity.y,
+                                             hit.surfaceVelocity.z}},
+                     {"position", {p.pos.x, p.pos.y, p.pos.z}}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
         }
 
         PHYS_LOG(
@@ -688,6 +869,11 @@ void doGLBSweepSlide(
         if (glm::dot(remainingMove, remainingMove) < 0.000001f)
             break;
     }
+
+    if (supportId == 0 && previousSupportId != 0)
+        p.vel += previousSupportVelocity;
+    p.collision.supportEntityId = supportId;
+    p.collision.supportVelocity = supportVelocity;
 
     auto tSweepEnd = std::chrono::steady_clock::now();
     float sweepTotalMs = std::chrono::duration<float, std::milli>(tSweepEnd - tSweepStart).count();

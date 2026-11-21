@@ -218,6 +218,9 @@ class Progress:
             "changed_paths": context.get("changed_paths", []),
             "elapsed_s": 0.0,
             "compile_s": 0.0,
+            "compile_sum_ms": 0.0,
+            "compile_min_ms": None,
+            "compile_max_ms": 0.0,
             "link_s": 0.0,
             "total_s": 0.0,
             "slowest": [],
@@ -251,6 +254,10 @@ class Progress:
         if self.worker_started_monotonic is not None:
             self.data["worker_elapsed_s"] = round(
                 time.monotonic() - self.worker_started_monotonic, 3)
+        subphase_started = self.data.get("subphase_started_monotonic")
+        if subphase_started is not None:
+            self.data["subphase_elapsed_ms"] = round(
+                (time.monotonic() - float(subphase_started)) * 1000, 3)
         try:
             write_json_atomic(self.path, self.data)
             self.dirty = False
@@ -262,8 +269,9 @@ class Progress:
             with self.lock:
                 if self.data.get("status") != "running":
                     return
-                if not self.dirty:
-                    continue
+                # Phase and nested-phase elapsed values move even when the
+                # worker has no file-level counter to update. Keep the live
+                # snapshot fresh at 2 Hz for the dashboard.
                 self._write_locked()
 
     def _append_locked(self, line: str) -> None:
@@ -322,6 +330,13 @@ class Progress:
             self.data["completed"] += 1
             if status == "compiled":
                 self.data["compiled"] += 1
+                self.data["compile_sum_ms"] = round(
+                    float(self.data.get("compile_sum_ms") or 0) + ms, 3)
+                prior_min = self.data.get("compile_min_ms")
+                self.data["compile_min_ms"] = round(
+                    ms if prior_min is None else min(float(prior_min), ms), 3)
+                self.data["compile_max_ms"] = round(
+                    max(float(self.data.get("compile_max_ms") or 0), ms), 3)
             elif status == "skipped":
                 self.data["skipped"] += 1
             elif status == "failed":
@@ -443,6 +458,63 @@ class Progress:
                 "scan_prepass_elapsed_s": round(elapsed_s, 3),
                 "last_progress_utc": utc_now(),
             })
+            self.dirty = True
+
+    def subphase_start(self, name: str, **fields) -> float:
+        started = time.monotonic()
+        utc = utc_now()
+        with self.lock:
+            phase = str(self.data.get("phase") or "")
+            self.data.update({"subphase": name,
+                              "subphase_started_monotonic": started,
+                              "subphase_started_utc": utc,
+                              "subphase_elapsed_ms": 0.0,
+                              **fields})
+            event = {"event": "subphase.started", "phase": phase,
+                     "subphase": name, "time_utc": utc,
+                     "elapsed_ms": round((started - self.started_monotonic) * 1000, 3),
+                     "build_attempt_id": self.data.get("build_attempt_id"),
+                     "revision": self.data.get("revision")}
+            self.data.setdefault("timeline", []).append(event)
+            del self.data["timeline"][:-128]
+            self._timing_locked(event)
+            self._write_locked()
+        return started
+
+    def subphase_end(self, name: str, started: float, **fields) -> float:
+        ended = time.monotonic()
+        duration_ms = round((ended - started) * 1000, 3)
+        with self.lock:
+            event = {"event": "subphase.completed",
+                     "phase": str(self.data.get("phase") or ""),
+                     "subphase": name, "time_utc": utc_now(),
+                     "duration_ms": duration_ms,
+                     "elapsed_ms": round((ended - self.started_monotonic) * 1000, 3),
+                     **fields,
+                     "build_attempt_id": self.data.get("build_attempt_id"),
+                     "revision": self.data.get("revision")}
+            self.data.setdefault("subphase_durations_ms", {})[name] = duration_ms
+            self.data.setdefault("timeline", []).append(event)
+            self.data["subphase"] = ""
+            self.data.pop("subphase_started_monotonic", None)
+            self.data.pop("subphase_started_utc", None)
+            self.data["subphase_elapsed_ms"] = 0.0
+            self.data.update(fields)
+            del self.data["timeline"][:-128]
+            self._timing_locked(event)
+            self._write_locked()
+        return duration_ms
+
+    def record_cache_invalidations(self, rows: list[dict]) -> None:
+        if not rows:
+            return
+        with self.lock:
+            self.data["cache_invalidations"] = rows[-32:]
+            self._append_timing_rows_locked([
+                {"event": "cache.invalidation", "time_utc": utc_now(), **row,
+                 "build_attempt_id": self.data.get("build_attempt_id"),
+                 "revision": self.data.get("revision")}
+                for row in rows])
             self.dirty = True
 
     def finish(self, status: str, **kwargs) -> None:
@@ -728,6 +800,77 @@ def parse_depfile(dep: Path) -> list[str] | None:
         return None
     return [token for token in match.group(1).split()
             if not token.endswith(":") and not token.endswith("pch.h.gch")]
+
+
+DEPENDENCY_INDEX_SCHEMA = 1
+
+
+def _normalized_cache_token(token: str) -> str:
+    path = Path(token)
+    if path.is_absolute():
+        try:
+            return str(ROOT / path.relative_to(SOURCE_ROOT))
+        except ValueError:
+            return str(path)
+    return str(ROOT / path)
+
+
+def load_dependency_index(path: Path) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(value, dict) or int(value.get("schema_version") or 0) != DEPENDENCY_INDEX_SCHEMA:
+        return {}
+    entries = value.get("entries")
+    return entries if isinstance(entries, dict) else {}
+
+
+def save_dependency_index(path: Path, entries: dict) -> None:
+    try:
+        write_json_atomic(path, {
+            "schema_version": DEPENDENCY_INDEX_SCHEMA,
+            "entries": entries,
+        })
+    except OSError:
+        pass
+
+
+def cached_dependency_tokens(entries: dict, source_path: str,
+                             source_hash: str, dep: Path) -> list[str] | None:
+    entry = entries.get(source_path)
+    if not isinstance(entry, dict):
+        return None
+    if source_hash and str(entry.get("source_hash") or "") != source_hash:
+        return None
+    try:
+        stat = dep.stat()
+        dependencies = entry.get("dependencies")
+        if (not isinstance(dependencies, list) or
+                int(entry.get("dep_size") or -1) != stat.st_size or
+                int(entry.get("dep_mtime_ns") or -1) != stat.st_mtime_ns):
+            return None
+        return [str(item) for item in dependencies]
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def remember_dependency_tokens(entries: dict, source_path: str,
+                               source_hash: str, dep: Path,
+                               tokens: list[str]) -> bool:
+    try:
+        stat = dep.stat()
+    except OSError:
+        return False
+    normalized = list(dict.fromkeys(
+        _normalized_cache_token(token) for token in tokens))
+    entries[source_path] = {
+        "source_hash": source_hash,
+        "dep_size": stat.st_size,
+        "dep_mtime_ns": stat.st_mtime_ns,
+        "dependencies": normalized,
+    }
+    return True
 
 
 def dependency_relative(token: str) -> str:
@@ -1221,24 +1364,63 @@ def build(args: argparse.Namespace) -> int:
             pch_stat = None
         scanned = skipped = 0
         dependency_check_ms = parse_ms = stat_ms = 0.0
+        dependency_check_rows: list[tuple[str, float]] = []
+        dependency_path_and_fanout_ms = 0.0
+        dependency_path_normalization_ms = 0.0
+        external_dependency_classification_ms = 0.0
         last_snapshot = scan_started
         parsed_tokens: dict[str, list[str] | None] = {}
         stat_targets: set[str] = set()
         header_counts: Counter[str] = Counter()
         prepass_started = time.perf_counter()
+        prepass_phase_started = progress.subphase_start(
+            "scan.dependency_index_prepass", depfile_total=len(scan_list))
         last_prepass_update = prepass_started
+        dep_index_path = object_dir / "dependency-index.json"
+        dependency_metadata: dict[str, tuple[bool, str]] = {}
+        index_load_started = time.perf_counter()
+        dep_index = load_dependency_index(dep_index_path)
+        dep_index_load_ms = (time.perf_counter() - index_load_started) * 1000.0
+        dep_index_changed = False
+        dep_index_seen: set[str] = set()
         progress.scan_prepass(parsed=0, total=len(scan_list), current="",
                               elapsed_s=0.0)
         for index, (item, _obj, dep) in enumerate(scan_list, 1):
             source_path = normalized(item["path"])
-            tokens = parse_depfile(dep)
+            dep_index_seen.add(source_path)
+            source_hash = str(item.get("sha256") or "")
+            tokens = cached_dependency_tokens(
+                dep_index, source_path, source_hash, dep)
+            if tokens is None:
+                parsed_started = time.perf_counter()
+                tokens = parse_depfile(dep)
+                parse_ms += (time.perf_counter() - parsed_started) * 1000.0
+                if tokens is not None:
+                    dep_index_changed = remember_dependency_tokens(
+                        dep_index, source_path, source_hash, dep, tokens
+                    ) or dep_index_changed
             parsed_tokens[source_path] = tokens
+            path_walk_started = time.perf_counter()
             for token in tokens or ():
-                if is_external_dependency(token):
+                metadata = dependency_metadata.get(token)
+                if metadata is None:
+                    external_started = time.perf_counter()
+                    is_external = is_external_dependency(token)
+                    external_dependency_classification_ms += (
+                        time.perf_counter() - external_started) * 1000.0
+                    normalize_started = time.perf_counter()
+                    relative = dependency_relative(token)
+                    dependency_path_normalization_ms += (
+                        time.perf_counter() - normalize_started) * 1000.0
+                    metadata = (is_external, relative)
+                    dependency_metadata[token] = metadata
+                is_external, relative = metadata
+                if is_external:
                     external_dependencies.add(token)
-                relative = dependency_relative(token)
                 if relative:
                     header_counts[relative] += 1
+            dependency_path_and_fanout_ms += (
+                time.perf_counter() - path_walk_started) * 1000.0
             if source_path not in handled and tokens:
                 stat_targets.update(tokens)
             now = time.perf_counter()
@@ -1247,12 +1429,40 @@ def build(args: argparse.Namespace) -> int:
                     parsed=index, total=len(scan_list), current=source_path,
                     elapsed_s=now - prepass_started)
                 last_prepass_update = now
-        parse_ms = (time.perf_counter() - prepass_started) * 1000.0
+        index_save_ms = 0.0
+        if dep_index_changed or len(dep_index) != len(dep_index_seen):
+            index_save_started = time.perf_counter()
+            dep_index = {key: value for key, value in dep_index.items()
+                         if key in dep_index_seen}
+            save_dependency_index(dep_index_path, dep_index)
+            index_save_ms = (time.perf_counter() - index_save_started) * 1000.0
+        dependency_prepass_ms = (time.perf_counter() - prepass_started) * 1000.0
+        dependency_prepass_other_ms = max(
+            0.0, dependency_prepass_ms - parse_ms - dependency_path_and_fanout_ms
+            - dep_index_load_ms - index_save_ms)
+        progress.subphase_end(
+            "scan.dependency_index_prepass", prepass_phase_started,
+            depfile_count=len(scan_list), parse_ms=round(parse_ms, 3),
+            path_and_fanout_ms=round(dependency_path_and_fanout_ms, 3),
+            path_normalization_ms=round(dependency_path_normalization_ms, 3),
+            external_classification_ms=round(
+                external_dependency_classification_ms, 3),
+            index_load_ms=round(dep_index_load_ms, 3),
+            index_save_ms=round(index_save_ms, 3),
+            remaining_loop_work_ms=round(dependency_prepass_other_ms, 3))
         progress.set(scan_phase="object_checks", scan_parsed=len(scan_list),
                      scan_current="", scan_prepass_elapsed_s=round(
-                         (time.perf_counter() - prepass_started), 3))
+                         dependency_prepass_ms / 1000.0),
+                     dependency_prepass_ms=round(dependency_prepass_ms, 3),
+                     dependency_index_load_ms=round(dep_index_load_ms, 3),
+                     dependency_index_save_ms=round(index_save_ms, 3),
+                     dependency_path_and_fanout_ms=round(
+                         dependency_path_and_fanout_ms, 3))
         stat_prewarm_ms = 0.0
         if stat_targets:
+            stat_phase_started = progress.subphase_start(
+                "scan.unique_dependency_stat_prewarm",
+                unique_path_count=len(stat_targets))
             stat_started = time.perf_counter()
             workers = min(16, max(2, (os.cpu_count() or 4) * 2))
             with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -1260,6 +1470,16 @@ def build(args: argparse.Namespace) -> int:
                     lambda token: cached_stat(token, stat_cache),
                     sorted(stat_targets)))
             stat_prewarm_ms = (time.perf_counter() - stat_started) * 1000.0
+            progress.subphase_end(
+                "scan.unique_dependency_stat_prewarm", stat_phase_started,
+                unique_path_count=len(stat_targets))
+        progress.set(stat_prewarm_ms=round(stat_prewarm_ms, 3),
+                     unique_stat_targets=len(stat_targets))
+        object_check_started = time.perf_counter()
+        object_check_phase_started = progress.subphase_start(
+            "scan.object_freshness_checks", object_count=len(scan_list))
+        invalidation_rows: list[dict] = []
+        dependency_stats_by_token: dict[str, os.stat_result | None] = {}
         for index, (item, obj, dep) in enumerate(scan_list, 1):
             source_path = normalized(item["path"])
             if source_path in handled:
@@ -1270,26 +1490,44 @@ def build(args: argparse.Namespace) -> int:
             awaiting = (time.monotonic() - progress.started_monotonic) * 1000.0
             dep_tokens = parsed_tokens.get(source_path)
             is_stale = args.force or dep_tokens is None
+            stale_reason = ("forced rebuild" if args.force else
+                            "missing or invalid dependency file" if dep_tokens is None else "")
             if not is_stale:
                 try:
                     object_stat = os.stat(obj)
                 except OSError:
                     is_stale = True
                     object_stat = None
-                if not is_stale and (object_stat.st_size == 0 or (
-                        pch_stat is not None and
-                        pch_stat.st_mtime >= object_stat.st_mtime)):
+                    stale_reason = "object file missing"
+                if not is_stale and object_stat.st_size == 0:
                     is_stale = True
+                    stale_reason = "object file is empty"
+                if (not is_stale and pch_stat is not None
+                        and pch_stat.st_mtime >= object_stat.st_mtime):
+                    is_stale = True
+                    stale_reason = "precompiled header is newer than object"
                 if not is_stale:
                     for token in dep_tokens or ():
-                        dependency = cached_stat(token, stat_cache)
-                        if dependency is None or dependency.st_mtime >= object_stat.st_mtime:
+                        if token not in dependency_stats_by_token:
+                            dependency_stats_by_token[token] = cached_stat(
+                                token, stat_cache)
+                        dependency = dependency_stats_by_token[token]
+                        if dependency is None:
                             is_stale = True
+                            stale_reason = f"dependency missing or unreadable: {token}"
+                            break
+                        if dependency.st_mtime >= object_stat.st_mtime:
+                            is_stale = True
+                            stale_reason = f"dependency newer than object: {token}"
                             break
             entry_ms = (time.perf_counter() - check_started) * 1000.0
             dependency_check_ms += entry_ms
+            dependency_check_rows.append((item["path"], entry_ms))
             if is_stale:
                 stale.append((item, obj, dep))
+                invalidation_rows.append({"path": item["path"],
+                                          "reason": stale_reason or "unknown stale condition",
+                                          "dependency_check_ms": round(entry_ms, 3)})
                 continue
             skipped += 1
             scan_rows.append({
@@ -1329,6 +1567,44 @@ def build(args: argparse.Namespace) -> int:
                     stat_ms=stat_prewarm_ms,
                     unique_dependencies=len(stat_cache))
                 last_snapshot = time.monotonic()
+        object_check_wall_ms = (time.perf_counter() - object_check_started) * 1000.0
+        object_check_overhead_ms = max(0.0, object_check_wall_ms - dependency_check_ms)
+        progress.subphase_end(
+            "scan.object_freshness_checks", object_check_phase_started,
+            object_count=scanned, dependency_check_sum_ms=round(dependency_check_ms, 3),
+            event_and_loop_overhead_ms=round(object_check_overhead_ms, 3),
+            stale_count=len(stale), skipped_count=skipped)
+        progress.record_cache_invalidations(invalidation_rows)
+        sorted_checks = sorted(dependency_check_rows, key=lambda row: row[1], reverse=True)
+        progress.set(dependency_prepass_ms=round(dependency_prepass_ms, 3),
+                     dependency_index_load_ms=round(dep_index_load_ms, 3),
+                     dependency_index_save_ms=round(index_save_ms, 3),
+                     dependency_path_and_fanout_ms=round(
+                         dependency_path_and_fanout_ms, 3),
+                     dependency_path_normalization_ms=round(
+                         dependency_path_normalization_ms, 3),
+                     external_dependency_classification_ms=round(
+                         external_dependency_classification_ms, 3),
+                     unique_dependency_metadata=len(dependency_metadata),
+                     dependency_prepass_other_ms=round(
+                         dependency_prepass_other_ms, 3),
+                     stat_prewarm_ms=round(stat_prewarm_ms, 3),
+                     unique_stat_targets=len(stat_targets),
+                     unique_dependency_token_stat_checks=len(
+                         dependency_stats_by_token),
+                     object_check_wall_ms=round(object_check_wall_ms, 3),
+                     object_check_overhead_ms=round(object_check_overhead_ms, 3),
+                     dependency_check_count=len(dependency_check_rows),
+                     dependency_check_min_ms=round(min(
+                         (row[1] for row in dependency_check_rows), default=0.0), 3),
+                     dependency_check_max_ms=round(
+                         sorted_checks[0][1] if sorted_checks else 0.0, 3),
+                     dependency_check_avg_ms=round(
+                         dependency_check_ms / len(dependency_check_rows), 3)
+                         if dependency_check_rows else 0.0,
+                     dependency_check_slowest=[
+                         {"path": path, "milliseconds": round(duration, 3)}
+                         for path, duration in sorted_checks[:10]])
         scan_seconds = round(time.monotonic() - scan_started, 3)
         stat_ms = stat_prewarm_ms
         if not quiet:
@@ -1695,15 +1971,36 @@ def build(args: argparse.Namespace) -> int:
     link_lines.append((ROOT / "external/manifold-prebuilt/lib/libmanifold.a").as_posix())
     link_lines.append(f"-L{Path(glfw_lib_dir).as_posix()}")
     link_lines.extend(LINK_LIBS)
+    link_prepare_started = progress.subphase_start("link.response_file_prepare")
     response.write_text("\n".join(link_lines) + "\n", encoding="utf-8")
+    object_input_bytes = 0
+    for path in objects:
+        try:
+            object_input_bytes += path.stat().st_size
+        except OSError:
+            pass
+    progress.subphase_end("link.response_file_prepare", link_prepare_started,
+                          response_file_bytes=response.stat().st_size,
+                          object_input_count=len(objects),
+                          linker_argument_count=len(link_lines),
+                          object_input_bytes=object_input_bytes)
 
     link_command = [cxx, "-shared", "-o", str(staging), "@" + str(response)]
     if os.path.isfile(staging):
         os.remove(staging)
     link_start = time.monotonic()
+    link_command_started = progress.subphase_start(
+        "link.gnu_linker", object_input_count=len(objects),
+        linker_argument_count=len(link_lines),
+        response_file=str(response.relative_to(ROOT)))
     link_result = run_tool(link_command, cwd=str(ROOT), stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, text=True)
     link_seconds = round(time.monotonic() - link_start, 3)
+    progress.subphase_end("link.gnu_linker", link_command_started,
+                          outcome="ok" if link_result.returncode == 0 else "failed",
+                          exit_code=link_result.returncode,
+                          staged_dll_bytes=(staging.stat().st_size
+                                            if staging.is_file() else 0))
     if link_result.returncode != 0:
         output = link_result.stdout or ""
         message = f"link failed in {link_seconds}s"
@@ -1751,10 +2048,13 @@ def build(args: argparse.Namespace) -> int:
 
     progress.set_phase("publish")
     publish_started = time.monotonic()
+    publish_hash_started = progress.subphase_start("publish.rename_and_hash")
     try:
         os.replace(staging, dll_path)
         code_hash = sha256_file(dll_path)
     except OSError as error:
+        progress.subphase_end("publish.rename_and_hash", publish_hash_started,
+                              outcome="failed", error=str(error)[:300])
         message = f"publish failed: {error}"
         progress.finish("publish_failed", compile_s=compile_seconds,
                         link_s=link_seconds, failed_phase="publish",
@@ -1766,6 +2066,8 @@ def build(args: argparse.Namespace) -> int:
                      "build_attempt_id": attempt_id, "revision": revision})
         print(f"[GAME BUILD] {message}", file=sys.stderr, flush=True)
         return 1
+    progress.subphase_end("publish.rename_and_hash", publish_hash_started,
+                          outcome="ok", dll_size_bytes=dll_path.stat().st_size)
     publish_seconds = round(time.monotonic() - publish_started, 3)
     total_seconds = round(time.monotonic() - progress.started_monotonic, 3)
     worker_seconds = round(time.monotonic() - worker_entry_started, 3)
@@ -1815,15 +2117,32 @@ def build(args: argparse.Namespace) -> int:
     }
     if change_report is not None:
         current["change_report"] = change_report
+    current_write_started = progress.subphase_start("publish.current_metadata")
     write_json_atomic(current_path, current, retries=40, delay=0.05)
+    progress.subphase_end("publish.current_metadata", current_write_started,
+                          path=str(current_path.relative_to(ROOT)))
+    generation_write_started = progress.subphase_start("publish.generation_metadata")
     write_json_atomic(generation_dir / "generation.json", current,
                       retries=40, delay=0.05)
+    progress.subphase_end("publish.generation_metadata", generation_write_started,
+                          path=str((generation_dir / "generation.json").relative_to(ROOT)))
+    dependency_manifest_started = progress.subphase_start(
+        "publish.external_dependency_manifest")
+    external_dependencies = collect_external_dependencies(entries)
+    progress.subphase_end("publish.external_dependency_manifest",
+                          dependency_manifest_started,
+                          dependency_count=len(external_dependencies),
+                          depfile_count=len(entries))
+    cache_marker_started = progress.subphase_start("publish.cache_marker")
     write_cache_marker(
         object_dir, revision=revision, generation=generation,
         flags_hash=flags_hash, link_identity=link_identity,
         compiler_stamp=compiler_stamp, code_hash=code_hash,
         objects=objects,
-        external_dependencies=collect_external_dependencies(entries))
+        external_dependencies=external_dependencies)
+    progress.subphase_end("publish.cache_marker", cache_marker_started,
+                          object_count=len(objects),
+                          dependency_count=len(external_dependencies))
     progress.finish("ok", compile_s=compile_seconds, link_s=link_seconds,
                     publish_s=publish_seconds, total_s=total_seconds,
                     worker_total_s=worker_seconds, no_op=False,

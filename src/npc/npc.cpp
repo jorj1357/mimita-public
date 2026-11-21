@@ -2855,7 +2855,14 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     // Fun Counter Strike objective rush: allow profile-tuned dash requests on
     // a known route when no enemy is visible. Shared ability availability and
     // cooldown still decide whether a requested dash can execute.
-    if (!dash && npc.behavior.active && npc.behavior.objectiveRush &&
+    const bool safeObjectiveRushRoute = npc.staggeredNavResult.valid &&
+        !npc.staggeredNavResult.blocked &&
+        !NpcNavigation::isStuck(npc) && npc.stateMachine.stuckTimer <= 0.0f &&
+        !npc.navigator.localCorrectionActive &&
+        !npc.navigator.areaEscapeActive && !npc.navigator.backtrackActive &&
+        glm::length(moveDir) > 0.1f;
+    if (!dash && safeObjectiveRushRoute &&
+        npc.behavior.active && npc.behavior.objectiveRush &&
         npc.utilityContext.objectiveKnown && !npc.sensors.hasTarget &&
         npc.dashCooldown <= 0.0f && npc.body.dash.dashAvailable)
         dash = shouldDash(npc, difficulty01(npc.difficulty),
@@ -3096,8 +3103,6 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     jump = true;
                     jumpReason = NpcJumpReason::Obstacle;
                 }
-                if (!policy)
-                    dash = npc.dashCooldown <= 0.0f;
                 npc.stateMachine.nextDecisionTime = std::min(npc.stateMachine.nextDecisionTime, 0.3f);
                 std::string key = "npc-nav-stuck-" + std::to_string(npc.id);
                 Debug::logThrottled(Debug::Category::NpcMovement, key.c_str(), 1.0f,

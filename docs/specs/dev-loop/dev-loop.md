@@ -2066,6 +2066,21 @@ dashboard is live, report the role, PID, executable, and command line; stop only
 verified extra dev-loop roles after the single owner is identified. Never kill
 every `python.exe`, unrelated Python tooling, or an unverified game/server.
 
+Daemon discovery must use a supported native process inventory on Windows and
+must not depend on PowerShell/WMI commands being installed. If a same-runtime
+Python process cannot be inspected well enough to rule out a duplicate daemon,
+fail closed and report that the count is unknown. The dashboard shows the
+verified root-checkout daemon count and PIDs, labels the expected count as one,
+and visibly warns when duplicates are found.
+
+The checkout daemon lock remains held until all build work owned by that daemon
+has reached a terminal result. During shutdown, join the active EXE build
+worker and the game-DLL worker thread (including its worker subprocess), then
+drain and persist their completion records before returning from `DevLoop.run`
+and releasing the lock. A worker must never outlive its daemon's lock. If
+controlled cancellation is added later, terminate and verify the owned process
+tree and persist a terminal `cancelled` result before releasing the lock.
+
 Window policy:
 
 - `--status`, `--command`, `--scenario-file`, `--request`, and

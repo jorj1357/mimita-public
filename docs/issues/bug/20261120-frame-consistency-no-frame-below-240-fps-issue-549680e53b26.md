@@ -26,3 +26,15 @@ expected_behavior: Every accepted frame is at most 4.167 ms (240 FPS), with no 2
 acceptance: Journal reports 100 percent of accepted frames at or below 4.167 ms; visible 240 tested on a 240 Hz display.
 paths: ['docs/specs/performance/performance.md', 'devscripts/dev-loop.py', 'src/engine/engine-tick-render.cpp']
 evidence: {'runtime': 'logs/2026-11-20/20261120_040807', 'observed': '90-120 FPS, MAX spike 2368.59 ms', 'display_hz': 60}
+
+## Agent suggestion
+
+### 2026-11-21T00:10:57.648Z — fps-dip-auto-trace-intake
+
+Related capability proposal: issue-13d080318e1c specifies automatic per-frame detection below the existing 4.167 ms/240 FPS budget, bounded client events.jsonl evidence, and creating/extending diagnosis issues by stable slowdown signature. Keep this frame-consistency issue as the outcome/performance target; use the new issue for instrumentation and issue automation. No implementation or runtime proof is claimed.
+
+## Agent suggestion
+
+### 2026-11-21T14:56:05.541Z — map-editor-freeze-issue
+
+Related editor-specific issue: issue-ba939787ffa3 records intermittent map reload/save/copy-paste freezes, including a user-reported ~0.5-second Payload route copy/paste stall. Use the existing 240 FPS frame-consistency target as the shared outcome; validate editor operations with pinned per-frame timing and owner-level scopes.

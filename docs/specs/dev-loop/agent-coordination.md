@@ -147,6 +147,67 @@ never edits a path owned by another agent. If the build/test completes, the
 agent resumes its original task. If no repair work exists, it records that and
 continues non-conflicting work.
 
+## General issue review scheduler
+
+The coordination CLI checks the shared review cadence at every `sync` and
+when a work session ends. It schedules one bounded independent review after
+five globally completed work sessions, or after 30 minutes once at least one
+new work session has completed. The time condition is observed on the next
+agent `sync`/work completion; the scheduler is not a background model or an
+always-running process.
+
+The scheduler uses a durable checkpoint in the coordination database and a
+deduplication key in the wake queue, so concurrent `sync` and work-end calls
+cannot enqueue the same review twice. Canceled and failed requests with the
+same cadence key are requeued instead of being mistaken for a successful
+schedule. Old launched requests are reconciled against their child PID so an
+exited reviewer cannot block future sweeps indefinitely. It selects one
+eligible issue at a time,
+prioritizing unproven/stale proof, then priority and longest time since review.
+Closed, cancelled, deferred, and clarification-waiting issues are not selected;
+issues reviewed in the last 24 hours are skipped. If no eligible issue exists,
+or no wake adapter is available, the scheduler records the result and keeps the
+reason visible.
+
+The scheduled reviewer cold-reads the issue brief and linked evidence, then
+appends a review with observations, counterevidence, uncertainty, and a next
+discriminating check. It also checks the evidence path for one concrete
+development-process improvement; it appends a measurable proposal to the
+existing improvement issue when supported, and records that no improvement was
+evident when it was not. This is review-only work: it does not edit source,
+close issues, or self-approve proof. A successful suggestion is not evidence
+that the underlying issue is fixed.
+
+Track scheduler health with eligible-issue review coverage, age of the oldest
+unreviewed high-priority/unproven issue, evidence-bearing review rate,
+no-op/duplicate rate, wake failures, and review latency. Revisit the cadence if
+it creates repetitive low-value reviews or excessive agent load. A due review
+cannot run while no agent activation or wake adapter is available; that gap
+must remain visible rather than being reported as completed.
+
+## Role-fluid collaboration and workflow review
+
+Task roles are assigned by the work, not restricted by agent identity or model.
+Any agent may temporarily act as investigator, implementer, evidence auditor,
+independent reviewer, or workflow/meta reviewer when qualified and when file
+ownership is respected. The task owner coordinates the work and records the
+synthesis; no permanent privileged meta-agent is required.
+
+At phase boundaries and useful wait periods, agents inspect whether the work
+has uncovered missing timing, evidence, ownership, handoff, or test coverage;
+avoidable human-only steps; repeatable work that can safely be delegated to AI;
+or agent coordination overhead. Findings and recommendations must be
+appended to the shared issue tracker, with evidence and a next check, before
+or alongside being summarized to the user. Use `issue suggest`, `issue review`,
+or a new full issue as appropriate. Do not duplicate a report when an existing
+issue can own the added evidence.
+
+Issues remain collaborative working records. Agents append new evidence,
+reproductions, tests, failed attempts, counterevidence, hypotheses, proposed
+fixes, metrics, and review conclusions over time. Separate observation from
+inference and unknowns. A cold handoff must be possible from the issue brief
+and linked artifacts without relying on the previous agent's private context.
+
 ## Issue context and awareness gaps
 
 An issue is ready to work only when it has the quote, reproduction, expected
@@ -241,8 +302,11 @@ Messages are local, bounded, append-only coordination records:
 - `lease.check`, `lease.expired`
 - `blocker`, `status`, `broadcast`
 
-Every agent has a read cursor. `sync` and `inbox` deliver unread messages and
-mark them read. `wait` blocks until a message arrives or the timeout expires.
+Every agent has an independent read receipt for each message. `sync` and
+`inbox` deliver that agent's unread messages and record that agent's read time;
+reading a broadcast never marks it read for another recipient. The dashboard is
+read-only and shows which agents have read each message. `wait` blocks until a
+message arrives or the timeout expires.
 
 Questions may target one agent or `any`. The first answer closes the question.
 `ack` prevents a false timeout while the owner is investigating.

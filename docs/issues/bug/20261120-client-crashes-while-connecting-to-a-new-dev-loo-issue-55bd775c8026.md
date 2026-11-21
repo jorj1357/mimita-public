@@ -145,3 +145,48 @@ Message: `msg-58b14ba36908` (evidence)
 Subject: Related TDM live reconnect failure in run 152743
 
 For the detailed client-crashes-while-connecting trace: related run 20261120_152743 began with a successful same-EXE TDM join on dust2cyberiav4 (client PID34144/server PID26136; EXE sha256 9e4a6288…, game DLL gen404 361a6835…). Later, snapshots stalled for 10s while last packet age was only 336ms. Client attempted reconnect 10 times; still-running server received each request but reported players=0 and rejected token fingerprint qZ60I0KD as token_not_found. Client terminal ReconnectFailed at 15:40:34.121Z, then teardown set active=false; both process IDs remained alive at 15:47 and run manifest was still stale online. No server player-removal/timeout event was found in the scanned journal, so reason the server had no player record remains unresolved. Evidence and screenshots are saved under logs/2026-11-20/20261120_152743/ and detailed in canonical issue issue-cf9cd77eb056. This does not reproduce the exact GUI mode-switch sequence.
+
+## Scheduled independent review
+
+### 2026-11-21T16:07:35.428Z — root-dll-status-review
+
+A bounded independent review was queued as wake wake-a3735a5dadad after 149 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Scheduled independent review
+
+### 2026-11-21T16:29:05.418Z — root
+
+A bounded independent review was queued as wake wake-2c5d6ff131e2 after 154 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive - recurrence isolated to server reconnect-token erase path; no fix claimed)
+
+### 2026-11-21T16:53:31.753Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Reviewer: issue-review-sweeper (independent, read-only; no source/build/close; no fix claimed).
+
+Scope and readiness: issue readiness is ready (8/8, 3 open tasks). Proof status has no task-proof record for new-mode-connect-crash-trace or welcome-transport-label, and welcome-delivery-trace is unproven; no completion claim is supported. Inspection covered the issue doc, proof status, launch reports, and the latest pinned journals on build 2026-11-21T02:26:50.306117Z:8b5838cbbf4c1bcda47c3f35e33583fde83bdacc89bdc52961e13980c976b871.
+
+Observed facts (no compiler/build invoked):
+1. Run 20261121_144350, request dashboard-e59a3fb1, launch report result=succeeded. After explicit leave at 15:14:53Z, a new connection attempt (connection_attempt_id 3) reached network.connection-state.changed Connecting->Connected at 15:18:19.084Z as local player 1 on dust2cyberiav4 (logs/2026-11-21/20261121_144350/client-01/events-0010.jsonl). Same-EXE TDM leave/reconnect succeeded on the current build.
+2. Run 20261121_140624, TDM dust2cyberiav4: server-01 emitted network.server.player.removed at 14:31:30.073Z for player 1 with removal_reason=reliable_event_failure, reconnect_token_retained=true, players 1->0 (logs/2026-11-21/20261121_140624/server-01/events.jsonl line 3919). Client-01 then flagged false_positive_suspected=true at 14:31:45.072Z, entered Reconnecting attempts 1..10 across a 60s grace, and every network.server.reconnect.lookup returned token_not_found (slot_state not_found, token_fingerprint a9783ce6; server lines 6170-6172 onward). Client terminal ReconnectFailed plus notification Server status: Disconnected - reconnect failed at 14:32:45.137Z (client events-0015 line 75345).
+3. First divergence in source: src/network/reliable-gameplay-events.cpp:119-144 erases the whole player slot (it = players.erase(it)) after logging removal; src/network/server-packets.cpp:523 computes reconnect_token_retained from !player.reconnectToken.empty() immediately before that erase, so the field means the token existed, not that it was retained. handleReconnectRequest scans only live players (server-packets.cpp:2352-2367), so an erased slot makes every retry token_not_found. This explains run 140624 and resolves the Nov 20 run 152743 open note that the server-player-record loss was unexplained.
+4. No new crash artifact: no 3221225477 or dev-loop.instance.exited rows in logs/2026-11-21. The reported crash (run 20261120_143117, client PID 10676, exit 3221225477) is not reproduced by the latest runs.
+
+Inference and uncertainty:
+- The reconnect failure is a server reconnect-token lifecycle defect on the reliable-event connection-failure removal path, not a client crash and not a premature Disconnected notification: the client stayed Reconnecting for the full grace and the terminal text was truthful. Run 144350 shows reconnect still succeeds when this erase path is not involved, so the fault is path-specific.
+- The user-visible shows Disconnected while still connecting symptom is not journal-proven in these runs. Run 144350 has no network.connection-state.changed event for entering Connecting/Reconnecting, and HUD text is derived at src/network/multiplayer-packets.cpp:2274-2322; no screenshots were captured. Visual acceptance stays unproven.
+- Whether the Nov 20 access-violation crash and the token-loss recurrence share a root cause is unknown.
+
+Contrary evidence:
+- Run 144350 leave -> retry -> Connected succeeded (attempt 3), with a succeeded launch report, so the intended lifecycle can work on this build.
+- Run 140624 terminal came after grace expiry (disconnect_elapsed_ms 60058, last_heard_age_ms 60007), so that run alone does not violate the no-Disconnected-while-nonterminal rule.
+- reconnect_token_retained=true is contradicted by the immediately following token_not_found; treat that field as unreliable evidence.
+
+Next discriminating check (not performed by this reviewer):
+1. On a pinned root-dev-loop build, force or await a reliable_event_failure removal and reconnect inside the token grace; assert server reconnect.lookup result=ok and client health returns Connected. A remaining token_not_found confirms the erase-path defect.
+2. For the owning task: preserve reconnect-token disposition across this erase path (retired-token lookup or delegate to the normal disconnect/timeout owner) and report the actual disposition (retained-until or false) in the removal event.
+3. Journal a network.connection-state.changed transition for entering Connecting/Reconnecting attempt N, then capture HUD screenshots during retry to close the visual gap.
+
+Process review: repeated missing-evidence/attribution delay. Runs 20261120_152743 and 20261121_140624 both ended in token_not_found, and the misleading reconnect_token_retained=true plus absent removal/token attribution blocked immediate root cause for more than 24h. One concrete improvement proposal is appended to issue-91e3384b219b with a measurable target and smallest experiment.

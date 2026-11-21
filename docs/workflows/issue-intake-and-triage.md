@@ -16,6 +16,29 @@ document contains a TODO that needs clarification.
 - Every issue has a state, owner, and next action, or it is explicitly
   deferred with a reason.
 - A task is complete only with its class-appropriate evidence.
+- Any nontrivial finding, uncertainty, hypothesis, recommendation, proposed
+  test, or counterexample communicated to the user must also be appended to
+  the relevant shared issue before or alongside the reply. If no suitable
+  issue exists, create one with the full required fields. Do not leave useful
+  discoveries only in chat.
+- Clearly label each statement as observed, inferred, hypothesized, disproved,
+  or still unknown. Attach the exact build/run/journal/path and timestamp where
+  available, plus the next check that could confirm or reject it.
+- Keep issue records useful to an agent taking over cold: include enough
+  current state, evidence, attempts, constraints, risks, and next steps that
+  the agent does not need private conversation history.
+- A cold handoff includes exact reproduction/configuration, expected versus
+  observed behavior, code owner/function/path, claim labels and counterevidence,
+  build/run/process identity, matching journal and artifact paths, failed
+  attempts, acceptance/proof criteria, risk/rollback, blockers, and the next
+  discriminating check. Missing evidence stays explicitly missing; never infer
+  it from a prior agent's private memory. See
+  `docs/specs/dev-loop/agent-context-contract.md` for the complete field set.
+- Continue improving an open issue over time. Append new evidence, failed and
+  successful reproductions, test plans/results, alternative explanations,
+  proposed fixes, metric comparisons, and dissent. Preserve earlier claims and
+  quotes; mark claims superseded or disproven with new evidence instead of
+  rewriting history.
 
 ## Steps
 
@@ -82,6 +105,14 @@ document contains a TODO that needs clarification.
    python devscripts/agent-coord.py issue review <issue-id> \
      --verdict pass --body "<evidence and limitations>"
    ```
+
+   On each completed activation, do one bounded development-process check. Add
+   a specific, evidence-backed improvement proposal and metric to the best
+   existing issue when the work supports it; otherwise do not create generic
+   process chatter. The general review scheduler also rotates one independent
+   issue review after five completed work sessions or 30 minutes when another
+   agent activation occurs. Its behavior and limits are defined in
+   `docs/specs/dev-loop/agent-coordination.md`.
 
 8. Record proof before completion. A behavior task or issue needs a verified
    `runtime_proven` proof or a reasoned exemption:

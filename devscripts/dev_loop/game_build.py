@@ -32,10 +32,18 @@ def _read_json(path: Path) -> dict:
 
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary = path.with_name(
+        f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n",
                           encoding="utf-8")
-    temporary.replace(path)
+    for attempt in range(20):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(0.05)
 
 
 def _append_timing(path: Path, event: dict) -> None:
@@ -593,16 +601,18 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     ready_path = output_root / "ready.json"
 
     _prune_logs(root, 3)
+    _prune_snapshots(root, 5)
     min_free = _min_free_bytes()
     free = _disk_free_bytes(root)
     if free is not None and free < min_free:
-        _prune_generations(root, 5)
-        _prune_logs(root, 3)
+        _prune_generations(root, 3)
+        _prune_snapshots(root, 2)
+        _prune_logs(root, 2)
         free = _disk_free_bytes(root)
     if free is not None and free < min_free:
         return fail_attempt(
             f"disk_low: {free // (1024 * 1024)} MB free, "
-            f"need {min_free // (1024 * 1024)} MB")
+            f"need {min_free // (1024 * 1024)} MB after auto-prune")
 
     for script in ("resident_state_codegen.py", "packet_registry_codegen.py"):
         result = run_stage(f"codegen:{script}",
@@ -730,7 +740,7 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
         "--source-root", str(source_snapshot),
         "--out", str(output_root),
         "--revision", revision,
-        "--jobs", "0",
+        "--jobs", "10",
         "--priority", "high",
         "--attempt-context", str(context_path),
     ]
@@ -834,15 +844,59 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
         "generation": current.get("generation"), "dll": current.get("dll"),
         "code_hash": current.get("code_hash"),
         "timeline_jsonl": str(timing_path.relative_to(root)),
-        "worker_metrics": {key: current.get(key) for key in
-                           ("source_count", "compiled", "skipped", "jobs",
-                            "object_scan_seconds", "dependency_check_ms",
-                            "scan_parse_ms", "scan_stat_ms",
-                            "scan_unique_dependencies",
-                            "changed_source_preflight_seconds",
-                            "compile_seconds", "link_seconds", "publish_seconds",
-                            "total_seconds", "worker_total_seconds",
-                            "slowest_compiles")},
+        "phase_durations_ms": worker_progress.get("phase_durations_ms", {}),
+        "subphase_durations_ms": worker_progress.get("subphase_durations_ms", {}),
+        "compile_sum_ms": worker_progress.get("compile_sum_ms", 0.0),
+        "compile_min_ms": worker_progress.get("compile_min_ms"),
+        "compile_max_ms": worker_progress.get("compile_max_ms", 0.0),
+        "cache_invalidations": worker_progress.get("cache_invalidations", []),
+        "dependency_check_stats": {
+            "count": worker_progress.get("dependency_check_count", 0),
+            "min_ms": worker_progress.get("dependency_check_min_ms", 0.0),
+            "max_ms": worker_progress.get("dependency_check_max_ms", 0.0),
+            "average_ms": worker_progress.get("dependency_check_avg_ms", 0.0),
+            "slowest": worker_progress.get("dependency_check_slowest", []),
+        },
+        "worker_metrics": {
+            **{key: current.get(key) for key in
+               ("source_count", "compiled", "skipped", "jobs",
+                "object_scan_seconds", "dependency_check_ms",
+                "scan_parse_ms", "scan_stat_ms",
+                "scan_unique_dependencies",
+                "changed_source_preflight_seconds",
+                "compile_seconds", "link_seconds", "publish_seconds",
+                "total_seconds", "worker_total_seconds",
+                "slowest_compiles")},
+            "compile_sum_ms": worker_progress.get("compile_sum_ms", 0.0),
+            "compile_min_ms": worker_progress.get("compile_min_ms"),
+            "compile_max_ms": worker_progress.get("compile_max_ms", 0.0),
+            "dependency_prepass_ms": worker_progress.get("dependency_prepass_ms", 0.0),
+            "dependency_index_load_ms": worker_progress.get("dependency_index_load_ms", 0.0),
+            "dependency_index_save_ms": worker_progress.get("dependency_index_save_ms", 0.0),
+            "dependency_path_and_fanout_ms": worker_progress.get(
+                "dependency_path_and_fanout_ms", 0.0),
+            "dependency_path_normalization_ms": worker_progress.get(
+                "dependency_path_normalization_ms", 0.0),
+            "external_dependency_classification_ms": worker_progress.get(
+                "external_dependency_classification_ms", 0.0),
+            "dependency_prepass_other_ms": worker_progress.get(
+                "dependency_prepass_other_ms", 0.0),
+            "stat_prewarm_ms": worker_progress.get("stat_prewarm_ms", 0.0),
+            "object_check_wall_ms": worker_progress.get("object_check_wall_ms", 0.0),
+            "object_check_overhead_ms": worker_progress.get(
+                "object_check_overhead_ms", 0.0),
+            "unique_stat_targets": worker_progress.get("unique_stat_targets", 0),
+            "dependency_check_stats": {
+                "count": worker_progress.get("dependency_check_count", 0),
+                "min_ms": worker_progress.get("dependency_check_min_ms", 0.0),
+                "max_ms": worker_progress.get("dependency_check_max_ms", 0.0),
+                "average_ms": worker_progress.get("dependency_check_avg_ms", 0.0),
+                "slowest": worker_progress.get("dependency_check_slowest", []),
+            },
+            "link_input_count": worker_progress.get("object_input_count", 0),
+            "link_argument_count": worker_progress.get("linker_argument_count", 0),
+            "link_object_input_bytes": worker_progress.get("object_input_bytes", 0),
+        },
         "toolchain": worker_progress.get("compiler", ""),
         "flags_identity": worker_progress.get("flags_identity", ""),
         "object_cache": current.get("object_cache", ""),
@@ -993,4 +1047,3 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
             "timing_jsonl": str(timing_path.relative_to(root)),
             "summary_json": str(summary_path.relative_to(root)),
         }
-

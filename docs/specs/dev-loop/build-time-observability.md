@@ -185,6 +185,38 @@ queue wait, progress-file write, worker output-handler time, link, coherence
 validation, staging/publication, and terminal result. The GUI reads a bounded
 live progress snapshot; it does not scan the full JSONL stream during refresh.
 
+Each generation is presented with a large elapsed/total timer and its own
+bounded history row. The history row must distinguish preflight, dependency
+scan, compiler wall time, link, publication, total attempt time, changed input,
+compiled/skipped counts, and attempt ID. While a phase has no honest
+completion denominator, show its live elapsed time and subphase instead of a
+blank progress card. A generation's live elapsed timer starts when the dev-loop
+accepts the attempt and includes setup and scheduler delay; worker-only time is
+shown separately.
+
+Nested timings explain, rather than rename, a parent phase. Dependency-scan
+subtimers separate dependency-index load/save, depfile parsing, dependency path
+normalization (including filesystem resolve calls), external-path
+classification/fan-out work, unique-file stat prewarm, and per-object freshness
+checks. Report per-translation-unit check min/average/max and the slowest paths;
+report why each stale object rebuilt (for example missing object, invalid
+depfile, newer PCH, or the exact newer/missing dependency). Compilation reports
+the wall interval separately from summed per-TU compiler time, min/max, and
+slowest source paths. Link timing identifies the linker response-file entry
+count, object count/size, and command duration. Publication is split into DLL
+rename/hash, current metadata, generation metadata, external-dependency
+collection, and cache-marker writing. Do not add nested durations to the parent
+duration: the nested intervals are contained within it.
+
+Show `published_generation` and `latest_live_activation` as separate values.
+The latter is read from the current server process journal's most recent
+`game.generation.activated` event, searching bounded chunks across its current
+and recently rotated journal segments; it includes the run, instance, DLL, and
+UTC time. A newer published generation without a matching activation event is
+explicitly unproven; never infer runtime activation from `current.json`, a
+successful link, or a publish result. Dashboard refresh reads only the tail of
+the current journal and a bounded number of attempt summaries.
+
 ### Launch latency objective
 
 The dashboard acknowledges a launch keypress in the next rendered frame
@@ -579,3 +611,25 @@ is append-only; a human makes the final decision on the resolution.
 
 No budget is lowered to make a result pass. A build success is not runtime
 evidence; build time and event-proof time are reported separately.
+## Revision-gated queue and dependency cache
+
+The whole-game queue is keyed by source revision, not by request ID. Requests
+for one revision attach to the same attempt. A newer revision supersedes older
+pending requests and produces at most one follow-up build after the active
+attempt ends. A failed revision is latched: it is not automatically retried
+until the source changes or an explicit retry is requested. Transient
+permission/publish failures may retry once after the environment clears;
+compile failures do not.
+
+The worker stores parsed dependency lists in
+`build/game/objects/<flags>/dependency-index.json`, keyed by source path,
+source hash, depfile size, and depfile mtime. Unchanged depfiles are not parsed
+again. Header fan-out and freshness checks reuse the cached lists; changed
+sources or depfiles invalidate only their entries. The index is bounded to the
+current source set and written atomically.
+
+Before a build, the loop prunes dated logs, old snapshots, and unreferenced
+generations. If disk remains below the configured reserve after pruning, the
+attempt fails with `disk_low` before compile. Progress, timing, and summary
+writes use unique temporary names and bounded atomic-replace retries so one
+writer cannot block another.

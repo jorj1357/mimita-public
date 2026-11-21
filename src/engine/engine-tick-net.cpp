@@ -153,6 +153,10 @@ void recoverStuckKeyboardGate(InputCommandSystem& cmd) {
 
 }  // namespace
 
+static InputFrame gLastAiInputFrame{};
+
+const InputFrame& lastAiInputFrame() { return gLastAiInputFrame; }
+
 void engineTickNet(Engine& engine, float dt)
 {
     Player& player = THE_PLAYER;
@@ -345,6 +349,7 @@ void engineTickNet(Engine& engine, float dt)
     if (PlayerAiController::active())
     {
         const InputFrame ai = PlayerAiController::buildFrame(player, camera, world);
+        gLastAiInputFrame = ai;
         mpInput.jumpHeld = ai.jump;
         mpInput.dashPressed = ai.dashPressed;
         mpInput.downDashPressed = ai.downDashPressed;
@@ -359,6 +364,10 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.lookPitch = ai.lookPitch;
         mpInput.camForward = ai.camForward;
         mpInput.equippedSlot = player.equippedSlot;
+    }
+    else
+    {
+        gLastAiInputFrame = InputFrame{};
     }
 
     // Detect canonical gameplay events and increment serials.

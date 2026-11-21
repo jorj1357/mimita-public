@@ -392,6 +392,18 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.lastInterpolationReanchorMagnitudeMs = 0.0;
     ctx.lastInterpolationReanchorReason.clear();
     ctx.lastClockAnchorServerTick = 0;
+    // Snapshot clocks are monotonic only within one authoritative server
+    // session. A reconnect may reach a replacement server whose tick is lower;
+    // retaining the previous high-water mark makes its snapshots look stale
+    // and stamps melee claims with a future contact tick.
+    ctx.latestServerTick = 0;
+    ctx.lastSnapshotTick = 0;
+    ctx.lastSnapshotReceivedMs = 0;
+    ctx.lastSnapshotDiagnosticsMs = 0;
+    ctx.lastSnapshotDiagnosticArrivalMs = 0;
+    ctx.snapshotsReceived = 0;
+    ctx.snapshotsMissed = 0;
+    ctx.serverIdentityMismatch = false;
     ctx.networkProjectiles.clear();
     ctx.projectileTerminals.clear();
     ctx.reliableEventSessionId = 0;

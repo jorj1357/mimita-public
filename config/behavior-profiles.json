@@ -24,7 +24,7 @@
       "id": "elite_squad",
       "skill_tier": "elite",
       // "aim_error_deg": 0.6,
-      "aim_error_deg": 10.0,
+      "aim_error_deg": 2.0,
       "focus_enabled": true,
       "swarm": true,
       "navigation_backend": "recast",
@@ -40,23 +40,16 @@
       "weapon_visit_shots": {
         "shotgun": 2,
         "revolver": 6,
-        // "rocket_launcher": 1,
-        "rocket_launcher": 4,
-        // "swordsword": 4,
-        "swordsword": 5,
-        // "chainsaw": 6,
-        "chainsaw": 20,
-        // "mace": 1,
-        "mace": 10,
-        // "deathball": 1,
-        "deathball": 10,
+        "rocket_launcher": 1,
+        "swordsword": 2,
+        "chainsaw": 6,
+        "mace": 1,
+        "deathball": 1,
         "spyknife": 1
       },
-      // "weapon_visit_jitter_shots": 0,
-      "weapon_visit_jitter_shots": 50,
+      "weapon_visit_jitter_shots": 0,
       "weapon_switch_delay_min": 0.02,
-      // "weapon_switch_delay_max": 0.1,
-      "weapon_switch_delay_max": 1.0,
+      "weapon_switch_delay_max": 0.1,
       "weapon_cycle_include_melee": true
     },
     {
@@ -330,6 +323,17 @@
       "id": "fun_cs_rush",
       "skill_tier": "elite",
       "objective_rush": true,
+      // Fun Counter Strike players aim through the physical arm, which is
+      // deliberately less accurate than a camera-locked crosshair. NPCs must
+      // share that handicap so they stay difficult but cannot empty a revolver
+      // into the player at near-zero latency.
+      // 200 ms at 60 Hz is 12 ticks; use the same floor for acquisition and
+      // between accepted shots. The tier still supplies elite decisions,
+      // pursuit, and weapon cycling.
+      "reaction_delay": 0.2,
+      "aim_error_deg": 5.0,
+      "turn_speed_deg_per_sec": 720.0,
+      "fire_interval_ticks": 12,
       "dash_cooldown_ticks": 3,
       // Spread the team around the objective/defuser instead of stacking.
       "formation_slots": 6,

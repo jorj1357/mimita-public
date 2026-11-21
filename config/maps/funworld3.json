@@ -2,6 +2,14 @@
   "attachments": [],
   "blocks": [
     {
+      "anchored": true,
+      "collision": true,
+      "color": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
       "enabled": true,
       "faces": [
         "",
@@ -12,8 +20,10 @@
         ""
       ],
       "id": "block_1",
-      "material": "",
+      "material": "stonev2",
+      "material_preset": "",
       "name": "",
+      "opacity": 1.0,
       "position": [
         180.37232971191406,
         47.595218658447266,
@@ -70,9 +80,16 @@
       "geometry": "assets/maps/procedural-mimitasizing5-infdgnslr-v5.glb",
       "id": "chunk_a",
       "name": "",
+      "origin": [
+        0.0,
+        0.0,
+        0.0
+      ],
       "parts": [],
       "spawn_points": [],
-      "tags": []
+      "tags": [],
+      "visible": true,
+      "yaw": 0.0
     }
   ],
   "entities": [
@@ -354,8 +371,24 @@
         "name": "",
         "order": 2,
         "position": [
-          158.90191650390625,
+          148.18060302734375,
           44.59479522705078,
+          313.6555480957031
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_2",
+        "name": "",
+        "order": 3,
+        "position": [
+          174.11392211914063,
+          24.341285705566406,
           313.6555480957031
         ],
         "radius": 2.0,
@@ -368,10 +401,10 @@
         "final": false,
         "id": "route4",
         "name": "",
-        "order": 3,
+        "order": 4,
         "position": [
           218.00376892089844,
-          14.990541458129883,
+          35.61705017089844,
           313.55120849609375
         ],
         "radius": 2.0,
@@ -384,10 +417,10 @@
         "final": false,
         "id": "route5",
         "name": "",
-        "order": 4,
+        "order": 5,
         "position": [
           293.1388854980469,
-          -39.022605895996094,
+          37.185691833496094,
           312.5906677246094
         ],
         "radius": 2.0,
@@ -400,10 +433,26 @@
         "final": false,
         "id": "route6",
         "name": "",
-        "order": 5,
+        "order": 6,
         "position": [
-          308.69915771484375,
-          -98.24836730957031,
+          357.329345703125,
+          11.851200103759766,
+          311.5013122558594
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_3",
+        "name": "",
+        "order": 7,
+        "position": [
+          331.0656433105469,
+          -95.63836669921875,
           311.5013122558594
         ],
         "radius": 2.0,
@@ -416,9 +465,9 @@
         "final": false,
         "id": "route_1",
         "name": "",
-        "order": 6,
+        "order": 8,
         "position": [
-          290.0,
+          282.62615966796875,
           -200.0,
           311.5010070800781
         ],
@@ -429,5 +478,6 @@
     ]
   },
   "vehicles": [],
-  "weapon_overrides": []
+  "weapon_overrides": [],
+  "world_mode": "static"
 }

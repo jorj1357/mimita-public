@@ -158,7 +158,7 @@ struct ProjectileExplodeEventPacket
     uint32_t fireSerial = 0;
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t victimCount = 0;
-    uint8_t reserved[2] = {};
+    uint8_t reserved[2] = {}; // [0] is 1 only for a validated world-surface impact.
     uint16_t weaponDefNetworkId = 0;
     float posX = 0.0f;
     float posY = 0.0f;

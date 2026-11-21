@@ -25,6 +25,11 @@ not a cached daemon phase:
 - last progress timestamp/age;
 - health (`LIVE`, `SLOW`, `NO PROGRESS`, `FAILED`, `PUBLISHED`);
 - source generation, published generation, artifact identity, and pending notes.
+- a prominent large timer for the active attempt or most recently completed
+  generation, plus a bounded recent-generation timing history with the changed
+  source, compiled/skipped counts, phase costs, and attempt ID;
+- the latest `game.generation.activated` event from the current server's journal
+  as runtime proof, clearly separated from the latest published generation.
 
 The worker writes progress at least twice per second, including the
 dependency-prepass phase, so a long prepass cannot look frozen at `1/642`.
@@ -32,6 +37,12 @@ The dashboard refresh remains one second. A stale progress age is displayed as
 `SLOW` or `NO PROGRESS`; it is not hidden behind an old daemon phase. The
 dashboard must not kill or restart a build; health is visibility, and recovery
 uses the build-owner policy.
+
+If the phase has no trustworthy completion denominator, retain the large
+elapsed timer and show the active phase/subphase duration. Do not leave a blank
+progress card or invent a percentage. A DLL that is newer than the last
+activation event is marked published but not proven active. Refresh reads only
+bounded attempt summaries and the tail of the current server journal.
 
 ## Dashboard presence policy
 
@@ -215,6 +226,13 @@ launch path; discovery itself does not adopt or relabel an external process.
 - Show the total unique live MiMITA process count beside the shared indicator.
   If a process scan fails, show the error and keep the last successful list
   marked stale until a scan succeeds.
+- Show the live root-checkout dev-loop daemon count and its verified PIDs in
+  the MIMITA PROCESSES summary, with `expected 1` and an explicit duplicate
+  warning when more than one matching daemon is alive. If daemon enumeration
+  fails or command-line identity cannot be verified, show `count unknown` and
+  the bounded scan error; never display an inferred zero. Discover daemons
+  through native Windows process APIs rather than a PowerShell/WMI or optional
+  package dependency, and match the checkout script path plus daemon role.
 - Show root dev-loop whole-game DLL progress separately from the launcher/EXE
   build in a large queue panel. Show the current generation, source generation,
   attempt ID, revision, attempt start time, current phase, and an ISO 8601 `as of`

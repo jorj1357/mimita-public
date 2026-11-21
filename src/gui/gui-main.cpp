@@ -204,6 +204,7 @@ static std::string gServerInstanceId;
 static std::string gServerEventsPath;
 static std::streamoff gServerEventsReadOffset = 0;
 static std::string gServerLastStartupEvent;
+static uint64_t gServerStartupProgressMs = 0;
 static bool gServerLoggerReady = false;
 static DWORD gLastLoggedServerExitPid = 0;
 static bool gServerStartupStallReported = false;
@@ -507,6 +508,7 @@ static bool launchServerProcess(MimitaNet::ServerLaunchSettings& settings)
     gServerProcessLaunchMs = MimitaNet::nowMs();
     gServerEventsReadOffset = 0;
     gServerLastStartupEvent.clear();
+    gServerStartupProgressMs = MimitaNet::nowMs();
     gServerLoggerReady = false;
     gLastLoggedServerExitPid = 0;
     gServerStartupStallReported = false;
@@ -877,8 +879,16 @@ static bool pollPendingServerRoomCode()
                     const std::string name = event.value("event", std::string{});
                     const auto fields = event.value("fields", nlohmann::json::object());
                     if (name == "server.startup.stage")
-                        gServerLastStartupEvent = fields.value("stage", std::string{}) +
-                            ":" + fields.value("result", std::string{});
+                    {
+                        const std::string stage =
+                            fields.value("stage", std::string{}) + ":" +
+                            fields.value("result", std::string{});
+                        if (stage != gServerLastStartupEvent)
+                        {
+                            gServerLastStartupEvent = stage;
+                            gServerStartupProgressMs = MimitaNet::nowMs();
+                        }
+                    }
                     else if (name == "logger.started" &&
                              event.value("pid", 0ULL) == gServerProcessInfo.dwProcessId)
                     {
@@ -974,7 +984,11 @@ static bool pollPendingServerRoomCode()
                 __FILE__, __LINE__, __func__);
             printf("[ROOM CODE WAIT FAILED] reason=server-exited exitCode=%lu path=%s\n",
                    exitCode, gPendingServerRoomFilePath.c_str());
-            onlineMenuSetServerCode("Server failed to create room");
+            gServerLaunchSettings.serverCode.clear();
+            gPendingLocalJoinFallbackRoomCode.clear();
+            gPendingLocalJoinFallbackStartMs = 0;
+            onlineMenuSetServerCode("");
+            onlineMenuSetServerRunning(false);
             if (!gPendingServerRoomFilePath.empty())
                 DeleteFileA(gPendingServerRoomFilePath.c_str());
             gPendingServerRoomFilePath.clear();
@@ -1057,18 +1071,29 @@ static bool pollPendingServerRoomCode()
         }
     }
 
-    constexpr uint64_t ROOM_CODE_TIMEOUT_MS = 60000;
-    if (now - gPendingServerRoomFileStartMs >= ROOM_CODE_TIMEOUT_MS)
+    constexpr uint64_t ROOM_CODE_MIN_TIMEOUT_MS = 60000;
+    constexpr uint64_t ROOM_CODE_STALL_TIMEOUT_MS = 45000;
+    constexpr uint64_t ROOM_CODE_MAX_TIMEOUT_MS = 300000;
+    const uint64_t waitElapsedMs = now - gPendingServerRoomFileStartMs;
+    const uint64_t progressMs = gServerStartupProgressMs != 0
+        ? gServerStartupProgressMs : gPendingServerRoomFileStartMs;
+    const uint64_t stalledForMs = now - progressMs;
+    const bool timedOut = waitElapsedMs >= ROOM_CODE_MAX_TIMEOUT_MS ||
+        (waitElapsedMs >= ROOM_CODE_MIN_TIMEOUT_MS &&
+         stalledForMs >= ROOM_CODE_STALL_TIMEOUT_MS);
+    if (timedOut)
     {
-        const uint64_t waitElapsedMs = now - gPendingServerRoomFileStartMs;
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Network, StructuredLevel::Important,
             "network.room-code.wait.timed-out",
             std::to_string(gServerProcessInfo.dwProcessId),
-            "dedicated server room was not registered before the wait deadline", 0,
+            "dedicated server room code did not arrive before the progress-aware deadline", 0,
             nlohmann::json{{"server_pid", gServerProcessInfo.dwProcessId},
                            {"wait_elapsed_ms", waitElapsedMs},
-                           {"timeout_ms", ROOM_CODE_TIMEOUT_MS},
+                           {"stalled_for_ms", stalledForMs},
+                           {"min_timeout_ms", ROOM_CODE_MIN_TIMEOUT_MS},
+                           {"stall_timeout_ms", ROOM_CODE_STALL_TIMEOUT_MS},
+                           {"max_timeout_ms", ROOM_CODE_MAX_TIMEOUT_MS},
                            {"logger_ready", gServerLoggerReady},
                            {"last_startup_stage", gServerLastStartupEvent},
                            {"server_instance_id", gServerInstanceId},
@@ -1076,11 +1101,18 @@ static bool pollPendingServerRoomCode()
                            {"map", gServerLaunchSettings.mapName},
                            {"mode", gServerLaunchSettings.gameMode}},
             __FILE__, __LINE__, __func__);
-        printf("[ROOM CODE WAIT TIMEOUT] path=%s elapsedMs=%llu\n",
+        printf("[ROOM CODE WAIT TIMEOUT] path=%s elapsedMs=%llu stalledMs=%llu\n",
                gPendingServerRoomFilePath.c_str(),
-               (unsigned long long)(now - gPendingServerRoomFileStartMs));
+               (unsigned long long)waitElapsedMs,
+               (unsigned long long)stalledForMs);
 
-        onlineMenuSetServerCode("Room creation timed out");
+        // Local gameplay joins directly over UDP and must not inherit an error
+        // string as a room code. Clear the display/fallback only; keep the
+        // already-started local join and the server process alive.
+        gServerLaunchSettings.serverCode.clear();
+        gPendingLocalJoinFallbackRoomCode.clear();
+        gPendingLocalJoinFallbackStartMs = 0;
+        onlineMenuSetServerCode("");
 
         DeleteFileA(gPendingServerRoomFilePath.c_str());
         gPendingServerRoomFilePath.clear();

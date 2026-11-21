@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cfloat>
 #include <cstdio>
+#include <cstring>
 #include <optional>
 
 #include <glm/gtc/quaternion.hpp>
@@ -733,6 +734,10 @@ void explodeProjectile(SOCKET sock,
     packet.normalX = surfaceNormal.x;
     packet.normalY = surfaceNormal.y;
     packet.normalZ = surfaceNormal.z;
+    // The terminal packet already carries two reserved bytes. Preserve whether
+    // this contact was a validated world collision so clients never infer a
+    // decal anchor from an actor hit or an in-air/lifetime explosion.
+    packet.reserved[0] = std::strcmp(impactType, "world") == 0 ? 1 : 0;
     const bool directBullet = projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE;
     packet.radius = directBullet ? 0.0f : projectile.splashRadius;
 

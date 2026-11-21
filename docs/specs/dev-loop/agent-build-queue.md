@@ -317,4 +317,15 @@ request, owner decision, queue, and pointer state.
 - Should cohort pointers be created automatically at cohort creation, or only
   on first successful cohort build?
 - What exact memory reserve should be kept for active tests and the editor?
+## Revision gate and retry latch
+
+Queued integration requests are coalesced by source revision. A new revision
+supersedes older pending requests; the active build is never duplicated. After
+completion, at most one follow-up build runs for the newest revision.
+
+A failed revision is latched until the source changes or an explicit retry is
+requested. Compile failures never auto-retry. Transient disk, permission, or
+publication failures may retry once after the resource condition clears. The
+queue records superseded request IDs and the failed signature so no agent has
+to infer whether a retry is pending.
 

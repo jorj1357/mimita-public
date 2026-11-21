@@ -72,6 +72,8 @@ struct SweepHit
     glm::vec3 point{0.0f};
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
     int triangleIndex = -1;
+    uint32_t entityId = 0;
+    glm::vec3 surfaceVelocity{0.0f};
     std::string colliderName;
 };
 

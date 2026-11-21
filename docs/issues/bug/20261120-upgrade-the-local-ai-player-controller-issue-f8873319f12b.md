@@ -101,3 +101,9 @@ Static review found a direct route-navigation gap in player-ai.cpp: planRoute() 
 ### 2026-11-20T22:43:00.840Z — arcade-collision-elite-proof
 
 Pinned baseline evidence: run 20261120_220344 on EXE 2026-11-20T20:20:51.788061Z and DLL gen416 logged 22,288 player.ai.navplan calls with points=0; current planRoute condition includes gRoute.empty() despite gRoutePlanTick=tick+30, so unsuccessful route search repeats every frame. Removed that condition; target change/movement and the existing 30-tick deadline still trigger replanning. The DLL request then failed disk_low (2031 MB free, 2048 MB required), so the patch is not built or runtime-proven yet. Baseline AI had 7,690 actions, 955 dash, 5,066 jump, 474 down-dash, 6,282 air-strafe, 292 actions near teammates; 15 authoritative kills were chainsaw 7, swordsword 6, deathball 1, mace 1, with no ranged weapon kills or freeze evidence. Full all-weapon acceptance remains open.
+
+## Agent suggestion
+
+### 2026-11-21T20:20:28.563Z — melee-proof-3weapons
+
+Implemented and runtime-proved the first no-target exploration slice on generation 432, run 20261121_201749 (arena1, NPCs deleted): scanner shows player.ai.explore=11 (rate-limited), player.ai.fallback_spawn=0, target_id=0, dash=24, down_dash=17. Task proof task-proof-851e73217692 is proven for the player.ai.explore event. The old 24 fallback spawns and 57-NPC/log inflation are gone from this run. Still unproven: the broader f887 acceptance (every weapon kill, collision stress route, teammate coordination, full human-contract behavior).

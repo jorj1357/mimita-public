@@ -123,8 +123,28 @@ acceptance is claimed.
 - Added `devscripts/scenarios/world_live_fork_v1.json` and updated
   `world-projects` command/event docs.
 - Generation 416 includes `src/mapeditor/map-editor-projects.cpp`; the published
-  `build/game/generation-416/game-g416.dll` contains the `fork_live` command
-  strings and the compile/link succeeded. An isolated generation-416 test run
-  reached server startup but the client did not observe active mode, so the
-  terminal command was not executed. No runtime proof is claimed.
+  `build/game/generation-416/game-g416.dll` contains the `fork_live` command.
+  Isolated run `20261120_232155` used generation 416 and executed
+  `worldproject fork_live` against `world_live_fork_probe_live`; client journal
+  `world-project.live-forked` reports the child project, source version,
+  previous head, parent version, and `source_unchanged:true`. Task proof
+  `task-proof-d6099e27411c` is verified.
+## Build revision gate and dependency cache
 
+- Whole-game requests now carry a source revision. Requests for one revision
+  coalesce, newer pending revisions supersede older queued requests, and a
+  failed revision is latched against automatic retry.
+- Added one transient retry path for permission/publish failures once the
+  environment clears; compile and codegen failures require a new revision or
+  explicit retry.
+- Added a persistent dependency index at
+  `build/game/objects/<flags>/dependency-index.json`; unchanged depfiles reuse
+  parsed dependencies and only changed sources/depfiles are parsed.
+- Added pre-build aggressive pruning of logs, snapshots, and generations before
+  the disk reserve check, and unique atomic temp names with retry for build
+  timing/progress writes.
+- Added `devscripts/quality/test_build_coordinator.py` and dependency-cache
+  coverage in `test_game_build_snapshot.py`. 68 focused tests pass.
+- No live build using the new coordinator has been measured yet; the current
+  daemon must restart to load it. No speed improvement is claimed until the
+  next measured build.

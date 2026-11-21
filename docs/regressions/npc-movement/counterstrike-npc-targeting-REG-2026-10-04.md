@@ -71,3 +71,30 @@ are closed:
 See `docs/changelog/2026-10-05/20261005_011500-wall-escape-event-verify.md` and
 Counter-Strike feature Attempt 18. Live CT-spawn escape acceptance remains
 pending.
+
+## Reported recurrence — Fun Counter Strike CTs repeatedly dash into spawn (2026-11-20)
+
+A user reported that Fun Counter Strike NPC behavior had previously worked and
+then regressed. The reported prior-good behavior is: Terrorist NPCs choose one
+bomb site and rush it; CT NPCs split or cover either site, then share a valid
+last-spotted Terrorist position after a CT sees one and continue fighting around
+that information. The current reported failure is CT NPCs staying at a spawn
+corner and repeatedly dashing into it instead of leaving spawn.
+
+This is a **reported recurrence**, not yet independently reproduced or confirmed
+as a code regression. The current desired behavior is already stated in
+`docs/specs/gamemodes/funcounterstrike.md`, section 12 (Objective rush and team
+commitment): Terrorists make a stable team site choice; CTs defend usable sites
+without learning the hidden choice; perception-backed reports cause CTs to rush
+the reported enemy area. This specification supports the behavior target but
+does not prove when or where the old behavior worked.
+
+Tracked as `issue-be1adb51b6ac` in
+`docs/issues/bug/20261120-fun-counter-strike-npc-objective-behavior-regres-issue-be1adb51b6ac.md`.
+Reproduction must measure NPC net displacement alongside dash attempts/results,
+route and goal state, stuck recovery, spawn geometry, and CT report creation and
+receipt. The root cause is unknown; do not raise global movement speed or dash
+probability until a pinned live Fun Counter Strike run identifies the first
+failing stage. The active dev-loop run checked at intake was Sandbox, so it is
+not evidence for this FCS report. Historical FCS proof of the reported prior-
+good behavior remains to be located.

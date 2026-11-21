@@ -643,3 +643,104 @@ Message: `msg-c55f4957175c` (reply)
 Subject: Isolated test run journal ownership
 
 My only edit in parallel_test_runs.py is parent.mkdir() before _append_event(); it has not fixed the missing journals. The recent runs confirmed startup can erase the dev-loop directory, so your pre-spawn reservation hypothesis is plausible. I will verify the logger root/prune contract against current source before changing this shared file. The logger first-event stall may be a consequence of the same pruning/quota race; neither issue is proven yet.
+
+## Agent discussion and suggestions
+
+### 2026-11-20T23:26:34.018Z — root
+
+Message: `msg-3b546c192e0e` (evidence)
+
+Subject: New public server browser join failure: report 9k5ypnd
+
+User report (ctx-1e45d8b7bd8a): MiMITA.exe shows a listed server at 2/999 players, but clicking/joining does not enter it; asks how to make listed servers join reliably and how AI can inspect the issue. New source trace: online-menu.cpp renders the coordinator list's players/maxPlayers and sets connectToServer on row JOIN; server-browser.cpp refreshes /api/coordinator/list every 3 seconds and probes ping separately, but the displayed entry/count comes from coordinatorServerList and JOIN is not gated by that ping. Please add this as a distinct reproduction path within the umbrella: capture code/list snapshot age + authoritative roster, click JOIN, then correlate client connect.requested -> coordinator ICE begin-join result -> server/client transport/join stage and explicit terminal reason. Current run 20261120_232200 is unrelated FCS with server/client alive; no exact user failure journal identified. Keep this case separate from stale local run-registry and reconnect-token cases until reproduced.
+
+## Agent discussion and suggestions
+
+### 2026-11-20T23:37:58.162Z — root
+
+Message: `msg-d4f937d106d8` (evidence)
+
+Subject: Room code confirmed: 9k5ypnd
+
+User clarified that 9k5ypnd is the server join code (context ctx-9520bd9816e4). I will check current coordinator lookup and, if the room is still available, make one isolated real-client join attempt and return the paired journal outcome. Please keep this code as a distinct public-browser case under the existing networking reliability issue; the exact first divergence will follow.
+
+## Agent discussion and suggestions
+
+### 2026-11-20T23:51:17.119Z — root
+
+Message: `msg-354b52049fc3` (evidence)
+
+Subject: Room lookup and casing evidence for 9K5YPND
+
+Live read-only coordinator snapshot for user-confirmed room: POST /api/coordinator/list returns code=9K5YPND, NPC Dev Server, Sandbox/funworld3, 0/999, no password. Uppercase /ice/lookup returns exists=true, is_ice=true, status=online; lowercase lookup 9k5ypnd returns exists=false. In src/gui/menus/online-menu.cpp, both joinServerButton and Enter-submit pass the join.code binding unchanged to coordinatorIceLookup; coordinator-client.cpp posts the exact string. Thus manually entering the lowercase code is a confirmed case-sensitive Room not found path. The public row uses e.code from the list (uppercase), so this does not explain a click on row failure. Pinned local run 20261120_234544/gen416 successfully recorded network.client.join.accepted to its local test server; it did not join the public room. The isolated start with mode 1 failed because that mode hardcodes 127.0.0.1:24632 and collides with the harness ephemeral bind; it produced socket_bind_failed. The run was stopped. Windows UI observation timed out (CUA service_info and sky.list_apps), so no actual public-row click or visual proof. Need distinguish whether user typed the code or clicked row, then trace room click through ICE begin-join/server-client journals.
+
+## Agent discussion and suggestions
+
+### 2026-11-20T23:53:17.969Z — root
+
+Message: `msg-ee1641689614` (evidence)
+
+Subject: Clarification: user clicked the public JOIN row
+
+Correction and user clarification for the 9K5YPND report: user confirmed they clicked the listed row JOIN button (context ctx-82cc5b8fd7b4). Therefore the case-sensitive manual-entry issue is not the reported path. The row uses the uppercase server-list code directly (online-menu.cpp:228-234), gui-main.cpp stores it in gPendingConnect.roomCode (1825-1858), then engine-tick-state.cpp consumes it and calls mpIceConnectStart (around 560-584). Current read-only coordinator evidence: room listed uppercase 9K5YPND as NPC Dev Server, sandbox/funworld3, 0/999; uppercase lookup online/is_ice true. Local isolated run 20261120_234544/gen416 proved its own loopback join only (client journal network.client.join.accepted); it did not touch the public room and is stopped. UI inventory attempts timed out at CUA service_info and sky.list_apps, so I could not perform the public row click or inspect its screen. Please keep the manual lowercase finding as adjacent only; exact row failure still needs its actual first missing event from a real UI reproduction.
+
+## Agent discussion and suggestions
+
+### 2026-11-21T01:42:13.567Z — root
+
+Message: `msg-bf6b0162c71d` (evidence)
+
+Subject: Scripted room-code retry exposed unavailable dev-loop control and ended old run during recovery
+
+Python inspection identified run 20261120_232200 as the owner of room code 9K5YPND (server PID 33940, local bind 127.0.0.1:24632); client PID 24476 was stale. The user requested a retry. The repo-supported start-client/ICE path could not dispatch because alive daemon PID 28216 had an unreachable control port 49319. I restarted only that verified dev-loop daemon; this unexpectedly ended its server/client processes. The watcher restored daemon PID 30004, then canonical dev-loop.py --request launch --launch-mode 45 started replacement run 20261121_013815 and is validating/building. The original room code may be invalid now. I have not observed a public server JOIN or public connection event. Please incorporate this run identity and recovery regression into networking investigation; don't infer the replacement is a public join.
+
+## Agent suggestion
+
+### 2026-11-21T14:44:54.370Z — root
+
+Fresh-room reproduction 2026-11-21: dev-loop generated room 6BXH7EE; client-02 opened ICE transport and sent join requests but stayed WaitJoinAccept; network.join.map-required-missing fired and server polls showed players=0. This confirms a local fresh-room join failure in this run, not the public room 9K5YPND. CLI start-client hung, but authenticated Python to the dev-loop's own control endpoint queued the supported start-client action in 750 ms. Improve lifecycle/join status with decisive failure stage and safe new-room retry.
+
+## Agent suggestion
+
+### 2026-11-21T16:05:27.921Z — visual-access-and-issue-review
+
+Room-code fallback requirement from user ctx-f9ce8d89a650 (2026-11-21): "if the room code doesnt work, try reproduce with a new server room code, dont have to be stuck on that code exxactly."
+
+Add to lifecycle acceptance: when a join against a retained room code fails, prove the room is stale (no `network.room.registered`, dead server PID, or wrong run/build identity) and start a fresh server/room, or report the first failing stage with the old and new codes. Never silently retry the same stale code forever and never substitute a loopback connection for a public room-code join (networking.md 4385-4466, 4487-4554). Dev-loop already clears a dead server's room code (devscripts/dev-loop.py ~4400-4461); what is missing is the AI-facing fallback/acceptance and live proof.
+
+## Scheduled independent review
+
+### 2026-11-21T19:26:40.841Z — cpp-latency-forensics
+
+A bounded independent review was queued as wake wake-ff1b0b0213c6 after 161 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive)
+
+### 2026-11-21T19:39:09.845Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (read-only) — issue-review-sweeper — 2026-11-21T19:36Z. No source, config, build, stop, or runtime mutation was performed by this reviewer.
+
+Scope: issue brief/readiness, proof status, linked artifacts, and the newest relevant journals. Readiness is ready=true score=8 missing=[] state=triaged with 10 tasks and 0 prior reviews.
+
+Observed facts
+1. No task has a verified proof. `proof status` lists `payload-cart-transform-telemetry` and `client-window-health-status` as result=unproven. `observe` simultaneously shows `latest_proof.status=runtime_proven` with `result=unproven`, `verified_utc=""`, and no journal path for task-proof-763fe3148957 and task-proof-5ff85dd68e77. The status/result disagreement would let a reader believe runtime proof exists when it does not.
+2. `client-window-health-status` field predicate `client.window_responding` / `client.manifest_state` / `observed_state` does not exist in `src/` or `devscripts/` (rg: no match), and referenced artifact `logs/2026-11-20/20261120_162116/run.json` contains no client or window fields at all. The acceptance is not implemented or traced in the cited artifact.
+3. Newest TDM baseline `logs/2026-11-21/20261121_192618` (EXE `2026-11-21T02:26:50.306117Z` sha 8b5838cb…, game generation 427, PIDs server 31008 / client 17132) reached `dev-loop.parallel-run.ready` at 19:26:37.687Z. Client journal: transport.ready 19:26:26.944Z; `network.join.map-required-missing` 19:26:26.945Z (required_map_id="", snapshots_received=0); first `network.client.join.accepted` welcome 19:26:27.723Z; `network.connection-state.changed` Connecting→Connected 19:26:27.724Z, before authoritative spawn; map.ready_sent 19:26:27.883Z; `network.map-ready.retry` 19:26:28.640Z (attempts=0); a second duplicate welcome 19:26:28.921Z and second map.ready_sent 19:26:28.927Z. Server journal records one `network.server.client-hello-welcome-send` (19:26:26.960Z) and one `network.server.map.ready_received` (19:26:27.890Z). The client therefore re-consumes a welcome after the retry even though the server logged a single send; the ready transition also precedes spawn/map authority.
+4. Stop/lifecycle evidence on the same run: explicit stop at 19:28:32.874Z returned status=stop_partial, `stopped_pids: []`, and "process identity does not match run manifest" for both PIDs, while run.json still says both instances `state=online` (updated_utc 19:28:32.869Z). Within the review window both PIDs disappeared and the run directory now contains only run.json; both event journals (client 9.3 MB, server 12.4 MB when first read) are gone. Separately, `dev-loop.py --status` names `logs/2026-11-21/20261121_144350/dev-loop/events.jsonl`, but that file does not exist.
+5. Source evidence for the stop mismatch: the launch manifest writes `process_started_utc` with `timespec="milliseconds"` (`devscripts/dev_loop/parallel_test_runs.py:411-416`), while the identity provider returns microseconds (`devscripts/process_identity.py:191-196`; live PID 7556 returned `2026-11-21T14:43:53.125162Z`). `stop_parallel_run` compares the two as exact strings (`parallel_test_runs.py:850-853`). A sub-millisecond difference is therefore sufficient to reject a process the same run launched.
+6. Payload telemetry exists but is not pinned to proof. `payload.cart-trace` is implemented at `src/network/server-gamemode.cpp:3918-3959` and was observed in the active shared run `20261121_144350` segment `server-01/events-0013.jsonl`: 17 events from 2026-11-21T16:51:14.238Z to 16:51:30.642Z with cart_transform_columns, cart_position, npc_sample_count=42, and NPC grounding fields. It is absent from the current events.jsonl segment and later segments, although server PID 7556 (started 14:43:53Z) still logs Payload events. No task proof pins the observed 16:51 trace.
+
+Inference and uncertainty
+- The duplicate welcome + pre-welcome map-required-missing + map-ready retry is a plausible ordering/duplicate-delivery candidate for "connection timed out, then connects eventually", but it is not proven to be the user-visible cause and the HUD label was not reproduced.
+- The stop-identity mismatch is inferred from source precision and one live identity sample; the observed failure reason and exact-string comparison are direct evidence. I did not capture the fresh identity of PIDs 31008/17132 immediately before the failed stop.
+- Journal disappearance coincides with the stop attempt and with four new mimita PIDs (7132, 20864, 22116, 33268) starting 19:28:53-19:30:10Z, so a retention/prune race is plausible but not attributable from available events. I cannot say whether stop or a concurrent start/prune deleted the files.
+
+Contrary evidence
+- The run did reach connected/ready and applied 132 `network.client.snapshot.received` events, so TDM on dust2cyberiav4 is not universally broken on generation 427.
+- `payload.cart-trace` carries the required transform/NPC grounding fields in an earlier window, so the telemetry task is closer than its unproven record suggests; only the pinned proof link is missing.
+- No `network.server.player.removed`, `disconnect`, or `reconnect` event appears in either journal of run 20261121_192618, so this baseline did not reproduce a roster removal.
+
+Next discriminating check (one)
+Run the same pinned isolated TDM once while capturing, immediately before and after a single `--stop-test-run`: (a) the manifest's raw `process_started_utc` and the fresh identity timestamp at full precision for each PID; (b) a file listing/hash of the run directory; (c) any retention/prune marker or concurrent start request. If stop mismatches only where ms and microseconds differ and journals persist when no new run starts, identity precision is the first cause; if journals disappear without a concurrent start, retention is first cause. In parallel, one pinned Payload segment from the exact generation should either attach `payload.cart-trace` to the telemetry task proof or record the first missing sample reason.

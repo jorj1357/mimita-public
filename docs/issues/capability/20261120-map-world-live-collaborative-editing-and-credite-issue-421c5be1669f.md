@@ -40,3 +40,9 @@ evidence: {'live_fork_command': 'worldproject fork_live <new-id> [title]', 'scen
 ### 2026-11-20T23:21:25.100Z — map-live-fork
 
 evidence: {'live_fork_command': 'worldproject fork_live <new-id> [title]', 'scenario': 'devscripts/scenarios/world_live_fork_v1.json', 'code': 'src/mapeditor/map-editor-projects.cpp/.h', 'event': 'world-project.live-forked', 'build_attempt': 'game-dll-20261120T211735017299Z-db53e8', 'generation': 416, 'dll': 'build/game/generation-416/game-g416.dll', 'compile_link': 'generation 416 DLL contains fork_live strings and compiled map-editor-projects.cpp', 'runtime': 'isolated test run failed at client active mode; command not executed'}
+
+## Context
+
+### 2026-11-20T23:25:57.406Z — map-live-fork
+
+evidence: {'live_fork_command': 'worldproject fork_live <new-id> [title]', 'scenario': 'devscripts/scenarios/world_live_fork_v1.json', 'code': 'src/mapeditor/map-editor-projects.cpp/.h', 'event': 'world-project.live-forked', 'generation': 416, 'run_id': '20261120_232155', 'journal': 'logs/2026-11-20/20261120_232155/client-01/events.jsonl', 'proof': 'task-proof-d6099e27411c', 'child_project': 'world_live_fork_child_live', 'source_project': 'world_live_fork_probe_live', 'source_unchanged': True}

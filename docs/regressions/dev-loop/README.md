@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 30
+Entries: 31
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -232,3 +232,10 @@ correction in the detail file.
 - Status: FIXED — three live close/reopen cycles and maximize/restore retained the left secondary monitor; saved coordinates and keepalive window rectangles matched.
 - Summary: `devscripts/dev_loop/gui.py`, `devscripts/dashboard-keepalive.py`
 - Detail: [dashboard-monitor-snap-REG-2026-11-20.md](dashboard-monitor-snap-REG-2026-11-20.md)
+
+## Entry 31 — Dev-loop process scan fallback timed out
+
+- Recorded: 2026-11-21T15:29:50.512Z
+- Status: ATTEMPTED FIX — native no-psutil fallback implemented; dashboard refresh proof pending.
+- Summary: The optional `psutil` fast path left a PowerShell/WMI fallback that timed out after 8 seconds in the process panel and launch reconciliation. Whole-game build load may have contributed, but causality is not established.
+- Detail: [process-scan-fallback-REG-2026-11-21.md](process-scan-fallback-REG-2026-11-21.md)

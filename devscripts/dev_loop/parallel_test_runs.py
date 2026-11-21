@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import ctypes
+from ctypes import wintypes
 import hashlib
 import json
 import os
@@ -371,19 +372,52 @@ def pid_alive(pid: int) -> bool:
 def _process_identity(pid: int) -> dict:
     if os.name != "nt" or pid <= 0:
         return {}
-    query = ("$p=Get-CimInstance Win32_Process -Filter \"ProcessId=" + str(int(pid)) +
-             "\"; if($null -ne $p){[Console]::WriteLine((ConvertTo-Json -Compress "
-             "@{executable=$p.ExecutablePath; process_started_utc="
-             "$p.CreationDate.ToUniversalTime().ToString('o')}))}")
+    class FileTime(ctypes.Structure):
+        _fields_ = [("low", wintypes.DWORD), ("high", wintypes.DWORD)]
+
     try:
-        result = subprocess.run(["powershell", "-NoProfile", "-Command", query],
-                                cwd=ROOT, capture_output=True, text=True,
-                                timeout=4, check=False,
-                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        value = json.loads(result.stdout.strip()) if result.returncode == 0 and result.stdout.strip() else {}
-    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL,
+                                         wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.QueryFullProcessImageNameW.argtypes = [
+            wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+            ctypes.POINTER(wintypes.DWORD)]
+        kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+        kernel32.GetProcessTimes.argtypes = [
+            wintypes.HANDLE, ctypes.POINTER(FileTime), ctypes.POINTER(FileTime),
+            ctypes.POINTER(FileTime), ctypes.POINTER(FileTime)]
+        kernel32.GetProcessTimes.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        handle = kernel32.OpenProcess(0x1000, False, int(pid))
+        if not handle:
+            return {}
+        try:
+            image = ctypes.create_unicode_buffer(32768)
+            image_size = wintypes.DWORD(len(image))
+            created = FileTime()
+            exited = FileTime()
+            kernel = FileTime()
+            user = FileTime()
+            if not kernel32.QueryFullProcessImageNameW(
+                    handle, 0, image, ctypes.byref(image_size)):
+                return {}
+            if not kernel32.GetProcessTimes(
+                    handle, ctypes.byref(created), ctypes.byref(exited),
+                    ctypes.byref(kernel), ctypes.byref(user)):
+                return {}
+            ticks = (int(created.high) << 32) | int(created.low)
+            started = (datetime.datetime(1601, 1, 1, tzinfo=datetime.timezone.utc)
+                       + datetime.timedelta(microseconds=ticks // 10))
+            return {"executable": image.value,
+                    "process_started_utc": started.isoformat(
+                        timespec="milliseconds").replace("+00:00", "Z")}
+        finally:
+            kernel32.CloseHandle(handle)
+    except (AttributeError, OSError, TypeError, ValueError):
         return {}
-    return value if isinstance(value, dict) else {}
 
 
 def _wait_event(journal: Path, event_name: str, pid: int, timeout: float,

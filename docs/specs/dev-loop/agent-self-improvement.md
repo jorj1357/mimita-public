@@ -36,6 +36,60 @@ observes:
 
 An agent must not wait for the user to ask for a self-improvement proposal.
 
+## Shared findings and cross-agent roles
+
+Useful analysis must enter the shared brain, not remain only in a user-facing
+answer or an agent's private working context. Before or alongside telling the
+user a nontrivial finding, uncertainty, hypothesis, suggested fix, test idea,
+or workflow gap, the agent appends it to the relevant issue discussion. If no
+issue fits, it creates one using the full issue-intake contract. The append
+states whether the claim is observed, inferred, hypothesized, disproved, or
+unknown and includes evidence references, timestamp, confidence/limits, and a
+next discriminating check when available.
+
+Every agent may assume any task role needed for the current work, including
+investigator, implementation owner, evidence auditor, independent reviewer,
+or workflow/meta reviewer. These are temporary responsibilities, not a model
+or agent allowlist. The task owner coordinates contributions; any agent may
+add evidence, challenge a claim, propose alternatives, or review another
+agent's method through the shared issue. A handoff must work from `issue brief`
+and linked artifacts alone.
+
+At task and phase boundaries, and while waiting when useful, agents review the
+workflow around their work for untracked time, missing stage evidence,
+unnecessary human steps, repeated manual work, slow handoffs, duplicated
+effort, ineffective tests, and safe opportunities to offload work to AI. Add
+specific findings and proposals to an existing issue or open a fully described
+improvement/build-friction/capability issue. Include the evidence, affected
+owner, proposed experiment, expected metric, correctness risk, and human-only
+decision that remains. This is a shared meta-review duty any agent can take;
+it does not require a permanently running or privileged meta-agent.
+
+At the end of every completed agent activation, make one short process check:
+did this work expose a repeated delay, failed-tool dead end, missing evidence,
+manual step, avoidable retry, or safe capability that could make development
+faster or more reliable? If the evidence supports a useful change, append one
+specific suggestion to the best existing issue (usually the relevant issue or
+the agent-awareness/self-improvement issue), with the observation, expected
+metric, risk, and smallest experiment. If not, do not invent a generic issue;
+record that no actionable improvement was found in the work summary. This
+check is bounded and must not interrupt the user's requested task.
+
+The general issue-review scheduler performs a deeper rotating review every
+five completed work sessions or after 30 minutes when another agent activation
+occurs. It cold-reads one stale/unproven open issue, asks an independent agent
+to append evidence or counterevidence, and asks for a process improvement only
+when the reviewed artifacts support one. Cadence counts completed work
+sessions/activations, never hidden model thoughts. If no agent activation or
+wake adapter is available, the due review remains visible and pending.
+
+For tests and claims, append both positive and negative live evidence over
+time. Name the exact build/revision, run, journal, event or measurement, and
+test conditions. Compare before and after under matching conditions, preserve
+failed attempts and contrary evidence, and state what result would falsify the
+claim. Do not equate a build, synthetic test, or process liveness with runtime
+behavior proof.
+
 ## Required proposal content
 
 Every proposal records:

@@ -4,3 +4,12 @@
 [submodule "external/manifold"]
 	path = external/manifold
 	url = https://github.com/elalish/manifold.git
+[submodule "external/blink"]
+	path = external/blink
+	url = https://github.com/crosire/blink.git
+[submodule "external/cr"]
+	path = external/cr
+	url = https://github.com/fungos/cr.git
+[submodule "external/flecs"]
+	path = external/flecs
+	url = https://github.com/SanderMertens/flecs.git

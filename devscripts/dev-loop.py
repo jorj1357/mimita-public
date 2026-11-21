@@ -53,7 +53,10 @@ from devscripts.path_containment import (
     resolve_coordinator_root,
     resolve_within,
 )
-from devscripts.process_identity import pid_alive as _process_pid_alive
+from devscripts.process_identity import (
+    pid_alive as _process_pid_alive,
+    windows_process_inventory,
+)
 
 COORDINATOR_ROOT = resolve_coordinator_root(ROOT)
 os.environ["MIMITA_COORDINATOR_ROOT"] = str(COORDINATOR_ROOT)
@@ -682,44 +685,50 @@ def find_ccache() -> str | None:
     return found
 
 
-def existing_dev_loop_pids() -> list[int]:
-    """Find other dev-loop processes for this exact checkout on Windows."""
+def dev_loop_process_inventory(checkout_root: Path = ROOT) -> list[dict]:
+    """Find live daemon processes for one checkout using native Win32 data."""
     if os.name != "nt":
         return []
-    script_text = str(Path(__file__).resolve()).replace("/", "\\").lower()
-    try:
-        result = run_hidden(
-            [
-                "powershell", "-NoProfile", "-Command",
-                "Get-CimInstance Win32_Process "
-                "| Where-Object { $_.Name -match '^pythonw?\\.exe$' } "
-                "| ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=3,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return []
-
-    pids = []
-    for line in result.stdout.splitlines():
-        try:
-            pid_text, command_line = line.split("\t", 1)
-            pid = int(pid_text.strip())
-        except (ValueError, TypeError):
+    root = Path(checkout_root).resolve()
+    script_text = str(root / "devscripts" / "dev-loop.py").replace("/", "\\").casefold()
+    python_dir = Path(sys.executable).resolve().parent
+    processes = windows_process_inventory({"python.exe", "pythonw.exe"})
+    found = []
+    for process in processes:
+        command_line = process.get("command_line")
+        if command_line is None:
+            try:
+                same_interpreter = Path(str(process.get("executable") or "")).resolve().parent == python_dir
+            except OSError:
+                same_interpreter = False
+            if same_interpreter:
+                raise RuntimeError(
+                    f"cannot verify Python process identity for PID {process.get('pid')}; "
+                    "refusing to assume no dev-loop daemon is running")
             continue
-        normalized_command = command_line.replace("/", "\\").lower()
+        normalized_command = str(command_line).replace("/", "\\").casefold()
         is_daemon = (
             "--daemon" in normalized_command
             or "--dev-loop-role=daemon" in normalized_command
             or "--dev-loop-role daemon" in normalized_command
         )
-        if (pid != os.getpid() and script_text in normalized_command
-                and is_daemon):
-            pids.append(pid)
-    return pids
+        if script_text in normalized_command and is_daemon:
+            found.append(process)
+    return found
+
+
+def existing_dev_loop_pids(checkout_root: Path = ROOT) -> list[int]:
+    """Find other dev-loop processes for this checkout; fail closed on scan errors."""
+    if os.name != "nt":
+        return []
+    try:
+        processes = dev_loop_process_inventory(checkout_root)
+    except (OSError, RuntimeError) as error:
+        raise SystemExit(
+            f"[DEV] cannot verify whether a dev-loop daemon already runs: {error}; "
+            "refusing to start a duplicate") from error
+    return [int(process["pid"]) for process in processes
+            if int(process.get("pid") or 0) != os.getpid()]
 
 
 def existing_dashboard_pid() -> int:
@@ -728,27 +737,15 @@ def existing_dashboard_pid() -> int:
         return 0
     script_text = str(Path(__file__).resolve()).replace("/", "\\").lower()
     try:
-        result = run_hidden(
-            [
-                "powershell", "-NoProfile", "-Command",
-                "Get-CimInstance Win32_Process "
-                "| Where-Object { $_.Name -match '^pythonw?\\.exe$' } "
-                "| ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=3,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
+        processes = windows_process_inventory({"python.exe", "pythonw.exe"})
+    except OSError:
         return 0
-    for line in result.stdout.splitlines():
-        try:
-            pid_text, command_line = line.split("\t", 1)
-            pid = int(pid_text.strip())
-        except (ValueError, TypeError):
+    for process in processes:
+        pid = int(process.get("pid") or 0)
+        command_line = process.get("command_line")
+        if command_line is None:
             continue
-        normalized_command = command_line.replace("/", "\\").lower()
+        normalized_command = str(command_line).replace("/", "\\").casefold()
         if (pid != os.getpid() and script_text in normalized_command
                 and "--daemon" not in normalized_command
                 and ("--dashboard" in normalized_command
@@ -773,24 +770,9 @@ def windows_process_identity(pid: int, fresh: bool = False,
     if cached is not None and now - cached[0] < _PROCESS_IDENTITY_TTL_SECONDS:
         return cached[1]
     try:
-        result = run_hidden(
-            [
-                "powershell", "-NoProfile", "-Command",
-                "$p = Get-CimInstance Win32_Process -Filter "
-                f"\"ProcessId={int(pid)}\"; "
-                "if ($null -ne $p) { "
-                "[Console]::WriteLine((ConvertTo-Json -Compress "
-                "@{pid=[int]$p.ProcessId; executable=$p.ExecutablePath; "
-                "command_line=$p.CommandLine; process_started_utc="
-                "$p.CreationDate.ToUniversalTime().ToString('o')})) }",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            check=False,
-        )
-        value = json.loads(result.stdout.strip()) if result.stdout.strip() else None
-    except (OSError, subprocess.SubprocessError, ValueError, json.JSONDecodeError):
+        matches = windows_process_inventory(pids={int(pid)})
+        value = matches[0] if matches else None
+    except (OSError, ValueError):
         value = None
     identity = value if isinstance(value, dict) else None
     _PROCESS_IDENTITY_CACHE[pid] = (now, identity)
@@ -803,45 +785,65 @@ def checkout_mimita_processes(*, strict: bool = False) -> list[dict]:
         if strict:
             raise RuntimeError("MiMITA process discovery is available on Windows only")
         return []
-    command = (
-        "Get-CimInstance Win32_Process -Filter \"Name='mimita.exe'\" | "
-        "Where-Object { $_.ExecutablePath -and "
-        "($_.ExecutablePath -like '" + str(ROOT).replace("'", "''") + "\\*') } | "
-        "ForEach-Object { [PSCustomObject]@{ pid=[int]$_.ProcessId; "
-        "executable=[string]$_.ExecutablePath; command_line=[string]$_.CommandLine; "
-        "process_started_utc=[string]($_.CreationDate.ToUniversalTime().ToString('o')) } } | "
-        "ConvertTo-Json -Compress"
-    )
     try:
-        result = run_hidden(
-            ["powershell", "-NoProfile", "-Command", command],
-            capture_output=True, text=True, timeout=8, check=False,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
+        import psutil
+    except ImportError:
+        psutil = None
+    if psutil is not None:
+        checkout_root = ROOT.resolve()
+        processes = []
+        try:
+            for process in psutil.process_iter(("pid", "name")):
+                try:
+                    info = process.info
+                    if str(info.get("name") or "").casefold() != "mimita.exe":
+                        continue
+                    executable = process.exe()
+                    if not executable:
+                        continue
+                    try:
+                        Path(executable).resolve().relative_to(checkout_root)
+                    except (OSError, ValueError):
+                        continue
+                    command_line = process.cmdline()
+                    processes.append({
+                        "pid": int(info["pid"]),
+                        "executable": executable,
+                        "command_line": subprocess.list2cmdline(command_line),
+                        "process_started_utc": datetime.datetime.fromtimestamp(
+                            process.create_time(), datetime.timezone.utc
+                        ).isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                    })
+                except psutil.NoSuchProcess:
+                    continue
+                except psutil.ZombieProcess:
+                    continue
+                except psutil.AccessDenied as error:
+                    if strict:
+                        raise RuntimeError(
+                            f"MiMITA process identity unavailable for PID "
+                            f"{process.pid}: {error}"
+                        ) from error
+            return processes
+        except psutil.Error as error:
+            if strict:
+                raise RuntimeError(f"MiMITA process scan failed: {error}") from error
+            return []
+    try:
+        checkout_root = ROOT.resolve()
+        processes = []
+        for item in windows_process_inventory():
+            executable = str(item.get("executable") or "")
+            try:
+                Path(executable).resolve().relative_to(checkout_root)
+            except (OSError, ValueError):
+                continue
+            processes.append(item)
+        return processes
+    except OSError as error:
         if strict:
             raise RuntimeError(f"MiMITA process scan failed: {error}") from error
         return []
-    if result.returncode != 0:
-        if strict:
-            detail = (result.stderr or result.stdout or "process query failed").strip()
-            raise RuntimeError(f"MiMITA process scan failed: {detail[:240]}")
-        return []
-    payload = (result.stdout or "").strip()
-    if not payload:
-        return []
-    try:
-        value = json.loads(payload)
-    except json.JSONDecodeError as error:
-        if strict:
-            raise RuntimeError("MiMITA process scan returned invalid JSON") from error
-        return []
-    if isinstance(value, dict):
-        value = [value]
-    if not isinstance(value, list):
-        if strict:
-            raise RuntimeError("MiMITA process scan returned an unexpected result")
-        return []
-    return [item for item in value if isinstance(item, dict)]
 
 
 def acquire_dev_loop_lock() -> int:
@@ -1295,6 +1297,15 @@ class DevLoop:
         self.active_game_build_request_ids: list[str] = []
         self.game_build_requests: dict[str, str] = {}
         self.game_build_request_meta: dict[str, dict] = {}
+        self.game_build_request_revisions: dict[str, str] = {}
+        self.game_build_desired_revision = ""
+        self.game_build_pending_revision = ""
+        self.game_build_active_revision = ""
+        self.game_build_last_success_revision = ""
+        self.game_build_failed_revision = ""
+        self.game_build_failed_signature = ""
+        self.game_build_retry_counts: dict[str, int] = {}
+        self.game_build_superseded = 0
         self.game_build_status = "idle"
         self.game_build_detail = ""
         self.game_build_started_utc: str | None = None
@@ -2609,6 +2620,28 @@ class DevLoop:
             self.build_requests = dict(list(self.build_requests.items())[-32:])
         return True
 
+    def _retry_transient_game_build(self, revision: str, error: str) -> None:
+        text = str(error or "").lower()
+        transient = any(token in text for token in (
+            "permissionerror", "access is denied", "publish",
+            "file is being used", "sharing violation"))
+        if not transient or not revision:
+            return
+        with self.lock:
+            if int(self.game_build_retry_counts.get(revision) or 0) >= 1:
+                return
+            self.game_build_retry_counts[revision] = 1
+        try:
+            free = shutil.disk_usage(ROOT).free
+            required = max(0, int(os.environ.get(
+                "MIMITA_GAME_BUILD_MIN_FREE_MB", "2048") or 2048)) * 1024 * 1024
+        except (OSError, ValueError):
+            return
+        if free < required:
+            return
+        self.queue_game_dll_request(
+            f"retry-{revision}", revision=revision, force=True)
+
     def _queue_build_if_needed(self) -> None:
         with self.lock:
             if (self.active_build_generation is None
@@ -2620,17 +2653,48 @@ class DevLoop:
                         self.pending_build_since_monotonic = time.monotonic()
 
     def queue_game_dll_request(self, request_id: str,
-                               metadata: dict | None = None) -> bool:
+                               metadata: dict | None = None, *,
+                               revision: int | str | None = None,
+                               force: bool = False) -> bool:
         request_id = request_id or f"game-dll-{uuid.uuid4().hex[:12]}"
+        revision_text = str(
+            revision if revision not in (None, "") else
+            (metadata or {}).get("revision") or self.generation)
+        metadata = dict(metadata or {})
+        metadata.setdefault("revision", revision_text)
         with self.lock:
-            if request_id not in self.pending_game_build_request_ids:
-                self.pending_game_build_request_ids.append(request_id)
-            self.game_build_requests[request_id] = "queued"
+            if (not force and
+                    self.game_build_failed_revision == revision_text):
+                self.game_build_requests[request_id] = "blocked"
+                self.game_build_detail = (
+                    f"revision {revision_text} failed; waiting for a new "
+                    "revision or explicit retry")
+                return False
+            if (self.game_build_worker is not None and
+                    self.game_build_active_revision == revision_text):
+                if request_id not in self.active_game_build_request_ids:
+                    self.active_game_build_request_ids.append(request_id)
+                self.game_build_requests[request_id] = "building"
+            else:
+                if (self.game_build_pending_revision and
+                        self.game_build_pending_revision != revision_text):
+                    for old_request in self.pending_game_build_request_ids:
+                        self.game_build_requests[old_request] = "superseded"
+                    self.game_build_superseded += len(
+                        self.pending_game_build_request_ids)
+                    self.pending_game_build_request_ids.clear()
+                if request_id not in self.pending_game_build_request_ids:
+                    self.pending_game_build_request_ids.append(request_id)
+                self.game_build_pending_revision = revision_text
+                self.game_build_requests[request_id] = "queued"
+            self.game_build_desired_revision = revision_text
+            self.game_build_request_revisions[request_id] = revision_text
             self.game_build_requests = dict(list(self.game_build_requests.items())[-32:])
-            if metadata:
-                self.game_build_request_meta[request_id] = dict(metadata)
-                self.game_build_request_meta = dict(
-                    list(self.game_build_request_meta.items())[-32:])
+            self.game_build_request_meta[request_id] = metadata
+            self.game_build_request_meta = dict(
+                list(self.game_build_request_meta.items())[-32:])
+            self.game_build_request_revisions = dict(
+                list(self.game_build_request_revisions.items())[-32:])
         return True
 
     def _record_game_build_output(self, line: str) -> None:
@@ -2677,11 +2741,17 @@ class DevLoop:
             if self.build_worker is not None or self.active_build_generation is not None:
                 return
             request_ids = list(self.pending_game_build_request_ids)
+            active_revision = self.game_build_pending_revision or str(
+                self.generation)
             self.pending_game_build_request_ids.clear()
+            self.game_build_pending_revision = ""
             self.active_game_build_request_ids = request_ids
+            self.game_build_active_revision = active_revision
             self.game_build_status = "building"
             self.game_build_started_utc = utc_now()
-            self.game_build_source_generation = self.generation
+            self.game_build_source_generation = (
+                int(active_revision) if active_revision.isdigit()
+                else self.generation)
             self.game_build_detail = "starting whole-game build"
             self.last_message = "building whole-game DLL generation"
             for request_id in request_ids:
@@ -2743,10 +2813,23 @@ class DevLoop:
                 request_ids = list(dict.fromkeys(
                     [*result.get("request_ids", []), *self.active_game_build_request_ids]
                 ))
+                completed_revision = self.game_build_active_revision or str(
+                    result.get("source_generation") or "")
                 self.active_game_build_request_ids = []
+                self.game_build_active_revision = ""
                 self.game_build_worker = None
                 self.last_game_build_result = "success" if success else "failed"
                 self.last_game_build_duration_seconds = float(result.get("duration_seconds", 0))
+                if success:
+                    self.game_build_last_success_revision = completed_revision
+                    self.game_build_failed_revision = ""
+                    self.game_build_failed_signature = ""
+                    self.game_build_retry_counts.pop(completed_revision, None)
+                else:
+                    self.game_build_failed_revision = completed_revision
+                    self.game_build_failed_signature = str(
+                        result.get("error") or result.get("failed_phase") or
+                        "build failed")
                 for request_id in request_ids:
                     self.game_build_requests[request_id] = self.last_game_build_result
                 self.game_build_requests = dict(list(self.game_build_requests.items())[-32:])
@@ -2766,6 +2849,9 @@ class DevLoop:
                     self.game_build_status = "failed"
                     self.game_build_detail = str(result.get("error") or "game build failed")
                     self.last_message = self.game_build_detail
+            if not success:
+                self._retry_transient_game_build(
+                    completed_revision, self.game_build_detail)
             self.save_state("game_build_succeeded" if success else "game_build_failed")
             self.record_runtime_event(
                 "dev-loop.game-generation.ready" if success
@@ -3241,7 +3327,8 @@ class DevLoop:
             "automatic hot/cold build decision",
         )
         if game_target:
-            self.queue_game_dll_request(f"auto-{self.generation}")
+            self.queue_game_dll_request(
+                f"auto-{self.generation}", revision=self.generation)
         self.change_event.set()
         self.save_state("source_changed")
 
@@ -5068,33 +5155,65 @@ class DevLoop:
                 self.last_message)
             return False, []
 
-        def process_role(item: dict) -> str:
-            command_line = str(item.get("command_line") or "").strip()
-            if int(item.get("pid", 0) or 0) == self.server_pid or \
-                    "--server" in command_line.lower().split():
-                return "server"
-            return "client" if command_line else "unknown"
-
         parallel_test_processes: set[tuple[int, str, str]] = set()
+        manifest_process_roles: dict[tuple[int, str, str], str] = {}
         for manifest_path in (ROOT / "logs").glob("*/*/run.json"):
             try:
                 run_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
-            if (run_manifest.get("test_run_kind") != "parallel_agent_test" or
-                    run_manifest.get("status") not in {"starting", "online"}):
-                continue
             for instance in run_manifest.get("instances", []):
-                if instance.get("role") != "client" or instance.get("state") not in {"starting", "online"}:
-                    continue
                 try:
-                    parallel_test_processes.add((
+                    process_key = (
                         int(instance.get("pid") or 0),
                         str(instance.get("process_started_utc") or ""),
                         os.path.normcase(str(instance.get("executable") or "")),
-                    ))
+                    )
                 except (TypeError, ValueError):
                     continue
+                if process_key[0] <= 0 or not process_key[1] or not process_key[2]:
+                    continue
+                role = str(instance.get("role") or "").strip().lower()
+                if role in {"server", "client"}:
+                    manifest_process_roles[process_key] = role
+                if (run_manifest.get("test_run_kind") == "parallel_agent_test" and
+                        run_manifest.get("status") in {"starting", "online"} and
+                        role == "client" and
+                        instance.get("state") in {"starting", "online"}):
+                    parallel_test_processes.add(process_key)
+
+        def manifest_role(item: dict) -> str:
+            pid = int(item.get("pid", 0) or 0)
+            started = str(item.get("process_started_utc") or "")
+            executable = os.path.normcase(str(item.get("executable") or ""))
+            exact = manifest_process_roles.get((pid, started, executable))
+            if exact:
+                return exact
+            try:
+                observed_time = datetime.datetime.fromisoformat(
+                    started.replace("Z", "+00:00"))
+            except ValueError:
+                return ""
+            for (known_pid, known_started, known_executable), role in manifest_process_roles.items():
+                if known_pid != pid or known_executable != executable:
+                    continue
+                try:
+                    known_time = datetime.datetime.fromisoformat(
+                        known_started.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if abs((observed_time - known_time).total_seconds()) <= 0.02:
+                    return role
+            return ""
+
+        def process_role(item: dict) -> str:
+            command_line = str(item.get("command_line") or "").strip()
+            if int(item.get("pid", 0) or 0) == self.server_pid or \
+                    "--server" in command_line.lower().split():
+                return "server"
+            if command_line:
+                return "client"
+            return manifest_role(item) or "unknown"
 
         def is_parallel_test_process(item: dict) -> bool:
             try:
@@ -5406,6 +5525,12 @@ class DevLoop:
                 print("[DEV] waiting for the active build to finish before daemon shutdown")
                 self.build_worker.join()
             self.drain_build_completions()
+            if (self.game_build_worker is not None
+                    and self.game_build_worker.is_alive()):
+                print("[DEV] waiting for the active game DLL build to finish "
+                      "before daemon shutdown")
+                self.game_build_worker.join()
+            self.drain_game_build_completions()
             # Only daemon-owned clients are terminated. The external server is
             # never killed here; it keeps its own console/lifetime.
             self.stop_processes()
@@ -6990,6 +7115,16 @@ def run_dashboard(args: argparse.Namespace) -> int:
                 def gui_status():
                     latest = snapshot() or current or {}
                     checkouts = collect_checkout_states()
+                    try:
+                        daemon_pids = sorted({
+                            int(item.get("pid") or 0)
+                            for item in dev_loop_process_inventory(ROOT)
+                            if int(item.get("pid") or 0) > 0
+                        })
+                        daemon_inventory_error = ""
+                    except (OSError, RuntimeError) as error:
+                        daemon_pids = None
+                        daemon_inventory_error = str(error)
                     identity = latest.get("build_identity") or {}
                     scenario = _scenario_state(str(latest.get("events_path") or ""))
                     scenario["build_id"] = scenario.get("build_id") or identity.get("build_id") or "—"
@@ -7020,6 +7155,10 @@ def run_dashboard(args: argparse.Namespace) -> int:
                         "checkouts": checkouts,
                         "checkout": str(ROOT),
                         "daemon_pid": latest.get("daemon_pid") or role_pids.get("daemon"),
+                        "daemon_pids": daemon_pids,
+                        "daemon_count": (len(daemon_pids)
+                                         if daemon_pids is not None else None),
+                        "daemon_inventory_error": daemon_inventory_error,
                         "updated_at": latest.get("updated_at") or "—",
                         "build_id": build_display,
                         "artifact_id": artifact_display or latest.get("latest_successful_build") or "—",
@@ -7365,6 +7504,11 @@ def _print_read_only_status(current: dict, as_json: bool,
     print(
         f"[DEV STATUS] game-build status={game_build.get('status') or '-'} "
         f"generation={game_build.get('generation') or '-'} "
+        f"desired={game_build.get('desired_revision') or '-'} "
+        f"active={game_build.get('active_revision') or '-'} "
+        f"last_success={game_build.get('last_success_revision') or '-'} "
+        f"failed={game_build.get('failed_revision') or '-'} "
+        f"superseded={game_build.get('superseded', 0)} "
         f"detail={game_build.get('detail') or '-'}"
     )
     print(f"[DEV STATUS] events={_terminal_file_link(current.get('events_path'))}")

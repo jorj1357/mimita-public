@@ -552,10 +552,11 @@ static NpcSpawnResolution resolveNpcSpawnCached(const World& world,
     }
     NpcSpawnResolution resolution;
     // A respawn can run inside the fixed tick. Bound the candidate search so a
-    // bad raw spawn cannot stall gameplay for seconds; an unbounded fallback
-    // still returns the raw point when no safe candidate fits the budget.
+    // bad raw spawn cannot stall gameplay. Spawn resolution must inspect more
+    // nearby lift/ring candidates before it falls back to the raw point; keep
+    // the existing 25 ms time bound so this cannot consume a whole extra tick.
     resolution.safeSpawn =
-        resolveSafeStandingSpawn(world, rawSpawn, 0.60f, 2.0f, 24, 25.0);
+        resolveSafeStandingSpawn(world, rawSpawn, 0.60f, 2.0f, 128, 25.0);
     resolution.rawInside = worldPointInsideSolid(world, rawSpawn);
     resolution.safeInside = worldPointInsideSolid(world, resolution.safeSpawn);
     cache[npcId] = CacheEntry{rawSpawn, resolution, geometrySignature};

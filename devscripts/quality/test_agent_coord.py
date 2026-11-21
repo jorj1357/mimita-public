@@ -201,6 +201,37 @@ class AgentCoordTests(unittest.TestCase):
         self.assertIsNotNone(answer)
         self.assertIn("yes", answer["body"])
 
+    def test_broadcast_read_receipts_are_independent_per_agent(self) -> None:
+        self.begin("agent-a")
+        self.begin("agent-b")
+        first = self.store.send(
+            "agent-a", "all", "broadcast inbox", "each agent reads separately")
+        received_a = self.store.inbox("agent-a")
+        self.assertEqual(received_a[0]["msg_id"], first["message"])
+        self.assertTrue(received_a[0]["read_at"])
+        self.assertEqual(self.store.status("agent-b")["unread"], 1)
+        received_b = self.store.inbox("agent-b")
+        self.assertEqual(received_b[0]["msg_id"], first["message"])
+        self.assertTrue(received_b[0]["read_at"])
+        snapshot = self.store.coordination_snapshot()
+        message = next(row for row in snapshot["messages"]
+                       if row["msg_id"] == first["message"])
+        self.assertEqual(
+            {row["agent"] for row in message["read_receipts"]},
+            {"agent-a", "agent-b"})
+
+        second = self.store.send(
+            "agent-a", "all", "broadcast sync", "sync receipts are per agent")
+        sync_a = self.store.sync("agent-a")
+        self.assertTrue(any(row["msg_id"] == second["message"]
+                            for row in sync_a["messages"]))
+        self.assertEqual(self.store.status("agent-b")["unread"], 1)
+        sync_b = self.store.sync("agent-b")
+        self.assertTrue(any(row["msg_id"] == second["message"]
+                            for row in sync_b["messages"]))
+        self.assertEqual(self.store.status("agent-a")["unread"], 0)
+        self.assertEqual(self.store.status("agent-b")["unread"], 0)
+
     def test_path_escape_is_rejected(self) -> None:
         self.begin("agent-a")
         with self.assertRaises(CoordError):

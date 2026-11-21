@@ -1228,7 +1228,8 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
         if (predIt != ctx.predictedExplosions.end())
             ctx.predictedExplosions.erase(predIt);
         else
-            spawnExplosionFx(position, weaponName, attacker, 1.0f, true, surfaceNormal);
+            spawnExplosionFx(position, weaponName, attacker, 1.0f, true, surfaceNormal,
+                             1.0f, nullptr, nullptr, event->reserved[0] != 0);
     }
     else if (predIt != ctx.predictedExplosions.end())
     {
@@ -1256,12 +1257,14 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
             de.correction = position - predictedPos;
             de.description = "explosion position mismatch";
             spawnDisagreementEffect(de);
-            spawnExplosionFx(position, weaponName, attacker, 1.0f, true, surfaceNormal);
+            spawnExplosionFx(position, weaponName, attacker, 1.0f, true, surfaceNormal,
+                             1.0f, nullptr, nullptr, event->reserved[0] != 0);
         }
     }
     else
     {
-        spawnExplosionFx(position, weaponName, attacker, 1.0f, true, surfaceNormal);
+        spawnExplosionFx(position, weaponName, attacker, 1.0f, true, surfaceNormal,
+                         1.0f, nullptr, nullptr, event->reserved[0] != 0);
     }
 
     for (uint8_t i = 0; i < event->victimCount && i < MAX_PROJECTILE_DAMAGE_RESULTS; ++i)
@@ -2410,7 +2413,11 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
                     auto pi = ctx.playerRegistry.find(ctx.localPlayerId);
                     if (pi != ctx.playerRegistry.end())
                         attacker = pi->second.name;
-                    spawnExplosionFx(explodePos, weaponId, attacker, 1.0f, true, step.hitNormal);
+                    const bool hasWorldImpactAnchor =
+                        step.type == ProjectileCollisionType::WorldImpact;
+                    spawnExplosionFx(explodePos, weaponId, attacker, 1.0f, true,
+                                     step.hitNormal, 1.0f, nullptr, nullptr,
+                                     hasWorldImpactAnchor);
                     ctx.predictedExplosions[projectile.fireSerial] = explodePos;
 
                     // ── Predicted blast hit feedback (instant) ──────────────

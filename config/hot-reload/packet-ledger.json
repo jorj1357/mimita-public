@@ -226,7 +226,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 789,
+      "client_line": 801,
       "client_owner": "game",
       "client_source": "src/network/multiplayer-packets.cpp",
       "id": 13,
@@ -447,7 +447,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 976,
+      "client_line": 985,
       "client_owner": "game",
       "client_source": "src/engine/engine-tick-net.cpp",
       "id": 26,
@@ -719,7 +719,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 750,
+      "client_line": 759,
       "client_owner": "game",
       "client_source": "src/engine/engine-tick-net.cpp",
       "id": 44,
@@ -1346,5 +1346,5 @@
   ],
   "protocol_version": 52,
   "schema_version": 1,
-  "source_sha256": "a4bb7bc900dca52d61a9c2c10808f4dbc856925df45e0d7c9207ca299698de88"
+  "source_sha256": "30babe12a4bf363cf5b9da08aabc6110ad312c53d2886ba5786f908167715c09"
 }

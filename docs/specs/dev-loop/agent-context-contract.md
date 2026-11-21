@@ -13,6 +13,9 @@ the issue document and journal are evidence, not a conversation transcript.
 - `issue`: title, verbatim user quote, summary, state, severity, priority, kind,
   source, reporter, via agent, owner, reviewers, reproduction, expected behavior,
   acceptance, clarification, defer reason, resolution, related build/run, paths.
+- `issue` analysis: append-only observations and proposals with a claim status
+  (observed, inferred, hypothesized, disproved, or unknown), evidence links,
+  limitations, and the next useful check.
 - `quotes`: all preserved user and reviewer quotes in append-only order.
 - `occurrences`: every recurrence, with launch/build/run evidence and time.
 - `tasks`: ordered steps, owner, dependencies, acceptance, proof status, and
@@ -26,6 +29,39 @@ the issue document and journal are evidence, not a conversation transcript.
 - `next`: the smallest legal next action, or `wait` with a reason.
 - `causality`: the last relevant events ordered by global sequence, with explicit
   parent event IDs where available.
+- `handoff`: current owner/activity, tested and untested methods, open
+  hypotheses, known counterevidence, safe next steps, and any decision that
+  requires the user.
+
+## Cold-handoff minimum
+
+An agent taking an issue without the original chat must be able to distinguish
+what happened from what is only suspected and reproduce the next useful check.
+The issue and linked artifacts should include:
+
+- the exact user report or observation, current expected behavior, steps and
+  launch/configuration needed to reproduce it;
+- current owner, task dependencies, code owner/function/path, blockers, wait
+  reason, and the smallest safe next action;
+- append-only claims labeled observed, inferred, hypothesized, disproved, or
+  unknown, with timestamp, confidence/limits, counterevidence, and the next
+  test that could discriminate between explanations;
+- exact build/EXE identity, source revision or hashes where relevant, game-DLL
+  generation, mode/map/profile, run/instance/PIDs, and paths to the matching
+  dev-loop, server, and client journals;
+- exact journal event names/IDs, ticks/timestamps, measurement conditions, and
+  relevant screenshot/video/audio sidecars with hashes when visual evidence is
+  necessary. A screenshot alone is not runtime behavior proof;
+- all attempted reproductions and their outcomes, including failed tools,
+  failed builds, missing artifacts, and contrary results;
+- measurable acceptance and proof expectations, correctness/privacy risks,
+  rollback or recovery path, and decisions that still require the user.
+
+If an artifact or identity is unavailable, say so explicitly and link the
+attempt that failed. Never fill a gap from private memory or imply a run proves
+a scenario it did not exercise. Do not copy secrets or unrelated private data
+into an issue. A cold reviewer should be able to continue from this brief and
+the linked evidence without reconstructing hidden conversation context.
 
 ## Contract rules
 
@@ -41,6 +77,12 @@ the issue document and journal are evidence, not a conversation transcript.
   keeps the issue unowned rather than inventing history.
 - The user's original words remain verbatim. An agent may add interpretation
   only in a separate summary or comment.
+- The issue and linked artifacts must be sufficient for any qualified agent
+  to continue without private chat history. Keep source quotes, claims,
+  evidence, task outcomes, and unresolved questions distinct and append-only.
+- Agents add new evidence and tests to the same issue over time, including
+  failed attempts and counterexamples. A claimed improvement includes
+  comparable measurements and the conditions needed to reproduce them.
 
 ## First use
 

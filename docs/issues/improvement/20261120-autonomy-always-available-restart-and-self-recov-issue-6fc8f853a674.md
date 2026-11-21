@@ -20,3 +20,21 @@ paths: ['docs/skills', 'docs/ROUTER.md', 'docs/specs/dev-loop/dev-loop.md', 'dev
 
 risk: Restarting an unrelated or healthy process could destroy evidence or user work; authority is limited to checkout-owned processes.
 proof_expectation: Recorded old/new PID, combined source hash, live control endpoint, status, and preserved/relaunched game pair.
+
+## Agent suggestion
+
+### 2026-11-21T00:32:47.800Z — dashboard-process-buttons-and-ai-autonomy
+
+Specific user acceptance addition: provide a dashboard-only restart/reopen action that closes and relaunches only the owned GUI process, reconnects to the existing daemon, leaves any active build request and current game/server processes untouched, and verifies the same dev-loop PID/build IDs before and after. Preserve the existing global restart procedure for actual daemon restarts; dashboard refresh alone must not require a restart.
+
+## Agent suggestion
+
+### 2026-11-21T01:16:28.360Z — dashboard-process-buttons-and-ai-autonomy
+
+Update for the current user report: link this issue to user context ctx-4c2102426c95. Add acceptance for dashboard-only close/reopen that preserves daemon PID, pending build request/build owner, and healthy game PIDs, verifies refreshed status on reconnect, and reports the old/new dashboard PID without treating a dashboard restart as a daemon restart. This session has not yet proven behavior during an active build.
+
+## Agent suggestion
+
+### 2026-11-21T01:24:30.306Z — dashboard-process-buttons-and-ai-autonomy
+
+Dashboard restart trial: terminated only verified old GUI PID 28468, then ensured/reopened the dashboard. Daemon 28216, watchdog 23328, run 20261120_232200, server 33940, and client 24476 remained alive; no build was active. The new dashboard PID 36288 ran and updated its lock, but the CLI initially printed pid=0. This suggests dashboard startup/reporting can be temporarily inconsistent; acceptance during an active build remains untested.
