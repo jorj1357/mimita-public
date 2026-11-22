@@ -228,7 +228,14 @@ reason for warning must be recorded. The default after rollout is block.
 
 Once proven, candidate builds and warm runtime are enabled by default so agents
 have maximum capability. Human approval remains required for changes to shared
-authority, production, or the game specification.
+authority, production, or the game specification. The user may grant a
+documented standing authorization for a tightly scoped production area. Under
+the current user authorization recorded in `AGENTS.md` and issue
+`issue-260667351e04`, authenticated agents may deploy routine mimita.fun
+website-only releases after the required tests and release checks. This does
+not authorize database/schema/data changes, secret or permission changes,
+destructive cleanup, or deployment outside the website allowlist. Deployment
+proof remains separate from source and test proof.
 
 ## Build-friction and improvement
 

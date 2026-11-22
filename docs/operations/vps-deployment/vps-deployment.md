@@ -12,9 +12,14 @@ also todo 2026-09-07T17:17:34Z  jorj  the vps does not need  game code no like c
 Before pulling code onto the VPS:
 
 1. Identify the most recently updated candidate branch from the authoritative Git remote.
-2. Confirm its branch name, latest commit, commit date, and intended task with the user before deployment.
+2. Verify the branch name, commit SHA/date, intended task, and authenticated
+   remote state. The standing website authorization below removes per-release
+   confirmation for changes inside its scope; it does not waive validation.
 3. Do not assume `develop/v2.0.1` or any version branch is current; those branches may be stale.
-4. Pull only the confirmed branch with `git pull --ff-only origin <confirmed-branch>`.
+4. Pull only an authorized, confirmed branch with
+   `git pull --ff-only origin <confirmed-branch>`. Website agents must use the
+   website-only release process below; never pull the monorepo into the live
+   website checkout because it contains game source.
 5. Preserve and report any pre-existing untracked or local VPS files; never delete or overwrite them as part of a pull.
 6. Verify the deployed commit and restart only the relevant existing service after a successful pull.
 
@@ -49,6 +54,32 @@ cache or package-cache data only after verifying it is not needed by a running
 service.
 * Test locally before deployment.
 
+## Standing website-agent authorization
+
+The user explicitly authorized authenticated AI agents to repair and deploy
+routine `mimita.fun` website changes end to end on 2026-11-22. The durable
+authorization is recorded in `AGENTS.md` and issue
+`issue-260667351e04`. Agents with valid GitHub push and `ssh mimita-vps`
+authentication do not need per-deployment confirmation for changes within
+that scope. The access key remains in the operator's SSH agent/configuration;
+never copy it into Codex prompts or this repository.
+
+The release payload is website-only. Deploy exact files from an already pushed
+commit using the allowlist in
+`docs/operations/website-agent-deployment.md`; do not pull the monorepo into a
+live website checkout, deploy game/C++ assets, or use a floating branch as the
+release identity. Build and validate locally, preserve the current production
+release and all untracked/user data, verify disk and database headroom, record
+the immutable SHA, and health-check after restarting only `mimita-api` and (if
+the frontend changed) reloading nginx. Automatic rollback is required when
+post-deploy readiness fails.
+
+Stop for a human decision if work requires a database/schema/data migration,
+destructive cleanup, secrets or permission changes, DNS/billing changes,
+another VPS service, or a deployment whose target/persistent-data mapping or
+rollback cannot be verified. The standing authorization does not turn a failed
+health check or unknown production drift into permission to guess.
+
 ## Website editing safety: preserve database recovery
 
 Website changes must not make PostgreSQL availability failures harder to detect,
@@ -79,11 +110,22 @@ and recent logs after the approved pull and restart.
 
 ## VPS and Production Deployment Rules
 
-The production VPS (107.191.48.226) must not be edited directly.
+The production VPS (107.191.48.226) must not be hand-edited. All website
+source and service changes must arrive through the committed release procedure
+below.
 
-**Code is never written to the VPS. The VPS only ever receives code by pulling changes that were committed locally and pushed to GitHub.** No file writes, no `scp`, no editors, no patches on the VPS. This guarantees the deployed files always match GitHub exactly and prevents version mismatches between GitHub and the VPS. If a file exists on the VPS that is not on GitHub (or differs from GitHub), that is a bug and must be reconciled by committing the correct version locally and deploying via `git pull`.
+**Production source is never hand-edited on the VPS.** It must come from an
+exact commit already pushed to GitHub. Ordinary services use the reviewed
+`git pull --ff-only` path. The user has also granted standing authority for
+authenticated AI agents to deploy routine mimita.fun changes without
+per-deployment confirmation; website releases use the SHA-bound, allowlisted
+website-only package procedure in
+`docs/operations/website-agent-deployment.md`. Do not pull the monorepo into
+the website runtime or send game source to the website VPS. Preserve any
+pre-existing untracked files and user data. Do not use a remote editor or an
+ad-hoc patch.
 
-All application changes must follow this path:
+Other production application changes follow this path:
 1. Make the change in the local repository.
 2. Test the change locally.
 3. Commit it to Git.
@@ -93,10 +135,11 @@ All application changes must follow this path:
 7. Restart or reload only the affected service.
 8. Verify health and logs after deployment.
 
-**Every deployment that touches `website/src/` MUST rebuild the frontend.**
-A stale `dist/` means the live site serves old JavaScript that may lack new
-components, routes, or fixes. Always run `npm run build` after pulling and
-before restarting services.
+**Every deployment that touches `website/src/` MUST rebuild the frontend from
+the same commit before activation.** A stale `dist/` means the live site serves
+old JavaScript that may lack new components, routes, or fixes. The website-only
+release procedure packages that build output and activates it with the matching
+API source.
 
 ### Production paths and historical deployment evidence
 

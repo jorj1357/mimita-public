@@ -157,6 +157,14 @@ Examples:
 Class C requires human approval, an exact diff, a small safe experiment,
 integration proof, and a rollback plan.
 
+A user's explicit standing authorization may satisfy approval only for the exact
+scope and limits written in the authoritative project instructions. For
+example, `AGENTS.md` grants authenticated agents a bounded deploy permission for
+routine mimita.fun website releases. This does not authorize an agent to widen
+that scope, change shared authority, or bypass the relevant evidence and
+rollback gates. Work outside the recorded scope still requires an explicit
+human decision.
+
 Autonomy may increase over time only from measured trust: accepted changes,
 rollback rate, failed proofs, human overrides, incidents, and evidence latency.
 It may not increase by lowering a metric or self-approving proof.

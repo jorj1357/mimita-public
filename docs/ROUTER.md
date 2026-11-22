@@ -137,7 +137,7 @@ systems first. Use this default order:
 | Reusable collision/volume queries or soft-fit movement | `docs/architecture/collision/collision.md`, `docs/specs/movement/movement.md`, `docs/specs/gamemodes/gamemodes.md` |
 | VPS inspection or repository-to-production comparison | `docs/operations/vps-audit.md`, `docs/operations/vps-deployment/vps-deployment.md`, `docs/operations/task-completion/task-completion.md` |
 | Persistent progression, rewards, profiles, leaderboards | `docs/specs/data-saving/data-saving.md`, `docs/operations/vps-audit.md`, `docs/operations/todo-sort-these/persistence-recovery.md` |
-| Website architecture, VPS website operations, database availability, and site recovery | `docs/architecture/website/website-architecture.md`, `docs/operations/website-operations.md`, `docs/operations/vps-deployment/vps-deployment.md`, `docs/operations/vps-audit.md`, `docs/operations/todo-sort-these/persistence-recovery.md` |
+| Website architecture, VPS website operations, database availability, and site recovery | `docs/architecture/website/website-architecture.md`, `docs/operations/website-operations.md`, `docs/operations/website-agent-deployment.md`, `docs/operations/vps-deployment/vps-deployment.md`, `docs/operations/vps-audit.md`, `docs/operations/todo-sort-these/persistence-recovery.md` |
 
 Also read `docs/regressions/README.md` for any bug or human-reported
 break. Read JSON architecture when settings or hot reload are involved.

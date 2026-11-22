@@ -231,10 +231,28 @@ Read these gates before doing anything else:
 
 - Never expose or commit credentials, tokens, private keys, cookies, database
   connection strings, or secret environment values.
-- Never edit production source or configuration directly.
-- Before deployment, verify the exact reviewed branch and commit.
-- Deploy only committed local code, preserve pre-existing untracked files, and
-  restart only the affected service.
+- Never hand-edit production application source or config. Deploy committed,
+  pushed code through the website-only procedure in
+  `docs/operations/website-agent-deployment.md`.
+- **Standing user authorization (2026-11-22, issue
+  `issue-260667351e04`):** any AI agent with working GitHub and
+  `ssh mimita-vps` authentication may implement, commit, push, and deploy
+  routine MiMITA website changes without asking for per-deployment approval.
+  This applies only to the active shared checkout branch, the website release
+  allowlist, and the checks and rollback procedure documented for mimita.fun.
+  The user explicitly requested that authenticated agents be able to fix the
+  website end to end. Verify the pushed commit SHA and release contents
+  yourself, record them, preserve pre-existing untracked data, and restart only
+  the affected website service.
+- This standing authorization does not cover database/schema/data migrations,
+  deleting or overwriting user data or backups, changing credentials or
+  account permissions, domain/DNS/billing changes, unrelated VPS services, or
+  bypassing a failed validation. Stop and ask before those actions or when the
+  deployment target, authentication, rollback, or source state is uncertain.
+- Use existing OS/Git/SSH authentication only; never request or copy secrets
+  into chat, source files, command output, or logs. An agent without the
+  required authenticated access may finish local work and must report the
+  specific access setup needed; it may not claim deployment.
 
 ## What belongs elsewhere
 

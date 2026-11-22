@@ -97,8 +97,10 @@ Snap files.
 
 ## Install the tracked safeguards
 
-After the local revision is committed, pushed, and confirmed as the VPS target,
-pull it using the deployment procedure. Before enabling backups, confirm that
+After the local revision is committed and pushed, deploy it using the
+website-only release procedure in
+`docs/operations/website-agent-deployment.md`; per-release confirmation is not
+needed for work inside the user's standing authorization. Before enabling backups, confirm that
 the root-owned rclone config has a `gdrive-crypt:` remote of type `crypt` backed
 by `gdrive:`, verify the OAuth account is `contact@ravgrowth.com`, and confirm
 the encryption key is available in the password manager. The uploader checks
@@ -276,11 +278,15 @@ Use down and recovery email alerts to `contact@ravgrowth.com`. The health paths
 return only a generic status, never database or host details. The external
 monitor can still alert when the VPS/API itself is unavailable.
 
-The selected monitor is UptimeRobot. Create separate HTTPS monitors for the
+The selected monitor is UptimeRobot. An authenticated agent may configure it
+under the user's standing website authorization without per-monitor approval.
+Create separate HTTPS monitors for the
 five URLs above, use HTTP status checks, and configure down/up email
 notifications to `contact@ravgrowth.com`. Do not treat this as configured until
 both a forced down alert and a recovery alert arrive. The provider account
-configuration remains an external setup step.
+requires an authenticated browser session or password-manager API credential;
+never put its password or API key in chat or repository files. See
+`docs/operations/website-agent-deployment.md` for the access handoff.
 
 ## Troubleshooting notes
 
