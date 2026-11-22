@@ -144,3 +144,45 @@ Keep this issue open for a guarded verification path: (1) demonstrate startup re
 ### 2026-11-21T16:17:32.832Z — root-dll-status-review
 
 Follow-up native process snapshot around 2026-11-21 16:16Z confirms two live same-checkout dev-loop daemons (PID 13660, mode 45; PID 33892, mode 58), not the earlier three-process snapshot. A DLL worker PID 34876 remains alive with parent PID 19168, but the daemon PID 19168 is absent from the same inventory; another worker PID 22464 remains under daemon 13660. This is direct evidence that worker/daemon lifetime and duplicate-count visibility need verification together. Do not kill these processes during evidence collection; compare PID/start-time identity, active worker state, and checkout lock owner before controlled recovery.
+
+## Scheduled independent review
+
+### 2026-11-22T13:08:00.821Z — cpp-latency-digest-cache
+
+A bounded independent review was queued as wake wake-80c90da11376 after 289 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (needs-evidence)
+
+### 2026-11-22T13:29:35.411Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Bounded independent review 2026-11-22T08:26Z (issue-review-sweeper, wake-80c90da11376). No source edits, builds, closes, or fix claims.
+
+Observed facts
+- Readiness is ready (8/8, state triaged) with one open task, process-panel-client-identity. No proof record exists for that task, so it is unproven.
+- Current provider: devscripts/process_identity.py:97 windows_process_inventory uses a Toolhelp snapshot plus QueryFullProcessImageNameW/GetProcessTimes; devscripts/dev-loop.py:895 checkout_mimita_processes prefers psutil and otherwise uses that native path. process_identity.py is committed at d89884f6 (2026-11-21T21:47Z).
+- Live cross-interpreter check: in the running dashboard's own interpreter C:\Python314\python.exe (3.14.0, psutil import absent), windows_process_inventory() returned exactly one process, PID 26748, C:\mimita-v9\.dev\current\mimita.exe, start 2026-11-22T01:10:32.216738Z, with a full command line, in 9.86 ms and 22.02 ms on two calls. The no-WMI/no-psutil fallback is functional and fast on this host now.
+- Dashboard PID 33128 (pythonw 3.14, started 2026-11-21T22:28:01Z, after the fix commit) has 4308 process_scan_request stage events through 2026-11-22T13:21:56Z and zero "PROCESS SCAN FAILED"/"scan failed"/"scan_error" lines in .dev/dev-loop-dashboard.log.
+- Limitation: selected devscripts/dev_loop/gui.py:2391-2392,2404-2405 catches scan exceptions and stores them only in UI state; it never writes a categorized event. Absence of scan-error log lines is therefore not evidence of successful scans, and scan failure counts are not recoverable from journals.
+- New failure evidence: .dev/launch-reports/2026-11-22T01-10-06.744Z/launch.json failed at client_reconciliation with "MiMITA process(es) still alive after cleanup: [24192]" (stopped_pids [24192]) after 6177.5 ms; request accept latency was 6062.3 ms. The next request, 2026-11-22T01-10-31.858Z, succeeded with press-to-ready 34844.7 ms (accept 1.8 ms, queue 124.5 ms; mode_start 20641 ms; client_connection 5021.9 ms).
+- Cleanup logic at dev-loop.py:5499-5531 appends a PID to stopped_pids after taskkill without checking the taskkill return code, then immediately rescans; a PID still present in that immediate rescan fails the launch. taskkill_rc and the dev-loop.process.reconcile event are unavailable because logs/2026-11-22/20261122_011031/dev-loop/events.jsonl does not exist even though dev-loop.py --status links it.
+- Run 20261122_011031 run.json has server-01 online as PID 26748 and no client. Dev status shows the server alive and client pids=[]. Exited-client removal is consistent for this run.
+
+Inference and uncertainty
+- The 2026-11-22 "sometimes doesn't work" recurrence is now a cleanup/verification race or a taskkill denial at client_reconciliation, not the old Get-CimInstance timeout. Which one is unresolved.
+- The long-wait symptom is dominated by readiness stages (mode_start ~20.6 s), not process scan; timing reduction is owned by issue-7d3dcfd7433b.
+- .dev/process-snapshots/20261122_025848.json uses a separate PowerShell CIM collector, not the GUI provider; do not cite it as GUI scan proof.
+- No visual Processes-panel observation exists after 2026-11-21T16:17Z, so current row accuracy remains unproven.
+
+Contrary evidence
+- User-reported positive process-panel behavior on 2026-11-21T14:37Z.
+- The native fallback works now in the exact dashboard interpreter in ~10-22 ms.
+- One 2026-11-22 launch succeeded and the exited client was removed from the manifest.
+
+Next discriminating checks
+1. Emit one bounded categorized event per process scan (result, count, duration_ms, provider, error[:N]) from gui.py before UI render; then do one manual Refresh and one launch and confirm exactly one event per scan and countable failures.
+2. Capture taskkill rc plus a bounded post-kill wait (poll pid_alive up to ~2 s) in dev-loop.process.reconcile; repeat a launch with a live client. A PID that disappears within the wait indicates a race; one that does not indicates a kill/permission or role-classification defect.
+3. Visually confirm on dashboard PID 33128 that Refresh shows one server row pid=26748, and that a client row appears on launch and disappears on exit.
+
+Verdict: needs-evidence.

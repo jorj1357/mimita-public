@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,14 @@ from pathlib import Path
 
 from devscripts.build_scheduler import acquire as acquire_build_slot
 from devscripts.source_manifest import build_manifest, diff_manifests, validate
+
+
+_TIMING_APPEND_LOCK = threading.Lock()
+_SNAPSHOT_CLEANUP_QUEUE: queue.Queue[tuple[Path, str, str, Path]] = queue.Queue(
+    maxsize=64)
+_SNAPSHOT_CLEANUP_LOCK = threading.Lock()
+_SNAPSHOT_CLEANUP_PENDING: set[str] = set()
+_SNAPSHOT_CLEANUP_THREAD: threading.Thread | None = None
 
 
 def _utc_now() -> str:
@@ -48,9 +57,10 @@ def _write_json(path: Path, payload: dict) -> None:
 
 def _append_timing(path: Path, event: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8", newline="\n") as output:
-        output.write(json.dumps(event, separators=(",", ":")) + "\n")
-        output.flush()
+    with _TIMING_APPEND_LOCK:
+        with path.open("a", encoding="utf-8", newline="\n") as output:
+            output.write(json.dumps(event, separators=(",", ":")) + "\n")
+            output.flush()
 
 
 def _sha256_file(path: Path) -> str:
@@ -59,6 +69,51 @@ def _sha256_file(path: Path) -> str:
         for block in iter(lambda: handle.read(1 << 20), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+_CODEGEN_CACHE_SCHEMA = 1
+_CODEGEN_VALIDATION_FILES = {
+    "resident_state_codegen.py": (
+        "devscripts/resident_state_codegen.py",
+        "config/hot-reload/state-schema.json",
+        "src/host/generated/resident-state-v1.h",
+        "config/hot-reload/state-ledger.json",
+    ),
+    "packet_registry_codegen.py": (
+        "devscripts/packet_registry_codegen.py",
+        "build/source-manifest.json",
+        "src/network/packets.h",
+        "src/network/schema/packet-header.h",
+        "src/host/generated/packet-registry-v1.h",
+        "config/hot-reload/packet-ledger.json",
+    ),
+}
+
+
+def _codegen_validation_fingerprint(root: Path, script: str,
+                                    manifest_revision: str) -> str:
+    """Key a successful --check by every direct input and checked output.
+
+    The packet registry also consumes the complete source manifest because it
+    scans source references; its revision invalidates that derived result when
+    any C++ source or header changes.
+    """
+    paths = _CODEGEN_VALIDATION_FILES[script]
+    try:
+        files = [(relative, _sha256_file(root / relative))
+                 for relative in paths]
+    except OSError:
+        return ""
+    payload = {
+        "schema": _CODEGEN_CACHE_SCHEMA,
+        "script": script,
+        "manifest_revision": (manifest_revision
+                              if script == "packet_registry_codegen.py" else ""),
+        "files": files,
+    }
+    return hashlib.sha256(json.dumps(
+        payload, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")).hexdigest()
 
 
 def _mirror_dir(root: Path) -> Path:
@@ -236,31 +291,278 @@ def _create_source_snapshot(root: Path, mirror: Path, attempt_id: str) -> Path:
     snapshot keeps the old inode when the next build refreshes a file.
     """
     destination_root = _snapshot_root(root, attempt_id)
+    remove_started = time.perf_counter()
     shutil.rmtree(destination_root, ignore_errors=True)
+    remove_seconds = time.perf_counter() - remove_started
     linked = copied = 0
+    file_count = directory_count = 0
+    directory_seconds = link_seconds = copy_seconds = 0.0
+    walk_started = time.perf_counter()
     for source_root_name in ("src", "include", "external"):
         source_root = mirror / source_root_name
         if not source_root.is_dir():
             continue
-        for source in source_root.rglob("*"):
-            if not source.is_file():
-                continue
-            relative = source.relative_to(mirror)
-            destination = destination_root / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                os.link(source, destination)
-                linked += 1
-            except OSError:
-                shutil.copy2(source, destination)
-                copied += 1
+        for current, _dirs, filenames in os.walk(source_root):
+            source_directory = Path(current)
+            relative_directory = source_directory.relative_to(mirror)
+            destination_directory = destination_root / relative_directory
+            directory_started = time.perf_counter()
+            destination_directory.mkdir(parents=True, exist_ok=True)
+            directory_seconds += time.perf_counter() - directory_started
+            directory_count += 1
+            for filename in filenames:
+                source = source_directory / filename
+                destination = destination_directory / filename
+                file_count += 1
+                link_started = time.perf_counter()
+                try:
+                    os.link(source, destination)
+                    link_seconds += time.perf_counter() - link_started
+                    linked += 1
+                except OSError:
+                    link_seconds += time.perf_counter() - link_started
+                    copy_started = time.perf_counter()
+                    shutil.copy2(source, destination)
+                    copy_seconds += time.perf_counter() - copy_started
+                    copied += 1
+    walk_seconds = max(
+        0.0,
+        time.perf_counter() - walk_started
+        - directory_seconds - link_seconds - copy_seconds,
+    )
     (destination_root / ".snapshot.json").write_text(json.dumps({
         "attempt_id": attempt_id,
         "source_mirror": str(mirror.relative_to(root)),
         "linked": linked,
         "copied": copied,
+        "files": file_count,
+        "directories": directory_count,
+        "remove_seconds": round(remove_seconds, 6),
+        "directory_prepare_seconds": round(directory_seconds, 6),
+        "hardlink_seconds": round(link_seconds, 6),
+        "copy_seconds": round(copy_seconds, 6),
+        "walk_and_path_seconds": round(walk_seconds, 6),
         "created_utc": _utc_now(),
     }, indent=2) + "\n", encoding="utf-8")
+    return destination_root
+
+
+def _is_directory_junction(path: Path) -> bool:
+    checker = getattr(os.path, "isjunction", None)
+    if checker is not None:
+        try:
+            return bool(checker(path))
+        except OSError:
+            return False
+    return path.is_symlink()
+
+
+def _create_directory_junction(link: Path, target: Path) -> None:
+    """Create an NTFS directory junction without spawning a shell process."""
+    if os.name != "nt":
+        raise OSError("directory junction snapshots require Windows")
+    import ctypes
+    import struct
+
+    link.mkdir()
+    target_path = str(target.resolve(strict=True))
+    substitute_name = "\\??\\" + target_path
+    substitute = substitute_name.encode("utf-16-le")
+    printed = target_path.encode("utf-16-le")
+    path_buffer = substitute + b"\0\0" + printed + b"\0\0"
+    payload = struct.pack("<HHHH", 0, len(substitute),
+                          len(substitute) + 2, len(printed)) + path_buffer
+    record = struct.pack("<IHH", 0xA0000003, len(payload), 0) + payload
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel.CreateFileW
+    create_file.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                            ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                            ctypes.c_void_p]
+    create_file.restype = ctypes.c_void_p
+    device_io = kernel.DeviceIoControl
+    device_io.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p,
+                          ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint32,
+                          ctypes.POINTER(ctypes.c_uint32), ctypes.c_void_p]
+    device_io.restype = ctypes.c_int
+    close_handle = kernel.CloseHandle
+    close_handle.argtypes = [ctypes.c_void_p]
+    invalid_handle = ctypes.c_void_p(-1).value
+    handle = create_file(
+        str(link), 0x40000000, 0x7, None, 3,
+        0x02000000 | 0x00200000, None)
+    if handle == invalid_handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    returned = ctypes.c_uint32()
+    buffer = ctypes.create_string_buffer(record)
+    try:
+        if not device_io(handle, 0x000900A4, buffer, len(record), None, 0,
+                         ctypes.byref(returned), None):
+            raise ctypes.WinError(ctypes.get_last_error())
+    except Exception:
+        # Remove the empty reparse directory if the mount point could not be set.
+        try:
+            os.rmdir(link)
+        except OSError:
+            pass
+        raise
+    finally:
+        close_handle(handle)
+
+
+def _remove_snapshot_tree(path: Path) -> None:
+    """Remove junction entries first so recursive cleanup never follows them."""
+    if not path.exists():
+        return
+    for current, directories, _files in os.walk(path, topdown=True,
+                                                 followlinks=False):
+        current_path = Path(current)
+        for name in list(directories):
+            candidate = current_path / name
+            if _is_directory_junction(candidate):
+                os.rmdir(candidate)
+                directories.remove(name)
+    shutil.rmtree(path, ignore_errors=False)
+
+
+def _create_junction_overlay_snapshot(
+        root: Path, base: Path, mirror: Path, replacement_paths: list[str],
+        removed_paths: list[str], attempt_id: str,
+        expected_hashes: dict[str, str] | None = None) -> Path:
+    """Share unchanged directory subtrees and materialize only edited branches."""
+    if os.name != "nt":
+        raise OSError("directory junction snapshots require Windows")
+    snapshots_root = (root / ".dev" / "build-snapshots").resolve()
+    base_resolved = base.resolve(strict=True)
+    base_resolved.relative_to(snapshots_root)
+    destination_root = _snapshot_root(root, attempt_id)
+    if destination_root.exists():
+        _remove_snapshot_tree(destination_root)
+
+    def normalized(value: str) -> str:
+        path = Path(str(value).replace("\\", "/"))
+        if path.is_absolute() or ".." in path.parts:
+            raise RuntimeError(f"snapshot overlay path escapes repository: {value}")
+        path = Path(*[part for part in path.parts if part not in ("", ".")])
+        if not path.parts or path.parts[0] not in ("src", "include", "external"):
+            raise RuntimeError(f"unsupported snapshot overlay path: {value}")
+        return path.as_posix()
+
+    replacements = {normalized(path) for path in replacement_paths}
+    removals = {normalized(path) for path in removed_paths}
+    overlays = replacements | removals
+    if not overlays:
+        raise RuntimeError("junction snapshot requires changed paths")
+    if any(not (base_resolved / path.split("/")[0]).is_dir()
+           for path in overlays):
+        raise RuntimeError("base snapshot is missing a source root")
+
+    linked = copied = removed = 0
+    junction_seconds = hardlink_seconds = copy_seconds = walk_seconds = 0.0
+    junction_targets: set[str] = set()
+    started = time.perf_counter()
+
+    def changed_below(relative: str) -> bool:
+        prefix = relative.rstrip("/") + "/"
+        return any(path == relative or path.startswith(prefix)
+                   for path in overlays)
+
+    def materialize(relative: str) -> None:
+        nonlocal linked, copied, removed
+        nonlocal junction_seconds, hardlink_seconds, walk_seconds
+        source_directory = base_resolved / relative
+        destination_directory = destination_root / relative
+        if not changed_below(relative):
+            junction_started = time.perf_counter()
+            target = source_directory.resolve(strict=True)
+            _create_directory_junction(destination_directory, target)
+            junction_seconds += time.perf_counter() - junction_started
+            try:
+                target_relative = target.relative_to(root.resolve()).as_posix()
+                if target_relative.startswith(".dev/build-snapshots/"):
+                    junction_targets.add(target_relative)
+            except ValueError:
+                pass
+            return
+
+        destination_directory.mkdir(parents=True, exist_ok=True)
+        scan_started = time.perf_counter()
+        if source_directory.is_dir():
+            for item in source_directory.iterdir():
+                child = f"{relative}/{item.name}"
+                if item.is_dir():
+                    materialize(child)
+                    continue
+                if not item.is_file():
+                    continue
+                if child in removals or child in replacements:
+                    if child in removals:
+                        removed += 1
+                    continue
+                target_file = destination_directory / item.name
+                link_started = time.perf_counter()
+                try:
+                    os.link(item, target_file)
+                    linked += 1
+                except OSError:
+                    link_failed = time.perf_counter() - link_started
+                    hardlink_seconds += link_failed
+                    copy_started = time.perf_counter()
+                    shutil.copy2(item, target_file)
+                    copy_seconds += time.perf_counter() - copy_started
+                    continue
+                hardlink_seconds += time.perf_counter() - link_started
+        walk_seconds += time.perf_counter() - scan_started
+
+    try:
+        for source_root in ("src", "include", "external"):
+            if (base_resolved / source_root).is_dir():
+                materialize(source_root)
+        expected_hashes = expected_hashes or {}
+        for relative in sorted(replacements):
+            source = mirror / Path(relative)
+            if not source.is_file():
+                raise RuntimeError(f"overlay source missing: {relative}")
+            destination = destination_root / Path(relative)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary = destination.with_name(destination.name + ".overlay.tmp")
+            shutil.copy2(source, temporary)
+            expected = expected_hashes.get(relative)
+            if expected and _sha256_file(temporary) != expected:
+                raise RuntimeError(f"overlay source changed during snapshot: {relative}")
+            os.replace(temporary, destination)
+            copied += 1
+
+        marker = {
+            "attempt_id": attempt_id,
+            "strategy": "junction_overlay",
+            "base_snapshot": str(base.relative_to(root)),
+            "replacement_paths": sorted(replacements),
+            "removed_paths": sorted(removals),
+            "junction_targets": sorted(junction_targets),
+            "linked": linked,
+            "copied": copied,
+            "removed": removed,
+            "junction_seconds": round(junction_seconds, 6),
+            "hardlink_seconds": round(hardlink_seconds, 6),
+            "copy_seconds": round(copy_seconds, 6),
+            "walk_seconds": round(walk_seconds, 6),
+            "total_seconds": round(time.perf_counter() - started, 6),
+            "created_utc": _utc_now(),
+        }
+        (destination_root / ".snapshot.json").write_text(
+            json.dumps(marker, indent=2) + "\n", encoding="utf-8")
+    except Exception:
+        if destination_root.exists():
+            try:
+                _remove_snapshot_tree(destination_root)
+            except OSError:
+                pass
+        try:
+            destination_root.parent.rmdir()
+        except OSError:
+            pass
+        raise
     return destination_root
 
 
@@ -300,6 +602,77 @@ def _reusable_published_snapshot(root: Path, revision: str) -> tuple[int, Path] 
         return generation, snapshot
     except (OSError, RuntimeError, TypeError, ValueError):
         return None
+
+
+def _snapshot_manifest(snapshot: Path, revision: str = "") -> dict | None:
+    manifest = _read_json(snapshot.parent / "source-manifest.json")
+    if (not isinstance(manifest, dict)
+            or not isinstance(manifest.get("sources"), list)
+            or not isinstance(manifest.get("headers"), list)
+            or not manifest.get("revision")):
+        return None
+    if revision and str(manifest.get("revision")) != revision:
+        return None
+    marker = _read_json(snapshot / ".snapshot.json")
+    if (not isinstance(marker, dict)
+            or str(marker.get("attempt_id") or "")
+            != snapshot.parent.name):
+        return None
+    marker_revision = str(marker.get("source_revision") or "")
+    if marker_revision and marker_revision != str(manifest.get("revision")):
+        return None
+    return manifest
+
+
+def _snapshot_for_revision(root: Path, revision: str) -> Path | None:
+    """Find an immutable source tree matching a prior manifest revision.
+
+    Prefer the currently published snapshot. If a newer candidate failed after
+    its source snapshot was captured, its manifest sidecar still makes that
+    immutable snapshot a safe base for the next incremental candidate.
+    """
+    if not revision:
+        return None
+    published = _reusable_published_snapshot(root, revision)
+    if published is not None:
+        return published[1]
+    snapshots = root / ".dev" / "build-snapshots"
+    try:
+        entries = sorted((item for item in snapshots.iterdir()
+                          if item.is_dir()),
+                         key=lambda item: item.stat().st_mtime,
+                         reverse=True)
+    except OSError:
+        return None
+    for attempt in entries:
+        source = attempt / "source"
+        if source.is_dir() and _snapshot_manifest(source, revision) is not None:
+            return source
+    return None
+
+
+def _write_snapshot_manifest(snapshot: Path, manifest: dict) -> None:
+    """Persist the exact source inventory beside its immutable source tree."""
+    revision = str(manifest.get("revision") or "")
+    if not revision:
+        raise RuntimeError("source manifest has no revision")
+    payload = {
+        "schema": 1,
+        "revision": revision,
+        "sources": manifest.get("sources", []),
+        "headers": manifest.get("headers", []),
+    }
+    destination = snapshot.parent / "source-manifest.json"
+    temporary = destination.with_name(destination.name + ".tmp")
+    temporary.write_text(json.dumps(payload, separators=(",", ":")) + "\n",
+                         encoding="utf-8")
+    os.replace(temporary, destination)
+    marker_path = snapshot / ".snapshot.json"
+    marker = _read_json(marker_path)
+    if isinstance(marker, dict) and marker:
+        marker["source_revision"] = revision
+        marker_path.write_text(json.dumps(marker, indent=2) + "\n",
+                               encoding="utf-8")
 
 
 def _create_overlay_snapshot(root: Path, base: Path, overlay_paths: list[str],
@@ -351,25 +724,173 @@ def _create_overlay_snapshot(root: Path, base: Path, overlay_paths: list[str],
     return destination_root
 
 
-def _prune_snapshots(root: Path, keep: int = 5,
-                     protect_attempts: list[str] | None = None) -> int:
-    snapshots = root / ".dev" / "build-snapshots"
-    if not snapshots.is_dir():
-        return 0
-    protected = {path.name for path in sorted(
-        (item for item in snapshots.iterdir() if item.is_dir()),
-        key=lambda item: item.stat().st_mtime, reverse=True)[:max(1, keep)]}
-    protected.update(str(value) for value in (protect_attempts or []) if value)
-    removed = 0
-    for path in snapshots.iterdir():
-        if not path.is_dir() or path.name in protected:
-            continue
+def _snapshot_cleanup_worker() -> None:
+    while True:
+        path, original_name, attempt_id, timing_path = _SNAPSHOT_CLEANUP_QUEUE.get()
+        started = time.monotonic()
+        error = ""
         try:
-            shutil.rmtree(path)
-            removed += 1
+            try:
+                shutil.rmtree(path)
+            except Exception as exc:  # cleanup must not kill the queue worker
+                error = str(exc)[:500]
+            try:
+                _append_timing(timing_path, {
+                    "event": "snapshot.cleanup.completed" if not error
+                    else "snapshot.cleanup.failed",
+                    "time_utc": _utc_now(), "build_attempt_id": attempt_id,
+                    "snapshot": original_name,
+                    "background": True,
+                    "duration_ms": round((time.monotonic() - started) * 1000, 3),
+                    "error": error,
+                })
+            except Exception:
+                # Snapshot cleanup and telemetry are housekeeping; neither can
+                # invalidate a successfully built generation.
+                pass
+        finally:
+            with _SNAPSHOT_CLEANUP_LOCK:
+                _SNAPSHOT_CLEANUP_PENDING.discard(str(path))
+            _SNAPSHOT_CLEANUP_QUEUE.task_done()
+
+
+def _queue_snapshot_cleanup(path: Path, original_name: str,
+                            attempt_id: str, timing_path: Path) -> bool:
+    global _SNAPSHOT_CLEANUP_THREAD
+    key = str(path)
+    with _SNAPSHOT_CLEANUP_LOCK:
+        if key in _SNAPSHOT_CLEANUP_PENDING:
+            return True
+        _SNAPSHOT_CLEANUP_PENDING.add(key)
+        if (_SNAPSHOT_CLEANUP_THREAD is None
+                or not _SNAPSHOT_CLEANUP_THREAD.is_alive()):
+            _SNAPSHOT_CLEANUP_THREAD = threading.Thread(
+                target=_snapshot_cleanup_worker,
+                name="game-build-snapshot-cleanup", daemon=True)
+            try:
+                _SNAPSHOT_CLEANUP_THREAD.start()
+            except RuntimeError:
+                _SNAPSHOT_CLEANUP_THREAD = None
+                _SNAPSHOT_CLEANUP_PENDING.discard(key)
+                return False
+        try:
+            _SNAPSHOT_CLEANUP_QUEUE.put_nowait(
+                (path, original_name, attempt_id, timing_path))
+        except queue.Full:
+            _SNAPSHOT_CLEANUP_PENDING.discard(key)
+            return False
+    return True
+
+
+def _queue_snapshot_trash(trash: Path, attempt_id: str,
+                          timing_path: Path) -> int:
+    queued = 0
+    try:
+        entries = list(trash.iterdir())
+    except OSError:
+        return 0
+    for path in entries:
+        if not path.is_dir():
+            continue
+        if _queue_snapshot_cleanup(path, path.name, attempt_id, timing_path):
+            queued += 1
+    return queued
+
+
+def _prune_snapshots(root: Path, keep: int = 5,
+                     protect_attempts: list[str] | None = None,
+                     attempt_id: str = "snapshot-housekeeping",
+                     timing_path: Path | None = None,
+                     synchronous: bool = False) -> int:
+    snapshots = root / ".dev" / "build-snapshots"
+    trash = root / ".dev" / "build-snapshot-trash"
+    timing_path = timing_path or (root / ".dev" / "build-timings"
+                                  / f"{attempt_id}.jsonl")
+    if synchronous:
+        # Only low-disk recovery waits for recursive deletion. Normal builds
+        # rename snapshots away and let the idle cleanup thread remove them.
+        _SNAPSHOT_CLEANUP_QUEUE.join()
+        try:
+            trash_entries = list(trash.iterdir()) if trash.is_dir() else []
         except OSError:
-            pass
-    return removed
+            trash_entries = []
+        for stale in trash_entries:
+            try:
+                shutil.rmtree(stale)
+            except Exception:
+                pass
+    else:
+        _queue_snapshot_trash(trash, attempt_id, timing_path)
+    try:
+        if not snapshots.is_dir():
+            return 0
+        entries = [item for item in snapshots.iterdir()
+                   if item.is_dir()]
+        protected = {path.name for path in sorted(
+            entries, key=lambda item: item.stat().st_mtime,
+            reverse=True)[:max(1, keep)]}
+        protected.update(str(value) for value in (protect_attempts or []) if value)
+        by_name = {path.name: path for path in entries}
+        # A published or in-flight overlay can still depend on directories in
+        # an older snapshot. Protect every referenced target before renaming
+        # any snapshot; old unreferenced overlays age out on a later prune.
+        for snapshot in entries:
+            marker = _read_json(snapshot / "source" / ".snapshot.json")
+            targets = (marker.get("junction_targets", [])
+                       if isinstance(marker, dict) else [])
+            for value in targets:
+                parts = Path(str(value).replace("\\", "/")).parts
+                if (len(parts) >= 3 and parts[0:2] == (".dev", "build-snapshots")
+                        and parts[2] in by_name):
+                    protected.add(parts[2])
+        game_root = root / "build" / "game"
+        for manifest_name in ("ready.json", "current.json"):
+            try:
+                generation = int(_read_json(game_root / manifest_name).get(
+                    "generation") or 0)
+                metadata = _read_json(
+                    game_root / f"generation-{generation}" / "generation.json")
+                source_root = Path(str(metadata.get("source_root") or ""))
+                if not source_root.is_absolute():
+                    source_root = root / source_root
+                relative_source = source_root.resolve().relative_to(
+                    (root / ".dev" / "build-snapshots").resolve())
+                if relative_source.parts and relative_source.parts[0] in by_name:
+                    protected.add(relative_source.parts[0])
+            except (OSError, RuntimeError, TypeError, ValueError):
+                pass
+    except OSError:
+        # Retention is best-effort. An inaccessible old snapshot must not stop
+        # a candidate build from using the last known-good published DLL.
+        return 0
+
+    deferred = 0
+    try:
+        trash.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return 0
+    for path in entries:
+        if path.name in protected:
+            continue
+        tombstone = trash / f"{path.name}-{uuid.uuid4().hex[:10]}"
+        try:
+            # Same-volume rename drops the old snapshot from the live index in
+            # milliseconds; the recursive directory walk happens off-path.
+            os.replace(path, tombstone)
+        except OSError:
+            continue
+        if synchronous:
+            try:
+                shutil.rmtree(tombstone)
+                deferred += 1
+            except OSError:
+                _queue_snapshot_cleanup(tombstone, path.name, attempt_id,
+                                        timing_path)
+        else:
+            _queue_snapshot_cleanup(tombstone, path.name, attempt_id,
+                                    timing_path)
+            deferred += 1
+    return deferred
 
 
 def _prune_logs(root: Path, keep_days: int = 3) -> int:
@@ -403,8 +924,8 @@ def _env_float(name: str, default: float) -> float:
 
 def _worker_metrics_summary(current: dict, worker_progress: dict,
                             last_attempt: dict, attempt_id: str,
-                            no_op: bool) -> dict:
-    """Summarize this attempt; never reuse prior-generation metrics for a no-op."""
+                            no_op: bool, success: bool) -> dict:
+    """Summarize only metrics belonging to this attempt."""
     metric_keys = (
         "source_count", "compiled", "skipped", "jobs", "object_scan_seconds",
         "dependency_check_ms", "scan_parse_ms", "scan_stat_ms",
@@ -412,6 +933,36 @@ def _worker_metrics_summary(current: dict, worker_progress: dict,
         "compile_seconds", "link_seconds", "publish_seconds", "total_seconds",
         "worker_total_seconds", "slowest_compiles",
     )
+    if not success:
+        if worker_progress.get("build_attempt_id") != attempt_id:
+            return {key: ([] if key == "slowest_compiles" else None)
+                    for key in metric_keys}
+        progress_keys = {
+            "source_count": ("scan_total", "source_count"),
+            "compiled": ("compiled",),
+            "skipped": ("skipped", "skipped_count"),
+            "jobs": ("jobs",),
+            "object_scan_seconds": ("object_scan_s",),
+            "dependency_check_ms": ("dependency_check_ms",),
+            "scan_parse_ms": ("scan_parse_ms", "parse_ms"),
+            "scan_stat_ms": ("scan_stat_ms", "stat_ms"),
+            "scan_unique_dependencies": ("scan_unique_dependencies",),
+            "changed_source_preflight_seconds": (
+                "changed_source_preflight_s",),
+            "compile_seconds": ("compile_s",),
+            "link_seconds": ("link_s",),
+            "publish_seconds": ("publish_s",),
+            "total_seconds": ("total_s",),
+            "worker_total_seconds": ("worker_total_s", "worker_elapsed_s"),
+            "slowest_compiles": ("slowest",),
+        }
+        return {
+            key: next((worker_progress[name] for name in names
+                       if name in worker_progress),
+                      [] if key == "slowest_compiles" else None)
+            for key, names in progress_keys.items()
+        }
+
     metrics = {key: current.get(key) for key in metric_keys}
     if not no_op or worker_progress.get("build_attempt_id") != attempt_id:
         return metrics
@@ -750,28 +1301,19 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     ready_path = output_root / "ready.json"
 
     _prune_logs(root, 3)
-    _prune_snapshots(root, 5)
+    _prune_snapshots(root, 5, attempt_id=attempt_id, timing_path=timing_path)
     min_free = _min_free_bytes()
     free = _disk_free_bytes(root)
     if free is not None and free < min_free:
         _prune_generations(root, 3)
-        _prune_snapshots(root, 2)
+        _prune_snapshots(root, 2, attempt_id=attempt_id,
+                         timing_path=timing_path, synchronous=True)
         _prune_logs(root, 2)
         free = _disk_free_bytes(root)
     if free is not None and free < min_free:
         return fail_attempt(
             f"disk_low: {free // (1024 * 1024)} MB free, "
             f"need {min_free // (1024 * 1024)} MB after auto-prune")
-
-    for script in ("resident_state_codegen.py", "packet_registry_codegen.py"):
-        result = run_stage(f"codegen:{script}",
-                           [sys.executable, str(root / "devscripts" / script), "--check"],
-                           timeout=_env_float("MIMITA_CODEGEN_TIMEOUT", 300.0))
-        if result == 124:
-            return fail_attempt(f"codegen timeout: {script}",
-                                failed_phase="codegen_timeout")
-        if result != 0:
-            return fail_attempt(f"codegen check failed: {script}", exit_code=result)
 
     set_stage("manifest_snapshot", "started")
     manifest_started = time.monotonic()
@@ -857,10 +1399,27 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     set_stage("manifest_validation", "completed",
               duration_ms=round((time.monotonic() - validation_started) * 1000, 3),
               source_count=len(manifest.get("sources", [])))
+    diff_started = time.monotonic()
+    set_driver_subphase("manifest_diff", "started", diff_started)
+    previous_revision = str(old_manifest.get("revision") or "")
+    source_base_snapshot = _snapshot_for_revision(root, previous_revision)
+    previous_manifest = (_snapshot_manifest(source_base_snapshot,
+                                             previous_revision)
+                         if source_base_snapshot is not None else None)
+    change_basis = previous_manifest or old_manifest
+    change_report = diff_manifests(change_basis, manifest) if change_basis else {}
+    set_driver_subphase("manifest_diff", "completed", diff_started,
+                        old_manifest_available=bool(old_manifest),
+                        changed_count=len(change_report.get("changed", [])),
+                        added_count=len(change_report.get("added", [])),
+                        changed_header_count=len(change_report.get(
+                            "changed_headers", [])))
     set_stage("source_snapshot", "started")
     snapshot_started = time.monotonic()
     metadata = build_metadata or {}
     reused_generation = 0
+    snapshot_strategy = "full_hardlink"
+    snapshot_fallback_reason = ""
     try:
         if (str(metadata.get("kind") or "") == "preview" and
                 metadata.get("overlay_paths")):
@@ -869,36 +1428,149 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
             source_snapshot = _create_overlay_snapshot(
                 root, base, [str(value) for value in metadata["overlay_paths"]],
                 attempt_id)
+            snapshot_strategy = "preview_overlay"
         else:
             reusable = _reusable_published_snapshot(root, revision)
             if reusable is not None:
                 reused_generation, source_snapshot = reusable
+                snapshot_strategy = "reused_published"
+            elif (source_base_snapshot is not None
+                  and previous_revision == revision):
+                source_snapshot = source_base_snapshot
+                snapshot_strategy = "reused_snapshot_revision"
             else:
-                source_snapshot = _create_source_snapshot(
-                    root, source_mirror, attempt_id)
+                replacement_paths = (
+                    list(change_report.get("changed", []))
+                    + list(change_report.get("added", []))
+                    + [str(item.get("to") or "")
+                       for item in change_report.get("renamed", [])]
+                    + list(change_report.get("changed_headers", []))
+                    + list(change_report.get("added_headers", [])))
+                removed_paths = (
+                    list(change_report.get("removed", []))
+                    + [str(item.get("from") or "")
+                       for item in change_report.get("renamed", [])]
+                    + list(change_report.get("removed_headers", [])))
+                previous = source_base_snapshot
+                expected_hashes = {
+                    str(item.get("path")): str(item.get("sha256"))
+                    for collection in (manifest.get("sources", []),
+                                       manifest.get("headers", []))
+                    for item in collection
+                    if item.get("path") and item.get("sha256")}
+                if (previous is not None and replacement_paths + removed_paths
+                        and len(replacement_paths) + len(removed_paths) <= 256):
+                    try:
+                        source_snapshot = _create_junction_overlay_snapshot(
+                            root, previous, source_mirror,
+                            replacement_paths, removed_paths, attempt_id,
+                            expected_hashes)
+                        snapshot_strategy = "junction_overlay"
+                    except (OSError, RuntimeError, ValueError) as error:
+                        snapshot_fallback_reason = str(error)[:300]
+                        source_snapshot = _create_source_snapshot(
+                            root, source_mirror, attempt_id)
+                else:
+                    if previous is None:
+                        snapshot_fallback_reason = "no matching published base snapshot"
+                    elif not replacement_paths and not removed_paths:
+                        snapshot_fallback_reason = "no source path delta"
+                    else:
+                        snapshot_fallback_reason = "delta exceeds 256 paths"
+                    source_snapshot = _create_source_snapshot(
+                        root, source_mirror, attempt_id)
+        if str(metadata.get("kind") or "") != "preview":
+            manifest_archive_started = time.monotonic()
+            try:
+                _write_snapshot_manifest(source_snapshot, manifest)
+            except (OSError, RuntimeError, TypeError, ValueError) as error:
+                set_driver_subphase(
+                    "source_manifest_archive", "failed", manifest_archive_started,
+                    fail_open=True, error=str(error)[:300])
+            else:
+                set_driver_subphase(
+                    "source_manifest_archive", "completed", manifest_archive_started,
+                    revision=revision,
+                    bytes=(source_snapshot.parent / "source-manifest.json").stat().st_size)
     except (OSError, RuntimeError, ValueError) as error:
         return fail_attempt(f"source snapshot failed: {error}",
                             failed_phase="source_snapshot")
     set_stage("source_snapshot", "completed",
               duration_ms=round((time.monotonic() - snapshot_started) * 1000, 3),
               path=str(source_snapshot.relative_to(root)),
-              reused_generation=reused_generation or None)
+              reused_generation=reused_generation or None,
+              strategy=snapshot_strategy,
+              fallback_reason=snapshot_fallback_reason or None)
     progress["source_snapshot"] = str(source_snapshot.relative_to(root))
     driver_phase_started = time.monotonic()
     set_driver_subphase("snapshot_prune", "started", driver_phase_started)
     pruned_snapshots = _prune_snapshots(
-        root, 5, protect_attempts=[source_snapshot.parent.name])
+        root, 5, protect_attempts=[source_snapshot.parent.name],
+        attempt_id=attempt_id, timing_path=timing_path)
     set_driver_subphase("snapshot_prune", "completed", driver_phase_started,
-                        removed_count=pruned_snapshots)
-    driver_phase_started = time.monotonic()
-    set_driver_subphase("manifest_diff", "started", driver_phase_started)
-    change_report = diff_manifests(old_manifest, manifest) if old_manifest else {}
-    set_driver_subphase("manifest_diff", "completed", driver_phase_started,
-                        old_manifest_available=bool(old_manifest),
-                        changed_count=len(change_report.get("changed", [])),
-                        added_count=len(change_report.get("added", [])),
-                        changed_header_count=len(change_report.get(
-                            "changed_headers", [])))
+                        deferred_count=pruned_snapshots,
+                        background_cleanup=True)
+
+    # Codegen checks are correctness gates, but running both Python generators
+    # before every manifest scan makes a true no-op pay their full cost. The
+    # manifest is now validated and written, so key each successful check by
+    # its complete direct inputs/outputs; packet registry also keys on the
+    # complete source manifest because its reference scan covers all sources.
+    codegen_cache_path = root / ".dev" / "codegen-validation-cache.json"
+    prior_codegen_cache = _read_json(codegen_cache_path)
+    cached_checks = (prior_codegen_cache.get("checks", {})
+                     if prior_codegen_cache.get("schema") == _CODEGEN_CACHE_SCHEMA
+                     and isinstance(prior_codegen_cache.get("checks"), dict)
+                     else {})
+    new_checks = dict(cached_checks)
+    validated_this_attempt: dict[str, str] = {}
+    for script in ("resident_state_codegen.py", "packet_registry_codegen.py"):
+        stage_name = f"codegen:{script}"
+        fingerprint = _codegen_validation_fingerprint(root, script, revision)
+        if fingerprint and cached_checks.get(script) == fingerprint:
+            set_stage(stage_name, "started", cache_hit=True,
+                      validation_fingerprint=fingerprint[:16])
+            set_stage(stage_name, "completed", duration_ms=0.0, exit_code=0,
+                      cache_hit=True, validation_fingerprint=fingerprint[:16])
+            validated_this_attempt[script] = fingerprint
+            continue
+
+        result = run_stage(
+            stage_name,
+            [sys.executable, str(root / "devscripts" / script), "--check"],
+            timeout=_env_float("MIMITA_CODEGEN_TIMEOUT", 300.0))
+        if result == 124:
+            return fail_attempt(f"codegen timeout: {script}",
+                                failed_phase="codegen_timeout")
+        if result != 0:
+            return fail_attempt(f"codegen check failed: {script}", exit_code=result)
+        if fingerprint:
+            verified_fingerprint = _codegen_validation_fingerprint(
+                root, script, revision)
+            if verified_fingerprint != fingerprint:
+                return fail_attempt(
+                    f"codegen inputs changed while checking: {script}",
+                    failed_phase="codegen_input_changed")
+            new_checks[script] = fingerprint
+            validated_this_attempt[script] = fingerprint
+
+    if new_checks != cached_checks:
+        cache_started = time.monotonic()
+        set_driver_subphase("codegen_cache_persist", "started", cache_started)
+        try:
+            _write_json(codegen_cache_path, {
+                "schema": _CODEGEN_CACHE_SCHEMA,
+                "checks": new_checks,
+            })
+        except OSError as error:
+            # Cache persistence is optional. A failed write only means the
+            # validated checks will run again on the next attempt.
+            set_driver_subphase("codegen_cache_persist", "failed", cache_started,
+                                error=str(error)[:240])
+        else:
+            set_driver_subphase("codegen_cache_persist", "completed", cache_started,
+                                check_count=len(new_checks))
+
     if change_report:
         change_report["generated_utc"] = _utc_now()
         driver_phase_started = time.monotonic()
@@ -961,12 +1633,23 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
         "--priority", "high",
         "--attempt-context", str(context_path),
     ]
+    linker = str((build_metadata or {}).get("linker") or "auto").strip().lower()
+    if linker not in {"auto", "gnu", "lld"}:
+        return fail_attempt(f"unsupported game DLL linker: {linker}",
+                            failed_phase="linker_selection")
+    command.extend(["--linker", linker])
     if change_report:
         command.extend(["--change-report", str(change_report_path)])
     if str(mode).lower() == "release":
         command.extend(["--build-mode", "release"])
     set_driver_subphase("worker_command_prepare", "completed", driver_phase_started,
                         argument_count=len(command))
+
+    for script, expected_fingerprint in validated_this_attempt.items():
+        if _codegen_validation_fingerprint(root, script, revision) != expected_fingerprint:
+            return fail_attempt(
+                f"codegen inputs changed before worker launch: {script}",
+                failed_phase="codegen_input_changed")
 
     if on_output:
         on_output(f"building whole-game revision {revision[:12]}")
@@ -1057,6 +1740,8 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     })
     if worker_progress.get("build_attempt_id") == attempt_id:
         progress.update(worker_progress)
+    attempt_metrics = _worker_metrics_summary(
+        current, worker_progress, last_attempt, attempt_id, no_op, success)
     summary = {
         "schema_version": 1, "build_attempt_id": attempt_id,
         "source_generation": source_generation, "revision": revision,
@@ -1070,10 +1755,8 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
         "worker_errors": [] if success else worker_errors[:20],
         "worker_output_tail": "" if success else worker_tail,
         "last_attempt_json": str(last_attempt_path.relative_to(root)),
-        "worker_total_seconds": (last_attempt.get("worker_total_seconds")
-                                 or current.get("worker_total_seconds")),
-        "object_scan_seconds": (last_attempt.get("object_scan_seconds")
-                                or current.get("object_scan_seconds")),
+        "worker_total_seconds": attempt_metrics["worker_total_seconds"],
+        "object_scan_seconds": attempt_metrics["object_scan_seconds"],
         "generation": current.get("generation"), "dll": current.get("dll"),
         "code_hash": current.get("code_hash"),
         "timeline_jsonl": str(timing_path.relative_to(root)),
@@ -1091,8 +1774,7 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
             "slowest": worker_progress.get("dependency_check_slowest", []),
         },
         "worker_metrics": {
-            **_worker_metrics_summary(current, worker_progress, last_attempt,
-                                      attempt_id, no_op),
+            **attempt_metrics,
             "compile_sum_ms": worker_progress.get("compile_sum_ms", 0.0),
             "compile_min_ms": worker_progress.get("compile_min_ms"),
             "compile_max_ms": worker_progress.get("compile_max_ms", 0.0),

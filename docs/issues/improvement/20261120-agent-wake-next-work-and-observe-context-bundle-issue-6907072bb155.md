@@ -91,3 +91,9 @@ Measurable target: within 24h, 1/1 controlled fallback exercise completes a turn
 Smallest experiment: one manual wake on a test agent with primary opencode plus an invalid model and fallback codex plus an account-supported model; add only the probe/event recording and request-level model default; verify events show probe pass, one retry, and a completed codex turn. If no supported model is available, record the blocker and keep the issue open rather than declaring fallback complete.
 
 Cross-links: issue-36579a10979a (this defect), issue-91e3384b219b (separate completion-classification proposal already recorded 2026-11-21T22:28Z). Reviewed read-only; no build or runtime change performed.
+
+## Agent suggestion
+
+### 2026-11-22T05:30:37.429Z — build-wait-reviewer
+
+Wake-delivery latency from issue-d2466e463a18 (build-wait-reviewer, 2026-11-22): the single reviewer wake wake-490a2459dd30 was queued 2026-11-22T04:37:03.139Z but the review did not start until 05:17:51.344Z (~40.8 min). .dev/agent-wake/events.jsonl shows: claimed codex 04:37:04.016Z, launched codex pid 2944 04:37:04.275Z, then wake.retry to opencode at 04:46:47.396Z, but opencode claimed/launched only at 05:17:51.310Z/05:17:51.344Z. The codex adapter exited without completing the review and the fallback then waited behind other wake work (wake-d8333c8c5780 was dispatched at 04:37:04.361Z for a different issue). Queue-once holds, but the one-minute wait-feedback loop actually took ~41 min. Suggested: bound adapter handoff/concurrency so a failed primary does not delay the fallback by tens of minutes, and record a wake delivery deadline/age. Reviewer: build-wait-reviewer.

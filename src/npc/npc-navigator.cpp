@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <limits>
 #include <string>
+#include <unordered_map>
 
 #include "npc/npc.h"
 #include "npc/npc-navigation.h"
@@ -663,7 +664,26 @@ glm::vec3 NpcNavigator::updateAreaEscape(const Npc& npc, const World& world,
     }
 
     const float radius = std::max(1.0f, settings.areaEscapeRadiusMeters);
+    glm::vec3 contactEscape(0.0f);
+    int staticContactNormals = 0;
+    for (const auto& contact : npc.body.movementContacts) {
+        if (contact.source != MovementContactSource::StaticWorld ||
+            std::fabs(contact.normal.z) > 0.5f)
+            continue;
+        glm::vec3 normal(contact.normal.x, contact.normal.y, 0.0f);
+        if (glm::length(normal) <= 0.001f) continue;
+        contactEscape += glm::normalize(normal);
+        ++staticContactNormals;
+    }
+    const float escapeDelay = staticContactNormals >= 1 &&
+                              glm::length(contactEscape) > 0.1f
+        ? std::min(1.0f, std::max(0.25f, settings.areaEscapeSeconds))
+        : std::max(1.0f, settings.areaEscapeSeconds);
+    const bool tryingToMove = glm::length(npc.lastMoveInput) > 0.1f;
     if (areaEscapeActive) {
+        // Contacts can alternate across adjacent faces while an NPC is still
+        // passing a corner. Keep the chosen breakout stable for its bounded
+        // hold instead of turning every new contact into a heading reversal.
         areaEscapeTimeRemaining -= dt;
         if (areaEscapeTimeRemaining > 0.0f)
             return areaEscapeDirection;
@@ -678,14 +698,24 @@ glm::vec3 NpcNavigator::updateAreaEscape(const Npc& npc, const World& world,
     // at its objective, holding, waiting) is not trapped and must not be pushed
     // away. A passing actor leaves the radius and resets; an oscillating actor
     // keeps trying to move and stays inside, so the timer grows.
-    const bool tryingToMove = glm::length(npc.lastMoveInput) > 0.1f;
-    if (!tryingToMove || horizontalDistance(npc.body.pos, areaAnchor) > radius) {
+    const bool driftedFromAnchor =
+        horizontalDistance(npc.body.pos, areaAnchor) > radius;
+    if (!tryingToMove) {
         areaAnchor = npc.body.pos;
         areaTimer = 0.0f;
+    } else if (driftedFromAnchor) {
+        // A wide local loop can leave the small anchor radius while still
+        // failing to advance its committed direction. Preserve the trap timer
+        // during failed-progress ticks so drift cannot hide a corner.
+        areaAnchor = npc.body.pos;
+        if (commitmentProgressFailed)
+            areaTimer += dt;
+        else
+            areaTimer = 0.0f;
     } else {
         areaTimer += dt;
     }
-    if (areaTimer < std::max(1.0f, settings.areaEscapeSeconds))
+    if (areaTimer < escapeDelay)
         return glm::vec3(0.0f);
 
     // Breakout. Pick the open direction that maximizes distance from the trap
@@ -693,7 +723,10 @@ glm::vec3 NpcNavigator::updateAreaEscape(const Npc& npc, const World& world,
     // movement is maximized instead of pacing.
     glm::vec3 away = npc.body.pos - areaAnchor;
     away.z = 0.0f;
-    if (glm::length(away) < 0.5f) {
+    const bool useContactEscape = glm::length(contactEscape) > 0.1f;
+    if (useContactEscape) {
+        away = glm::normalize(contactEscape);
+    } else if (glm::length(away) < 0.5f) {
         const glm::vec3 facing(npc.currentFacing.x, npc.currentFacing.y, 0.0f);
         away = glm::length(facing) > 0.001f ? glm::normalize(facing)
                                             : glm::vec3(1.0f, 0.0f, 0.0f);
@@ -713,6 +746,8 @@ glm::vec3 NpcNavigator::updateAreaEscape(const Npc& npc, const World& world,
     constexpr int SAMPLES = 16;
     glm::vec3 best = away;
     float bestScore = -1e9f;
+    const float escapeBias = std::max(0.5f, settings.forwardBias);
+    const float goalBias = std::max(4.0f, settings.targetProgressBias);
     for (int i = 0; i < SAMPLES; ++i) {
         const float ang = (float)i * (6.2831853f / (float)SAMPLES);
         const glm::vec3 dir(std::cos(ang), std::sin(ang), 0.0f);
@@ -725,8 +760,9 @@ glm::vec3 NpcNavigator::updateAreaEscape(const Npc& npc, const World& world,
             open = d;
         }
         const float score = open
-                          + glm::dot(dir, away) * 6.0f
-                          + (glm::length(toGoal) > 0.001f ? glm::dot(dir, toGoal) * 3.0f : 0.0f);
+                          + glm::dot(dir, away) * escapeBias
+                          + (glm::length(toGoal) > 0.001f
+                                 ? glm::dot(dir, toGoal) * goalBias : 0.0f);
         if (score > bestScore) {
             bestScore = score;
             best = dir;
@@ -737,6 +773,20 @@ glm::vec3 NpcNavigator::updateAreaEscape(const Npc& npc, const World& world,
     areaEscapeActive = true;
     areaEscapeTimeRemaining = std::max(0.5f, settings.areaEscapeHoldSeconds);
     areaEscapeStartedThisUpdate = true;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        "npc.area-escape", std::to_string(npc.id),
+        useContactEscape ? "static_contact_escape" : "trap_anchor_escape",
+        static_cast<uint32_t>(now * 60.0f),
+        nlohmann::json{{"actor_id", npc.id},
+                       {"position", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+                       {"area_anchor", {areaAnchor.x, areaAnchor.y, areaAnchor.z}},
+                       {"direction", {best.x, best.y}},
+                       {"contact_escape_dir", {away.x, away.y}},
+                       {"static_contact_normal_count", staticContactNormals},
+                       {"replanned_from_blocked_area_escape", false},
+                       {"direction_source", useContactEscape ? "static_contact_normals" : "trap_anchor"}},
+        __FILE__, __LINE__, __FUNCTION__);
     // Cancel the short-term flip-flop so the breakout is not immediately undone.
     clearLocalCorrection();
     backtrackActive = false;
@@ -1156,6 +1206,47 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
     } else if (!justRetryDelay && recastNavmeshStale && !preservingLocalCorrection) {
         needPlan = true;
         reason = "navmesh_stale";
+    }
+
+    // An actor already inside the goal tolerance has no route to plan. In
+    // particular, avoid asking Recast to query a zero-distance path, which
+    // has caused multi-second fixed-tick stalls in FCS.
+    if (needPlan && horizontalDistance(npc.body.pos, dest) <=
+                        std::max(0.0f, goal.tolerance)) {
+        path.clear();
+        pathGap.clear();
+        pathCapability.clear();
+        pathIndex = 0;
+        lastGoal = dest;
+        hasLastGoal = true;
+
+        const uint32_t reachedTick =
+            static_cast<uint32_t>(npc.sensors.time * 60.0f);
+        static std::unordered_map<uint32_t, uint32_t> lastReachedLogTick;
+        auto lastLog = lastReachedLogTick.find(npc.id);
+        if (lastLog == lastReachedLogTick.end() ||
+            reachedTick >= lastLog->second + 60u) {
+            if (lastReachedLogTick.size() > 128)
+                lastReachedLogTick.clear();
+            lastReachedLogTick[npc.id] = reachedTick;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.nav.goal-reached", std::to_string(npc.id),
+                "replan skipped because destination is already reached",
+                reachedTick,
+                nlohmann::json{{"actor", npc.id},
+                               {"goal_kind", static_cast<int>(goal.kind)},
+                               {"destination_distance_m",
+                                horizontalDistance(npc.body.pos, dest)},
+                               {"goal_tolerance_m", goal.tolerance},
+                               {"replan_reason", reason},
+                               {"recast_query_skipped", true}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        result.valid = true;
+        result.destination = dest;
+        result.waypoint = dest;
+        return result;
     }
 
     double globalGraphMs = 0.0;

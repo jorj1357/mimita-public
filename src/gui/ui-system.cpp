@@ -37,6 +37,7 @@ bool gDebug = false;
 bool gMousePrev = false;
 bool gMouseDown = false;
 bool gMouseClickEdge = false;
+int gMouseClickEdgeFramesRemaining = 0;
 bool gUiEditMode = false;
 int gFrame = 0;
 int gDrawCalls = 0;
@@ -74,6 +75,7 @@ void uiInit(GLFWwindow* win)
 
 void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
 {
+    static bool mouseEdgeLossReportedForPress = false;
     gWindow = win;
     gOwnsHoverInput = ownsHoverInput;
     int framebufferWidth = 0;
@@ -137,8 +139,34 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
     gMouseDown = InputRouter::mouseDown(0);
     // Mouse edge state belongs to the one interactive UI pass. Rendering-only
     // passes must observe the edge without consuming it before buttons run.
-    if (gOwnsHoverInput)
-        gMouseClickEdge = gMouseDown && !gMousePrev;
+    if (gOwnsHoverInput) {
+        if (gMouseDown && !gMousePrev)
+            gMouseClickEdgeFramesRemaining = 2;
+        else if (!gMouseDown)
+            gMouseClickEdgeFramesRemaining = 0;
+        gMouseClickEdge = gMouseDown &&
+            gMouseClickEdgeFramesRemaining > 0;
+    }
+
+    if (!gMouseDown) {
+        mouseEdgeLossReportedForPress = false;
+    } else if (gOwnsHoverInput && gMousePrev &&
+               !mouseEdgeLossReportedForPress &&
+               StructuredLogger::instance().shouldLog(
+                   StructuredCategory::Gui, StructuredLevel::Important)) {
+        mouseEdgeLossReportedForPress = true;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, StructuredLevel::Important,
+            "ui.mouse_edge_rearmed", "UI_MOUSE",
+            "an interactive UI pass observed a held press after an earlier pass advanced mouse history",
+            0,
+            nlohmann::json{{"pass_name", passName ? passName : "unknown"},
+                           {"mouse_down", gMouseDown},
+                           {"mouse_prev", gMousePrev},
+                           {"click_edge", gMouseClickEdge},
+                           {"frame", gFrame}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 
     if (gMouseDown != gMousePrev &&
         StructuredLogger::instance().shouldLog(
@@ -290,6 +318,12 @@ void uiEndFrame()
         Debug::logThrottled(Debug::Category::Render, "ui-frame-complete", DebugConfig::PRINT_INTERVAL, "[UI] Render pass complete drawCalls=%d widgets=%d warnings=%zu\n", gDrawCalls, gWidgets, gWarnings.size());
     if (gOwnsHoverInput)
         gMousePrev = gMouseDown;
+    if (gOwnsHoverInput && gMouseClickEdgeFramesRemaining > 0 &&
+        gMouseDown && gMousePrev) {
+        --gMouseClickEdgeFramesRemaining;
+        if (gMouseClickEdgeFramesRemaining == 0)
+            gMouseClickEdge = false;
+    }
     namespace r = mimita::game::render;
     r::useProgram(0);
     r::enable(r::Capability::DepthTest);

@@ -389,3 +389,123 @@ Proposal (smallest, read-only first): before an issue review writes latency conc
 Measurable target: over the next 10 launch reports after the lint is adopted, zero unflagged rows with `stage_elapsed_ms == elapsed_ms`, and every latency-tracker review includes the lint result plus proof status; tracker proof rows non-zero or explicitly exempted.
 
 Smallest experiment: implement the checker as a standalone read-only script over existing reports (no source change to the dev loop) and run it on the current 40 reports to confirm the baseline counts above; only then wire it into the scheduled review path. Do not edit `dev-loop.py` under this proposal.
+
+## Agent suggestion
+
+### 2026-11-22T04:28:29.826Z — issue-review-sweeper
+
+Process proposal from issue-review-sweeper (wake-45e91846d4b1, 2026-11-22T04:28Z), grounded in the issue-49ded3edbe47 independent review.
+
+Observed evidence: the repo has a periodic tech-debt audit spec plus a read-only scanner (devscripts/tech-debt-audit.py), but no dev-loop hook, scheduled task, or agent task invokes it (only docs/changelog mention it). Over ~48h the scan stayed at 122 findings with 0 triaged and 0 focused tech-debt or duplication issues were filed from it. Raw runs also include the scanner's own regex literals (tech-debt-audit.py:47-50), generated src/host/generated/packet-registry-v1.h, and include/doc-comment matches, so a reader cannot separate new debt from noise.
+
+Proposal (safe, measurable, no authority change):
+- Add `--baseline <counts.json>` and a `--delta` summary to the scanner, plus suppressions for the scanner's own file, src/host/generated/, and include/comment-only matches.
+- Add one bounded cadence task in the existing coordination/dev-loop surface that runs the scanner at most once per N completed sessions, opens at most 3 ranked focused issues (dedupe by kind+path+symbol), and records one summary event.
+
+Measurable target: one cycle classifies 100% of candidates as issue/exempt/not-debt (from 0/122 today); it creates 3-5 focused issues or records explicit exemptions; a second cycle creates 0 duplicate issues; the scan prints a delta and stays under 60s. Smallest experiment: add baseline/delta, run once, manually file the top-3 genuine findings, record elapsed time and duplicate count; only then decide whether the cadence task is worth wiring.
+
+## Context
+
+### 2026-11-22T05:20:37.008Z — cpp-latency-pressure-profile
+
+reproduction: The user asked that a long-running goal remain active across repeated continue turns and that optional diagnostic failures not stop build progress.
+expected_behavior: Agents continue an explicit goal across activations with checkpoints and fail open on optional profiler failures while retaining required build gates.
+acceptance: Gold reference explains the behavior, distinguishes optional diagnostics from build blockers, and records current WPR failure as tooling-only.
+paths: ['docs/gold/20261030_033224-agent-session-handoff-gold.md', 'docs/specs/dev-loop/agent-self-improvement.md']
+evidence: {'wpr': 'wpr -start CPU -filemode failed with 0xc5585011; no build was attempted by this call', 'status': 'optional profiler not integrated in build path'}
+risk: Do not mask required compiler, linker, generated-code, source-coherence, or cache-correctness failures.
+proof_expectation: Documentation review and future long-running goal handoff with one persisted evidence checkpoint
+context_id: ctx-fc9b2656cbcd
+
+## Agent suggestion
+
+### 2026-11-22T05:21:39.046Z — cpp-latency-pressure-profile
+
+User direction 2026-11-22: add a gold practice for continuing an explicit goal across repeated “continue” turns so the user need not restate it, with durable checkpoints and verified evidence. I added RECOMMENDED_PRACTICE to docs/gold/20261030_033224-agent-session-handoff-gold.md: retain goal/constraints/proofs across turns and fresh sessions, continue from current repo state, make progress while waiting, and leave the goal active until acceptance is met. This complements (does not replace) the existing fresh-session handoff guidance. Same user report asks optional diagnostic failures not to fail a build: WPR start returned 0xc5585011 due system-performance policy; this was a manual optional profiler attempt, no game build was invoked or failed. Recommendation: evidence-tool status should be distinct from build status; profiler failure records unavailable and falls back to existing JSONL/psutil, while required codegen/source-coherence/compiler/link/cache checks still fail closed. Metric: optional profiler failure causes zero change to DLL build result and <=1s fallback overhead. Documentation only; no build/behavior proof claimed.
+
+## Agent suggestion
+
+### 2026-11-22T05:26:44.052Z — codex-networking-runtime-proof
+
+Proposal (analysis only, no source/coordination-policy change claimed) from codex-networking-runtime-proof, responding to user context ctx-fc9b2656cbcd: "add gold behavior of pursuing goal mode i think this is great and should do more like this letting ai work for long long times bc thats what id end up doing just sending same thing anyway".
+
+USER INTENT
+The user wants a durable "pursue this goal until done" mode so an agent keeps working across many activations instead of the human re-sending the same instruction. This is the long-horizon autonomy the gold workflow docs/gold/2026-11-21-autonomous-gameplay-investigation-and-proof.md already demonstrates in one activation; it is not yet a persisted, resumable coordination object.
+
+GAP
+The coordination brain has bounded per-activation wake, work sessions, issues, and checkpoints (docs/specs/dev-loop/agent-coordination.md:123,160-183,275), but no first-class GOAL with acceptance, budget, stop conditions, a plan, and self-continuation. `next --mode waiting` picks disjoint filler work; nothing re-wakes an owner to continue the same unblocked goal.
+
+PROPOSED GOAL OBJECT (smallest version)
+- Fields: goal_id, owner agent, linked issue, outcome statement, acceptance, proof expectation, budget (wall-clock + max activations), stop conditions, plan, append-only checkpoint log, state in {active, blocked, met, paused, exhausted}.
+- Commands: `agent-coord goal start|checkpoint|status|pause|resume|stop`.
+- Each checkpoint records: what advanced, exact evidence/build/run IDs, first divergence, next step, blocker, and whether acceptance/proof changed. This reuses the shared-evidence contract (issue-70cbf4d13c02).
+
+CONTINUATION LOOP AND GUARDRAILS
+- While a goal is active and not blocked/met, queue a deduped wake for the OWNER (existing wake dedup key pattern), so the human does not need to re-prompt.
+- Every activation stays bounded (existing per-activation budget). At activation end the agent commits a checkpoint; if there is useful next work it re-queues, otherwise it stops.
+- Stop conditions: acceptance met with verified evidence or a reasoned exemption; a decision that needs human/Class C approval; repeated no-progress (e.g. two checkpoints with no new evidence) marks blocked and escalates to a reviewer/human instead of spinning; budget exhausted marks exhausted and opens/updates an issue.
+- No new authority: goals still honor edit leases, halt/freeze, Class C human approval, and proof gating. A goal may not self-approve completion.
+- `met` requires the issue's proof expectation, so this strengthens rather than bypasses proof-first completion.
+
+DOCUMENTATION
+- Record the pattern as gold (a new docs/gold entry: long-horizon goal pursuit) and reference it from the autonomy classes in docs/specs/dev-loop/agent-self-improvement.md, so "keep working until the outcome is proven, checkpoint and escalate" becomes the preferred behavior.
+
+ACCEPTANCE FOR A FOLLOW-UP
+- A goal started on one issue survives at least three agent activations, produces checkpoints with concrete evidence, and reaches {met|blocked|exhausted} with an auditable trail, without the human re-sending the instruction.
+- A goal with a decision blocker or two no-progress checkpoints stops re-waking and escalates instead of looping.
+
+This is a shared-coordination (Class C) change, so it needs human approval before implementation. This comment proposes the design and claims no edit.
+
+## Agent suggestion
+
+### 2026-11-22T07:34:20.973Z — issue-review-sweeper
+
+Recurrence update to the 2026-11-20T06:45:16.702Z suggestion to validate issue evidence paths on intake. issue-549680e53b26, opened 2026-11-20, still cites logs/2026-11-20/20261120_040807 as its only evidence; that run directory does not exist and logs/2026-11-20 is empty, so its 90-120 FPS / 2368.59 ms observation cannot be reproduced. The current issue lint checks only the eight readiness fields, and readiness accepts any non-empty evidence object, so a dead runtime path passes silently. Smallest experiment: add a read-only --check-evidence-paths mode to issue lint that parses evidence.runtime, related_run, and proof journal_path for open/in_review issues and prints missing or empty paths. Measurable target: on the next sweep, 100 percent of open/in_review issues either resolve every cited runtime path to an existing run directory containing at least one events*.jsonl, or are listed in lint output for correction; zero dead evidence paths pass silently. No source edit or runtime behavior change is claimed here; this is a proposal for the owner of this issue.
+
+## Agent suggestion
+
+### 2026-11-22T08:21:15.567Z — issue-review-sweeper
+
+Sweeper process evidence (2026-11-22, bounded review of issue-a271b0296faa): the issue has 6 tasks and a self-reported `evidence` JSON, yet `proof list --issue issue-a271b0296faa` returns 0 task_proof records, and its recorded "context lint unlinked=0" now measures 153 unlinked. That is missing evidence plus a stale recorded metric surviving ~2 days.
+
+Proposal: have the issue-review sweep (a) flag any high-priority issue whose evidence field is non-empty but has no task_proof record older than 48h, and (b) re-measure a recorded metric when the issue names one (here `context lint`) and append the observed delta.
+
+Measurable target: 0 high-priority issues older than 48h with self-reported evidence and no proof record; every re-measured metric either matches or is flagged stale in the review body.
+
+Smallest experiment: add the lint re-measure and the no-proof flag to one review-sweeper tick, run 3 sweeps, and count flagged issues plus false positives.
+
+## Agent suggestion
+
+### 2026-11-22T09:23:53.600Z — issue-review-sweeper
+
+Process finding from the issue-89c11130189a sweep: implementation and passing tests existed since 2026-11-20, yet the issue stayed new with 4 open tasks and no linked proof for about two days, and 0/27 live work sessions carried issue/task linkage. This is a repeated progress/awareness gap, not a one-off. Measurable target: by the next scheduled issue-review sweep, 0 issues with a referencing changelog and a passing acceptance test remain in new/triaged/assigned without a recorded blocker or next step for more than 24h; report that count on the board. Smallest experiment: add a bounded detector to the scheduled issue review that lists issues whose detail file or changelog references their ID and whose stated test command passes, but whose state is still new/triaged/assigned and older than 24h, append one review or blocker to each, and count the result for one sweep.
+
+## Agent suggestion
+
+### 2026-11-22T09:37:52.857Z — cpp-latency-failure-containment
+
+User asked for gold long-running goal pursuit; this practice already exists in docs/gold/20261030_033224-agent-session-handoff-gold.md, section 'Long-running goals survive turns and session resets': inspect durable goal/coordination/runtime state each activation, continue on 'continue', do the next concrete measurable action, keep an exact checkpoint, and do not stop on optional tool failure. Current goal remains active with many required outcomes; current activation is continuing it and corrected the failure reference to issue-ae248907f1f1. Evidence: existing gold section and persistent goal state; next useful formal proof is evaluate cold-handoff success after a fresh activation using only goal/issue/checkpoint and no repeated user prompt.
+
+## Agent suggestion
+
+### 2026-11-22T10:42:04.611Z — cpp-latency-linker-investigation
+
+Fail-open boundary: the optional presentation DLL nested in EXE setup may fail and must be timed/logged while the required EXE build continues. Required C++ compile/link, generated-code consistency, source snapshot/coherence, dependency-cache freshness, and candidate game-DLL publication remain fail-closed: continuing with a stale/partial candidate would falsely imply the edit is active. Verify each fallback by a forced optional-DLL failure followed by successful required EXE build, then a separate required-DLL failure that reports failure and keeps the prior published generation/runtime unchanged. The current optional DLL negative-cache fingerprint only includes explicitly listed inputs and file/tool metadata; its transitive-header limitation remains a correctness risk until dependency closure is included.
+
+## Agent suggestion
+
+### 2026-11-22T11:56:33.219Z — cpp-latency-next-step
+
+User explicitly reinforced persistent goal work: treat repeated 'continue' as continuation of the same objective, preserve checkpoint/evidence across activations, keep working through measurable gaps, and distinguish optional artifact failures from required correctness gates. The existing gold handoff already documents this; this activation continued from its checkpoint and leaves the edit-to-live goal active and unproven.
+
+## Agent suggestion
+
+### 2026-11-22T12:45:44.246Z — issue-review-sweeper
+
+Process proposal from issue-review-sweeper during the bounded review of issue-6fc8f853a674 (wake-2f88ad4d6436), 2026-11-22. Evidence of a repeatable process gap (missing evidence / avoidable re-review): issue-6fc8f853a674 has existed since 2026-11-20 with 5 tasks, all still state=open and latest_proof=null, even though the primary deliverables (docs/skills/dev-loop-restart-v1.md, the .opencode skill, the ROUTER route, and spec 19.4a) are present. Because no documentation-only evidence or task verification was recorded, the scheduler selected it for another independent review, and this reviewer could only restate that deliverables exist and proof/task state is unrecorded. This wastes review wakes on already-built documentation work. Measurable target: reduce repeat independent-review wakes on issues whose deliverable files already exist but whose tasks carry no evidence. Concretely, get the count of 'deliverable-present, task-open, latest_proof=null' issues selected by the review scheduler to 0 within 5 sweeps, and let owners mark documentation-only tasks done with a reviewed-diff evidence record instead of a runtime proof. Smallest experiment: add a documentation-only evidence path (e.g. `proof exempt` with the changed doc paths plus a short reviewed-diff note is already supported, but no task-level 'doc delivered' verification helper exists). Start by having one owner use the existing `proof task-add`/`proof task-verify` or `proof exempt` on the three documentation tasks of issue-6fc8f853a674, record the skill/route/spec paths as evidence, then observe over the next 5 scheduler sweeps whether issue-6fc8f853a674 and similar documentation issues stop being re-selected; if they do, codify the check; if not, the scheduler's selection query needs a deliverable-exists signal rather than only proof/task state.
+
+## Agent suggestion
+
+### 2026-11-22T14:06:03.248Z — issue-review-sweeper
+
+Evidence-backed development-process proposal from issue-review-sweeper (sweep wake-22c5037b7631, review of issue-4b9f9ef115fe, 2026-11-22). Observed gap: the versioninfo launch-timeout fix landed 2026-11-20 (commit a065471f) and has 23 successful live versioninfo stages plus complete launches, yet 292 completed sessions later its task versioninfo-preflight-fast still has latest_proof=null and the issue was still triaged until this review. Secondary observation: the launcher marks the versioninfo stage successful on returncode==0 alone (devscripts/dev-loop.py:4713-4726); it does not assert VERSIONINFO_BEGIN/END or required JSON keys, so the acceptance clause "returns complete VERSIONINFO output" still needs a human/manual capture. That is both missing evidence and a human-only verification step. Measurable target: (a) 100% of successful versioninfo stages assert VERSIONINFO_BEGIN, VERSIONINFO_END, VERSIONINFO_JSON, and EXECUTABLE_PATH before marking success; (b) any task with >=3 successful live stages of the behavior it fixes has a proof record or a reasoned exemption within one review sweep (currently 0/1 here); (c) sessions-from-fix-to-proof for launch-preflight fixes drops from >292 to <=5. Smallest experiment: patch only the versioninfo stage in devscripts/dev-loop.py to parse stdout markers and, on success, call the existing task-proof record path with launch_id/run_id/build_id; then run one real dev-loop launch and inspect that launch report plus the resulting task proof. Acceptance is a fresh launch report showing asserted markers and a created proof record; a compile or static parse is not behavior proof.

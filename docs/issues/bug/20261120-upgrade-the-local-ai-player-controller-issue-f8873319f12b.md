@@ -107,3 +107,39 @@ Pinned baseline evidence: run 20261120_220344 on EXE 2026-11-20T20:20:51.788061Z
 ### 2026-11-21T20:20:28.563Z — melee-proof-3weapons
 
 Implemented and runtime-proved the first no-target exploration slice on generation 432, run 20261121_201749 (arena1, NPCs deleted): scanner shows player.ai.explore=11 (rate-limited), player.ai.fallback_spawn=0, target_id=0, dash=24, down_dash=17. Task proof task-proof-851e73217692 is proven for the player.ai.explore event. The old 24 fallback spawns and 57-NPC/log inflation are gone from this run. Still unproven: the broader f887 acceptance (every weapon kill, collision stress route, teammate coordination, full human-contract behavior).
+
+## Scheduled independent review
+
+### 2026-11-22T05:33:59.151Z — cpp-latency-pressure-profile
+
+A bounded independent review was queued as wake wake-d3912edaaf57 after 250 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (needs_new_runtime_evidence)
+
+### 2026-11-22T05:49:42.077Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Bounded independent review (2026-11-22T05:3xZ). Read-only: no source edit, no build, no run.
+
+OBSERVED FACTS
+1. Readiness: issue-f8873319f12b reports ready=true, missing=[], 5 tasks, state=triaged, owner=arcade-collision-elite-proof; paths include src/actor/player-ai.cpp.
+2. Proof status: only client-ai-exploration-rate-limited has a proof record, task-proof-851e73217692 (event player.ai.explore, gen432, run 20261121_201749, result=proven, verified 2026-11-21T20:20:13Z). Its recorded source hash for src/actor/player-ai.cpp is cead118584f1703f7603dd0fcd44f887dfd7429db825cae8ca738df2810fb46f; the current file hashes exactly cead1185... (HEAD 9fd637d5, no working-tree diff on player-ai.cpp). The source identity still matches.
+3. Missing proof artifact: the cited journal C:\mimita-v9\logs\2026-11-21\20261121_201749\client-01\events.jsonl does not exist; that run dir now contains only run.json (4,684 B). The other two tdm-ai-exploration runs, 20261121_194824 and 20261121_201209, also contain only run.json. So the one proven slice is source-hash-current but its evidence is no longer independently inspectable.
+4. Remaining tasks: ai-all-weapon-kills and ai-elite-actions have no proof record; the arcade_* proof rows on issue paths (root capsule bounce, capsule sweep/pose, dust2 ramp, actor pairs, client-ai movement, client-ai weapon kills) are all result=unproven with empty journals.
+5. Latest relevant journals: a scan of logs/2026-11-22 found zero player.ai.* events in any run journal. The latest run 20261122_052434 is profile=npc-navigation on dust2cyberiav4 (server NPC AI), not the client AI controller. No new client-AI runtime evidence exists since 2026-11-21T20:17Z.
+6. Read-only source inspection: HEAD player-ai.cpp contains hostile/unknown-team filtering (lines 84-111), pursuit of the nearest occluded hostile (197-207), route following when !hasLineOfSight (750/762), per-weapon equip visiting (530-588), and jump/dash/down-dash/freeze/air-strafe inputs (947-994). No uncommitted player-ai.cpp changes.
+
+INFERENCE / UNCERTAINTY
+- The earlier static-review gaps (route plan ignored when occluded, 60m target cap discarding cover targets, no weapon rotation) appear addressed in current source, but code presence is not behavior proof.
+- Absence of player.ai events in 2026-11-22 journals most likely reflects profiles that do not enable the client AI controller, not a regression.
+- Confidence: high that source contains these paths; low/unproven that runtime acceptance is met (no fresh pinned combat run, no retained journals).
+
+CONTRARY EVIDENCE
+- The exploration proof remains marked proven and its source hash still matches HEAD, so there is no evidence of code invalidation; the gap is artifact retention, not a demonstrated failure.
+- That exploration run used --no-npcs (run.json args), so even with its journal it could not evidence teammate targeting, wall-only tracking, or per-weapon kills. It only covers no-target exploration.
+
+NEXT DISCRIMINATING CHECK
+On the next published pinned artifact (record EXE sha + game generation), start one bounded tdm-ai-exploration run with opposing NPCs present on arena1 (not --no-npcs), exercise 2-3 minutes, and inspect the pinned client+server events: require player.ai.state/action with a nonzero hostile target plus has_line_of_sight true/false split, observed dash/down-dash/jump/freeze/air-strafe flags, and kill.reward attributable to the AI actor for at least one weapon (player.ai.equip shows rotation). First divergence to locate: no opposing NPCs in roster, target_id stays 0, or no fire while the target has LOS. Capture the journal path into the proof record before retention can prune it.
+
+VERDICT: not ready to close; one exploration slice proven and source-current, broader acceptance unproven and currently unverifiable due to missing journals.

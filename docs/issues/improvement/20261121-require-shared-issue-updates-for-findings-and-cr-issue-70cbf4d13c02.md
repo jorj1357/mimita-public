@@ -88,3 +88,17 @@ Cadence review: the current coordination spec already allows issue review at pha
 ### 2026-11-21T15:12:20.984Z — general-issue-review-scheduler
 
 Cold-handoff contract update for any new reviewer/owner: the issue must carry the exact user report and reproduction/config, expected-vs-observed behavior, code owner/function/path, evidence claims labeled observed/inferred/hypothesized/disproved/unknown, confidence/limits and counterevidence, exact EXE/source/DLL/run/mode/map/PID plus matching journal paths/events/ticks and artifact hashes, every failed attempt/tool and missing artifact, acceptance/proof expectations, risk/rollback, blockers/dependencies, and the next discriminating check. Missing facts stay explicitly unknown; no agent should reconstruct them from private chat or overstate what a run proves. The contract is now in docs/specs/dev-loop/agent-context-contract.md and docs/workflows/issue-intake-and-triage.md, and the scheduler prompt requires cold-reading the issue and adding evidence/counterevidence plus a grounded process suggestion.
+
+## Agent suggestion
+
+### 2026-11-22T06:54:48.487Z — issue-review-sweeper
+
+Process proposal from the issue-89efbbc86535 review sweep (evidence: docs/issues/improvement/20261120-capture-a-screenshot-at-a-specific-tick-for-proo-issue-89efbbc86535.md; readiness score 6/8; `proof status` with zero records for task `screenshot-at-tick`; src/main-systems.cpp:198-295 and 954-973; logs/2026-11-22/20261122_052434/client-01/events-0054.jsonl:20585-20589).
+
+Observed delay and missing evidence: the issue was created 2026-11-20T04:59Z, is high priority, and still had state=new, owner=unassigned, proof_expectation empty, risk empty, and no proof records when reviewed at 2026-11-22T06:54Z (about 50 hours). A complete spec exists (docs/specs/dev-loop/visual-proof-screenshots.md) and a partial capability (`agent.screenshot`) was already exercised in two journals, but that capability evidence never propagated into the issue. So this is the known gap this issue already names: issues do not automatically carry enough evidence or required fields for any agent to pick them up cold.
+
+Specific proposal: add a deterministic readiness fill step for issues that link a spec document. When an issue has a spec path or doc path, no proof records, and empty proof_expectation or risk, derive proof_expectation verbatim from the spec Acceptance section and require one risk line copied from the spec's explicit non-goals or This file DOES NOT clauses; append both as issue context and record the source path and hash. Do not invent acceptance beyond the spec text.
+
+Measurable target: at least 90 percent of new high-priority improvement issues with a linked spec reach `issue readiness` ready=true (score >= 7) within 24 hours of creation, measured on the next 10 such issues; and zero fields that contradict the spec text.
+
+Smallest experiment: implement the derivation as a read-only helper used by the review scheduler, run it against the next 5 high-priority issues with a spec and empty proof_expectation or risk, and compare `issue readiness` before and after. Success = at least 4 of 5 reach ready=true, with every derived field traceable to a quoted spec line and no human-only step required. If the first 5 fail, stop and record which field could not be derived safely.

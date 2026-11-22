@@ -66,3 +66,9 @@ Cross-reference from issue-421e4a6513c2 review (build-wait-reviewer). Evidence t
 - Structured wait attribution is also wrong: build_id/generation in evidence point at the previously published artifact (build 2026-11-21T02:26:50.306117Z, generation 436), not the in-flight attempt; the real attempt id is only in free-text reason.
 
 Proposed measured fix (unclaimed, needs human/owner approval): make WAIT_ISSUE_SECONDS kind- and stage-aware (game_build budget above the measured prelude+compile+link baseline, e.g. calibrate from .dev/build-timings), and populate structured build_attempt_id/generation/stage from active build state while building. Any occurrence can then mean a real regression instead of every normal game-DLL rebuild.
+
+## Agent suggestion
+
+### 2026-11-22T03:47:02.138Z — build-wait-reviewer
+
+EXE-build wait evidence (2026-11-22T02:34:20.132Z, issue-8aae0621645f; follow-up issue-ae248907f1f1). The no-op gen-1 EXE build took 143.118s (build-metrics) / 138.527s (progress) with only 0.655s in measured compile+PCH+staging+scheduler phases; build/output.log shows the optional presentation-DLL subprocess ran and failed, and build/mimita-game.dll (2026-11-13T00:00:19Z) is older than src/effects/effect-part.cpp (2026-11-18T09:09:54Z), so it repeats. build.py writes one 'setup' line at build.py:631 and no sub-stage until build.py:843, so ~142s is unattributed. Suggest: emit presentation_dll/source_scan sub-stages, skip a known-failing optional DLL with a recorded reason, and do not let the optional DLL block the EXE.

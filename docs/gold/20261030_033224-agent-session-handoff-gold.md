@@ -120,6 +120,39 @@ This practice is confirmed by repeated use in this project's AI workflow. It is 
 
 The honest claim is smaller and still useful: when a session has accumulated unrelated work and repeated compaction, a fresh session plus a factual handoff produces cleaner work than continuing to compress the same session.
 
+## Long-running goals survive turns and session resets
+
+- Status: `RECOMMENDED_PRACTICE` — requested by the project owner and supported by this latency investigation; not yet a controlled measure of agent completion quality.
+- Audience: agents pursuing a user-authorized goal across multiple turns or work activations.
+- Purpose: keep one durable objective moving for as long as needed, including when the user says only “continue,” without requiring them to repeat the whole request.
+
+Treat a follow-up such as “continue” as steering for the active goal unless the user clearly cancels it or asks for an incompatible objective. Carry forward the original target, later clarifications, safety constraints, decisions, completed work, verified evidence, and unresolved gaps. At each activation:
+
+1. Read the current goal and check the coordination brain, user context, build/run status, active leases, and proofs.
+2. Continue from the newest verified repository state. Do not redo completed work, trust stale memory over current files, or treat a prior attempt as proof of success.
+3. Make the next concrete action advance the goal. While a dependency or build is waiting, do useful independent investigation, measurement, or issue updates; do not wait silently.
+4. Record a short checkpoint with exact artifacts, measurements, failed attempts, uncertainty, and the next discriminating action. A fresh session may take over from that checkpoint without making the user restate the goal.
+5. Keep the goal active while required outcomes remain. A failed optional tool, an elapsed-time boundary, a context reset, or one successful partial optimization does not complete the goal. Mark it complete only when its stated acceptance is met and the required evidence exists; record the remaining blocker if progress needs user input or an external change.
+
+This practice supports long work while retaining the fresh-session handoff above: continuity belongs in the explicit goal, issue, and checkpoint, not in an indefinitely growing chat transcript.
+
+## Optional tools and accelerators fail open
+
+- Status: `RECOMMENDED_PRACTICE` — based on the WPR permission failure and the optional presentation-DLL failure observed in the MiMITA latency investigation.
+- Audience: agents and tools adding optional profilers, CPU samplers, tracing, or accelerated build/reload paths to a workflow.
+- Purpose: keep failure of an optional capability from failing an otherwise valid primary build, while making degraded or missing live-reload behavior explicit.
+
+Keep each optional capability separate from the primary build result:
+
+- If an optional profiler cannot start, record its exact error and status as unavailable, continue the build, and use a safe evidence fallback such as existing stage timings or process-level sampling.
+- If an optional fast build or reload artifact fails, let the required EXE or DLL build continue when it remains independently valid. Record the failed artifact, error, duration, and attempt ID; suppress unchanged repeated failures for a bounded period, while allowing changed inputs or an explicit retry to run again.
+- Do not claim a requested live behavior is active when the failed optional artifact was the only path that could activate it. Report the primary build result, optional-path result, and live activation result separately; use the supported cold or existing-runtime fallback only when that fallback is valid for the requested change.
+- A profiler or optional fast-path failure must not fail an otherwise valid required build or report the goal blocked when safe fallback evidence or execution remains available.
+- Preserve failures in required correctness gates. Compiler, linker, generated-source validation, source-coherence, and cache-freshness failures still fail the build; fail-open applies only to optional capabilities whose failure leaves a valid primary result.
+- Report build, optional-capability, diagnostic, and activation statuses separately so “EXE succeeded, presentation DLL unavailable, live reload not activated” is unambiguous.
+
+In this investigation, `wpr -start CPU -filemode` returned `0xc5585011` because Windows would not enable system-performance profiling policy. WPR did not start recording and no game build was attempted as part of that call. The investigation continued using the dev-loop timing JSONL, runtime journal, and a Python/psutil process sample. This was a failed optional measurement tool, not a failed build.
+
 ## Related project documents
 
 - `AGENTS.md` — permanent working rules and evidence gates.

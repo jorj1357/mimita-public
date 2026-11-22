@@ -958,3 +958,5 @@ GetMimitaModuleAPI(std::uint32_t abiVersion)
 {
     return abiVersion == mimita_module::ABI_VERSION ? &gModule.base : nullptr;
 }
+
+// Build latency probe: stable module identity cache reuse; no behavior change.

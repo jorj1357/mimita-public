@@ -115,6 +115,7 @@ BUILD_DIR = os.path.join(ROOT, "build")
 PROGRESS_PATH = os.path.join(BUILD_DIR, "progress.json")
 BUILD_MONOTONIC_START = time.monotonic()
 PHASE_TIMINGS = {}
+PHASE_DETAILS = {}
 _PROGRESS_LOCK = threading.RLock()
 _LAST_CURRENT_PROGRESS = 0.0
 # OBJ_DIR and PCH_OUTPUT are set per build mode after MODE is resolved below.
@@ -159,6 +160,7 @@ def write_build_metrics(result, link_reason=""):
             "phase_seconds": {
                 key: round(value, 3) for key, value in PHASE_TIMINGS.items()
             },
+            "phase_details": PHASE_DETAILS,
             "ccache_hits": cache.get("direct_cache_hit", 0) -
                 CCACHE_START_STATS.get("direct_cache_hit", 0),
             "ccache_misses": cache.get("direct_cache_miss", 0) -
@@ -402,6 +404,7 @@ def write_progress(phase, **fields):
         "phase_seconds": {
             key: round(value, 3) for key, value in PHASE_TIMINGS.items()
         },
+        "phase_details": PHASE_DETAILS,
     }
     payload.update(fields)
     with _PROGRESS_LOCK:
@@ -646,31 +649,167 @@ CCACHE_START_STATS = ccache_stats()
 
 start_time = time.time()
 
-# Presentation DLL is an optional fast path. It must never block or fail the
-# authoritative EXE build, and it only runs when one of its own inputs changed.
+# The legacy presentation DLL is an optional fast path. A failed attempt must
+# not fail the authoritative EXE build or repeat for every unrelated edit.
+# The cooldown is deliberately bounded; source/toolchain changes invalidate
+# it immediately, and MIMITA_RETRY_PRESENTATION_DLL=1 forces a retry.
 game_dll = os.path.join(ROOT, "build", "mimita-game.dll")
 game_dll_inputs = [
     os.path.join(ROOT, "src", "effects", "effect-part.cpp"),
     os.path.join(ROOT, "src", "hot-reload", "quick-hit-debug-visual.cpp"),
     os.path.join(ROOT, "src", "hot-reload", "game-api.h"),
 ]
+game_dll_builder = os.path.join(ROOT, "build_game_dll.py")
+game_dll_state_path = os.path.join(ROOT, ".dev", "presentation-dll-attempt.json")
+game_dll_retry_cooldown_s = 30 * 60
+force_game_dll_retry = os.environ.get("MIMITA_RETRY_PRESENTATION_DLL") == "1"
+
 game_dll_needed = not os.path.isfile(game_dll)
 if not game_dll_needed:
     dll_mtime = os.path.getmtime(game_dll)
-    game_dll_needed = any(os.path.isfile(path) and os.path.getmtime(path) > dll_mtime
-                          for path in game_dll_inputs)
-if game_dll_needed:
+    game_dll_needed = any(
+        os.path.isfile(path) and os.path.getmtime(path) > dll_mtime
+        for path in game_dll_inputs)
+
+game_dll_fingerprint_rows = []
+for path in [*game_dll_inputs, game_dll_builder,
+             os.path.join(ROOT, "build_toolchain.py"), __file__, COMPILER]:
+    try:
+        stat = os.stat(path)
+        signature = [stat.st_size, stat.st_mtime_ns]
+    except OSError:
+        signature = None
+    game_dll_fingerprint_rows.append((os.path.relpath(path, ROOT), signature))
+game_dll_fingerprint = hashlib.sha256(json.dumps(
+    game_dll_fingerprint_rows, sort_keys=True, separators=(",", ":")
+).encode("utf-8")).hexdigest()
+
+if force_game_dll_retry:
+    game_dll_needed = True
+
+previous_game_dll_attempt = read_json(game_dll_state_path)
+failed_at = previous_game_dll_attempt.get("failed_at_epoch")
+try:
+    failure_age_s = time.time() - float(failed_at)
+except (TypeError, ValueError):
+    failure_age_s = game_dll_retry_cooldown_s
+cached_game_dll_failure = (
+    not force_game_dll_retry
+    and game_dll_needed
+    and previous_game_dll_attempt.get("outcome") == "failed"
+    and previous_game_dll_attempt.get("fingerprint") == game_dll_fingerprint
+    and 0 <= failure_age_s < game_dll_retry_cooldown_s)
+
+if not game_dll_needed:
+    PHASE_DETAILS["presentation_dll"] = {
+        "outcome": "up_to_date", "elapsed_s": 0.0,
+    }
+    write_progress("presentation_dll", presentation_dll_outcome="up_to_date",
+                   presentation_dll_elapsed_s=0.0)
+elif cached_game_dll_failure:
+    cached_error = str(
+        previous_game_dll_attempt.get("error") or "unknown failure")
+    retry_after_s = max(0.0, game_dll_retry_cooldown_s - failure_age_s)
+    PHASE_DETAILS["presentation_dll"] = {
+        "outcome": "cached_failure_skip", "elapsed_s": 0.0,
+        "previous_error": cached_error,
+        "retry_after_s": round(retry_after_s, 3),
+    }
+    print("[HOT RELOAD] optional presentation DLL skipped after a recent "
+          f"failure ({failure_age_s:.1f}s old, "
+          f"exit={previous_game_dll_attempt.get('exit_code', 'unknown')}); "
+          "continuing with the EXE build", flush=True)
+    write_progress(
+        "presentation_dll", presentation_dll_outcome="cached_failure_skip",
+        presentation_dll_elapsed_s=0.0,
+        presentation_dll_previous_error=cached_error,
+        presentation_dll_retry_after_s=retry_after_s)
+else:
     dll_environment = os.environ.copy()
     dll_environment["MIMITA_BUILD_LOCK_PARENT_PID"] = str(os.getpid())
     dll_creationflags = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
                          if os.name == "nt" else 0)
-    game_dll_build = subprocess.run(
-        [sys.executable, os.path.join(ROOT, "build_game_dll.py")],
-        env=dll_environment,
-        creationflags=dll_creationflags,
-    )
-    if game_dll_build.returncode != 0:
-        print("[HOT RELOAD] presentation DLL failed; continuing with the EXE build")
+    dll_started = time.monotonic()
+    def record_dll_failure(error, elapsed_s, exit_code=None):
+        detail = {
+            "outcome": "failed", "elapsed_s": round(elapsed_s, 3),
+            "error": str(error),
+        }
+        if exit_code is not None:
+            detail["exit_code"] = int(exit_code)
+        PHASE_TIMINGS["presentation_dll_s"] = elapsed_s
+        PHASE_DETAILS["presentation_dll"] = detail
+        marker = {
+            "schema": 1, "outcome": "failed",
+            "fingerprint": game_dll_fingerprint,
+            "failed_at_epoch": time.time(),
+            "exit_code": exit_code, "error": str(error),
+            "elapsed_s": round(elapsed_s, 3),
+        }
+        try:
+            write_json_atomic(game_dll_state_path, marker)
+        except OSError:
+            pass
+        print("[HOT RELOAD] optional presentation DLL failed "
+              f"({error}, {elapsed_s:.3f}s); continuing with the EXE build",
+              flush=True)
+        write_progress(
+            "presentation_dll", presentation_dll_outcome="failed",
+            presentation_dll_elapsed_s=round(elapsed_s, 3),
+            presentation_dll_error=str(error),
+            presentation_dll_exit_code=exit_code)
+
+    PHASE_DETAILS["presentation_dll"] = {
+        "outcome": "building", "elapsed_s": 0.0,
+    }
+    write_progress("presentation_dll", presentation_dll_outcome="building",
+                   presentation_dll_elapsed_s=0.0)
+    try:
+        dll_process = subprocess.Popen(
+            [sys.executable, game_dll_builder], env=dll_environment,
+            creationflags=dll_creationflags)
+    except OSError as error:
+        record_dll_failure(f"could not start build_game_dll.py: {error}", 0.0)
+    else:
+        dll_last_progress = dll_started
+        while dll_process.poll() is None:
+            time.sleep(0.5)
+            now = time.monotonic()
+            dll_elapsed_s = now - dll_started
+            PHASE_DETAILS["presentation_dll"] = {
+                "outcome": "building", "elapsed_s": round(dll_elapsed_s, 3),
+                "pid": dll_process.pid,
+            }
+            if now - dll_last_progress >= 1.0:
+                write_progress(
+                    "presentation_dll", presentation_dll_outcome="building",
+                    presentation_dll_elapsed_s=round(dll_elapsed_s, 3),
+                    presentation_dll_pid=dll_process.pid)
+                dll_last_progress = now
+        dll_elapsed_s = time.monotonic() - dll_started
+        dll_exit_code = int(dll_process.returncode or 0)
+        if dll_exit_code != 0:
+            record_dll_failure(
+                f"build_game_dll.py exited with code {dll_exit_code}",
+                dll_elapsed_s, dll_exit_code)
+        else:
+            PHASE_TIMINGS["presentation_dll_s"] = dll_elapsed_s
+            PHASE_DETAILS["presentation_dll"] = {
+                "outcome": "success", "elapsed_s": round(dll_elapsed_s, 3),
+            }
+            marker = {
+                "schema": 1, "outcome": "success",
+                "fingerprint": game_dll_fingerprint,
+                "completed_at_epoch": time.time(),
+                "elapsed_s": round(dll_elapsed_s, 3),
+            }
+            try:
+                write_json_atomic(game_dll_state_path, marker)
+            except OSError:
+                pass
+            write_progress(
+                "presentation_dll", presentation_dll_outcome="success",
+                presentation_dll_elapsed_s=round(dll_elapsed_s, 3))
 
 # Module DLLs are built on demand by the running game's ModuleHost. The EXE
 # build must not compile every module: that serializes the whole machine and

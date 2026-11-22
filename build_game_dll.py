@@ -87,9 +87,12 @@ command += [
 ]
 
 print("[HOT RELOAD] rebuilding DLL")
-result = run_tool(command, cwd=ROOT)
+result = run_tool(command, cwd=ROOT, capture_output=True, text=True)
 if result.returncode != 0:
-    print("[HOT RELOAD] reload failed")
+    if result.stdout:
+        print(result.stdout.rstrip(), file=sys.stderr, flush=True)
+    print(f"[HOT RELOAD] reload failed: compiler exit={result.returncode}",
+          file=sys.stderr, flush=True)
     sys.exit(result.returncode)
 
 os.replace(STAGING_DLL, OUTPUT_DLL)

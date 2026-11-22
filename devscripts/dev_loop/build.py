@@ -61,15 +61,71 @@ def latest_artifact_matches(root: Path, loop) -> tuple[str, str, Path] | None:
     return artifact_id, folder, artifact
 
 
+def published_source_identity(root: Path, loop) -> tuple[dict, int] | None:
+    """Return the source identity recorded for the latest published EXE.
+
+    Game-DLL-only edits advance the shared source generation without making
+    the EXE stale. The identity is provenance for that artifact, not a claim
+    about the current worktree. The canonical build result decides whether the
+    EXE inputs are still a no-op; reusing provenance avoids several full-tree
+    Git scans in that common case.
+    """
+    folder = getattr(loop, "latest_build_folder", "") or ""
+    if not folder:
+        return None
+    artifact = root / ".dev" / "builds" / folder
+    try:
+        identity = json.loads((artifact / "build-identity.json").read_text(
+            encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(identity, dict):
+        return None
+    if str(identity.get("artifact_id") or "") != str(
+            getattr(loop, "latest_build", "") or ""):
+        return None
+    source = identity.get("source_at_publish") or identity.get(
+        "source_at_build_start")
+    if not isinstance(source, dict) or not source.get("revision") or not source.get(
+            "worktree_sha256"):
+        return None
+    try:
+        source_generation = int(identity.get("source_generation"))
+    except (TypeError, ValueError):
+        return None
+    return dict(source), source_generation
+
+
 def run_build(loop, requested_generation: int, request_ids: list[str], mode: str,
               *, root: Path, make_artifact_id, publish_build, find_ccache,
               creationflags: int, hidden_startupinfo) -> None:
     started = time.monotonic()
+    with loop.lock:
+        source_generation_at_start = int(loop.generation)
+    identity_phase_started = time.monotonic()
+    loop._record_build_progress({
+        "phase": "source_identity",
+        "elapsed_s": 0.0,
+        "message": "checking published EXE source identity",
+    })
     try:
-        source_at_start = source_identity(root)
+        source_at_start = None
+        source_identity_source_generation = source_generation_at_start
+        published_identity = published_source_identity(root, loop)
+        if published_identity is not None:
+            source_at_start, source_identity_source_generation = published_identity
+        source_identity_start_basis = (
+            "published_exe_artifact" if source_at_start is not None
+            else "full_worktree_git")
+        if source_at_start is None:
+            source_at_start = source_identity(root)
+        source_identity_start_seconds = time.monotonic() - identity_phase_started
     except (OSError, subprocess.SubprocessError):
         source_at_start = {"revision": "unknown", "dirty": True,
                            "worktree_sha256": "unknown"}
+        source_identity_start_basis = "unavailable"
+        source_identity_start_seconds = time.monotonic() - identity_phase_started
+    setup_started = time.monotonic()
     command = [sys.executable, "-u", str(root / "build.py"), "build-only"]
     if mode == "release":
         command.append("release")
@@ -126,6 +182,13 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
     artifact_id: str | None = None
     folder_name: str | None = None
     error_message = ""
+    build_script_seconds = 0.0
+    post_build_processing_seconds = 0.0
+    artifact_validation_seconds = 0.0
+    artifact_publish_seconds = 0.0
+    source_identity_publish_seconds = 0.0
+    source_identity_publish_basis = "not_applicable"
+    build_script_started = time.monotonic()
     try:
         process = subprocess.Popen(
             command,
@@ -147,23 +210,62 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
             if progress:
                 loop._record_build_progress(progress)
         result = process.wait()
+        build_script_seconds = time.monotonic() - build_script_started
     except OSError as error:
+        build_script_seconds = time.monotonic() - build_script_started
         error_message = f"could not start canonical build: {error}"
         loop._record_build_output(error_message)
 
+    post_build_started = time.monotonic()
     successful = result == 0 and (
         "BUILD SUCCESS" in "".join(output)
         or "Nothing changed." in "".join(output)
     )
     if successful:
         try:
-            try:
-                source_at_publish = source_identity(root)
-            except (OSError, subprocess.SubprocessError):
-                source_at_publish = {"revision": "unknown", "dirty": True,
-                                     "worktree_sha256": "unknown"}
             build_text = "".join(output)
+            with loop.lock:
+                source_generation_at_publish = int(loop.generation)
+            source_changed_during_build = (
+                source_generation_at_publish != source_generation_at_start)
+            source_identity_publish_basis = source_identity_start_basis
+            if source_changed_during_build:
+                publish_identity_started = time.monotonic()
+                try:
+                    source_at_publish = source_identity(root)
+                    source_identity_source_generation = source_generation_at_publish
+                    source_identity_publish_basis = "full_worktree_git"
+                except (OSError, subprocess.SubprocessError):
+                    source_at_publish = {"revision": "unknown", "dirty": True,
+                                         "worktree_sha256": "unknown"}
+                    source_identity_publish_basis = "unavailable"
+                source_identity_publish_seconds = (
+                    time.monotonic() - publish_identity_started)
+            elif (source_identity_start_basis == "published_exe_artifact"
+                  and "Nothing changed." not in build_text):
+                # The compiler found a cold input that the watcher did not
+                # classify as stale. Refresh once after the build, then use
+                # that identity at both ends because the watched generation
+                # stayed stable for the whole attempt.
+                publish_identity_started = time.monotonic()
+                try:
+                    source_at_publish = source_identity(root)
+                    source_at_start = source_at_publish
+                    source_identity_source_generation = source_generation_at_publish
+                    source_identity_start_basis = "full_worktree_git_after_stable_build"
+                    source_identity_publish_basis = "full_worktree_git"
+                except (OSError, subprocess.SubprocessError):
+                    source_at_publish = {"revision": "unknown", "dirty": True,
+                                         "worktree_sha256": "unknown"}
+                    source_identity_publish_basis = "unavailable"
+                source_identity_publish_seconds = (
+                    time.monotonic() - publish_identity_started)
+            else:
+                source_at_publish = source_at_start
+            artifact_validation_started = time.monotonic()
             reused = latest_artifact_matches(root, loop)
+            artifact_validation_seconds = (
+                time.monotonic() - artifact_validation_started)
             if reused and ("Nothing changed." in build_text or
                            source_at_start == source_at_publish):
                 artifact_id, folder_name, destination = reused
@@ -174,9 +276,12 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
                     "message": "publishing the validated executable",
                 })
                 artifact_id, folder_name = make_artifact_id()
+                artifact_publish_started = time.monotonic()
                 destination = publish_build(artifact_id, folder_name,
                                            requested_generation, mode,
                                            source_at_start, source_at_publish)
+                artifact_publish_seconds = (
+                    time.monotonic() - artifact_publish_started)
             loop._record_build_progress({
                 "phase": "completed",
                 "artifact_id": artifact_id,
@@ -188,11 +293,67 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
             error_message = f"publish failed: {error}"
             loop._record_build_output(error_message)
 
+    post_build_processing_seconds = time.monotonic() - post_build_started
+
+    output_log_started = time.monotonic()
     try:
         (root / ".dev" / "build-output.log").write_text(
             "".join(output), encoding="utf-8", errors="replace")
     except OSError:
         pass
+    output_log_seconds = time.monotonic() - output_log_started
+
+    with loop.lock:
+        source_generation_at_completion = int(loop.generation)
+    source_changed_during_build = (
+        source_generation_at_completion != source_generation_at_start)
+    event_started = time.monotonic()
+    try:
+        loop.record_runtime_event(
+            "dev-loop.build.source_identity",
+            {"request_ids": request_ids,
+             "source_generation_start": source_generation_at_start,
+             "source_generation_end": locals().get(
+                 "source_generation_at_publish", source_generation_at_completion),
+             "identity_source_generation": source_identity_source_generation,
+             "source_changed_during_build": source_changed_during_build,
+             "start_seconds": round(source_identity_start_seconds, 3),
+             "publish_seconds": round(locals().get(
+                 "source_identity_publish_seconds", 0.0), 3),
+             "start_basis": source_identity_start_basis,
+             "publish_basis": locals().get(
+                 "source_identity_publish_basis", "not_applicable")},
+            "EXE build source identity timing",
+        )
+    except Exception:
+        pass
+
+    runtime_event_seconds = time.monotonic() - event_started
+    total_worker_seconds = time.monotonic() - started
+    setup_seconds = max(0.0, build_script_started - setup_started)
+    accounted_seconds = sum((
+        source_identity_start_seconds, setup_seconds, build_script_seconds,
+        post_build_processing_seconds, output_log_seconds, runtime_event_seconds,
+    ))
+    worker_timing = {
+        "total_worker_seconds": round(total_worker_seconds, 3),
+        "source_identity_start_seconds": round(source_identity_start_seconds, 3),
+        "source_identity_publish_seconds": round(source_identity_publish_seconds, 3),
+        "source_identity_start_basis": source_identity_start_basis,
+        "source_identity_publish_basis": source_identity_publish_basis,
+        "source_identity_source_generation": source_identity_source_generation,
+        "setup_seconds": round(setup_seconds, 3),
+        "build_script_seconds": round(build_script_seconds, 3),
+        "post_build_processing_seconds": round(post_build_processing_seconds, 3),
+        "artifact_validation_seconds": round(artifact_validation_seconds, 3),
+        "artifact_publish_seconds": round(artifact_publish_seconds, 3),
+        "output_log_seconds": round(output_log_seconds, 3),
+        "runtime_event_seconds": round(runtime_event_seconds, 3),
+        "unattributed_seconds": round(max(0.0, total_worker_seconds - accounted_seconds), 3),
+        "source_generation_start": source_generation_at_start,
+        "source_generation_end": source_generation_at_completion,
+        "source_changed_during_build": source_changed_during_build,
+    }
 
     loop.build_completions.put({
         "generation": requested_generation,
@@ -204,10 +365,23 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
         "source_revision": source_at_start.get("revision"),
         "source_dirty": source_at_start.get("dirty"),
         "source_worktree_sha256": source_at_start.get("worktree_sha256"),
-        "source_changed_during_build": source_at_start != locals().get("source_at_publish", source_at_start),
+        "source_changed_during_build": source_changed_during_build,
         "folder_name": folder_name,
         "destination": str(destination) if destination else "",
         "error": error_message,
-        "duration_seconds": max(0.0, time.monotonic() - started),
+        "duration_seconds": total_worker_seconds,
+        "worker_timing": worker_timing,
+        "source_identity": {
+            "start_seconds": round(source_identity_start_seconds, 3),
+            "publish_seconds": round(locals().get(
+                "source_identity_publish_seconds", 0.0), 3),
+            "start_basis": source_identity_start_basis,
+            "publish_basis": locals().get(
+                "source_identity_publish_basis", "not_applicable"),
+            "source_generation_start": source_generation_at_start,
+            "source_generation_end": locals().get(
+                "source_generation_at_publish", source_generation_at_start),
+            "identity_source_generation": source_identity_source_generation,
+        },
         "output_tail": [line.rstrip()[-240:] for line in output[-10:]],
     })

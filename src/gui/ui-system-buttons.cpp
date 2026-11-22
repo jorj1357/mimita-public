@@ -46,6 +46,10 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     const bool rawHovered = pointIn(fbx, fby, fbR);
     s.pressed = rawHovered && gMouseDown;
     s.clicked = !gUiEditMode && rawHovered && gMouseClickEdge && !gDropdownModalActive;
+    if (s.clicked) {
+        gMouseClickEdge = false;
+        gMouseClickEdgeFramesRemaining = 0;
+    }
 
     if (!gMouseDown)
         gButtonPressDiagnosticEmitted = false;

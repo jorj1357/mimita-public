@@ -40,3 +40,41 @@ proof_expectation: Runtime-proven coordinator CLI evidence: run the reproduction
 ### 2026-11-21T05:43:39.573Z — build-wait-reviewer
 
 Suggestion (build-wait-reviewer, bounded wake): extend proposals with region, base_hash, and claimed_paths. In proposal_apply, take the existing FileLock, re-read the file, verify the patch touches only claimed_paths, then git apply --check to a temp index and os.replace the merged bytes; on any overlap or stale context, open a conflict and leave the file unchanged. Record result_sha in proposals and the coord.proposal.applied event. Keep edit begin (one-writer lease) as the default; only allow the short-lock path for explicitly disjoint regions. Proof must be a scratch-file two-agent CLI run, not a unit test alone.
+
+## Scheduled independent review
+
+### 2026-11-22T04:46:46.209Z — codex-ingame-gui-reconnect
+
+A bounded independent review was queued as wake wake-357781f65dce after 244 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (confirmed-unimplemented)
+
+### 2026-11-22T05:21:27.742Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Reviewer: issue-review-sweeper (independent, read-only). Scope: issue brief/readiness, proof status, linked artifacts, current code/spec, and the coordination journal.
+
+OBSERVED FACTS (2026-11-22)
+1. No implementation or proof exists. Task coord-proposal-apply-v2 is state=open with empty evidence; `proof list --issue issue-52b59bdd440c` returns `[]`. Readiness is ready=true, 8/8, 1 task.
+2. Working tree is clean for devscripts/agent_coord.py and docs/specs/dev-loop/agent-coordination.md. The last commit touching the module is d89884f6 (2026-11-21T21:47Z), after the task was created, but it did not add the accepted behavior; the proposal schema and apply path are unchanged.
+3. proposals schema (devscripts/agent_coord.py:286-297) has proposal_id, path, sender, recipient, patch_path, patch_sha, state, created_utc, applied_utc. No region, base_hash, result hash, or conflict column.
+4. edit_propose (devscripts/agent_coord.py:3666-3701) requires --region, but region is used only in the notification subject/body. proposal_create (3751-3772) does not persist region or a base file hash; it stores only the patch sha.
+5. proposal_apply (3787-3815) rejects whenever any active lease exists on the target (3796-3798), reproducing the reported symptom. It then runs `git apply --check` and a separate `git apply` (3799-3808) at the repo root with no coordinator lock, no check that the patch touches only the declared row path, and no atomic temp+replace. It records only state='applied' and applied_utc, with no resulting file hash and no conflict row.
+6. FileLock is used only to append events.jsonl (agent_coord.py:688). Nothing serializes concurrent proposal_apply calls.
+7. Spec still requires the old behavior: docs/specs/dev-loop/agent-coordination.md:520-524 says the holder may apply it after releasing the lease. Acceptance items 1 and 5 therefore need a spec change as well as code, matching the prior reviewer note.
+8. Journal: .dev/agent-coord/events.jsonl has 5,921 events and zero coord.proposal.created, coord.proposal.applied, or coord.proposal.rejected events. The proposal path has never been exercised in this coordination state, so there is no runtime evidence in either direction.
+
+INFERENCE / UNCERTAINTY
+- Defect confidence is high from direct code read: the free-lease requirement, missing base hash, missing path allowlist, unlocked check/apply, and missing result hash are all present in current source. The prior evidence line numbers are stale (~377-line offset); use 3666-3701, 3787-3815, and spec 520-524, not the old 3410-3438 / 3289-3324 / 638-640.
+- The conflict-record format and overlap rule are not merely unimplemented; they are undefined, so acceptance tests must define them first.
+- This review did not run the runtime reproduction. ROOT for git apply is hardcoded to the checkout (agent_coord.py:28) and is independent of the --root state option (4044, 4524), so an isolated --root repro would still git apply into this shared working tree. A bounded reviewer cannot generate that evidence without mutating the shared checkout, which is a cross-agent interference risk.
+
+CONTRARY EVIDENCE
+- Region/lease support is otherwise present (edit begin --region, shared regions), and proposal show/reject exist. This does not change the apply-path defect.
+- A claim that no commit landed since task creation would be false: d89884f6 landed after the task. The accurate claim is that the accepted behavior is absent in current HEAD and working tree.
+
+NEXT DISCRIMINATING CHECK (owner, not this reviewer)
+- In a disposable clone (so hardcoded ROOT is the clone), create a scratch file. Agent A edit begin it; Agent B edit propose a disjoint patch; then A proposal apply. Expected today: rejection at 3796-3798 while A's lease is active. Then run two disjoint applies concurrently and record the check/apply race. Capture file SHA-256 before/after and show the absence of a conflict row and result hash. This is the issue's stated proof expectation and remains unmet.
+
+VERDICT: confirmed-unimplemented; do not close.

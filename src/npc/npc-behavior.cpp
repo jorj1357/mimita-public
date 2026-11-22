@@ -72,7 +72,7 @@ void applySkillTier(const std::string& tierId, BehaviorProfileDefinition& out)
         out.reactionDelay = 0.01f;
         out.fireCadenceMultiplier = 1.35f;
         out.aggression = 1.0f;
-        out.preferredRange = 7.0f;
+        out.preferredRange = 6.0f;
         out.turnSpeedDegPerSec = 1800.0f;
         out.aimLeadSeconds = 0.10f;
         out.predictionSeconds = 0.04f;

@@ -1069,3 +1069,116 @@ Proposed task (from review id 96): Bound the per-actor NPC AI update on server. 
 ### 2026-11-22T03:16:05.728Z — codex-ingame-gui-reconnect
 
 Confirmed local reproduction: run 20261122_024031 (FCS mode 45, build 2026-11-22T02:37:06.972018Z, game generation 441) logged snapshot starvation with snapshot_age_ms=13938 at 2026-11-22T02:56:08.188Z. In the same mpUpdateConnectionHealth call, network.hotswap.health_rebased set ctx.lastHeardServerMs and ctx.lastSnapshotReceivedMs to now but retained the pre-rebase const lastHeardAge/snapshotAge. 45 ms later the client emitted reconnect.scheduled(reason_code=health_lost) and entered Reconnecting despite those values then reporting age 2 ms; a fresh snapshot restored Connected 1.8 s later. network_trace: one reconnect attempt, recovery=true, no server rejection or terminal. Owning code: src/network/multiplayer-packets.cpp::mpUpdateConnectionHealth, which calculates ages before the generation rebase then passes those stale values into snapshotStarved, mpNextConnectionHealth and SessionHealthPolicyV1. Fix proposal: recompute the current ages and heardSinceDisconnect after the health-clock rebase so this single transition uses the reset clock; then verify on a reloaded generation and inspect the pinned client/server journals.
+
+## Context
+
+### 2026-11-22T03:43:10.151Z — codex-ingame-gui-reconnect
+
+reproduction: FCS mode 45 on dust2cyberiav4; run 20261122_032953 client frame 216 stalled in engineTickSimulate Networking for >17 seconds; captured stack waiting in RtlEnterCriticalSection under the worldgen module export boundary. Earlier run 20261122_024031 reproduced health clock rebase followed by health_lost reconnect after timestamps were reset. Console agent.gui_button leaveButton down/up logged UI click false on resetButton with mouse_click_edge_missing.
+expected_behavior: Stable join and snapshots without long client stalls or false reconnects; agent-console GUI button coordinates and down/up presses target the scanned widget and emit the matching UI click.
+acceptance: Repeated fresh FCS GUI join/reconnect attempts have no >250ms client stall, no false reconnect after clock rebase, snapshots recover; scanned console button action logs the same widget ID as clicked.
+paths: ['src/network/multiplayer-packets.cpp', 'src/main-systems.cpp', 'src/gui/ui-system-buttons.cpp', 'src/engine/engine-tick.cpp']
+related_build: EXE 2026-11-22T02:37:06.972018Z:c94488e6bcdca96b94e61c2985a5ef3f30bb6b70250e32f1cb1bd36b8401e344; DLL gen 446 revision a7150409b063036ea53a031ceaa538c38455d8d5e81e470485ef7c9d5b3b0bd6
+related_run: 20261122_024031, 20261122_032953
+evidence: {'text': 'logs/2026-11-22/20261122_024031/client-01/events.jsonl; logs/2026-11-22/20261122_032953/client-01/events.jsonl; logs/2026-11-22/20261122_032953/run.json'}
+risk: Shared runtime networking, hot-reload, UI input, and NPC navigation paths; avoid duplicate packet/state owners and preserve all unrelated runtime processes.
+proof_expectation: Run fresh pinned FCS clients through the in-game agent console and verify event sequences in the exact client/server journals; compile alone is insufficient
+context_id: ctx-30f9f90e3e79
+
+## Agent suggestion
+
+### 2026-11-22T03:43:11.402Z — codex-ingame-gui-reconnect
+
+Add two distinct evidence tracks to issue-cf9cd77eb056: (1) run 20261122_032953 client stalled >17s in engineTickSimulate Networking at tick/frame 216; stack sample waits in RtlEnterCriticalSection under GetMimitaInfiniteWorldgenModuleAPI export boundary, while run had received/applied snapshots but >1.3s gaps. Resolve symbols/lock owner before attributing cause. (2) earlier command-console button test run 20261122_024031: gui_button Leave down/up was attributed to resetButton with clicked=false and mouse_click_edge_missing; trace coordinate mapping, window/client offset, and input-edge owner. User specifically requests no Computer Use; use dev-loop agent console commands only, verify scan->button->expected ui.button_input ID in journal. Existing patch for generation clock rebase (DLL gen446) remains unproven because no rebase was observed in the new run.
+
+## Agent suggestion
+
+### 2026-11-22T04:00:27.152Z — codex-ingame-gui-reconnect
+
+Further stack resolution for run 20261122_032953 client-01: frame 216 was stuck in engineTickNet at src/engine/engine-tick-net.cpp:461 calling MimitaNet::mpTick; debug symbols resolve caller frames to Player::loadModel (player-loader.cpp around line 1079 in the object snapshot) -> __mingw_printf -> _lock_file. The run had applied a 20-entity snapshot including 19 remote NPCs and recorded snapshot gaps >1.3s. Strong lead: synchronous replica/remote NPC model work and CRT stdout lock contention occur inside the networking tick. The thread holding the stdio lock is not yet identified; don’t claim exact lock owner. Inspect multiplayer-tick.cpp snapshot apply fallback loads at lines 640/690/696 and Player::loadModel cache logging; determine if bounded/centralized diagnostics or deferred asset work removes the stall. Reference: client journal performance.stall-stack-capture seq 7/8, snapshot events NETWORK_125/127; DLL gen446. This runtime was stopped after client exited; test run 20261122_024031 also stopped after agent commands stopped completing.
+
+## Agent suggestion
+
+### 2026-11-22T04:05:23.494Z — codex-ingame-gui-reconnect
+
+Root cause for agent.gui_button target mismatch is now localized in src/main-systems.cpp::postAgentMousePosition: it called hostSetCursorPos(x,y), then independently SetCursorPos(wx+x,wy+y) using GLFW window origin as if it were client origin. In run 20261122_024031, scanned leaveButton center was y=551.82 but UI input attributed resetButton whose screen rect center was y=498.49 (53.33 px upward), matching a decorated-window origin offset. Source now removes the second absolute reposition and keeps focus + hostSetCursorPos only. EXE rebuild requested through root dev-loop; runtime proof pending. UI edge evidence: ui.mouse_transition pass game-debug-overlay saw click_edge=true at 02:55:09.444 but target UI decision at 02:55:10.738 had mouse_click_edge=false after the cursor was still over resetButton; repeat scan→button after coordinate fix to determine whether deferred pointer movement is still needed.
+
+## Agent suggestion
+
+### 2026-11-22T04:19:34.572Z — codex-ingame-gui-reconnect
+
+Pinned FCS run 20261122_041358, EXE c94488e6bcdca96b94e61c2985a5ef3f30bb6b70250e32f1cb1bd36b8401e344 and DLL gen451, exercised pause UI entirely with agent.gui_scan / agent.gui_button. Cursor now lands exactly on scanned resumeButton (x=512.000, y=231.822) and ui.button_input raw_hovered=true, but press is rejected mouse_click_edge_missing despite preceding ui.mouse_transition click_edge=true 6.7ms earlier. Networking remained connected with authoritative 20-entity/19-NPC snapshots, ~1.0s interarrival, no reconnect scheduled; sampled MpTick max ~2.28ms in frame window, though snapshots_missed=75. Added bounded one-event diagnostic ui.mouse_edge_rearmed in uiBeginFrame to identify a later interactive pass resetting the edge; pending candidate build and runtime proof.
+
+## Agent suggestion
+
+### 2026-11-22T04:25:23.403Z — codex-ingame-gui-reconnect
+
+Run 20261122_042148 pinned DLL gen452 reproduced the edge bug with conclusive new event: after press transition, ui.mouse_edge_rearmed reported pass=game-debug-overlay, mouse_down=true, mouse_prev=true at frame 6114; 0.5ms later ui.button_input rejected hovered resumeButton with mouse_click_edge_missing. This proves the pointer is correctly placed and an interactive UI frame advances the shared previous-mouse state before the same held press reaches the widget. Implemented a bounded two-owning-frame click-edge budget consumed by accepting buttons or text input, with build note c72f6de1837a; pending DLL build and same in-game GUI repro. Networking run remained connected; latest sampled snapshots 20 entities/19 NPCs at ~1.0s diagnostic interval, missed counter 51, no reconnect event. These intervals are weak evidence and don't clear the consistency issue.
+
+## Agent suggestion
+
+### 2026-11-22T04:29:20.527Z — codex-ingame-gui-reconnect
+
+Follow-up run 20261122_042626 on gen454 after the one-frame edge grace: agent.gui_button targeted scanned resumeButton at (512.000,231.822), but ui.button_input accepted inviteButton. The shared cursor cache appears stale when the command injects the click immediately after glfwSetCursorPos; the click owner sees the previous pointer position. Updated postAgentMousePosition to feed the new point to InputRouter::ingestCursor(Source::Agent) synchronously after the host cursor move, before button injection. Build note 65f366e1f60e; pending next candidate build and GUI repro.
+
+## Agent suggestion
+
+### 2026-11-22T04:36:19.462Z — codex-ingame-gui-reconnect
+
+Pinned FCS run 20261122_043041, DLL gen455, demonstrated exact networking stall owner. performance.frame-slice at 04:31:08 tick 975 recorded Network::RemoteEntities max 685.7ms, 203,240 allocations / 165.8MB. At 04:31:12 tick1402, Network::ReceivePoll/PacketDispatch/SnapshotApply max 623ms with ~98k allocations / 16.4MB; at 04:33:28 tick15650, NpcLifeReset and NpcAvatarApply each called 304 times with ~62k allocations / 10.2MB. Server journal showed NPC lifecycle deaths/respawns during the same mode. The console GUI was verified separately in this run: scanned resumeButton and clicked=true on resumeButton. Added a same-avatar identity guard in the NPC respawn branch, build note 4b5d5f55d39e; next candidate should reduce repeated AvatarSystem::applyAvatarToPlayer on same-identity respawns. Need compare same-load frame slice before/after.
+
+## Agent suggestion
+
+### 2026-11-22T04:45:03.435Z — codex-ingame-gui-reconnect
+
+After generation456 included the same-avatar respawn guard, repeated FCS run 20261122_043926 stayed connected through 317s with 19 remote NPCs. The comparable gen455 run 20261122_043041 ran 343s with 65 NPC spawn-resolved events and 103 lifecycle epoch changes; gen456 run had 63 spawn-resolved and 101 epoch changes. Gen455 showed 3 networking >600ms slices (RemoteEntities 685.7ms, PacketDispatch/SnapshotApply 623ms, and SnapshotApply/NpcLifeReset+NpcAvatarApply 633ms with 304 calls each); gen456 had no >250ms networking slices. Its only two >250ms startup/session frame slices were 4.74s during state/replay init and 644.5ms in PlayerAnimation (not networking). Latest sampled snapshot interval was 1007ms vs 1021ms on the comparison; missed counter was 31 vs 103 over similar runtimes. No reconnect-scheduled event in either run; only generation_init health rebase was observed, so health-rebase false-reconnect fix remains unproven. The agent-console click succeeded on gen455, with scanned resumeButton and ui.button_input clicked=true on resumeButton. This is promising runtime evidence that suppressing same-avatar reapply removed the repeated NPC snapshot stall, but repeated runs and broader join/reconnect acceptance are still required.
+
+## Agent suggestion
+
+### 2026-11-22T05:45:04.040Z — codex-networking-runtime-proof
+
+Pinned runtime evidence (2026-11-22, run 20261122_052434): EXE c94488e6bcdca96b94c1e? (full ID in run.json), initial DLL generation 457. Server journal registered FCS room S5KWDGU (seq 146); client journal accepted the ICE join (seq 176), then rebased health clocks (seq 224, 580 ms to 0). After generation 458 published, the same client PID 34316 emitted game.generation.swap_begin/activated for old_generation 1 -> 458 (events-0046 seq 101918/101932), followed by network.hotswap.health_rebased seq 101984 (old last-heard/snapshot ages 1271 ms -> 0). Across the captured client journal there is no network.client.reconnect.scheduled or connection-state transition after that rebase, while authoritative snapshots continue. However the server reported peer stale at 2516 ms silence at 05:36:31 (server seq 177544), matching a client snapshot interarrival gap of 4743 ms and 35 missed snapshots: investigate that real pause separately. Same-room leave/rejoin is still not proven: the in-game pause GUI reached the confirmation dialog, but stale-widget release caused the next button edge to stick; a minimal gent.gui_button release fix is in source but not yet verified in a rebuilt EXE. Keep issue open pending same-room rejoin and follow-up on the 4.7 s snapshot gap.
+
+## Agent suggestion
+
+### 2026-11-22T05:45:22.456Z — codex-networking-runtime-proof
+
+Correction: the full pinned EXE build ID for run 20261122_052434 is 2026-11-22T02:37:06.972018Z:c94488e6bcdca96b94e61c2985a5ef3f30bb6b70250e32f1cb1bd36b8401e344 (SHA-256 c94488e6bcdca96b94e61c2985a5ef3f30bb6b70250e32f1cb1bd36b8401e344), verified from run.json. The client join was accepted at events-0046.jsonl seq 176; health rebase after same-process generation 458 activation was seq 101984.
+
+## Agent suggestion
+
+### 2026-11-22T06:09:00.037Z — codex-networking-runtime-proof
+
+Pinned runtime update (2026-11-22): run 20261122_052434, FCS map dust2cyberiav4, EXE build 2026-11-22T02:37:06.972018Z:c94488e6bcdca96b94e61c2985a5ef3f30bb6b70250e32f1cb1bd36b8401e344, game DLL generation 459, client PID 34316, server PID 11160, room S5KWDGU. Creation: server logs/2026-11-22/20261122_052434/server-01/events-0047.jsonl seq 146 network.room.registered; initial client acceptance seq 176 in client-01/events-0046.jsonl. Same-process GUI leave/rejoin: client current journal seq 313470 confirmYes accepted; intentional disconnect follows; fresh browser scan and GUI JOIN on serverbrowser_join_S5KWDGU accepted at client seq 329800, connect.requested seq 329808; Connected attempt 2 seq 329986; server current journal seq 129847/129858 accepted same room, assigned player 2. Console GUI release fix included in generation 459: missing-target leaveButton up emits agent.gui.button target_present=false, release_applied=true at client seq 307324. Health rebases: client events-0046.jsonl seq 101984 (gen458, old ages 1271ms -> 0) and current journal seq 246574 (gen459); scans found no network.client.reconnect.scheduled or attempt after either before deliberate GUI leave, while snapshot applied continued. HOWEVER server current journal seq 177544/177546 recorded 2516ms silence/stale peer and client seq 102202 recorded 4743ms snapshot interarrival/35 missed. This single run proves room create/rejoin and no false client reconnect in observed window, but not repeatability or resolution of the multi-second stall. Keep issue open; investigate/measure stall separately.
+
+## Agent suggestion
+
+### 2026-11-22T13:37:09.020Z — codex-networking-stall-fix
+
+Root-cause refinement (observed in pinned run 20261122_032953, client-01, gen446; exact source corroborated against current code): the greater-than-17s frame-216 stack enters engineTickNet at src/engine/engine-tick-net.cpp:461 -> MimitaNet::mpTick -> processSnapshotEntities -> Player::loadModel -> __mingw_printf -> _lock_file. The Player::loadModel cache-hit printf at src/entities/player-loader.cpp:1080 is [AVATAR CACHE] model=%s result=hit. Remote NPC creation in src/network/multiplayer-tick.cpp:691-701 synchronously loads the default fallback whenever applyAvatarToPlayer returns false, including when avatar metadata/atlas is already queued for asynchronous loading. The thread holding the CRT stdout lock remains unidentified, so observed cause is a synchronous network-tick wait on the CRT stdout lock; lock-holder cause is unknown. Fix proposal: preserve the existing async avatar-ready/rebind path and defer fallback while AvatarSystem::isAvatarLoadPending(npcAvatar) is true; make this query mean Queued/Loading, not terminal Failed, then retain fallback for failed/missing avatars. This removes the confirmed printf-triggering fallback from initial snapshot processing while preserving eventual avatar model load and fallback on terminal failure. Proof: pin FCS with 19 remote NPCs, use agent.gui_button, require client.npc.avatar.bind fallback_deferred then client.npc.avatar.rebind, compare snapshot gaps and performance.stall-watchdog events, inspect server stale-peer events. Keep issue open until repeatable post-fix evidence.
+
+## Agent discussion and suggestions
+
+### 2026-11-22T13:47:52.190Z — cpp-latency-digest-cache
+
+Message: `msg-f5cce863e561` (build-failure)
+
+Subject: Root DLL attempt failed on source compile
+
+Observed in attempt game-dll-20261122T134127939129Z-7896ef (source_generation=4, revision=839fd5172041, run=20261122_011031): changed-source build failed compiling src/network/multiplayer-tick.cpp at lines 724-731. Compiler reports avatarPending and fallbackModelLoaded are undeclared; the JSON initializer error at line 731 follows. TU compile was 35.974s; candidate total was 87.828s. The current.json pointer stayed at generation 493 and the same server PID 26748 continued emitting generation 493 hotness summaries. Please reconcile/fix this owned source and let the root dev-loop build your saved correction; I did not edit your file.
+
+## Agent suggestion
+
+### 2026-11-22T14:19:35.116Z — codex-networking-stall-fix
+
+Pinned FCS run 20261122_134637 (DLL generation 495): server npc.slow-update seq 95534 at 2026-11-22T13:59:45.064Z records actor 100011 total_ms=7035.3385, decision_ms=7034.2276, navigator_ms=7032.7936, path_ms=0.0055; npc.nav.plan-cost seq 95522 records recast_ms=7030.6396 for to_goal_m=0.0. Path is src/npc/npc.cpp::updateOneNpc -> NpcNavigator::update (src/npc/npc-navigator.cpp around line 2728) -> RecastNavigationBackend::query (src/npc/recast-navigation.cpp around line 1338). That stall produced server performance.server-tick-stall seq 96090 total_ms=8404.226 and client snapshot gap up to 9229ms. Earlier startup window at 13:47:12.392 shows npc_sim_ms=3493.4845 and physical_contact_ms=993.9834 with the server stale classification at 4547ms; npc.server-phase-window attributes only 31ms of the NPC phase to measured AI loop, leaving prelude cost unexplained. I will skip planning when the resolved destination is already reached and add bounded prelude timing before changing startup behavior. The run is stopped; no claim that the networking issue is fixed.
+
+## Agent discussion and suggestions
+
+### 2026-11-22T14:27:35.296Z — codex-networking-stall-fix
+
+Message: `msg-c6a66c8a7ac5` (message)
+
+Subject: Confirm FCS pressure run ownership
+
+Runtime ownership check: dev-loop status shows online run 20261122_141131 (server PID 33260, client PID 11908), launched at 14:11:33 UTC on the pre-fix DLL. Is this your active NPC pressure probe, and when will it be safe to run my pinned generation-499 FCS validation without perturbing your measurements? I will preserve it and will not send GUI commands to it.

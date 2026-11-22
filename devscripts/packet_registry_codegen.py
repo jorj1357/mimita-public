@@ -21,6 +21,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +29,8 @@ DEFAULT_PACKETS = "src/network/packets.h"
 DEFAULT_HEADER = "src/host/generated/packet-registry-v1.h"
 DEFAULT_LEDGER = "config/hot-reload/packet-ledger.json"
 MANIFEST = "build/source-manifest.json"
+REFERENCE_CACHE = ".dev/packet-reference-cache.json"
+REFERENCE_CACHE_SCHEMA = 1
 
 ENUM_RE = re.compile(r"^\s*(PACKET_[A-Z0-9_]+)\s*=\s*(\d+)\s*,\s*$")
 PROTOCOL_RE = re.compile(r"PROTOCOL_VERSION\s*=\s*(\d+)")
@@ -129,52 +132,131 @@ def scan_dispatch(path: Path, direction: str, owners: dict[str, str]) -> dict[st
     return found
 
 
-def scan_source_references(packets: list[dict], owners: dict[str, str]) -> dict[str, dict]:
+def scan_source_references(
+    packets: list[dict], owners: dict[str, str],
+    manifest_sources: list[dict] | None = None,
+    cache_path: Path | None = None,
+    metrics: dict | None = None,
+    source_root: Path = ROOT,
+) -> dict[str, dict]:
+    started = time.perf_counter()
     by_name = {packet["name"]: packet["id"] for packet in packets}
     found: dict[str, dict] = {}
-    for path in sorted((ROOT / "src").rglob("*.cpp")):
-        source = path.relative_to(ROOT).as_posix()
+    entries = manifest_sources
+    if entries is None:
+        entries = [
+            {"path": path.relative_to(source_root).as_posix(),
+             "owner": owners.get(path.relative_to(source_root).as_posix(), "unknown")}
+            for path in sorted((source_root / "src").rglob("*.cpp"))
+        ]
+    cache: dict = {"sources": {}}
+    if cache_path is not None:
+        try:
+            data = json.loads(cache_path.read_text(encoding="utf-8"))
+            if (isinstance(data, dict)
+                    and data.get("schema") == REFERENCE_CACHE_SCHEMA
+                    and isinstance(data.get("sources"), dict)):
+                cache = data
+        except (OSError, ValueError, TypeError):
+            pass
+    old_sources = cache.get("sources", {})
+    new_sources: dict[str, dict] = {}
+    cache_hits = files_read = packet_tokens = 0
+    scan_started = time.perf_counter()
+    for entry in sorted(entries, key=lambda row: str(row.get("path", ""))):
+        source = str(entry.get("path", "")).replace("\\", "/")
+        if not source.startswith("src/") or not source.endswith(".cpp"):
+            continue
         if source.startswith("src/host/generated/") or source.endswith("packet-registry-v1.h"):
             continue
-        owner = owners.get(source, "unknown")
+        owner = str(entry.get("owner", owners.get(source, "unknown")))
         if owner == "unknown":
             continue
+        path = source_root / source
         try:
-            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+            stat = path.stat()
         except OSError:
             continue
-        for index, line in enumerate(lines):
-            # The old loop tested every packet name against every source line.
-            # Tokenize only packet identifiers present in the line instead.
-            for match in PACKET_REFERENCE_RE.finditer(line):
-                token = match.group(1)
-                # Preserve the previous substring semantics for identifiers
-                # that extend a packet name, while checking all names only for
-                # the comparatively rare PACKET_* tokens rather than every line.
-                names = ([token] if token in by_name else
-                         [name for name in by_name if name in token])
-                for name in names:
-                    previous = found.get(name)
-                    if previous is not None and previous["owner"] == "game":
-                        continue
-                    if previous is not None and owner != "game":
-                        continue
-                    found[name] = {
-                        "source": source,
-                        "line": index + 1,
-                        "owner": owner,
-                        "path": "dll" if owner == "game" else "resident",
-                    }
+        signature = [stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
+        cached = old_sources.get(source, {})
+        cached_signature = cached.get("signature") if isinstance(cached, dict) else None
+        cached_tokens = cached.get("tokens") if isinstance(cached, dict) else None
+        valid_tokens = (
+            isinstance(cached_tokens, list)
+            and all(isinstance(token, list) and len(token) == 2
+                    and isinstance(token[0], str)
+                    and isinstance(token[1], int)
+                    for token in cached_tokens)
+        )
+        if cached_signature == signature and valid_tokens:
+            tokens = cached_tokens
+            cache_hits += 1
+        else:
+            files_read += 1
+            tokens = []
+            try:
+                for index, line in enumerate(path.read_text(
+                        encoding="utf-8", errors="ignore").splitlines(), 1):
+                    tokens.extend([token, index]
+                                  for token in PACKET_REFERENCE_RE.findall(line))
+            except OSError:
+                continue
+        new_sources[source] = {"signature": signature, "tokens": tokens}
+        packet_tokens += len(tokens)
+        for token, line_number in tokens:
+            # Preserve old substring matching for extended PACKET_* names.
+            names = ([token] if token in by_name else
+                     [name for name in by_name if name in token])
+            for name in names:
+                previous = found.get(name)
+                if previous is not None and previous["owner"] == "game":
+                    continue
+                if previous is not None and owner != "game":
+                    continue
+                found[name] = {
+                    "source": source,
+                    "line": line_number,
+                    "owner": owner,
+                    "path": "dll" if owner == "game" else "resident",
+                }
+    scan_seconds = time.perf_counter() - scan_started
+    cache_write_started = time.perf_counter()
+    cache_written = False
+    if cache_path is not None:
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(json.dumps({
+                "schema": REFERENCE_CACHE_SCHEMA,
+                "sources": new_sources,
+            }, separators=(",", ":")) + "\n", encoding="utf-8")
+            cache_written = True
+        except OSError:
+            # This is derived acceleration state; a failed write must not fail
+            # packet generation or the game build.
+            pass
+    if metrics is not None:
+        metrics.update({
+            "source_files": len(new_sources), "cache_hits": cache_hits,
+            "cache_misses": files_read, "files_read": files_read,
+            "packet_tokens": packet_tokens,
+            "scan_ms": round(scan_seconds * 1000, 3),
+            "cache_write_ms": round((time.perf_counter() - cache_write_started) * 1000, 3),
+            "cache_written": cache_written,
+            "total_ms": round((time.perf_counter() - started) * 1000, 3),
+        })
     return found
 
 
-def generate(packets: list[dict], protocol_version: int, manifest: dict) -> tuple[str, str]:
+def generate(packets: list[dict], protocol_version: int, manifest: dict,
+             reference_scan_metrics: dict | None = None) -> tuple[str, str]:
     owners = owner_map(manifest)
     scans = {
         direction: scan_dispatch(ROOT / relative, direction, owners)
         for direction, relative in DISPATCH.items()
     }
-    references = scan_source_references(packets, owners)
+    references = scan_source_references(
+        packets, owners, manifest.get("sources", []),
+        ROOT / REFERENCE_CACHE, reference_scan_metrics)
     rows: list[dict] = []
     for packet in sorted(packets, key=lambda item: item["id"]):
         row = {"id": packet["id"], "name": packet["name"]}
@@ -314,6 +396,7 @@ def write_if_changed(path: Path, text: str) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    main_started = time.perf_counter()
     parser = argparse.ArgumentParser(description="Generate the packet hotness registry")
     parser.add_argument("--packets", default=DEFAULT_PACKETS)
     parser.add_argument("--header", default=DEFAULT_HEADER)
@@ -322,22 +405,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
 
+    input_started = time.perf_counter()
     try:
         packets = parse_packets(resolve(args.packets))
         manifest = read_json(ROOT / MANIFEST)
     except (OSError, json.JSONDecodeError) as error:
         fail(f"cannot read input: {error}")
         return 2
+    input_seconds = time.perf_counter() - input_started
     if not packets:
         fail("no PACKET_* entries found")
         return 2
     protocol_version = parse_protocol_version(
         ROOT / "src/network/schema/packet-header.h")
-    header, ledger_text = generate(packets, protocol_version, manifest)
+    reference_scan_metrics: dict = {}
+    generate_started = time.perf_counter()
+    header, ledger_text = generate(
+        packets, protocol_version, manifest, reference_scan_metrics)
+    generate_seconds = time.perf_counter() - generate_started
     header_path = resolve(args.header)
     ledger_path = resolve(args.ledger)
 
     if args.check:
+        check_started = time.perf_counter()
         stale: list[str] = []
         for path, expected in ((header_path, header), (ledger_path, ledger_text)):
             try:
@@ -352,12 +442,26 @@ def main(argv: list[str] | None = None) -> int:
                 fail(item)
             fail("run: python devscripts/packet_registry_codegen.py")
             return 1
+        print(f"[PACKET CODEGEN] timing {json.dumps({
+            'input_ms': round(input_seconds * 1000, 3),
+            'generate_ms': round(generate_seconds * 1000, 3),
+            'reference_scan': reference_scan_metrics,
+            'check_ms': round((time.perf_counter() - check_started) * 1000, 3),
+            'total_ms': round((time.perf_counter() - main_started) * 1000, 3),
+        }, sort_keys=True)}")
         print(f"[PACKET CODEGEN] ok packets={len(packets)}")
         return 0
 
     wrote_header = write_if_changed(header_path, header)
     wrote_ledger = write_if_changed(ledger_path, ledger_text)
     changed = "wrote" if (wrote_header or wrote_ledger) else "unchanged"
+    print(f"[PACKET CODEGEN] timing {json.dumps({
+        'input_ms': round(input_seconds * 1000, 3),
+        'generate_ms': round(generate_seconds * 1000, 3),
+        'reference_scan': reference_scan_metrics,
+        'write_ms': round((time.perf_counter() - generate_started - generate_seconds) * 1000, 3),
+        'total_ms': round((time.perf_counter() - main_started) * 1000, 3),
+    }, sort_keys=True)}")
     print(f"[PACKET CODEGEN] {changed} packets={len(packets)} "
           f"header={args.header} ledger={args.ledger}")
     return 0

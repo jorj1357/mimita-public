@@ -44,6 +44,7 @@ if str(ROOT) not in sys.path:
 ABI_VERSION = 1
 GAME_OWNER = "game"
 IDENTITY_HEADER = "module-identity.h"
+IDENTITY_PROVIDER_SOURCE = "module-identity-provider.cpp"
 
 FOLDED_MODULE_SYMBOLS = {
     "src/mapeditor/map-editor-module.cpp": "GetMimitaMapEditorModuleAPI",
@@ -631,20 +632,44 @@ def flags_identity(cxx: str, base_flags: list[str], build_mode: str, pch: bool) 
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def identity_text(generation: int, revision: str) -> str:
+def identity_text() -> str:
+    """Return the stable wrapper-facing identity declarations.
+
+    Generation and source revision live in one generated object per DLL. Keeping
+    these declarations byte-for-byte stable prevents every module wrapper from
+    rebuilding just because a new game generation was published.
+    """
     return ("#pragma once\n"
-            f"#define MIMITA_MODULE_GENERATION {generation}u\n"
-            f'#define MIMITA_MODULE_SOURCE_HASH "{revision}"\n'
-            "#define MIMITA_MODULE_STATE_SCHEMA 1\n")
+            "#include <cstdint>\n"
+            "namespace mimita_module_identity {\n"
+            "extern const std::uint32_t generation;\n"
+            "extern const char source_hash[];\n"
+            "extern const std::uint32_t state_schema;\n"
+            "}\n"
+            "#define MIMITA_MODULE_GENERATION (::mimita_module_identity::generation)\n"
+            "#define MIMITA_MODULE_SOURCE_HASH (::mimita_module_identity::source_hash)\n"
+            "#define MIMITA_MODULE_STATE_SCHEMA (::mimita_module_identity::state_schema)\n")
 
 
-def write_identity_if_changed(path: Path, generation: int, revision: str) -> bool:
-    """Write the generated identity header only when its bytes change.
+def identity_provider_text(generation: int, revision: str) -> str:
+    """Generate one tiny TU carrying the values for this DLL generation."""
+    return ("#include <cstdint>\n"
+            "#include \"module-identity.h\"\n"
+            "namespace mimita_module_identity {\n"
+            f"const std::uint32_t generation = {int(generation)}u;\n"
+            f'const char source_hash[] = "{revision}";\n'
+            "const std::uint32_t state_schema = 1u;\n"
+            "}\n")
+
+
+def write_identity_if_changed(path: Path) -> bool:
+    """Write stable module identity declarations only when their bytes change.
 
     Cache freshness uses file mtimes, so rewriting an identical header would
-    invalidate every module wrapper for no reason.
+    invalidate every module wrapper for no reason. Per-generation values are
+    supplied by identity_provider_text() instead.
     """
-    text = identity_text(generation, revision)
+    text = identity_text()
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.is_file():
         try:
@@ -656,11 +681,11 @@ def write_identity_if_changed(path: Path, generation: int, revision: str) -> boo
     return True
 
 
-def identity_matches(path: Path, generation: int, revision: str) -> bool:
+def identity_matches(path: Path) -> bool:
     if not path.is_file():
         return False
     try:
-        return path.read_text(encoding="utf-8") == identity_text(generation, revision)
+        return path.read_text(encoding="utf-8") == identity_text()
     except OSError:
         return False
 
@@ -865,22 +890,32 @@ def remember_dependency_tokens(entries: dict, source_path: str,
 
 
 def dependency_relative(token: str) -> str:
-    """Return a project-relative header path for fan-out attribution."""
+    """Return a project-relative header path for fan-out attribution.
+
+    Dependency tokens come from compiler-generated depfiles and the persistent
+    dependency index. Resolve them lexically: filesystem ``Path.resolve()`` on
+    every unique token was dominating the index prepass despite this result
+    being used only for diagnostic header fan-out, not freshness decisions.
+    """
     path = Path(token)
     if path.is_absolute():
-        try:
-            path = ROOT / path.relative_to(SOURCE_ROOT)
-        except ValueError:
-            pass
+        relative = None
+        for base in (SOURCE_ROOT, ROOT):
+            try:
+                relative = path.relative_to(base)
+                break
+            except ValueError:
+                continue
+        if relative is None:
+            return ""
     else:
-        path = ROOT / path
-    try:
-        relative = path.resolve().relative_to(ROOT).as_posix()
-    except (OSError, ValueError):
+        relative = path
+    relative_text = Path(os.path.normpath(str(relative))).as_posix()
+    if relative_text == ".." or relative_text.startswith("../"):
         return ""
-    if relative.startswith("src/") and relative.endswith(
+    if relative_text.startswith("src/") and relative_text.endswith(
             (".h", ".hpp", ".inl")):
-        return relative
+        return relative_text
     return ""
 
 
@@ -1215,10 +1250,23 @@ def build(args: argparse.Namespace) -> int:
         logical_flags.append("-DMIMITA_PROBE_BRIDGE")
 
     flags_hash = flags_identity(cxx, logical_flags, args.build_mode, args.pch)
-    link_identity = hashlib.sha256("\n".join([
+    if args.linker == "auto":
+        args.linker = ("lld" if (Path(cxx).parent / "ld.lld.exe").is_file()
+                       else "gnu")
+    linker_name = "ld.lld.exe" if args.linker == "lld" else "ld.exe"
+    linker_path = Path(cxx).parent / linker_name
+    if not linker_path.is_file():
+        message = f"requested game DLL linker is missing: {linker_path}"
+        return early_fail("linker_selection", message, 1)
+    linker_stat = linker_path.stat()
+    linker_stamp = f"{linker_stat.st_size}:{linker_stat.st_mtime_ns}"
+    link_identity_parts = [
         *LINK_LIBS, "manifold-prebuilt", f"glfw={Path(glfw_lib_dir).as_posix()}",
-        f"abi={ABI_VERSION}"]).encode("utf-8")
-    ).hexdigest()[:16]
+        f"abi={ABI_VERSION}"]
+    if args.linker == "lld":
+        link_identity_parts.append(f"linker=lld:{linker_stamp}")
+    link_identity = hashlib.sha256(
+        "\n".join(link_identity_parts).encode("utf-8")).hexdigest()[:16]
     try:
         compiler_stat = Path(cxx).stat()
         compiler_stamp = f"{compiler_stat.st_size}:{compiler_stat.st_mtime_ns}"
@@ -1245,6 +1293,8 @@ def build(args: argparse.Namespace) -> int:
     progress.set_phase("identity_and_cache",
                        compiler=str(cxx), flags_identity=flags_hash,
                        link_identity=link_identity,
+                       linker=args.linker, linker_path=str(linker_path),
+                       linker_stamp=linker_stamp,
                        compiler_stamp=compiler_stamp,
                        object_cache=object_cache_rel,
                        seeded_objects=seeded, toolchain_seconds=toolchain_seconds)
@@ -1271,6 +1321,8 @@ def build(args: argparse.Namespace) -> int:
         return str(path).replace("\\", "/")
 
     def module_extra_flags(source_path: str) -> list[str]:
+        if Path(source_path).name == IDENTITY_PROVIDER_SOURCE:
+            return [f"-I{identity_dir}"]
         symbol = FOLDED_MODULE_SYMBOLS.get(source_path)
         if symbol:
             return [f"-I{identity_dir}", "-DMIMITA_MODULE_BUILD",
@@ -1281,6 +1333,13 @@ def build(args: argparse.Namespace) -> int:
 
     def compile_command(item: dict, obj: Path, dep: Path) -> list[str]:
         source_path = normalized(item["path"])
+        if Path(source_path).name == IDENTITY_PROVIDER_SOURCE:
+            # This generated TU only defines three primitive identity values.
+            # Loading the full game PCH made this 258-byte source take 5.26s;
+            # compile it with the same MinGW C++ compiler but only its own
+            # stable header dependency.
+            return [*ccache_prefix, cxx, "-std=c++17", "-O0", "-g0",
+                    f"-I{identity_dir}", "-c", item["path"], "-o", str(obj)]
         return [*ccache_prefix, cxx, *base_flags, *module_extra_flags(source_path),
                 "-MF", str(dep), "-c", item["path"], "-o", str(obj)]
 
@@ -1714,15 +1773,16 @@ def build(args: argparse.Namespace) -> int:
         and str(published.get("build_mode") or "") == args.build_mode
         and (str(published.get("flags_identity") or "") == flags_hash
              or str(published.get("object_cache") or "") == object_cache_rel)
+        and str(published.get("link_identity") or "") == link_identity
         and published_dll.is_file()
         and link_inputs_unchanged())
 
     probe_scan = None
-    identity_changed = False
+    identity_header_changed = False
     if candidate:
         generation = published_generation
         progress.data["generation"] = generation
-        if identity_matches(identity_path, generation, revision):
+        if identity_matches(identity_path):
             marker_started = time.monotonic()
             progress.set_phase("object_cache_scan",
                                cache_candidates=len(entries),
@@ -1740,8 +1800,8 @@ def build(args: argparse.Namespace) -> int:
                     parse_ms=0.0, stat_ms=fast_seconds * 1000.0,
                     unique_dependencies=len(marker.get("external_dependencies") or []),
                     external_dependencies=[], write_marker=False)
-        identity_changed = write_identity_if_changed(identity_path, generation, revision)
-        if not identity_changed:
+        identity_header_changed = write_identity_if_changed(identity_path)
+        if not identity_header_changed:
             progress.set_phase("object_cache_scan",
                                cache_candidates=len(entries),
                                scan_mode="dependency_probe")
@@ -1759,11 +1819,26 @@ def build(args: argparse.Namespace) -> int:
 
     generation = args.generation if args.generation > 0 else next_generation()
     progress.data["generation"] = generation
-    identity_changed = write_identity_if_changed(identity_path, generation, revision)
+    progress.set(total=len(sources) + 1, generated_compile_units=1)
+    identity_header_changed = (write_identity_if_changed(identity_path)
+                               or identity_header_changed)
     generation_dir = out_root / f"generation-{generation}"
     generation_dir.mkdir(parents=True, exist_ok=True)
     dll_path = generation_dir / f"game-g{generation}.dll"
     staging = generation_dir / f"game-g{generation}.build.dll"
+
+    progress.set_phase("identity_provider_source_generation")
+    identity_source_started = progress.subphase_start(
+        "identity.provider_source_generation")
+    identity_provider_source = generation_dir / IDENTITY_PROVIDER_SOURCE
+    identity_provider_contents = identity_provider_text(generation, revision)
+    identity_provider_source.write_text(identity_provider_contents,
+                                        encoding="utf-8")
+    progress.subphase_end(
+        "identity.provider_source_generation", identity_source_started,
+        generated_source=str(identity_provider_source.relative_to(ROOT)),
+        source_bytes=len(identity_provider_contents.encode("utf-8")),
+        generation=generation, revision=revision)
 
     if changed_entries:
         to_build = [entry for entry in changed_entries
@@ -1811,7 +1886,7 @@ def build(args: argparse.Namespace) -> int:
         scan = probe_scan
         stale = list(scan["stale"])
         rows = scan["rows"]
-        if identity_changed:
+        if identity_header_changed:
             identity_paths = {normalized(path) for path in IDENTITY_SOURCE_PATHS}
             stale.extend(entry for entry in entries
                          if normalized(entry[0]["path"]) in identity_paths
@@ -1865,7 +1940,7 @@ def build(args: argparse.Namespace) -> int:
         build_cause = "header_fanout"
     elif changed_sources:
         build_cause = "changed_sources"
-    elif identity_changed:
+    elif identity_header_changed:
         build_cause = "identity"
     else:
         build_cause = "rebuild"
@@ -1876,6 +1951,15 @@ def build(args: argparse.Namespace) -> int:
 
     work = [entry for entry in stale
             if normalized(entry[0]["path"]) not in preflight_handled]
+    identity_provider_object = generation_dir / "module-identity-provider.o"
+    identity_provider_dep = generation_dir / "module-identity-provider.d"
+    identity_provider_entry = (
+        {"path": str(identity_provider_source),
+         "sha256": hashlib.sha256(
+             identity_provider_contents.encode("utf-8")).hexdigest()},
+        identity_provider_object,
+        identity_provider_dep,
+    )
     progress.set_phase("vendor_compile",
                        dependency_scan_seconds=dependency_scan_seconds,
                        object_scan_s=dependency_scan_seconds,
@@ -1883,14 +1967,15 @@ def build(args: argparse.Namespace) -> int:
                        scan_parse_ms=round(scan_parse_ms, 3),
                        scan_stat_ms=round(scan_stat_ms, 3),
                        scan_unique_dependencies=scan_unique_dependencies,
-                       pending_compile_count=len(work),
+                       pending_compile_count=len(work) + 1,
+                       identity_provider_pending=1,
                        changed_source_preflight_s=preflight_seconds)
 
     # Transitional diagnostic link input: the game DLL calls GLAD directly
     # today. Build the resident C dispatcher into the candidate so the whole-game
     # link can be measured; this is not a cutover-safe render boundary and is
     # replaced by CAP_RENDER before cutover.
-    vendor_objects: list[Path] = []
+    vendor_objects: list[Path] = [identity_provider_object]
     vendor_dir = out_root / "vendor"
     vendor_dir.mkdir(parents=True, exist_ok=True)
     glad_source = SOURCE_ROOT / "src" / "glad.c"
@@ -1924,11 +2009,23 @@ def build(args: argparse.Namespace) -> int:
         vendor_compile_seconds = round(time.monotonic() - vendor_started, 3)
     if glad_object.is_file():
         vendor_objects.append(glad_object)
-    progress.set_phase("compile", vendor_compile_seconds=vendor_compile_seconds,
-                       pending=len(work))
+    progress.set_phase(
+        "compile", vendor_compile_seconds=vendor_compile_seconds,
+        pending=len(work) + 1, total=len(sources) + 1,
+        generated_compile_units=1,
+        identity_provider_source=str(identity_provider_source.relative_to(ROOT)))
 
     compile_start = time.monotonic()
-    if work:
+    identity_compile_started = progress.subphase_start(
+        "compile.module_identity_provider",
+        generated_source=str(identity_provider_source.relative_to(ROOT)))
+    run_compile_batch([identity_provider_entry], 1)
+    identity_provider_compile_ms = progress.subphase_end(
+        "compile.module_identity_provider", identity_compile_started,
+        generated_source=str(identity_provider_source.relative_to(ROOT)),
+        generated_object=str(identity_provider_object.relative_to(ROOT)),
+        outcome="failed" if failures else "ok")
+    if work and not failures:
         stop_event.clear()
         run_compile_batch(work, jobs)
     compile_seconds = round(preflight_seconds + time.monotonic() - compile_start, 3)
@@ -1970,24 +2067,43 @@ def build(args: argparse.Namespace) -> int:
             object_input_bytes += path.stat().st_size
         except OSError:
             pass
+    extra_object_input_bytes = 0
+    for path in vendor_objects:
+        try:
+            extra_object_input_bytes += path.stat().st_size
+        except OSError:
+            pass
     progress.subphase_end("link.response_file_prepare", link_prepare_started,
                           response_file_bytes=response.stat().st_size,
                           object_input_count=len(objects),
+                          extra_object_input_count=len(vendor_objects),
+                          total_object_input_count=(len(objects) +
+                                                    len(vendor_objects)),
+                          identity_provider_object=(
+                              str((generation_dir / "module-identity-provider.o")
+                                  .relative_to(ROOT))),
                           linker_argument_count=len(link_lines),
-                          object_input_bytes=object_input_bytes)
+                          object_input_bytes=object_input_bytes,
+                          extra_object_input_bytes=extra_object_input_bytes,
+                          total_object_input_bytes=(object_input_bytes +
+                                                    extra_object_input_bytes))
 
-    link_command = [cxx, "-shared", "-o", str(staging), "@" + str(response)]
+    link_command = [cxx]
+    if args.linker == "lld":
+        link_command.extend(["-fuse-ld=lld", f"-B{linker_path.parent}"])
+    link_command.extend(["-shared", "-o", str(staging), "@" + str(response)])
     if os.path.isfile(staging):
         os.remove(staging)
     link_start = time.monotonic()
     link_command_started = progress.subphase_start(
-        "link.gnu_linker", object_input_count=len(objects),
+        f"link.{args.linker}_linker", linker=str(linker_path),
+        object_input_count=len(objects),
         linker_argument_count=len(link_lines),
         response_file=str(response.relative_to(ROOT)))
     link_result = run_tool(link_command, cwd=str(ROOT), stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, text=True)
     link_seconds = round(time.monotonic() - link_start, 3)
-    progress.subphase_end("link.gnu_linker", link_command_started,
+    progress.subphase_end(f"link.{args.linker}_linker", link_command_started,
                           outcome="ok" if link_result.returncode == 0 else "failed",
                           exit_code=link_result.returncode,
                           staged_dll_bytes=(staging.stat().st_size
@@ -2079,6 +2195,8 @@ def build(args: argparse.Namespace) -> int:
         "build_mode": args.build_mode,
         "flags_identity": flags_hash,
         "link_identity": link_identity,
+        "linker": args.linker,
+        "linker_path": str(linker_path),
         "compiler_stamp": compiler_stamp,
         "jobs": jobs,
         "priority": args.priority,
@@ -2096,7 +2214,13 @@ def build(args: argparse.Namespace) -> int:
         "changed_header_fanout": changed_header_fanout,
         "header_fanout_top": fanout_top,
         "identity_wrapper_count": (len(IDENTITY_SOURCE_PATHS)
-                                   if identity_changed else 0),
+                                   if identity_header_changed else 0),
+        "generated_compile_units": 1,
+        "identity_provider_source": str(
+            identity_provider_source.relative_to(ROOT)),
+        "identity_provider_object": str(
+            identity_provider_object.relative_to(ROOT)),
+        "identity_provider_compile_ms": identity_provider_compile_ms,
         "changed_source_preflight_seconds": preflight_seconds,
         "total_seconds": total_seconds,
         "worker_total_seconds": worker_seconds,
@@ -2203,6 +2327,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default="build/game")
     parser.add_argument("--generation", type=int, default=0)
     parser.add_argument("--build-mode", choices=("debug", "release"), default="debug")
+    parser.add_argument("--linker", choices=("auto", "gnu", "lld"), default="auto",
+                        help="linker for this candidate generation; auto prefers LLD and uses GNU ld if LLD is absent")
     parser.add_argument("--revision", default="", help="required manifest revision")
     parser.add_argument("--change-report", default="",
                         help="source diff report to attach to current/generation metadata")

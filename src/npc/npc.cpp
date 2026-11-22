@@ -2735,6 +2735,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         } else ++npcNavigationSkipped;
         NpcNavResult& mutableNav = npc.staggeredNavResult;
         bool objectivePlanFallback = false;
+        bool objectivePlanAttempted = false;
+        glm::vec3 objectivePlanDirection{0.0f};
+        const char* objectivePlanDirectionSource = "none";
         const bool objectiveTravelGoal =
             npc.utility.currentGoal == UtilityGoalKind::MoveToObjective ||
             npc.utility.currentGoal == UtilityGoalKind::PlantObjective ||
@@ -2747,16 +2750,35 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             const glm::vec3 toGoal(mutableNav.destination.x - npc.body.pos.x,
                                    mutableNav.destination.y - npc.body.pos.y, 0.0f);
             if (glm::length(toGoal) > 0.1f) {
-                MovementCommitmentSettings objectiveSettings = commitmentSettings;
-                objectiveSettings.openDistanceBias = 1.0f;
-                objectiveSettings.forwardBias = 8.0f;
-                objectiveSettings.targetProgressBias = 20.0f;
-                const glm::vec3 openDir = npc.navigator.chooseBestOpenDirection(
-                    npc, toGoal, toGoal, world, nearCandidates, objectiveSettings,
-                    npc.sensors.time,
-                    NpcDifficultyConfig::instance().settings().searchMemorySeconds);
-                if (glm::length(openDir) > 0.1f) {
-                    mutableNav.dir = openDir;
+                objectivePlanAttempted = true;
+                const glm::vec3 committedPlanar(
+                    npc.navigator.committedDirection.x,
+                    npc.navigator.committedDirection.y, 0.0f);
+                const glm::vec3 toGoalPlanar(toGoal.x, toGoal.y, 0.0f);
+                const bool commitmentStillAdvancesObjective =
+                    npc.navigator.commitmentActive &&
+                    !npc.navigator.commitmentProgressFailed &&
+                    !npc.movementStuckEpisodeActive &&
+                    !npc.navigator.areaEscapeActive &&
+                    npc.stateMachine.stuckTimer <= 0.0f &&
+                    glm::length(committedPlanar) > 0.1f &&
+                    glm::length(toGoalPlanar) > 0.1f &&
+                    glm::dot(glm::normalize(committedPlanar),
+                             glm::normalize(toGoalPlanar)) > 0.25f;
+                if (commitmentStillAdvancesObjective) {
+                    objectivePlanDirection = npc.navigator.committedDirection;
+                    objectivePlanDirectionSource = "movement_commitment";
+                } else {
+                    objectivePlanDirection = npc.navigator.chooseBestOpenDirection(
+                        npc, toGoal, toGoal, world, nearCandidates, commitmentSettings,
+                        npc.sensors.time,
+                        NpcDifficultyConfig::instance().settings().searchMemorySeconds);
+                    objectivePlanDirectionSource = "open_direction";
+                    if (glm::length(objectivePlanDirection) > 0.1f)
+                        npc.navigator.startLocalCorrection(objectivePlanDirection, 1.0f);
+                }
+                if (glm::length(objectivePlanDirection) > 0.1f) {
+                    mutableNav.dir = objectivePlanDirection;
                     mutableNav.blocked = false;
                     mutableNav.detour = true;
                     objectivePlanFallback = true;
@@ -2767,6 +2789,27 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         npcNavigatorMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - npcNavStart).count();
         emitNavPlanEvents(npc, nav, navSettings);
+        const uint32_t navFailureEventTick = (uint32_t)(npc.sensors.time * 60.0f);
+        if (objectivePlanAttempted && npc.lastNavFailureTick == navFailureEventTick) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.nav-objective-fallback", std::to_string(npc.id),
+                objectivePlanFallback ? "open direction applied"
+                                      : "no open direction found",
+                navFailureEventTick,
+                nlohmann::json{{"actor", npc.id},
+                               {"goal_kind", (int)npc.utility.currentGoal},
+                               {"failure_reason", nav.replanReason
+                                    ? nav.replanReason : "failed"},
+                               {"applied", objectivePlanFallback},
+                               {"direction_source", objectivePlanDirectionSource},
+                               {"destination", {nav.destination.x,
+                                                 nav.destination.y,
+                                                 nav.destination.z}},
+                               {"direction", {objectivePlanDirection.x,
+                                               objectivePlanDirection.y}}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
         replanReasonThisTick = nav.replanReason;
         // While a route is being followed toward a non-visible goal, recovery
         // jumps are harmful: in the air the actor's control is too weak to turn,
@@ -2787,6 +2830,11 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         // makes the route authoritative and stops the actor running past its
         // objective; combat and local wall-avoid keep priority.
         if (!npc.sensors.hasTarget && nav.valid)
+            moveDir = nav.dir;
+        // Failed plans have no valid route, but the objective fallback still
+        // selected a concrete open direction. Feed it to movement instead of
+        // leaving the previous patrol/commitment heading in control.
+        if (objectivePlanFallback)
             moveDir = nav.dir;
         // A blocked route owns the steering: turn/hold from the navigator, and
         // never let traversal launch a jump/dash into the confirmed obstacle.
@@ -3162,16 +3210,33 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     objectiveTarget.y - npc.body.pos.y, 0.0f);
                 const float objectiveDistance = glm::length(toObjective);
                 const char* recoveryStrategy = "random_open_direction";
+                glm::vec3 contactEscapeDirection{0.0f};
                 if (objectiveRecovery && objectiveDistance > 0.1f) {
-                    MovementCommitmentSettings objectiveSettings = commitmentSettings;
-                    objectiveSettings.openDistanceBias = 1.0f;
-                    objectiveSettings.forwardBias = 8.0f;
-                    objectiveSettings.targetProgressBias = 20.0f;
+                    for (const MovementContact& contact : npc.body.movementContacts) {
+                        if (contact.source != MovementContactSource::StaticWorld ||
+                            std::fabs(contact.normal.z) > 0.5f)
+                            continue;
+                        glm::vec3 normal(contact.normal.x, contact.normal.y, 0.0f);
+                        if (glm::length(normal) > 0.1f)
+                            contactEscapeDirection += glm::normalize(normal);
+                    }
+                    const bool hasContactEscape =
+                        glm::length(contactEscapeDirection) > 0.1f;
+                    MovementCommitmentSettings recoverySettings = commitmentSettings;
+                    if (hasContactEscape) {
+                        contactEscapeDirection = glm::normalize(contactEscapeDirection);
+                        // Escape direction is the clear side of static contact
+                        // normals. During recovery it temporarily outweighs the
+                        // objective bearing that led into the corner.
+                        recoverySettings.forwardBias = 20.0f;
+                        recoveryStrategy = "objective_contact_escape";
+                    }
                     openDir = npc.navigator.chooseBestOpenDirection(
-                        npc, toObjective, toObjective, world, nearCandidates,
-                        objectiveSettings, npc.sensors.time,
+                        npc, hasContactEscape ? contactEscapeDirection : toObjective,
+                        toObjective, world, nearCandidates,
+                        recoverySettings, npc.sensors.time,
                         NpcDifficultyConfig::instance().settings().searchMemorySeconds);
-                    if (glm::length(openDir) > 0.1f)
+                    if (glm::length(openDir) > 0.1f && !hasContactEscape)
                         recoveryStrategy = "objective_progress_open_direction";
                 }
                 if (glm::length(openDir) <= 0.1f) {
@@ -3223,6 +3288,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                             {"policy", policy ? policy->blockedBehavior : "none"},
                             {"recovery_strategy", recoveryStrategy},
                             {"open_dir", {openDir.x, openDir.y}},
+                            {"contact_escape_dir", {contactEscapeDirection.x,
+                                                       contactEscapeDirection.y}},
                             {"objective_target", {objectiveTarget.x,
                                                    objectiveTarget.y,
                                                    objectiveTarget.z}},
@@ -3379,6 +3446,19 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 moveDir + glm::normalize(repulse) * 0.7f);
         }
     }
+
+    // In FCS, stuck recovery and failed objective navigation own movement.
+    // Do not let combat or stale module intent add a dash impulse into the
+    // corner while the navigator is trying to break out.
+    const bool objectiveRecoveryOwnsDash = npc.behavior.active &&
+        npc.behavior.objectiveRush &&
+        (npc.movementStuckEpisodeActive || npc.navigator.areaEscapeActive ||
+         npc.navigator.commitmentProgressFailed ||
+         npc.stateMachine.stuckTimer > 0.0f ||
+         (npc.staggeredNavResult.planFailed &&
+          !npc.staggeredNavResult.hasPath));
+    if (objectiveRecoveryOwnsDash)
+        dash = false;
 
     InputState input;
     if (npc.replayControlled && npc.replayUseRecordedIntent && npc.hasReplayInput)
@@ -3639,29 +3719,26 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             ? static_cast<float>(npc.behavior.dashCooldownTicks) / 60.0f
             : (0.80f - difficulty01(npc.difficulty) * 0.62f);
         EffectPartSystem::instance().spawnDash(npc.body.pos);
-        if (!npc.hasLoggedDash) {
-            npc.hasLoggedDash = true;
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::NpcMovement, StructuredLevel::Important,
-                "npc.dash", std::to_string(npc.id), "shared_dash",
-                (uint32_t)(npc.sensors.time * 60.0f),
-                nlohmann::json{
-                    {"actor", npc.id},
-                    {"team", npc.body.matchTeam},
-                    {"profile", npc.behaviorProfileId},
-                    {"difficulty", npc.difficulty},
-                    {"target_distance", npc.sensors.targetDistance},
-                    {"target_visible", npc.sensors.hasTarget},
-                    {"objective_rush_no_enemy", objectiveRushNoEnemy},
-                    {"objective_route_safe", safeObjectiveRushRoute},
-                    {"module_dash_requested", npc.moduleDash},
-                    {"nav_path_active", npc.staggeredNavResult.hasPath},
-                    {"nav_plan_failed", npc.staggeredNavResult.planFailed},
-                    {"stuck_episode_active", npc.movementStuckEpisodeActive},
-                    {"local_correction_active", npc.navigator.localCorrectionActive},
-                    {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
-                __FILE__, __LINE__, __FUNCTION__);
-        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.dash", std::to_string(npc.id), "shared_dash",
+            (uint32_t)(npc.sensors.time * 60.0f),
+            nlohmann::json{
+                {"actor", npc.id},
+                {"team", npc.body.matchTeam},
+                {"profile", npc.behaviorProfileId},
+                {"difficulty", npc.difficulty},
+                {"target_distance", npc.sensors.targetDistance},
+                {"target_visible", npc.sensors.hasTarget},
+                {"objective_rush_no_enemy", objectiveRushNoEnemy},
+                {"objective_route_safe", safeObjectiveRushRoute},
+                {"module_dash_requested", npc.moduleDash},
+                {"nav_path_active", npc.staggeredNavResult.hasPath},
+                {"nav_plan_failed", npc.staggeredNavResult.planFailed},
+                {"stuck_episode_active", npc.movementStuckEpisodeActive},
+                {"local_correction_active", npc.navigator.localCorrectionActive},
+                {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
     if (wantDownDash && downDashAvailableBefore && !npc.body.dash.downDashAvailable)

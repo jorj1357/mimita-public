@@ -1409,6 +1409,7 @@ class DevLoop:
         self.build_requests: dict[str, str] = {}
         self.last_build_result = ""
         self.last_build_duration_seconds: float | None = None
+        self.last_build_timing: dict = {}
         self.game_build_worker: threading.Thread | None = None
         self.game_build_completions: Queue[dict] = Queue()
         self.pending_game_build_request_ids: list[str] = []
@@ -2065,6 +2066,7 @@ class DevLoop:
                 "build_output_tail": list(self.build_output_tail),
                 "last_build_result": self.last_build_result,
                 "last_build_duration_seconds": self.last_build_duration_seconds,
+                "last_build_timing": dict(self.last_build_timing),
                 "build_requests": dict(self.build_requests),
                 "game_build_status": self.game_build_status,
                 "game_build_detail": self.game_build_detail,
@@ -2159,6 +2161,7 @@ class DevLoop:
             "build_output_tail": build_snapshot["build_output_tail"],
             "last_build_result": build_snapshot["last_build_result"],
             "last_build_duration_seconds": build_snapshot["last_build_duration_seconds"],
+            "last_build_timing": build_snapshot["last_build_timing"],
             "build_requests": build_snapshot["build_requests"],
             "game_build": {
                 "status": build_snapshot["game_build_status"],
@@ -2904,9 +2907,15 @@ class DevLoop:
                     value = self.game_build_request_meta.get(request_id)
                     if value:
                         metadata[request_id] = dict(value)
-            build_metadata = next(
+            build_metadata = dict(next(
                 (value for value in metadata.values()
-                 if str(value.get("kind") or "") == "preview"), None)
+                 if str(value.get("kind") or "") == "preview"), {}))
+            for value in metadata.values():
+                if value.get("linker"):
+                    build_metadata["linker"] = value["linker"]
+                    break
+            if not build_metadata:
+                build_metadata = None
             result = run_game_build_worker(
                 ROOT, request_ids, self.pending_build_mode, source_generation,
                 on_output=self._record_game_build_output,
@@ -3128,7 +3137,9 @@ class DevLoop:
                 self.record_control_event(request, "accepted", self.last_message)
                 self.save_state("game_build_queued")
             elif action == "game-dll":
-                self.queue_game_dll_request(request_id)
+                self.queue_game_dll_request(
+                    request_id,
+                    {"linker": str(request.get("game_dll_linker") or "auto")})
                 self.start_game_build_worker()
                 self.last_message = "game-DLL build request queued through dev-loop"
                 self.record_control_event(request, "accepted", self.last_message)
@@ -3791,6 +3802,8 @@ class DevLoop:
                 self.active_build_phase = ""
                 self.active_build_progress = {}
                 self.last_build_duration_seconds = float(result.get("duration_seconds", 0))
+                self.last_build_timing = dict(result.get("worker_timing") or {})
+                self.last_build_timing["request_ids"] = request_ids
                 self.last_build_result = "success" if success else "failed"
                 if success:
                     self.latest_build_mode = str(result.get("mode") or "debug")
@@ -3810,34 +3823,6 @@ class DevLoop:
                         else "published_stale" if self.latest_stale
                         else "published_current"
                     )
-                    try:
-                        cutover = run_hidden(
-                            [sys.executable,
-                             str(ROOT / "devscripts" / "exe_cutover_gate.py"),
-                             "--report-only"],
-                            cwd=ROOT, text=True, capture_output=True, check=False)
-                        cutover_line = next(
-                            (line for line in cutover.stdout.splitlines()
-                             if "linked_game_sources=" in line), "no cutover report")
-                        self.record_runtime_event(
-                            "dev-loop.exe-cutover", {"result": cutover_line},
-                            "EXE cutover static link report")
-                    except OSError:
-                        pass
-                    try:
-                        cap_render = run_hidden(
-                            [sys.executable,
-                             str(ROOT / "devscripts" / "cap_render_gate.py"),
-                             "--report-only"],
-                            cwd=ROOT, text=True, capture_output=True, check=False)
-                        cap_line = next(
-                            (line for line in cap_render.stdout.splitlines()
-                             if "raw_gl_sources=" in line), "no CAP_RENDER report")
-                        self.record_runtime_event(
-                            "dev-loop.cap-render", {"result": cap_line},
-                            "CAP_RENDER static coverage report")
-                    except OSError:
-                        pass
                 else:
                     self.last_message = str(result.get("error") or
                                             f"build failed with exit code {result.get('return_code')}")
@@ -3865,6 +3850,67 @@ class DevLoop:
                 if pending_launch:
                     self.launch_after_build = False
 
+            if success:
+                # Publish the required build result before optional report-only
+                # scans. Do this after releasing self.lock because save_state()
+                # constructs a snapshot that acquires the same non-reentrant lock.
+                self.build_worker = None
+                self.save_state("build_succeeded")
+                report_timings = {}
+                cutover_started = time.monotonic()
+                try:
+                    cutover = run_hidden(
+                        [sys.executable,
+                         str(ROOT / "devscripts" / "exe_cutover_gate.py"),
+                         "--report-only"],
+                        cwd=ROOT, text=True, capture_output=True,
+                        check=False, timeout=4.0)
+                    cutover_line = next(
+                        (line for line in cutover.stdout.splitlines()
+                         if "linked_game_sources=" in line), "no cutover report")
+                    cutover_outcome = (
+                        "reported" if cutover.returncode == 0
+                        else f"failed_open_exit_{cutover.returncode}")
+                    self.record_runtime_event(
+                        "dev-loop.exe-cutover",
+                        {"result": cutover_line,
+                         "outcome": cutover_outcome,
+                         "elapsed_seconds": round(
+                             time.monotonic() - cutover_started, 3)},
+                        "EXE cutover static link report")
+                except (OSError, subprocess.SubprocessError) as error:
+                    cutover_outcome = f"failed_open:{error}"
+                report_timings["exe_cutover_report_seconds"] = round(
+                    time.monotonic() - cutover_started, 3)
+                report_timings["exe_cutover_report_outcome"] = cutover_outcome
+                cap_render_started = time.monotonic()
+                try:
+                    cap_render = run_hidden(
+                        [sys.executable,
+                         str(ROOT / "devscripts" / "cap_render_gate.py"),
+                         "--report-only"],
+                        cwd=ROOT, text=True, capture_output=True,
+                        check=False, timeout=4.0)
+                    cap_line = next(
+                        (line for line in cap_render.stdout.splitlines()
+                         if "raw_gl_sources=" in line), "no CAP_RENDER report")
+                    cap_render_outcome = (
+                        "reported" if cap_render.returncode == 0
+                        else f"failed_open_exit_{cap_render.returncode}")
+                    self.record_runtime_event(
+                        "dev-loop.cap-render",
+                        {"result": cap_line,
+                         "outcome": cap_render_outcome,
+                         "elapsed_seconds": round(
+                             time.monotonic() - cap_render_started, 3)},
+                        "CAP_RENDER static coverage report")
+                except (OSError, subprocess.SubprocessError) as error:
+                    cap_render_outcome = f"failed_open:{error}"
+                report_timings["cap_render_report_seconds"] = round(
+                    time.monotonic() - cap_render_started, 3)
+                report_timings["cap_render_report_outcome"] = cap_render_outcome
+                self.last_build_timing.update(report_timings)
+
             self.build_worker = None
             self.save_state("build_succeeded" if success else "build_failed")
             self.record_runtime_event(
@@ -3874,6 +3920,7 @@ class DevLoop:
                  "destination": result.get("destination") or "",
                  "source_generation": generation,
                  "duration_seconds": self.last_build_duration_seconds,
+                 "worker_timing": dict(self.last_build_timing),
                  "request_ids": request_ids,
                  "error": "" if success else self.last_message},
                 "EXE build published" if success else "EXE build failed",
@@ -7772,9 +7819,24 @@ def _work_resume(agent: str) -> None:
 
 
 def wait_for_build_request(request_id: str, timeout: float) -> int:
-    deadline = time.monotonic() + max(1.0, timeout)
+    wait_started = time.monotonic()
+    deadline = wait_started + max(1.0, timeout)
+    poll_count = 0
+    state_read_seconds = 0.0
+    sleep_seconds = 0.0
+
+    def report_timing(terminal_status: str) -> None:
+        elapsed = time.monotonic() - wait_started
+        print(f"[DEV CONTROL TIMING] wait_seconds={elapsed:.3f} "
+              f"state_read_seconds={state_read_seconds:.3f} "
+              f"sleep_seconds={sleep_seconds:.3f} polls={poll_count} "
+              f"terminal_status={terminal_status}")
+
     while time.monotonic() < deadline:
+        read_started = time.monotonic()
         current = read_current_run() or {}
+        state_read_seconds += time.monotonic() - read_started
+        poll_count += 1
         status = (current.get("build_requests") or {}).get(request_id)
         game_build = current.get("game_build") or {}
         if status is None:
@@ -7783,13 +7845,19 @@ def wait_for_build_request(request_id: str, timeout: float) -> int:
             print(f"[DEV CONTROL] build request={request_id} result=success "
                   f"build={current.get('latest_successful_build')} "
                   f"game_generation={game_build.get('generation')}")
+            report_timing("success")
             return 0
         if status == "failed":
             print(f"[DEV CONTROL] build request={request_id} result=failed "
                   f"detail={game_build.get('detail') or current.get('message')}",
                   file=sys.stderr)
+            report_timing("failed")
             return 1
-        time.sleep(0.5)
+        poll_sleep = min(0.1, max(0.0, deadline - time.monotonic()))
+        sleep_started = time.monotonic()
+        time.sleep(poll_sleep)
+        sleep_seconds += time.monotonic() - sleep_started
+    report_timing("timeout")
     print(f"[DEV CONTROL] build request={request_id} timed out waiting for completion",
           file=sys.stderr)
     return 2
@@ -7990,6 +8058,8 @@ def run_control_client(args: argparse.Namespace) -> int:
         request["hot_client"] = True
     if action == "build":
         request["build_mode"] = args.build_mode
+    if action == "game-dll":
+        request["game_dll_linker"] = getattr(args, "game_dll_linker", "auto")
     if action == "agent-build":
         request["build_request"] = getattr(args, "build_request", "") or ""
         request["requested_by"] = (

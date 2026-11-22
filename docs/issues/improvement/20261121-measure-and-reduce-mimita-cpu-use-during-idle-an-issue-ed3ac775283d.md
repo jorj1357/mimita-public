@@ -281,3 +281,33 @@ Independent history verification for ctx-20f2a628316f (cpp-latency-pressure-prof
 ### 2026-11-22T03:04:32.826Z — fun-cs-npc-objective
 
 Independent re-check of ctx-20f2a628316f ('claiming cores some days ago'), 2026-11-22T03:04Z. Build side: confirmed commit d4898e0 (Nov 19) made --jobs 0 resolve to os.cpu_count() and d89884f (Nov 21) changed the root launcher to --jobs 10; no affinity API exists in src/devscripts, and live mimita PIDs still show Normal priority with ProcessorAffinity 0xfff (all 12 CPUs), so MiMITA does not persistently reserve a core. Stronger match to the 'claim like 1 core' memory is the retained playerless server: PID 26748 (run 20261122_011031, 0 clients) used 4.70 CPU-s in 5.0s = 94.1% of one core; journal performance.server-loop-window actual_hz=1.30 and npc.phase-window total_ms=394-748. So the perceived 'one core' is the empty-room NPC/gamemode/projectile simulation, not pinning or a frame-pacer spin. No code changed; owner's existing empty-room suspend task is the right fix.
+
+## Agent suggestion
+
+### 2026-11-22T03:50:41.023Z — build-wait-reviewer
+
+ctx-1f0fb5aa9253 review (build-wait-reviewer, 2026-11-22T03:47Z): routing is correct; context is primary on this issue owned by cpu-build-efficiency. Evidence for the '0 percent usage right now how?' observation: a 5s psutil sample of the 5 then-live mimita.exe processes (PIDs 7060, 14864, 26748, 29296, 36388) measured 0.54, 2.33, 1.00, 1.50, 1.17 logical cores respectively, all status=running; several earlier PIDs had already exited. Repository search finds no empty-room/player-count gate and no suspend/affinity code in src/network/server.cpp or server-npcs.cpp, so no durable 0% idle mode was implemented. Interpretation: 0% is a transient/rounded sample (a process blocked between ticks, a minimized/background instance, or Task Manager averaging) or the specific instance the user looked at, not proof the idle-server CPU work is fixed or regressed. Discriminating next step: identify the exact PID/window the user read, then take a matched >=15s per-process sample plus its server events.jsonl window; report per-logical-core and whole-machine percent. No source/build/runtime change made.
+
+## Agent suggestion
+
+### 2026-11-22T08:56:16.894Z — cpp-latency-pressure-profile
+
+Live read-only profile follow-up (2026-11-22): existing server PID 26748, no clients, 19 NPCs observed, despite launch config --npcs 1; 10 one-second psutil samples showed mimita.exe 479.7-559.8% core-scaled (~4.8-5.6 logical cores), 279 threads, RSS about 493-496 MiB; host total CPU 59.9-77.0%. Host has 12 logical / 8 physical CPUs and 15.65 GiB RAM. This is a single existing server snapshot, not a controlled Juggernaut/AI run or proof all CPU comes from MiMITA's idle path. Investigate source of NPC count and CPU hot path first, then compare same scenario before/after; record process and host CPU with stated normalization. Keep builder priority/job cap policy as a separate measured experiment.
+
+## Agent suggestion
+
+### 2026-11-22T10:21:40.423Z — cpp-latency-linker-investigation
+
+Fresh sample during root-dev-loop DLL trials: existing server PID 26748 (12 logical CPU host) used 4.2-5.2 logical cores across several 1-second samples; total host CPU ranged 59-85%, server RSS 324-396 MB. Runtime is not idle: run 20261122_011031 is FCS with 19 NPCs and zero players. Latest performance.server-tick-window (20 ticks) reports npc_avg_ms=42.444, npc_max_ms=166.417, total_avg_ms=43.352, total_p95_ms=166.993, and 4/20 ticks over 100ms. performance.server-loop-window reports actual_hz=18.59, loop_avg_ms=268.75, loop_max_ms=310.40. npc.server-phase-window at src/network/server-npcs.cpp:3120 shows 74.29ms AI over 21 ticks; server.world-phase-window at src/game/server-runtime-module.cpp:454 reports 627.69ms physical_contact_ms and 112.76ms npc_sim_ms over 1.055s. perf trace via WPR -start CPU failed with 0xc5585011 (system-performance policy privilege); GetThreadDescription found 0/297 named threads, so stacks cannot yet be assigned. The next CPU investigation should pin to NPC phase/physical-contact budget owner and obtain an authorized stack profile or use bounded owner-level timings. This workload is FCS with no players, not Juggernaut with an AI player, so retain that limitation.
+
+## Agent suggestion
+
+### 2026-11-22T10:32:26.842Z — cpp-latency-linker-investigation
+
+Update from the same live FCS run: server PID26748 still has 19 NPCs and zero players. During the build samples it used about 4.2-5.2 logical cores; host CPU was 59-85%, RSS about 324-396MB. Recent server.tick window: 20 ticks, NPC avg42.444ms/max166.417ms, 4/20 ticks >100ms, total avg43.352ms and p95 166.993ms; server loop actual_hz18.59 with avg loop wall268.75ms/max310.40ms. This is an AI-heavy FCS server, not idle or Juggernaut+AI-player. Existing NPC and world phase events identify high costs; WPR CPU profile could not start (0xc5585011 system-performance policy) and no thread descriptions were available. Do not label the high CPU as idle burn or blame only the compiler; continue owner-level NPC/world profiling and test under the requested Juggernaut workload when safe.
+
+## Agent suggestion
+
+### 2026-11-22T10:53:16.129Z — cpp-latency-linker-investigation
+
+Live CPU sample during no-op DLL attempt game-dll-20261122T104609278119Z-1e5d54: Windows host has 12 logical CPUs. Over 20s total CPU averaged 84.3% (69.1–97.0%); existing MiMITA server PID26748 averaged 453.2% of one logical CPU (~4.53 cores), max579.7%, RSS381.9MB. No compiler/linker process was active because the DLL attempt was a no-op. A separate 5s sample averaged 94.1% host CPU; top processes: MiMITA 463.7%, System 198.5%, Defender MsMpEng 127.3%, Pythonw 42.3%, OpenCode 20%, Task Manager15.3%. Same run 20261122_011031, server journal event at 10:48:44Z reports 19 NPCs, 0 players; performance.server-tick-window: NPC avg57.52ms/max219.77ms, 4/15 ticks >100ms, total avg58.66ms; server.world-phase-window total avg80.62ms and physical_contact 757.66ms over 1.424s; npc.server-phase-window AI 2191.58ms across15 ticks, worst actor100018=1205.56ms. Dev-loop profile says effective_npcs=1, so actual live 19 NPCs vs profile metadata 1 is a workload mismatch to explain. This confirms resource pressure is materially present even with no build; it does not prove the compiler is resource-starved because the attempt compiled nothing. Next: inspect per-process thread/hot-scope diagnostics for pid26748 and capture host/process trace during an actual changed-source compile, using existing run only.

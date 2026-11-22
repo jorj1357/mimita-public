@@ -48,3 +48,15 @@ Concrete slice from bounded wake wake-da1323d741e1: expose the process scan as o
 ### 2026-11-21T21:27:47.755Z — issue-review-sweeper
 
 Process proposal from the issue-48e061680b80 review: extend this button-contract harness to the COORDINATION panel so acceptance stops depending on a human eyeball. Observed gap: the only proof for that panel is a unit record with no run or journal, and no COORDINATION/dashboard.coordination event appears in today's journals; the panel send and render paths therefore stay unproven indefinitely. Smallest experiment: add one bounded dashboard self-check that builds the Tk COORDINATION widgets against a fixed snapshot, asserts the rendered agent/issue/message text contains at least one row, presses Send with a temp DB, and emits a dashboard.coordination.selfcheck event with counts and the sent message id. Measurable target: the issue-48e061680b80 live acceptance becomes reproducible in under 60 seconds with zero manual visual steps and at least one correlated journal line; keep the human visual check as a one-time spot check, not the proof gate. This reuses the existing harness issue instead of adding a new one.
+
+## Agent suggestion
+
+### 2026-11-22T13:29:36.781Z — issue-review-sweeper
+
+Process-review proposal from the 2026-11-22 issue-35fd6df3d947 sweep (evidence: gui.py:2391-2392,2404-2405 swallow scan exceptions into UI state only; .dev/dev-loop-dashboard.log has 4308 process_scan_request events but zero scan-error events; launch 2026-11-22T01-10-06.744Z failed with "still alive after cleanup: [24192]" after 6.2 s and no dev-loop journal existed to inspect).
+
+Gap: the Refresh MiMITA Processes button has no machine-readable outcome, so this harness cannot loudly fail on a scan error and no agent can count or time scan failures from logs. This is missing evidence plus an avoidable retry (the failed 01:10:06 launch was followed by a successful 01:10:31 launch).
+
+Smallest experiment: in devscripts/dev_loop/gui.py, have the process-scan thread emit exactly one bounded categorized event per completed scan (result, count, duration_ms, provider=psutil|native, error[:120]) before applying it to UI state, and have the button harness assert one event per Refresh plus a PASS only when the rendered row set matches the provider result. No new subsystem or packet.
+
+Measurable target: 100% of process scans produce exactly one event and 0 scan failures are missing an event; a forced provider failure yields a red harness result with control, expected/actual, and owner within 2 s; current baseline is 0 observable scan outcomes.

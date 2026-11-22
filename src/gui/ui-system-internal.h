@@ -31,6 +31,7 @@ extern bool gDebug;
 extern bool gMousePrev;
 extern bool gMouseDown;
 extern bool gMouseClickEdge;
+extern int gMouseClickEdgeFramesRemaining;
 extern bool gUiEditMode;
 extern int gFrame;
 extern int gDrawCalls;

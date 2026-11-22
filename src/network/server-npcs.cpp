@@ -901,7 +901,6 @@ static void respawnServerNpc(Npc& npc, const World& world)
     npc.lastLoggedUtilityGoal = -1;
     npc.lastLoggedUtilityAction = -1;
     npc.hasLoggedPursuitState = false;
-    npc.hasLoggedDash = false;
     npc.lastLoggedPursuitTarget = 0;
     npc.lastLoggedPursuitVisible = false;
     npc.lastLoggedPursuitRemembered = false;
@@ -1896,10 +1895,25 @@ void simulateSharedNpcs(SOCKET sock,
     double worstAiMs = 0.0;
     uint32_t worstAiActor = 0;
     uint32_t recoveryActor = 0;
+    double collisionConfigPollMs = 0.0;
+    double npcAdoptionMs = 0.0;
+    double damageSyncMs = 0.0;
+    double modeProfileSyncMs = 0.0;
+    double targetingPolicyMs = 0.0;
+    double beginSimulationTickMs = 0.0;
     Perf::ScopedTimer npcSimulationTimer("Server::NpcSimulation");
+    auto preludeStageStart = std::chrono::steady_clock::now();
     ActorCollisionConfig::instance().pollHotReload(tick);
+    collisionConfigPollMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - preludeStageStart).count();
+    preludeStageStart = std::chrono::steady_clock::now();
     adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive, world);
+    npcAdoptionMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - preludeStageStart).count();
+    preludeStageStart = std::chrono::steady_clock::now();
     syncServerNpcDamageToNpc(npcs, npcSystem, npcIdsAlive);
+    damageSyncMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - preludeStageStart).count();
 
     // Keep the authoritative roster and health mirrors synchronized, but skip
     // all NPC decision, movement, physics, and actor-pair work until ACTIVE.
@@ -1948,6 +1962,7 @@ void simulateSharedNpcs(SOCKET sock,
     // today). Re-resolve them here so editing the active gamemode JSON changes
     // living NPCs without a respawn. Role/actor-preset NPCs keep their own
     // profile and are not overwritten by this mode fallback.
+    preludeStageStart = std::chrono::steady_clock::now();
     bool modeProfileChanged = false;
     const Gamemode& activeGamemode =
         GamemodeRegistry::instance().get(serverGamemodeState().matchMode);
@@ -1979,6 +1994,8 @@ void simulateSharedNpcs(SOCKET sock,
     }
     if (modeProfileChanged)
         npcSystem.refreshDifficultyTuning();
+    modeProfileSyncMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - preludeStageStart).count();
 
     // Each NPC targets its own nearest actor. A mode may own its targeting
     // policy (team modes, e.g. Counter-Strike opposite_team); otherwise the
@@ -2000,6 +2017,7 @@ void simulateSharedNpcs(SOCKET sock,
     const auto& npcDifficulty = NpcDifficultyConfig::instance().settings();
     const bool teamMatch = serverGamemodeState().objectiveRounds;
 
+    preludeStageStart = std::chrono::steady_clock::now();
     NpcTargetingPolicy targeting;
     const Gamemode& activeGamemodeForTargeting =
         GamemodeRegistry::instance().get(serverGamemodeState().matchMode);
@@ -2050,7 +2068,12 @@ void simulateSharedNpcs(SOCKET sock,
     const bool freezeWaveBanner = serverGamemodeState().npcWaves
         && serverGamemodeState().waveBannerVisible
         && npcDifficulty.freezeDuringWaveBanner;
+    targetingPolicyMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - preludeStageStart).count();
+    preludeStageStart = std::chrono::steady_clock::now();
     npcBeginSimulationTick(tick);
+    beginSimulationTickMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - preludeStageStart).count();
     const auto npcAiStart = std::chrono::steady_clock::now();
     uint64_t targetScans = 0;
     uint64_t targetScanSkipped = 0;
@@ -3144,6 +3167,12 @@ void simulateSharedNpcs(SOCKET sock,
                            {"worst_ai_ms", worstAiMs},
                            {"worst_ai_actor", worstAiActor},
                            {"recovery_ms", recoveryMs},
+                           {"collision_config_poll_ms", collisionConfigPollMs},
+                           {"npc_adoption_ms", npcAdoptionMs},
+                           {"damage_sync_ms", damageSyncMs},
+                           {"mode_profile_sync_ms", modeProfileSyncMs},
+                           {"targeting_policy_ms", targetingPolicyMs},
+                           {"begin_simulation_tick_ms", beginSimulationTickMs},
                            {"pair_ms", pairMs},
                            {"respawn_ms", respawnMs},
                            {"rebuild_ms", rebuildMs},

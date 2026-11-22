@@ -813,7 +813,9 @@ bool AvatarSystem::queueAvatarLoad(const std::string& name, bool retry) {
 
 bool AvatarSystem::isAvatarLoadPending(const std::string& name) const {
     auto it = mLoadStates.find(name);
-    return it != mLoadStates.end() && it->second != AvatarLoadState::Ready;
+    return it != mLoadStates.end() &&
+        (it->second == AvatarLoadState::Queued ||
+         it->second == AvatarLoadState::Loading);
 }
 
 void AvatarSystem::pollBackgroundAvatarLoads() {

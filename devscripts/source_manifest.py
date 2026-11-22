@@ -22,12 +22,14 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import json
 import os
 import sys
+import threading
 import time
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from pathlib import Path
 from typing import Callable
 
@@ -56,6 +58,218 @@ HEADER_SUFFIXES = (".h", ".hpp", ".hh", ".hxx", ".inl", ".ipp")
 HEADER_ROOTS = ("src", "include")
 ALLOWED_OWNERS = {"game", "resident", "bootstrap", "launcher", "tool", "test", "vendor"}
 _INVENTORY_CACHE: dict[tuple[Path, str], tuple[tuple[str, ...], dict[str, int]]] = {}
+_INVENTORY_WATCHERS: dict[Path, "_DirectoryChangeWatcher"] = {}
+_INVENTORY_WATCHER_CURSORS: dict[tuple[Path, str], int] = {}
+_HASH_WATCHER_CURSORS: dict[Path, int] = {}
+_HASH_WATCHER_CURSOR_LOCK = threading.Lock()
+INVENTORY_CACHE_SCHEMA = 1
+OWNER_RESOLVER_CACHE_SCHEMA = 1
+
+
+class _DirectoryChangeWatcher:
+    """Best-effort Windows name-change journal for warm source inventories.
+
+    The persistent inventory remains authoritative after a daemon restart: its
+    directory stamps are checked once before this watcher is trusted. If the
+    notification stream overflows or stops, callers fall back to a full stamp
+    check and tree scan.
+    """
+
+    _BUFFER_BYTES = 64 * 1024
+    _EVENT_LIMIT = 16384
+    _FILE_NAME = 0x00000001
+    _DIR_NAME = 0x00000002
+    _SIZE = 0x00000008
+    _LAST_WRITE = 0x00000010
+    _ACTIONS = {"added": 1, "removed": 2, "renamed_old": 4, "renamed_new": 5}
+
+    def __init__(self, root: Path):
+        if os.name != "nt":
+            raise OSError("directory notifications require Windows")
+        from ctypes import wintypes
+
+        self.root = root
+        self._lock = threading.Lock()
+        self._ready = threading.Event()
+        self._events: deque[tuple[int, int, str]] = deque(maxlen=self._EVENT_LIMIT)
+        self._sequence = 0
+        self._overflow_sequence = 0
+        self._error = ""
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self._kernel32 = kernel32
+        kernel32.CreateFileW.restype = wintypes.HANDLE
+        kernel32.CreateFileW.argtypes = (
+            wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+            wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+        kernel32.ReadDirectoryChangesW.restype = wintypes.BOOL
+        kernel32.ReadDirectoryChangesW.argtypes = (
+            wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD,
+            wintypes.BOOL, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
+            wintypes.LPVOID, wintypes.LPVOID)
+        handle = kernel32.CreateFileW(
+            str(root), 0x0001, 0x00000001 | 0x00000002 | 0x00000004,
+            None, 3, 0x02000000, None)
+        if handle == wintypes.HANDLE(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+        self._handle = handle
+        self._thread = threading.Thread(
+            target=self._run, name="mimita-source-inventory-watch", daemon=True)
+        self._thread.start()
+        if not self._ready.wait(2.0):
+            kernel32.CloseHandle(handle)
+            raise OSError("source inventory watcher did not start")
+
+    @property
+    def sequence(self) -> int:
+        with self._lock:
+            return self._sequence
+
+    @property
+    def error(self) -> str:
+        with self._lock:
+            return self._error
+
+    def events_since(self, sequence: int
+                     ) -> tuple[int, list[tuple[int, int, str]]] | None:
+        with self._lock:
+            if self._error:
+                return None
+            if self._overflow_sequence > sequence:
+                return None
+            if self._events and sequence < self._events[0][0] - 1:
+                return None
+            snapshot_sequence = self._sequence
+            return (snapshot_sequence,
+                    [item for item in self._events if item[0] > sequence])
+
+    def _append(self, action: int, relative_name: str) -> None:
+        relative_name = relative_name.replace("\\", "/").strip("/")
+        if not relative_name or relative_name == "." or ".." in Path(relative_name).parts:
+            return
+        parts = Path(relative_name).parts
+        # Ignore paths the source inventories never include. Counting their
+        # notifications would make unrelated cache/build writes invalidate a
+        # source-tree snapshot and force a needless retry.
+        if (not parts or parts[0] in EXCLUDE_DIRS
+                or any(part in DEEP_EXCLUDE_DIRS for part in parts[1:])):
+            return
+        with self._lock:
+            next_sequence = self._sequence + 1
+            if len(self._events) == self._EVENT_LIMIT:
+                self._overflow_sequence = next_sequence
+            self._sequence = next_sequence
+            self._events.append((next_sequence, action, relative_name))
+
+    def _run(self) -> None:
+        from ctypes import wintypes
+
+        buffer = ctypes.create_string_buffer(self._BUFFER_BYTES)
+        self._ready.set()
+        while True:
+            bytes_returned = wintypes.DWORD()
+            ok = self._kernel32.ReadDirectoryChangesW(
+                self._handle, buffer, len(buffer), True,
+                self._FILE_NAME | self._DIR_NAME | self._SIZE | self._LAST_WRITE,
+                ctypes.byref(bytes_returned), None, None)
+            if not ok:
+                error = ctypes.get_last_error()
+                with self._lock:
+                    self._error = f"ReadDirectoryChangesW failed: {error}"
+                return
+            if not bytes_returned.value:
+                with self._lock:
+                    self._sequence += 1
+                    self._overflow_sequence = self._sequence
+                continue
+            offset = 0
+            total = int(bytes_returned.value)
+            base_address = ctypes.addressof(buffer)
+            while offset + 12 <= total:
+                next_offset = wintypes.DWORD.from_buffer(buffer, offset).value
+                action = wintypes.DWORD.from_buffer(buffer, offset + 4).value
+                name_bytes = wintypes.DWORD.from_buffer(buffer, offset + 8).value
+                if name_bytes % 2 or offset + 12 + name_bytes > total:
+                    with self._lock:
+                        self._sequence += 1
+                        self._overflow_sequence = self._sequence
+                    break
+                name = ctypes.wstring_at(base_address + offset + 12,
+                                          name_bytes // 2)
+                self._append(int(action), name)
+                if not next_offset:
+                    break
+                offset += int(next_offset)
+
+
+def _directory_watcher(root: Path) -> _DirectoryChangeWatcher | None:
+    if os.name != "nt":
+        return None
+    watcher = _INVENTORY_WATCHERS.get(root)
+    if watcher is not None:
+        return watcher if not watcher.error else None
+    try:
+        watcher = _DirectoryChangeWatcher(root)
+    except (OSError, AttributeError):
+        return None
+    _INVENTORY_WATCHERS[root] = watcher
+    return watcher
+
+
+def _watcher_changed_directories(root: Path, kind: str,
+                                 events: list[tuple[int, int, str]],
+                                 cached_stamps: dict[str, int]) -> list[str]:
+    changed: set[str] = set()
+    suffixes = (".cpp",) if kind == "cpp" else HEADER_SUFFIXES
+    excluded_deep = DEEP_EXCLUDE_DIRS if kind == "cpp" else HEADER_EXCLUDE_DIRS
+    for _sequence, _action, relative_name in events:
+        if _action == 3:  # modified content; it does not change the path inventory
+            continue
+        parts = Path(relative_name).parts
+        if not parts or parts[0] in EXCLUDE_DIRS:
+            continue
+        if any(part in excluded_deep for part in parts[1:]):
+            continue
+        if kind == "headers" and parts[0] not in HEADER_ROOTS:
+            continue
+        path = Path(relative_name)
+        absolute = root / path
+        if (relative_name in cached_stamps or absolute.is_dir()):
+            changed.add(path.as_posix())
+        elif path.suffix.lower() in suffixes:
+            parent = path.parent.as_posix()
+            if parent != ".":
+                changed.add(parent)
+    return sorted(changed)
+
+
+def _watcher_changed_source_files(
+        events: list[tuple[int, int, str]]) -> set[str]:
+    """Return source/header paths touched since a digest cursor."""
+    suffixes = {".cpp", *HEADER_SUFFIXES}
+    changed: set[str] = set()
+    for _sequence, _action, relative_name in events:
+        if Path(relative_name).suffix.lower() in suffixes:
+            changed.add(relative_name)
+    return changed
+
+
+def _digest_watcher_snapshot(root: Path) -> tuple[
+        _DirectoryChangeWatcher | None, int | None, set[str], bool]:
+    watcher = _directory_watcher(root)
+    if watcher is None:
+        return None, None, set(), True
+    cursor = _HASH_WATCHER_CURSORS.get(root)
+    if cursor is None:
+        # No cursor means this process has no complete event history. Validate
+        # every cached stamp once, then establish a cursor after a stable
+        # snapshot. Files whose metadata changed are rehashed by digest_for.
+        return watcher, watcher.sequence, set(), True
+    events = watcher.events_since(cursor)
+    if events is None:
+        # Overflow or watcher error: rebuild the trusted stamp baseline.
+        return watcher, watcher.sequence, set(), True
+    sequence, changes = events
+    return watcher, sequence, _watcher_changed_source_files(changes), False
 
 
 def sha256_file(path: Path) -> str:
@@ -228,18 +442,82 @@ def _incremental_inventory(root: Path, kind: str, cached_paths: tuple[str, ...],
     return sorted(paths), stamps, rescanned_directories
 
 
-def _cached_inventory(root: Path, kind: str) -> tuple[list[str], dict]:
+def _cached_inventory(root: Path, kind: str,
+                      _retry: int = 0) -> tuple[list[str], dict]:
     key = (root, kind)
+    cache_path = root / ".dev" / f"source-inventory-{kind}-cache.json"
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
     cached = _INVENTORY_CACHE.get(key)
-    changed_directories = (_directory_stamp_changes(root, cached[1])
-                           if cached is not None else [])
-    if cached is not None and not changed_directories:
-        return list(cached[0]), {"cache_hit": True}
+    persistent_hit = False
+    if cached is None:
+        try:
+            payload = read_json(cache_path)
+            if (isinstance(payload, dict)
+                    and payload.get("schema") == INVENTORY_CACHE_SCHEMA
+                    and payload.get("root") == str(root)
+                    and payload.get("kind") == kind
+                    and isinstance(payload.get("paths"), list)
+                    and isinstance(payload.get("stamps"), dict)):
+                cached = (tuple(str(path) for path in payload["paths"]),
+                          {str(path): int(stamp)
+                           for path, stamp in payload["stamps"].items()})
+                persistent_hit = True
+        except (OSError, ValueError, TypeError):
+            cached = None
+    watcher = _directory_watcher(root)
+    watcher_used = watcher is not None
+    watcher_cursor = _INVENTORY_WATCHER_CURSORS.get(key)
+    watcher_sequence = watcher.sequence if watcher is not None else -1
+    changed_directories: list[str] | None = []
+    if cached is not None:
+        if watcher is None:
+            changed_directories = _directory_stamp_changes(root, cached[1])
+        elif watcher_cursor is None:
+            # A persistent cache cannot trust notifications emitted before the
+            # daemon started watching. Validate its stamps once, then use the
+            # live stream for later requests.
+            baseline = watcher.sequence
+            changed_directories = _directory_stamp_changes(root, cached[1])
+            event_snapshot = watcher.events_since(baseline)
+            if event_snapshot is None:
+                changed_directories = None
+            else:
+                watcher_sequence, events = event_snapshot
+                changed_directories.extend(_watcher_changed_directories(
+                    root, kind, events, cached[1]))
+        else:
+            event_snapshot = watcher.events_since(watcher_cursor)
+            if event_snapshot is None:
+                changed_directories = None
+            else:
+                watcher_sequence, events = event_snapshot
+                changed_directories = _watcher_changed_directories(
+                    root, kind, events, cached[1])
+    elif watcher is not None:
+        watcher_sequence = watcher.sequence
+
+    if cached is not None and changed_directories == []:
+        if watcher is None or watcher.sequence == watcher_sequence:
+            _INVENTORY_CACHE[key] = cached
+            if watcher is not None:
+                _INVENTORY_WATCHER_CURSORS[key] = watcher_sequence
+            return list(cached[0]), {
+                "cache_hit": True, "watcher_cache": watcher_used,
+                "directory_count": len(cached[1]),
+            }
+        if _retry < 2:
+            return _cached_inventory(root, kind, _retry + 1)
+        changed_directories = None
     scanner = _scan_cpp_inventory if kind == "cpp" else _scan_header_inventory
     incremental = (_incremental_inventory(root, kind, cached[0], cached[1],
                                            changed_directories)
                    if cached is not None and changed_directories else None)
     if incremental is None:
+        if watcher is not None and watcher_cursor is not None:
+            watcher_sequence = watcher.sequence
         result, stamps = scanner(root)
         rescanned_directories = len(stamps)
         incremental_used = False
@@ -249,21 +527,51 @@ def _cached_inventory(root: Path, kind: str) -> tuple[list[str], dict]:
     # Validate the directory tree after enumerating it. If a file or directory
     # was added/removed during the scan, return the scan result but do not trust
     # it as a reusable inventory on the next build.
-    stable = not _directory_stamp_changes(root, stamps)
+    if watcher is None:
+        stable = not _directory_stamp_changes(root, stamps)
+    else:
+        stable = watcher.sequence == watcher_sequence
+        if not stable and _retry < 2:
+            # Cache this coherent-enough enumeration at the sequence it saw;
+            # the next pass applies every later event before returning it.
+            _INVENTORY_CACHE[key] = (tuple(result), stamps)
+            _INVENTORY_WATCHER_CURSORS[key] = watcher_sequence
+            return _cached_inventory(root, kind, _retry + 1)
     if stable:
         _INVENTORY_CACHE[key] = (tuple(result), stamps)
+        if watcher is not None:
+            _INVENTORY_WATCHER_CURSORS[key] = watcher_sequence
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = cache_path.with_name(
+                f"{cache_path.name}.{os.getpid()}.tmp")
+            temporary.write_text(json.dumps({
+                "schema": INVENTORY_CACHE_SCHEMA, "root": str(root),
+                "kind": kind, "paths": result, "stamps": stamps,
+            }, separators=(",", ":")), encoding="utf-8")
+            os.replace(temporary, cache_path)
+        except OSError:
+            # Inventory cache is derived data; a later call can rescan.
+            pass
     else:
         _INVENTORY_CACHE.pop(key, None)
+    reported_changed_directories = changed_directories or []
     return result, {
-        "cache_hit": False,
-        "invalidated_reason": ("directory_stamp_changed" if changed_directories
-                               else "cold_or_unstable_scan"),
-        "changed_directory_count": len(changed_directories),
-        "changed_directories": changed_directories[:32],
-        "changed_directories_truncated": len(changed_directories) > 32,
+        "cache_hit": False, "persistent_cache_hit": persistent_hit,
+        "invalidated_reason": (
+            "watcher_history_unavailable" if changed_directories is None else
+            "directory_stamp_changed" if changed_directories else
+            "cold_or_unstable_scan"),
+        "changed_directory_count": len(reported_changed_directories),
+        "changed_directories": reported_changed_directories[:32],
+        "changed_directories_truncated": (
+            len(reported_changed_directories) > 32),
         "rescanned_directory_count": rescanned_directories,
         "incremental": incremental_used,
         "inventory_stable": stable,
+        "watcher_cache": watcher_used,
+        "directory_count": len(stamps),
+        "watcher_sequence": watcher_sequence if watcher is not None else None,
     }
 
 
@@ -383,6 +691,68 @@ class OwnerResolver:
 _RESOLVER_CACHE: dict[Path, tuple[tuple, OwnerResolver]] = {}
 
 
+def _resolver_from_cache(root: Path, owner_config: dict, payload: dict
+                         ) -> OwnerResolver | None:
+    module_owners = payload.get("module_owners")
+    overrides = payload.get("overrides")
+    rule_assignments = payload.get("rule_assignments")
+    link_inputs = payload.get("link_inputs")
+    errors = payload.get("errors")
+    warnings = payload.get("warnings")
+    if not all(isinstance(value, dict) for value in
+               (module_owners, overrides, rule_assignments, link_inputs)):
+        return None
+    if any(not isinstance(path, str) or not isinstance(value, dict)
+           for path, value in overrides.items()):
+        return None
+    if any(not isinstance(group, str) or not isinstance(entries, list)
+           or any(not isinstance(entry, dict)
+                  or not isinstance(entry.get("path"), str)
+                  or not isinstance(entry.get("owner"), str)
+                  or not isinstance(entry.get("reason"), str)
+                  for entry in entries)
+           for group, entries in link_inputs.items()):
+        return None
+    if not isinstance(errors, list) or not isinstance(warnings, list):
+        return None
+    parsed_rules: dict[str, tuple[str, str]] = {}
+    for path, value in rule_assignments.items():
+        if (not isinstance(path, str) or not isinstance(value, list)
+                or len(value) != 2 or not all(isinstance(item, str) for item in value)):
+            return None
+        parsed_rules[path] = (value[0], value[1])
+    if any(not isinstance(path, str) or not isinstance(owner, str)
+           for path, owner in module_owners.items()):
+        return None
+    resolver = OwnerResolver.__new__(OwnerResolver)
+    resolver.root = root
+    resolver.config = owner_config
+    resolver.errors = [str(item) for item in errors]
+    resolver.warnings = [str(item) for item in warnings]
+    resolver.module_owners = module_owners
+    resolver.overrides = overrides
+    resolver.rule_assignments = parsed_rules
+    resolver.link_inputs = link_inputs
+    return resolver
+
+
+def _resolver_cache_payload(root: Path, signature: tuple,
+                            resolver: OwnerResolver) -> dict:
+    return {
+        "schema": OWNER_RESOLVER_CACHE_SCHEMA,
+        "root": str(root),
+        "signature": hashlib.sha256(json.dumps(
+            signature, separators=(",", ":")).encode("utf-8")).hexdigest(),
+        "module_owners": resolver.module_owners,
+        "overrides": resolver.overrides,
+        "rule_assignments": {path: list(value)
+                             for path, value in resolver.rule_assignments.items()},
+        "link_inputs": resolver.link_inputs,
+        "errors": resolver.errors,
+        "warnings": resolver.warnings,
+    }
+
+
 def _owner_resolver_signature(root: Path, cpp_paths: list[str]) -> tuple:
     """Fingerprint every input that can change source ownership resolution."""
     owner_path = root / OWNERS_REL
@@ -418,14 +788,45 @@ def _cached_owner_resolver(root: Path, cpp_paths: list[str]) -> tuple[OwnerResol
     cached = _RESOLVER_CACHE.get(root)
     if cached is not None and cached[0] == signature:
         return cached[1], True
+    signature_hash = hashlib.sha256(json.dumps(
+        signature, separators=(",", ":")).encode("utf-8")).hexdigest()
+    cache_path = root / ".dev" / "source-owner-resolver-cache.json"
+    try:
+        payload = read_json(cache_path)
+        if (isinstance(payload, dict)
+                and payload.get("schema") == OWNER_RESOLVER_CACHE_SCHEMA
+                and payload.get("root") == str(root)
+                and payload.get("signature") == signature_hash):
+            try:
+                owner_config = read_json(root / OWNERS_REL)
+            except (OSError, json.JSONDecodeError):
+                owner_config = {}
+            resolver = _resolver_from_cache(root, owner_config, payload)
+            if resolver is not None:
+                _RESOLVER_CACHE[root] = (signature, resolver)
+                return resolver, True
+    except (OSError, ValueError, TypeError):
+        pass
     resolver = OwnerResolver(root)
     _RESOLVER_CACHE[root] = (signature, resolver)
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = cache_path.with_name(f"{cache_path.name}.{os.getpid()}.tmp")
+        temporary.write_text(json.dumps(
+            _resolver_cache_payload(root, signature, resolver),
+            separators=(",", ":")), encoding="utf-8")
+        os.replace(temporary, cache_path)
+    except OSError:
+        # Ownership remains authoritative in config/catalog; this cache only
+        # avoids expanding unchanged glob rules on the next attempt.
+        pass
     return resolver, False
 
 
 def build_manifest(root: Path, resolver: OwnerResolver | None = None,
                    hash_cache: dict | None = None,
-                   progress_callback: Callable[[dict], None] | None = None) -> dict:
+                   progress_callback: Callable[[dict], None] | None = None,
+                   _inventory_retry: int = 0) -> dict:
     def report(name: str, state: str, started: float, **fields) -> None:
         if progress_callback is None:
             return
@@ -442,16 +843,24 @@ def build_manifest(root: Path, resolver: OwnerResolver | None = None,
             pass
 
     root = Path(root).resolve()
-    stats = {"cache_hits": 0, "cache_misses": 0, "files_hashed": 0,
+    stats = {"cache_hits": 0, "event_cache_hits": 0,
+             "baseline_stat_cache_hits": 0, "event_forced_rehashes": 0,
+             "cache_misses": 0, "files_hashed": 0,
              "bytes_hashed": 0, "stat_ms": 0.0, "hash_ms": 0.0,
              "owner_resolve_ms": 0.0}
     used_cache: dict[str, dict] = {}
 
+    # The watcher lives in the root dev-loop process. Its event sequence lets
+    # warm attempts reuse unchanged digests without issuing thousands of file
+    # stats. A fresh process, watcher overflow, or unavailable watcher has no
+    # trustworthy event history, so it validates cached size/time stamps; any
+    # mismatch is hashed before the baseline cursor is trusted.
+    digest_watcher, digest_sequence, changed_source_files, validate_all_stamps = (
+        _digest_watcher_snapshot(root))
+
     def digest_for(rel: str) -> tuple[str, int, int]:
         path = root / rel
-        stat_started = time.perf_counter()
-        stat = path.stat()
-        stats["stat_ms"] += (time.perf_counter() - stat_started) * 1000.0
+        changed_event = rel in changed_source_files
         if hash_cache is not None:
             cached = hash_cache.get(rel)
             if isinstance(cached, dict) and cached.get("sha256"):
@@ -460,11 +869,25 @@ def build_manifest(root: Path, resolver: OwnerResolver | None = None,
                     cached_mtime = int(cached.get("mtime_ns", -1))
                 except (TypeError, ValueError):
                     cached_size = cached_mtime = -1
-                if (cached_size == stat.st_size
-                        and cached_mtime == stat.st_mtime_ns):
-                    stats["cache_hits"] += 1
+                if (not validate_all_stamps and not changed_event):
+                    stats["event_cache_hits"] += 1
                     used_cache[rel] = cached
-                    return str(cached["sha256"]), stat.st_size, stat.st_mtime_ns
+                    return (str(cached["sha256"]), cached_size, cached_mtime)
+        stat_started = time.perf_counter()
+        stat = path.stat()
+        stats["stat_ms"] += (time.perf_counter() - stat_started) * 1000.0
+        if (hash_cache is not None and not changed_event
+                and isinstance(cached, dict) and cached.get("sha256")
+                and cached_size == stat.st_size
+                and cached_mtime == stat.st_mtime_ns):
+            if validate_all_stamps:
+                stats["baseline_stat_cache_hits"] += 1
+            else:
+                stats["cache_hits"] += 1
+            used_cache[rel] = cached
+            return str(cached["sha256"]), stat.st_size, stat.st_mtime_ns
+        if changed_event:
+            stats["event_forced_rehashes"] += 1
         stats["cache_misses"] += 1
         hash_started = time.perf_counter()
         digest, size, mtime_ns = stamped_sha256(path)
@@ -534,9 +957,6 @@ def build_manifest(root: Path, resolver: OwnerResolver | None = None,
                    files_completed=index, files_total=len(header_paths), **stats)
     report("header_digest", "completed", phase_started,
            files_completed=len(header_paths), files_total=len(header_paths), **stats)
-    if hash_cache is not None:
-        hash_cache.clear()
-        hash_cache.update(used_cache)
     lines.extend(f"header:{item['path']}:{item['sha256']}" for item in headers)
     phase_started = time.perf_counter()
     report("config_hash_and_revision", "started", phase_started)
@@ -546,6 +966,32 @@ def build_manifest(root: Path, resolver: OwnerResolver | None = None,
     report("config_hash_and_revision", "completed", phase_started,
            config_count=len(config_hashes), source_count=len(sources),
            header_count=len(headers), **stats)
+
+    # A new/removed/renamed translation unit can arrive while the manifest is
+    # being assembled. Re-read the event-backed inventories before returning;
+    # if their path sets moved, rebuild the manifest from the new stable set.
+    final_cpp_paths = _cached_inventory(root, "cpp")[0]
+    final_header_paths = _cached_inventory(root, "headers")[0]
+    event_race = False
+    if digest_watcher is not None and digest_sequence is not None:
+        final_events = digest_watcher.events_since(digest_sequence)
+        event_race = (final_events is None
+                      or final_events[0] != digest_sequence)
+    if (final_cpp_paths != cpp_paths or final_header_paths != header_paths
+            or event_race):
+        if _inventory_retry >= 2:
+            raise RuntimeError(
+                "source tree changed repeatedly while building the manifest")
+        return build_manifest(root, None, hash_cache, progress_callback,
+                              _inventory_retry + 1)
+
+    if hash_cache is not None:
+        hash_cache.clear()
+        hash_cache.update(used_cache)
+    if digest_watcher is not None and digest_sequence is not None:
+        with _HASH_WATCHER_CURSOR_LOCK:
+            _HASH_WATCHER_CURSORS[root] = max(
+                digest_sequence, _HASH_WATCHER_CURSORS.get(root, -1))
 
     counts = Counter(item["owner"] for item in sources)
     return {

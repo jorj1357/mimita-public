@@ -560,6 +560,8 @@ static bool renderTextInput(GLFWwindow* window, const char* id,
 
     if (rawHovered && clickEdge && !UISys::gDropdownModalActive)
     {
+        UISys::gMouseClickEdge = false;
+        UISys::gMouseClickEdgeFramesRemaining = 0;
         // Click inside field → focus and place caret
         float localX = (float)(fbx - textOriginX + state.horizontalScrollPx);
         int clickedIndex = uiTextInputCharacterIndexFromX(displayText, localX, textScale);

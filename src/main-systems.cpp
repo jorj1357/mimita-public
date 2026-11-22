@@ -188,9 +188,11 @@ bool postAgentMousePosition(double x, double y)
 {
     if (!mimita::game::hostFocusWindow() ||
         !mimita::game::hostSetCursorPos(x, y)) return false;
-    int wx = 0, wy = 0;
-    if (!mimita::game::hostWindowPosition(wx, wy)) return false;
-    return SetCursorPos(wx + static_cast<int>(x), wy + static_cast<int>(y)) != 0;
+    // GLFW may deliver the cursor callback on its next event poll. Publish
+    // the agent move to the canonical input owner now so the click in this
+    // command cannot use the pointer position from the previous frame.
+    InputRouter::ingestCursor(x, y, InputRouter::Source::Agent);
+    return true;
 }
 
 bool captureAgentWindowBmp(const std::string& relativePath,
@@ -907,6 +909,18 @@ void registerAgentCommands()
             const auto found = std::find_if(widgets.rbegin(), widgets.rend(),
                 [&](const UITrackedWidget& widget) { return widget.id == args[0]; });
             if (found == widgets.rend()) {
+                if (args[1] == "up") {
+                    // A press may activate a modal or close its parent, so
+                    // the widget can disappear before the matching release.
+                    // Always release the physical button even when its target
+                    // is no longer part of the latest frame.
+                    postAgentMouseButton(GLFW_MOUSE_BUTTON_LEFT, false);
+                    writeAgentCommandEvent("agent.gui.button",
+                        "released agent UI button after its widget disappeared",
+                        {{"element_id", args[0]}, {"operation", args[1]},
+                         {"target_present", false}, {"release_applied", true}});
+                    return;
+                }
                 writeAgentCommandEvent("agent.gui.button.failed",
                     "element ID is not present in the latest UI scan",
                     {{"element_id", args[0]}, {"operation", args[1]},

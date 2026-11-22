@@ -628,13 +628,17 @@ static void processSnapshotEntities(
             const std::string npcAvatar = entity.avatarName[0] != '\0'
                 ? std::string(entity.avatarName)
                 : npcAvatarNameForLife(entity.networkEntityId, entity.transformEpoch);
-            if (!npcAvatar.empty()) {
+            if (!npcAvatar.empty() && p.avatarName() != npcAvatar) {
                 bool avatarApplied = false;
                 {
                     MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcAvatarApply");
                     avatarApplied = AvatarSystem::instance().applyAvatarToPlayer(p, npcAvatar);
                 }
-                if (!avatarApplied) {
+                // A respawn can arrive while the replacement avatar is still
+                // loading asynchronously. Keep the replica's already loaded
+                // model in that case instead of reloading the fallback model
+                // synchronously inside mpTick on every new life.
+                if (!avatarApplied && !p.modelLoaded) {
                     {
                         MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcFallbackModelLoad");
                         p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
@@ -679,21 +683,26 @@ static void processSnapshotEntities(
                         : npcAvatarNameForLife(entity.networkEntityId, entity.transformEpoch);
                 }
                 bool avatarApplied = false;
+                bool avatarPending = false;
+                bool fallbackModelLoaded = false;
                 if (!npcAvatar.empty()) {
                     {
                         MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcAvatarApply");
                         avatarApplied = AvatarSystem::instance().applyAvatarToPlayer(p, npcAvatar);
                     }
-                    if (!avatarApplied) {
+                    avatarPending = AvatarSystem::instance().isAvatarLoadPending(npcAvatar);
+                    if (!avatarApplied && !avatarPending) {
                         {
                             MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcFallbackModelLoad");
                             p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                            fallbackModelLoaded = p.modelLoaded;
                         }
                     }
                 } else {
                     {
                         MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcFallbackModelLoad");
                         p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                        fallbackModelLoaded = p.modelLoaded;
                     }
                 }
                 {
@@ -713,13 +722,14 @@ static void processSnapshotEntities(
                         {"apply_returned", avatarApplied},
                         {"avatar_instance_bound", p.avatarInstance != nullptr},
                         {"model_loaded", p.modelLoaded},
+                        {"fallback_deferred", !avatarApplied && avatarPending},
+                        {"fallback_model_loaded", fallbackModelLoaded},
                         {"load_pending", npcAvatar.empty()
-                            ? false : AvatarSystem::instance().isAvatarLoadPending(npcAvatar)},
-                        {"fallback_model", !avatarApplied},
+                            ? false : avatarPending},
+                        {"fallback_model", fallbackModelLoaded},
                         {"fallback_reason", avatarApplied ? "none" :
-                            (npcAvatar.empty() ? "empty_identity" :
-                             (AvatarSystem::instance().isAvatarLoadPending(npcAvatar)
-                                  ? "avatar_async_pending" : "avatar_apply_failed"))}});
+                            (avatarPending ? "avatar_async_pending" :
+                             (npcAvatar.empty() ? "empty_identity" : "avatar_apply_failed"))}});
                 {
                     MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcAvatarConsoleLog");
                     Debug::warn(Debug::Category::Avatar,
@@ -759,21 +769,28 @@ static void processSnapshotEntities(
         }
 
         // The first NPC bind may race the background avatar metadata/atlas
-        // load.  That bind intentionally falls back to the default model, but
-        // the replica must not stay there forever once the requested avatar is
-        // ready.  Retry only for an existing NPC with the same valid network
-        // identity and no avatar instance; pending and failed cache states are
-        // left alone until the cache reports Ready.
+        // load. While it is queued/loading, keep model work out of mpTick; once
+        // ready, the existing async model path rebinds it. A terminal failure
+        // gets the default fallback once, preserving a visible replica.
         if (!isNew && entity.entityType == ENTITY_NPC &&
             entity.avatarName[0] != '\0' &&
             p.avatarName() == entity.avatarName &&
             p.avatarInstance == nullptr &&
+            !p.modelLoaded &&
             !AvatarSystem::instance().isAvatarLoadPending(entity.avatarName))
         {
             MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcAvatarRebind");
             const std::string networkAvatar(entity.avatarName);
             const bool rebound =
                 AvatarSystem::instance().applyAvatarToPlayer(p, networkAvatar);
+            bool fallbackModelLoaded = false;
+            if (!rebound && !p.modelLoaded &&
+                !AvatarSystem::instance().isAvatarLoadPending(networkAvatar))
+            {
+                MIMITA_PERF_SCOPE("Network::SnapshotApply::NpcFallbackModelLoad");
+                p.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+                fallbackModelLoaded = p.modelLoaded;
+            }
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Avatar, StructuredLevel::Important,
                 "client.npc.avatar.rebind", std::to_string(entity.networkEntityId),
@@ -784,7 +801,7 @@ static void processSnapshotEntities(
                  {"apply_returned", rebound},
                  {"avatar_instance_bound", p.avatarInstance != nullptr},
                  {"model_loaded", p.modelLoaded},
-                 {"fallback_model", p.avatarInstance == nullptr}},
+                 {"fallback_model", fallbackModelLoaded}},
                 __FILE__, __LINE__, __FUNCTION__);
         }
 

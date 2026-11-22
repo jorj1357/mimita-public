@@ -92,6 +92,8 @@ def create_parser() -> argparse.ArgumentParser:
                         help="wait for the requested build to finish; allowed for agent requests")
     parser.add_argument("--build-mode", choices=("debug", "release"), default="debug",
                         help="configuration for --request build")
+    parser.add_argument("--game-dll-linker", choices=("auto", "gnu", "lld"), default="auto",
+                        help="candidate DLL linker for --request game-dll; auto prefers LLD and falls back to GNU when LLD is absent")
     parser.add_argument("--build-timeout", type=float, default=36000.0,
                         help="maximum seconds to wait with --wait-for-build")
     parser.add_argument("--ensure-running", action="store_true", help="ensure the watchdog, daemon, and required dashboard exist and exit")
