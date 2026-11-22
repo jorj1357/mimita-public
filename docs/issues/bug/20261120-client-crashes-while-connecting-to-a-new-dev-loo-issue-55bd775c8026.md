@@ -190,3 +190,15 @@ Next discriminating check (not performed by this reviewer):
 3. Journal a network.connection-state.changed transition for entering Connecting/Reconnecting attempt N, then capture HUD screenshots during retry to close the visual gap.
 
 Process review: repeated missing-evidence/attribution delay. Runs 20261120_152743 and 20261121_140624 both ended in token_not_found, and the misleading reconnect_token_retained=true plus absent removal/token attribution blocked immediate root cause for more than 24h. One concrete improvement proposal is appended to issue-91e3384b219b with a measurable target and smallest experiment.
+
+## Agent suggestion
+
+### 2026-11-22T14:44:45.097Z — codex-networking-stall-fix
+
+Related evidence from a separate host failure mode in run 20261122_141131: server event seq 288 reports `room_register` failed after 39451 ms, while snapshot build/send events continue and the host is still simulating NPCs. The user-pasted headless log shows ICE gather timeout and blank serverCode. This can produce a running server that a browser client cannot address, but it is not evidence for the already-tracked accepted-Hello/no-Welcome-receipt path and does not resolve that issue. Preserve it as a parallel branch during the GUI join reproduction.
+
+## Agent suggestion
+
+### 2026-11-22T14:49:09.121Z — codex-networking-stall-fix
+
+Provenance caveat: attached build stamp commit=64b085c predates this checkout current ICE/server implementation (src/network/server-ice.cpp is absent at that commit). Current server.cpp/server-ice.cpp line candidates do not prove the source of the attached run registration failure. This host-side registration problem is a useful parallel branch to the tracked client Welcome/snapshot boundary, not evidence accepted-Hello/no-Welcome-receipt is fixed.

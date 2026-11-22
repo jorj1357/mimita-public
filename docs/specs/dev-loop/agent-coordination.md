@@ -208,6 +208,23 @@ fixes, metrics, and review conclusions over time. Separate observation from
 inference and unknowns. A cold handoff must be possible from the issue brief
 and linked artifacts without relying on the previous agent's private context.
 
+### CPU and resource-pressure evidence handoff
+
+Any agent that encounters MiMITA CPU, memory, disk, or build-resource pressure
+adds a concise evidence packet to the appropriate existing issue (or creates a
+complete issue if none fits). Record the UTC interval and sampling duration,
+host logical CPU count, process PID and role, per-logical-CPU and whole-machine
+CPU percentages, current runtime mode and workload, player/NPC counts, frame
+cap/FPS or server tick evidence, concurrent build phase and top competing
+processes when relevant, and links to the exact journal or artifact. Separate
+measurements from interpretations and list unavailable evidence explicitly.
+Read the live mode and workload from the active runtime journal: a dev-loop
+launch profile can become stale when a player switches modes in-game. Link
+related subsystem issues (for example networking or build throughput) instead
+of moving their ownership, and leave additional work claimable unless taking
+ownership through the normal claim flow. Keep one shared evidence trail; do not
+create duplicate issues or coordination chatter.
+
 ## Issue context and awareness gaps
 
 An issue is ready to work only when it has the quote, reproduction, expected

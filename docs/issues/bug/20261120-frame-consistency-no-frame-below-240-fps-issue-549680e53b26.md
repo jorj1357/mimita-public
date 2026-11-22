@@ -73,3 +73,9 @@ NEXT DISCRIMINATING CHECK
 3. Add the missing proof_expectation, for example: pinned 67-NPC run, >=60 s steady client window, journal shows 0 accepted frames above 4.167 ms with the full percentile/max report, and a visible 240 Hz check only when a 240 Hz display is actually used.
 
 Confidence: high that current gen-470 client frames are far over the 240 FPS budget in the observed FCS runs; medium that Setup::ConfigPolling is the dominant steady-state stutter owner pending the 67-NPC reproduction; low/unknown for visible 240 Hz behavior.
+
+## Agent suggestion
+
+### 2026-11-22T14:35:33.216Z — codex-networking-stall-fix
+
+Cross-issue frame consistency evidence from pinned FCS run 20261122_134637 (gen495): first measured client frame window had frame_max_ms=4844.5137 and frame_avg_ms=2934.6653; State scope max=2130.1 ms with ~2,995,553 allocations, Audio max=1303.2 ms, MusicUpdate max=1004.5 ms. Server first-frame startup also had a 4547 ms stale classification and the client later applied a snapshot after 5353 ms. These were startup effects separate from the later exact 7.03s Recast query. No claim that the new NPC guard resolves the startup frame budget; fresh-runtime verification is pending.

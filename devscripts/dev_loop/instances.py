@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import datetime
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
+
+from .state import write_json
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -54,15 +55,13 @@ def create_run_layout() -> RunLayout:
 
 
 def write_run_manifest(layout: RunLayout, manifest: dict) -> None:
-    """Atomically write the run manifest so readers never see a partial file."""
+    """Write a run manifest with the shared retrying atomic JSON writer."""
     payload = dict(manifest)
     payload.setdefault("schema_version", 1)
     payload["run_id"] = layout.run_id
     payload["journal_root"] = str(layout.run_dir)
     payload["updated_utc"] = _utc_now()
-    temp = layout.manifest_path.with_suffix(".json.tmp")
-    temp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    os.replace(temp, layout.manifest_path)
+    write_json(layout.manifest_path, payload)
 
 
 def read_run_manifest(layout: RunLayout) -> dict:

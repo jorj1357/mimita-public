@@ -140,7 +140,9 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
             break;
 
         case UtilityGoalKind::DefuseObjective:
-            s.relevance = ctx.canDefuse ? 1.0f : 0.0f;
+            // The assigned CT must pursue the bomb before entering interaction
+            // range; canDefuse only becomes true once the NPC reaches it.
+            s.relevance = (ctx.canDefuse || ctx.isDefuserId) ? 1.0f : 0.0f;
             s.objectiveState = ctx.objectiveKnown ? 1.0f : 0.0f;
             s.total = s.relevance * health * (0.5f + 0.5f * losOpen);
             // The designated defuser must keep holding even while shooting at

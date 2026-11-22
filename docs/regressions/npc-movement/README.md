@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 9
+Entries: 10
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -75,3 +75,19 @@ Entries: 9
 - Recorded: 2026-11-08 (human report; exact time not supplied)
 - Status: REPORTED / NOT YET REPRODUCED
 - Detail: [payload-combat-priority-REG-2026-11-08.md](payload-combat-priority-REG-2026-11-08.md)
+
+## Entry 10 — Fun Counter-Strike NPC speed, wall-stuck and defuse behavior
+
+- Recorded: 2026-11-22 (human report; exact time not supplied)
+- Status: REPORTED / INVESTIGATING; cause and historical baseline unverified
+- Summary: Elite FCS NPCs reportedly stopped matching their earlier objective rush behavior; current diagnostic run shows repeated stuck/progress-failure signals and no CT defuse attempt.
+- Detail: [fcs-objective-speed-defuse-REG-2026-11-22.md](fcs-objective-speed-defuse-REG-2026-11-22.md)
+
+## Entry 11 — Juggernaut Horde team-role and NPC-aim regression
+
+- Recorded: 2026-11-22T15:27:21Z
+- Status: OBSERVED; FIX NOT APPLIED; DLL CAUSE NOT ISOLATED
+- Summary: Live Horde `team_pick 2` assigned legacy BLUE with no role; 303
+  accepted shots targeted player 1, but none registered an entity hit and
+  measured aim error averaged 36.85 degrees.
+- Detail: [jugger-horde-team-role-and-npc-aim-REG-2026-11-22.md](jugger-horde-team-role-and-npc-aim-REG-2026-11-22.md)

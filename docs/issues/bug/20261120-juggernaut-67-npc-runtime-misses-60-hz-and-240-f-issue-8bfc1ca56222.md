@@ -56,3 +56,9 @@ Task: remote-cull-240fps (step 0)
 ### 2026-11-20T03:44:50.364Z — runtime-60hz
 
 Task: connection-stability (step 0)
+
+## Agent suggestion
+
+### 2026-11-22T14:35:31.676Z — codex-networking-stall-fix
+
+Cross-issue evidence from the FCS runtime, relevant to NPC/tick budget: run 20261122_134637 (Fun Counter Strike, 19 NPCs, generation 495) recorded server npc.slow-update actor 100011 at 2026-11-22T13:59:45.064Z with total_ms=7035.3385, navigator_ms=7032.7936, decision_ms=7034.2276; npc.nav.plan-cost seq 95522 had recast_ms=7030.6396 and to_goal_m=0.0. The same tick stalled 8404.226 ms. This identifies a shared NPC navigation hotspot relevant to high-NPC server rate, but does not prove the 67-NPC scenario has the same cause. A guard was added in src/npc/npc-navigator.cpp and generation 499 published; fresh FCS runtime evidence is pending.

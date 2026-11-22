@@ -257,3 +257,45 @@ Generation 478 run 20261122_081330_fcs-route-proof-applied-fallback is pinned to
 Fixed FCS objective fallback steering, refreshed failed routes during recovery, and suppressed dashes while recovery owns movement. Generation 478 live runtime proof shows an NPC A-site plant, bomb explosion and Terrorist round win, eight NPC-on-NPC kills, CT sighting reports and positive movement; all logged dashes had no stuck or failed-navigation state.
 
 Evidence: evidence-7d99aad1439a (integration, proven)
+
+## Context
+
+### 2026-11-22T14:45:16.654Z — fcs-npc-speed-combat-investigation
+
+reproduction: Use exact pinned FCS server journal on dust2cyberiav4; prior gen478 run 20261122_081330_fcs-route-proof-applied-fallback contained plant starts and one completion but CT did not start a defuse before bomb explosion. Current source/runtime generation must be rebuilt and retested before attributing the event gap to current code.
+expected_behavior: Per user report, elite FCS NPCs coordinate one T site rush, use legal shared fast movement, plant and defend; CTs discover/share enemy/site information, contest and demonstrably defuse; measure each NPC's movement, stuck/contact, kill, grenade, and objective outcomes.
+acceptance: Pinned multi-round live run with actual per-actor speed distributions, distance-unit calibration, objective arrival/progress, wall-contact and movement-block metrics, 10m stuck and area dwell durations, net displacement/path length, NPC-on-NPC kill count/time-between-kills, grenade use, round-start-to-first-plant-start, plant-start-to-defuse-start, and plant-start/plant-completion-to-defuse-start latency; at least one CT objective.defuse-start and objective.defused. Historical baseline before DLL-reload changes remains user-reported until a matching prior journal is found. 100 m/s remains a proposed target until world units and shared player cap are calibrated.
+paths: ['src/npc', 'src/network/server-gamemode.cpp', 'src/network/server-npcs.cpp', 'config/movement', 'config/behavior-profiles.json', 'docs/specs/gamemodes/funcounterstrike.md', 'logs', 'docs/regressions/npc-movement']
+related_build: generation 478 (diagnostic only, latest successful build is stale against source per dev-loop status)
+related_run: 20261122_081330_fcs-route-proof-applied-fallback
+evidence: {'journal': 'logs/2026-11-22/20261122_081330_fcs-route-proof-applied-fallback/server-01/events.jsonl', 'counts': {'npc.stuck-episode': 2223, 'npc.movement-progress-failed': 1156, 'npc.nav-plan-failed': 316, 'npc.nav-objective-fallback': 311, 'npc.dash': 1321, 'npc.team-report': 48, 'kill.reward': 52, 'npc.death': 37, 'npc.grenade-thrown': 101, 'objective.plant-start': 3, 'objective.plant-interrupted': 2, 'objective.planted': 1, 'npc.defuse-assigned': 5, 'objective.defuse-start': 0, 'objective.defused': 0, 'objective.exploded': 1}, 'limitations': 'Unnormalized single-run event counts do not provide per-NPC speed/contact duration or prove NPC-v-NPC kill attribution. One CT was assigned 34.0 units from bomb; no attempt/completion followed before explosion.'}
+risk: Shared movement tuning risks affecting other modes and violating shared player/physics caps. Keep behavior at fixed 60 Hz, use existing shared owners, separate combat/intentional objective holds from stuck state, and avoid wallhack-like CT information before legitimate sighting.
+proof_expectation: Fresh exact pinned dev-loop artifact and generation; server event journal includes defuse start and completion plus sufficient bounded samples for per-actor normalized movement, contact, stuck, combat, and objective timing metrics. Human gameplay acceptance is separate.
+context_id: ctx-27a4e225dea5
+
+## Agent suggestion
+
+### 2026-11-22T14:56:27.175Z — fcs-npc-speed-combat-investigation
+
+New gen478 FCS runtime correlation (diagnostic, not current-source proof): after objective.planted at t=296.685, CT actor 100002 was assigned at distance 34.01; there were 5 npc.defuse-assigned events, 0 objective.defuse-start/defused, and objective.exploded at t=397.101. For the assigned actor, npc.utility-decision alternated between MoveToObjective and DefendSite while can_defuse=false; no DefuseObjective goal appeared. Static owner trace found src/npc/npc-utility.cpp scoreUtilityGoal(DefuseObjective) gated relevance solely on ctx.canDefuse, which becomes true only in interaction range. I changed it so ctx.isDefuserId also makes the goal relevant while approaching (src/npc/npc-utility.cpp), build note 4b3d4ffda2ea, DLL generation 500 succeeded and includes only this changed path. Exact pinned FCS proof is pending; my isolated run 20261122_145137 failed at t=52.87 before planting due run-manifest write failure, so it does not validate defuse.
+
+## Triage
+
+### 2026-11-22T14:59:11.650Z — fcs-npc-speed-combat-investigation
+
+Summary: User expanded the FCS navigation regression to require measurable per-NPC speed/contact/stuck/kill/grenade/objective metrics and a verified CT defuse; prior plant-only proof is insufficient. Latest gen478 diagnostic run had 2,223 stuck episodes and no CT defuse start/completion; gen500 defuse-priority fix builds, but isolated runtime capture failed before planting due run.json WinError 5.
+Owner: fcs-npc-speed-combat-investigation
+Priority: high
+
+## Agent suggestion
+
+### 2026-11-22T15:06:20.609Z — fcs-npc-speed-combat-investigation
+
+Coarse baseline from gen478 server 
+pc.attack-gate.pos: sorted samples by actor and t; used consecutive 0.05–2.0 s intervals, excluded four >150-unit/s spikes (presumed teleports), and time-weighted displacement. 19 actor IDs, 3,758 segments/4,500 s: 8.43 world-units/s 3D mean (8.13 planar), median 6.83, p90 20.39, max retained segment 96.01; actor means 6.84–10.92. This is sparse chord displacement, not true per-life velocity; map units not yet calibrated. Full method/limits are now in docs/regressions/npc-movement/fcs-objective-speed-defuse-REG-2026-11-22.md. Treat it as a low-motion baseline and instrument actual fixed-tick velocity/path distance before judging the user's 100 m/s aspiration.
+
+## Agent suggestion
+
+### 2026-11-22T15:28:42.020Z — fcs-npc-speed-combat-investigation
+
+Correction to the prior speed-baseline discussion note: the sampled position event was npc.attack-gate with fields.pos. The full event name is present correctly in the regression detail file; the earlier discussion line lost its initial n due to shell escaping. The reported 8.43 world-units/s weighted mean and other values are unchanged.

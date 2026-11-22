@@ -151,6 +151,94 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def parse_gcc_time_report(output: str, *, max_rows: int = 48) -> dict:
+    """Parse a bounded GCC ``-ftime-report`` block for timing JSONL.
+
+    Keep the compiler's phase names and wall-time columns instead of retaining
+    all successful compiler output. GCC versions vary in their exact padding,
+    so each row also keeps a short raw form for later interpretation.
+    """
+    lines = str(output or "").splitlines()
+    start = next((index for index, line in enumerate(lines)
+                  if line.strip().lower().startswith("time variable")), None)
+    if start is None:
+        return {"format": "gcc-ftime-report", "status": "missing", "rows": []}
+
+    headers = [name.lower() for name in re.findall(
+        r"\b(?:usr|sys|wall|GGC)\b", lines[start], re.IGNORECASE)]
+    if not headers:
+        return {
+            "format": "gcc-ftime-report",
+            "status": "unknown_header",
+            "rows": [],
+            "header": lines[start].strip()[:240],
+        }
+
+    number_pattern = re.compile(
+        r"(?P<value>(?:\d+(?:\.\d*)?|\.\d+))\s*"
+        r"(?P<unit>[kKmMgG]?)\s*"
+        r"(?:\(\s*(?P<percent>\d+)\s*%\s*\))?")
+    limit = max(1, int(max_rows))
+    rows: list[dict] = []
+    truncated = False
+    for line in lines[start + 1:]:
+        if ":" not in line:
+            continue
+        phase, values = line.split(":", 1)
+        phase = phase.strip()
+        if not phase:
+            continue
+        matches = list(number_pattern.finditer(values))
+        if len(matches) < len(headers):
+            continue
+        parsed = [{
+            "value": float(match.group("value")),
+            "unit": match.group("unit") or "",
+            "percent": (int(match.group("percent"))
+                        if match.group("percent") is not None else None),
+        } for match in matches[:4]]
+        row = {"phase": phase, "raw": line.strip()[:240]}
+        for name, value in zip(headers, parsed):
+            if name == "usr":
+                row["user_seconds"] = value["value"]
+                row["user_percent"] = value["percent"]
+            elif name == "sys":
+                row["system_seconds"] = value["value"]
+                row["system_percent"] = value["percent"]
+            elif name == "wall":
+                row["wall_seconds"] = value["value"]
+                row["wall_percent"] = value["percent"]
+            elif name == "ggc":
+                row["ggc"] = value
+        if len(rows) >= limit:
+            truncated = True
+            break
+        rows.append(row)
+    result = {
+        "format": "gcc-ftime-report",
+        "status": "parsed" if rows else "empty",
+        "rows": rows,
+        "truncated": truncated,
+    }
+    if not rows:
+        # A successful compile may emit a GCC report layout we do not yet
+        # understand. Retain only a short excerpt so the format can be fixed
+        # from real build evidence without preserving unbounded compiler output.
+        excerpt = "\n".join(lines[start:start + 8]).strip()
+        if excerpt:
+            result["excerpt"] = excerpt[:1600]
+    return result
+
+
+def is_unsupported_time_report(output: str) -> bool:
+    """Return true only when the compiler rejects the optional report switch."""
+    text = str(output or "").lower()
+    mentions_flag = "-ftime-report" in text
+    return mentions_flag and any(phrase in text for phrase in (
+        "unrecognized command-line option", "unrecognized option",
+        "unknown argument", "unknown option", "unsupported option"))
+
+
 def set_process_priority(level: str) -> None:
     if os.name != "nt":
         return
@@ -318,7 +406,8 @@ class Progress:
     def record(self, status: str, path: str, ms: float, detail: str = "",
                *, check_started_utc: str = "", check_elapsed_ms: float = 0.0,
                queue_wait_ms: float = 0.0, started_utc: str = "",
-               started_elapsed_ms: float = 0.0) -> None:
+               started_elapsed_ms: float = 0.0,
+               diagnostics: dict | None = None) -> None:
         with self.lock:
             record_started = time.perf_counter()
             ended_utc = utc_now()
@@ -372,6 +461,8 @@ class Progress:
                 "generation": self.data.get("generation"),
                 "revision": self.data.get("revision"),
             }
+            if diagnostics is not None:
+                file_event["compiler_timing"] = diagnostics
             self.data["file_events"].append(file_event)
             del self.data["file_events"][:-100]
             if status == "skipped":
@@ -1320,6 +1411,12 @@ def build(args: argparse.Namespace) -> int:
     def normalized(path: str) -> str:
         return str(path).replace("\\", "/")
 
+    timing_report_paths = {
+        normalized(str(path))
+        for path in progress.data.get("changed_paths", [])
+        if str(path).lower().endswith(".cpp")
+    }
+
     def module_extra_flags(source_path: str) -> list[str]:
         if Path(source_path).name == IDENTITY_PROVIDER_SOURCE:
             return [f"-I{identity_dir}"]
@@ -1331,7 +1428,8 @@ def build(args: argparse.Namespace) -> int:
             return [f"-I{identity_dir}", "-DMIMITA_MODULE_BUILD"]
         return []
 
-    def compile_command(item: dict, obj: Path, dep: Path) -> list[str]:
+    def compile_command(item: dict, obj: Path, dep: Path, *,
+                        time_report: bool = False) -> list[str]:
         source_path = normalized(item["path"])
         if Path(source_path).name == IDENTITY_PROVIDER_SOURCE:
             # This generated TU only defines three primitive identity values.
@@ -1340,38 +1438,81 @@ def build(args: argparse.Namespace) -> int:
             # stable header dependency.
             return [*ccache_prefix, cxx, "-std=c++17", "-O0", "-g0",
                     f"-I{identity_dir}", "-c", item["path"], "-o", str(obj)]
-        return [*ccache_prefix, cxx, *base_flags, *module_extra_flags(source_path),
-                "-MF", str(dep), "-c", item["path"], "-o", str(obj)]
+        command = [*ccache_prefix, cxx, *base_flags,
+                   *module_extra_flags(source_path)]
+        if time_report:
+            # Diagnostic-only: this flag does not change generated code or the
+            # persistent object-cache identity. It is limited to explicitly
+            # changed .cpp inputs so a header fan-out does not flood logs.
+            command.append("-ftime-report")
+        command.extend(["-MF", str(dep), "-c", item["path"], "-o", str(obj)])
+        return command
 
     def compile_one(item: dict, obj: Path, dep: Path, submitted: float,
                     submitted_utc: str
-                    ) -> tuple[str, dict, float, str, float, str, float]:
+                    ) -> tuple[str, dict, float, str, float, str, float,
+                               dict | None]:
         if stop_event.is_set():
-            return ("skipped", item, 0.0, "", 0.0, "", 0.0)
+            return ("skipped", item, 0.0, "", 0.0, "", 0.0, None)
         queue_wait_ms = (time.monotonic() - submitted) * 1000.0
         started_utc, started_elapsed_ms = progress.start_source(
             item["path"], queue_wait_ms=queue_wait_ms,
             submitted_utc=submitted_utc)
         started = time.perf_counter()
-        result = run_tool(compile_command(item, obj, dep), cwd=str(SOURCE_ROOT),
+        source_path = normalized(item["path"])
+        report_requested = source_path in timing_report_paths
+        report_started = time.perf_counter()
+        result = run_tool(compile_command(
+                              item, obj, dep, time_report=report_requested),
+                          cwd=str(SOURCE_ROOT),
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           text=True)
+        output = result.stdout or ""
+        diagnostics = None
+        if report_requested:
+            probe_ms = (time.perf_counter() - report_started) * 1000.0
+            diagnostics = parse_gcc_time_report(output)
+            if result.returncode != 0 and is_unsupported_time_report(output):
+                # Optional compiler instrumentation must not turn a valid game
+                # compile into a failed candidate. Retry without the flag only
+                # when the compiler clearly rejected that diagnostic option.
+                first_output = output
+                fallback_started = time.perf_counter()
+                result = run_tool(compile_command(item, obj, dep),
+                                  cwd=str(SOURCE_ROOT),
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, text=True)
+                fallback_ms = (time.perf_counter() - fallback_started) * 1000.0
+                output = result.stdout or ""
+                diagnostics = {
+                    "format": "gcc-ftime-report",
+                    "status": "unsupported_fallback",
+                    "unsupported_probe_ms": round(probe_ms, 3),
+                    "fallback_compile_ms": round(fallback_ms, 3),
+                    "error": first_output[:600],
+                }
+                if result.returncode != 0:
+                    output = (first_output[:1000]
+                              + "\n--- retry without optional timing flag ---\n"
+                              + output)
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         if result.returncode != 0:
-            return ("failed", item, elapsed_ms, result.stdout or "",
-                    queue_wait_ms, started_utc, started_elapsed_ms)
+            return ("failed", item, elapsed_ms, output,
+                    queue_wait_ms, started_utc, started_elapsed_ms,
+                    diagnostics)
         return ("compiled", item, elapsed_ms, "", queue_wait_ms,
-                started_utc, started_elapsed_ms)
+                started_utc, started_elapsed_ms, diagnostics)
 
     def record_compile_result(result: tuple) -> str:
         (status, item, elapsed_ms, output, queue_wait_ms,
-         started_utc, started_elapsed_ms) = result
+         started_utc, started_elapsed_ms, diagnostics) = result
         if status == "skipped":
             return status
         progress.record(status, item["path"], elapsed_ms, output,
                         queue_wait_ms=queue_wait_ms,
                         started_utc=started_utc,
-                        started_elapsed_ms=started_elapsed_ms)
+                        started_elapsed_ms=started_elapsed_ms,
+                        diagnostics=diagnostics)
         if status == "failed":
             failures.append({"path": normalized(item["path"]),
                              "output": output[:4000]})

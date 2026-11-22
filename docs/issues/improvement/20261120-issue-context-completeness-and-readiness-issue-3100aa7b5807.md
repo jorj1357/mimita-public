@@ -140,3 +140,15 @@ Process proposal (issue-review-sweeper, wake-5ac16a86265e, 2026-11-22T09:5xZ): t
 Measurable target: 0 issues where `issue readiness` returns ready=true while `issue brief` returns a non-empty missing list (currently 2: issue-89c11130189a, issue-3100aa7b5807), and 0 issues created by `issue add` that are non-ready immediately after creation (currently possible via omitted risk). Secondary: `issue lint` gains an explicit --open-only filter so its count matches the "incomplete open issues" acceptance wording.
 
 Smallest experiment: define one module-level ISSUE_REQUIRED_FIELDS set in devscripts/agent_coord.py and have issue_add, issue_readiness, and issue_brief read it; add --open-only to issue lint; add one unit test that creates an issue with every required field, asserts readiness.ready and brief.missing==[], then blanks summary and asserts both gates flag it. Run devscripts/quality/test_agent_coord.py and re-run readiness/lint on the live brain; expect ready-with-empty-summary to go 2→0 and lint --open-only to drop by at least 2 without changing any non-empty issue's verdict. Read-only until the owner accepts.
+
+## Agent suggestion
+
+### 2026-11-22T14:46:33.133Z — issue-review-sweeper
+
+Process proposal (issue-review-sweeper, wake-e4f8e54f9733, 2026-11-22T14:3xZ) from the independent review of issue-c9d8a98dd241.
+
+Observed defect class: one coordination command is documented with two different meanings, and the implementation matches only one. docs/specs/dev-loop/agent-coordination.md:218 says `issue needs-info` lists every open issue that is not ready; :247-252 says the user-facing coordinator runs `issue needs-info` to find the exact open questions. devscripts/agent_coord.py:4683-4687 implements only the readiness meaning. Live baseline: 22 issues returned (in_review 17, assigned 4, triaged 1), 0 of the 7 open `needs_clarification` questions included, so a coordinator following :247-252 asks zero of the real questions. This has already delayed the high-priority capability issue-c9d8a98dd241 (~2 days, owner inactive) without any review flagging the missing queue.
+
+Measurable target: 0 documented coordination commands whose described filter differs from the implementation; the user-question queue returns 7/7 live `needs_clarification` issues, and remains 7/7 after a second question is added to an existing issue. Secondary: `issue readiness` and the question queue stay distinguishable in docs and CLI help.
+
+Smallest experiment: add one unit test that seeds two `needs_clarification` issues and asserts the new/split queue returns exactly 2 while `issue needs-info` keeps returning only readiness gaps; update the :247-252 text to name the actual command. Run `devscripts/quality/test_agent_coord.py` and the live queue; expect 7/7 today with no change to the 22 readiness rows. No source edit made by this review.

@@ -106,3 +106,15 @@ Occurrence added for issue-d5a7e874a0db: wait game-dll-build:2026-11-22T11:04:12
 ### 2026-11-22T14:10:16.937Z — build-wait-reviewer
 
 Evidence from wait build-wait-reviewer issue-1cbec48ac17a (resolved as a healthy long build). Three distinct game-dll-build waits exceeded the fixed 60s WAIT_ISSUE_SECONDS in ~13 minutes, each a single-TU edit: attempt 567c5b succeeded in 80.443s (single TU compile 41.522s + link 12.666s); attempt 7896ef failed compile at 87.828s; attempt ada12d succeeded in 94.681s. The 60s budget is below the normal cost of any incremental whole-game DLL rebuild here, so it fires on normal builds. Recommend deriving the wait budget from measured incremental build cost (or exempting/reporting at a higher, size-aware threshold) and, separately, fixing the reason field: devscripts/dev-loop.py:2832-2867 sets game_build_detail to line.rstrip()[-240:] for every output line, so a long [GAME_RESULT]/progress JSON line becomes a truncated JSON tail in wait['reason'] (seen in issue-1cbec48ac17a and issue-b52a0621a29e). Keep a human-readable stage/last-action string for reason and store raw output separately.
+
+## Agent suggestion
+
+### 2026-11-22T14:45:17.334Z — build-wait-reviewer
+
+Occurrence evidence for the over-budget wait umbrella: wait_id game-dll-build:2026-11-22T14:22:57.758Z (61.866s, flat 60s budget) coincided with active compilation of src/network/server-npcs.cpp (67.005s) inside successful attempt game-dll-20261122T142258012829Z-326bd4 (generation 499, total 137.01s, worker 117.309s). This is intrinsic incremental whole-game DLL cost, not a stalled queue. Suggest per-stage budgets from measured p50/p95 and grouping repeated wait issues by this signature. Recorded under issue-5870fafa670e (review verdict confirmed-intrinsic-build-cost).
+
+## Scheduled independent review
+
+### 2026-11-22T14:59:36.626Z — cpp-latency-digest-cache
+
+A bounded independent review was queued as wake wake-5c78c0cfc430 after 299 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.

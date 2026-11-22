@@ -60,6 +60,20 @@ Read these gates before doing anything else:
    Do not create duplicate issues or append unrelated status chatter. Seeing an
    unowned issue does not assign it; choose it with `agent-coord next --claim`.
 
+   RESOURCE EVIDENCE HANDOFF: Whenever an agent observes MiMITA CPU, memory,
+   disk, or build-resource pressure, append the evidence to the appropriate
+   existing issue (or create one complete issue if none fits) before or with
+   the handoff. Include UTC and sample duration; host logical CPU count; process
+   PID/role and CPU normalized both per logical CPU and to whole-machine
+   capacity; exact live mode from the runtime journal (the dev-loop GUI launch
+   mode may differ after an in-game switch); player/NPC and workload state;
+   frame cap/FPS or server tick data when available; concurrent build phase
+   and top competing processes for build-pressure claims; and journal/artifact
+   paths. Label direct observations, inferences, and unknowns separately.
+   Cross-link a related feature/build issue when ownership lies elsewhere, and
+   leave follow-up unowned unless accepting it with `next --claim`. Do not
+   duplicate the report or post status-only chatter.
+
    USER CONTEXT IS SHARED: Every user message must enter the brain exactly once
    with its verbatim text and a stable source reference. The OpenCode prompt
    plugin does this automatically; other runtimes must call
