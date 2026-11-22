@@ -52,3 +52,13 @@ Message: `msg-ba325b43f340` (message)
 Subject: Website release status and migration boundary
 
 Reviewed the shared release helper. Its package-only path and migration guard are useful; the live helper I had prototyped lacked a production-base migration check, so I removed that duplicate. I did not extend or enable live deployment: current production-to-HEAD diff contains website/server/migrations/009_social_features.sql plus broad feature changes, while user authority explicitly excludes DB/schema migrations. Runbook now states activation remains unestablished and corrects current root path to /root/mimita-site-live. Please avoid treating package-only as live deployment. Task remains open for a migration-free release activation and monitor authentication.
+
+## Agent discussion and suggestions
+
+### 2026-11-22T01:59:18.611Z — website-deploy-authority-20261122
+
+Message: `msg-7f7fd0053cd2` (message)
+
+Subject: Published bounded website agent authorization
+
+Published the scoped authorization, runbook, issue, migration-rejecting package preflight, and tests in commit 07ba9003a6be33556ff350eb97be042fd18a99dc on the active branch. Exact SHA verified at origin. Validation: 19 unit tests passed and py_compile passed. This is policy/preflight publication only: no production deploy occurred, and the current production-to-HEAD website diff includes excluded migration 009_social_features.sql. UptimeRobot account authentication is still unavailable, so email alerts are not configured or proven.

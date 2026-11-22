@@ -102,46 +102,54 @@ void logReliableFailureAggregate(const char* trigger,
                         gFailureStats.attemptsExhausted, gFailureStats.ttlExpired);
 }
 
-void markReliableConnectionUnhealthy(std::unordered_map<uint32_t, ServerPlayer>& players,
-                                     std::unordered_map<uint32_t, ServerPlayer>::iterator& it,
-                                     const char* trigger,
-                                     uint8_t packetType,
-                                     uint32_t eventId)
+// A reliable gameplay event that cannot be delivered is NOT proof that the
+// peer is gone. The normal connection-health owner (timeout/grace) owns slot
+// removal; erasing here made a healthy session vanish inside its reconnect
+// grace as soon as the queue hit max attempts. Record the degraded delivery,
+// drop the undeliverable event, and keep the slot/token for reconnect.
+void noteReliableDeliveryFailure(const ServerPlayer& player,
+                                 const char* trigger,
+                                 uint8_t packetType,
+                                 uint32_t eventId,
+                                 size_t playersBefore)
 {
-    const ServerPlayer& player = it->second;
     const uint64_t removalTimeMs = reliableNowMs();
-    const size_t playersBefore = players.size();
     const uint32_t lastAcceptedServerTick = player.lastAcceptedServerTick;
     const char* failureTrigger = trigger ? trigger : "unspecified";
     const uint64_t silentMs = removalTimeMs >= player.lastHeardMs
         ? removalTimeMs - player.lastHeardMs : 0;
 
-    // This branch erases the session without passing through the normal
-    // timeout/disconnect owner. Record the delivery failure and common removal
-    // transition before the reconnect token and player slot are discarded.
-    StructuredLogger::instance().writeEvent(
-        StructuredCategory::Network, StructuredLevel::Important,
-        "network.server.reliable-event.connection-failed",
-        "player:" + std::to_string(player.id) + ":event:" + std::to_string(eventId),
-        failureTrigger, lastAcceptedServerTick,
-        nlohmann::json{{"player_id", player.id},
-                       {"failure_trigger", failureTrigger},
-                       {"packet_type", (unsigned)packetType},
-                       {"event_id", eventId},
-                       {"event_session_id", player.reliableEventSessionId},
-                       {"pending_reliable_events", player.pendingReliableEvents.size()},
-                       {"last_accepted_server_tick", lastAcceptedServerTick},
-                       {"tick_basis", "last_accepted_server_tick"},
-                       {"last_heard_ms", player.lastHeardMs},
-                       {"silent_ms", silentMs},
-                       {"connection_stale", player.connectionStale},
-                       {"players_before", playersBefore},
-                       {"players_after", playersBefore > 0 ? playersBefore - 1 : 0}},
-        __FILE__, __LINE__, __FUNCTION__);
-    serverLogPlayerSessionRemoval(player, "reliable_event_failure",
-                                  removalTimeMs, lastAcceptedServerTick, playersBefore);
-    logReliableFailureAggregate(trigger, it->second, packetType, eventId);
-    it = players.erase(it);
+    // A dead peer can expire hundreds of queued events during its reconnect
+    // grace. Flushing one Important record per event turns the grace window
+    // into a journal-lock stall, so keep the structured diagnostic to one line
+    // per second; the throttled aggregate below still counts every failure.
+    static thread_local uint64_t lastStructuredLogMs = 0;
+    if (removalTimeMs >= lastStructuredLogMs + 1000)
+    {
+        lastStructuredLogMs = removalTimeMs;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.server.reliable-event.delivery-degraded",
+            "player:" + std::to_string(player.id) + ":event:" + std::to_string(eventId),
+            failureTrigger, lastAcceptedServerTick,
+            nlohmann::json{{"player_id", player.id},
+                           {"failure_trigger", failureTrigger},
+                           {"packet_type", (unsigned)packetType},
+                           {"event_id", eventId},
+                           {"event_session_id", player.reliableEventSessionId},
+                           {"pending_reliable_events", player.pendingReliableEvents.size()},
+                           {"last_accepted_server_tick", lastAcceptedServerTick},
+                           {"tick_basis", "last_accepted_server_tick"},
+                           {"last_heard_ms", player.lastHeardMs},
+                           {"silent_ms", silentMs},
+                           {"connection_stale", player.connectionStale},
+                           {"slot_state", "held"},
+                           {"action", "keep-connection"},
+                           {"players_before", playersBefore},
+                           {"players_after", playersBefore}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+    logReliableFailureAggregate(trigger, player, packetType, eventId);
 }
 
 } // namespace
@@ -295,12 +303,13 @@ ReliableGameplayEventQueueResult queueReliableGameplayEventToAll(SOCKET sock,
         if (one == ReliableGameplayEventQueueResult::ConnectionUnavailable ||
             one == ReliableGameplayEventQueueResult::BacklogSaturated)
         {
-            markReliableConnectionUnhealthy(players, it,
+            noteReliableDeliveryFailure(it->second,
                 one == ReliableGameplayEventQueueResult::BacklogSaturated
                     ? "backlog-saturated" : "initial-send-failed",
-                header->type, eventId);
+                header->type, eventId, players.size());
             result = worseResult(result, one);
-            continue;  // markReliableConnectionUnhealthy already advanced `it`
+            ++it;
+            continue;
         }
         result = worseResult(result, one);
         ++it;
@@ -361,10 +370,9 @@ void tickReliableGameplayEvents(SOCKET sock,
     uint32_t resentCount = 0;
     uint32_t expiredCount = 0;
 
-    for (auto playerIt = players.begin(); playerIt != players.end(); )
+    for (auto playerIt = players.begin(); playerIt != players.end(); ++playerIt)
     {
         ServerPlayer& player = playerIt->second;
-        bool disconnected = false;
         for (auto it = player.pendingReliableEvents.begin(); it != player.pendingReliableEvents.end(); )
         {
             const bool ttlExpired = now - it->createdMs > (uint64_t)cfg.ttlMs;
@@ -377,27 +385,15 @@ void tickReliableGameplayEvents(SOCKET sock,
                     ++gFailureStats.attemptsExhausted;
                 ++expiredCount;
 
-                // Chat delivery is best-effort at the event-queue layer. The
-                // client continues retrying its idempotent request, and the
-                // normal server connection-health timer owns disconnects.
-                // Erasing the player here made badconn 8 look disconnected
-                // after 80 * 50 ms, long before the configured 60 s grace.
-                if (it->packetType == PACKET_CHAT_MESSAGE_EVENT)
-                {
-                    Debug::logThrottled(Debug::Category::Networking,
-                        "reliable-chat-event-expired", 1.0f,
-                        "[RELIABLE CHAT EVENT EXPIRED] playerId=%u eventId=%u reason=%s action=keep-connection\n",
-                        player.id, it->eventId,
-                        ttlExpired ? "ttl-expired" : "attempts-exhausted");
-                    it = player.pendingReliableEvents.erase(it);
-                    continue;
-                }
-
-                markReliableConnectionUnhealthy(players, playerIt,
+                // Keep the connection; the normal server connection-health
+                // timer owns disconnects. Dropping only the undeliverable
+                // event prevents an unbounded retry backlog without erasing a
+                // session that is still inside its reconnect grace window.
+                noteReliableDeliveryFailure(player,
                     ttlExpired ? "ttl-expired" : "attempts-exhausted",
-                    it->packetType, it->eventId);
-                disconnected = true;
-                break;
+                    it->packetType, it->eventId, players.size());
+                it = player.pendingReliableEvents.erase(it);
+                continue;
             }
             if (now - it->lastSendMs >= (uint64_t)cfg.retryMs)
             {
@@ -406,9 +402,12 @@ void tickReliableGameplayEvents(SOCKET sock,
                 {
                     ++gFailureStats.sendFailed;
                     ++expiredCount;
-                    markReliableConnectionUnhealthy(players, playerIt,
-                        "retry-send-failed", it->packetType, it->eventId);
-                    disconnected = true;
+                    // Transport is temporarily unavailable. Keep the slot and
+                    // pending event; retry next maintenance tick or let TTL
+                    // bound it. Stop retrying this player for this tick.
+                    noteReliableDeliveryFailure(player, "retry-send-failed",
+                                                it->packetType, it->eventId,
+                                                players.size());
                     break;
                 }
                 it->lastSendMs = now;
@@ -422,8 +421,6 @@ void tickReliableGameplayEvents(SOCKET sock,
             ++pendingCount;
             ++it;
         }
-        if (!disconnected)
-            ++playerIt;
     }
 
     static uint64_t lastLogMs = 0;

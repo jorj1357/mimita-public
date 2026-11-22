@@ -103,3 +103,45 @@ From bounded review of issue-054ea1bcda9b (exe-build wait exe-build:0:2026-11-21
 ### 2026-11-21T16:33:49.728Z — build-wait-reviewer
 
 Measured evidence from wait issue-ad873eff97f3 (wait_id game-dll-build:2026-11-21T13:49:38.158Z, build game-dll-20261121T134938183745Z-c0c1da, gen 420): the build resumed and completed at 13:59:58.446Z, success=true, total 620.249s. object_cache_scan was 86.35s and compile 418.84s. The wait is structural: the first scan.snapshot lands at scan_seconds 79.613s, and recorded parse_ms 9210 plus stat_ms 166 explain only about 9.4s, so roughly 70s of the prepass is untimed. scan_entries runs dependency_relative (devscripts/game_build_worker.py:1325-1327 and :804-816) per dependency token, which calls Path.resolve; the object-cache dependency-index.json has 642 sources and 160,446 token occurrences. Prior incremental builds gen 414-416 spent 318-383s in object_cache_scan versus 44-55s compiling. Suggested smallest changes: drop Path.resolve from the per-token prepass (use normalized relative keys), add prepass sub-timers and a scan_prepass timing row, and attribute/fold repeated game_build waits under this tracker instead of one issue per wait_id.
+
+## Scheduled independent review
+
+### 2026-11-22T00:04:25.986Z — cpp-latency-pressure-profile
+
+A bounded independent review was queued as wake wake-fefc3ae78b7c after 199 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (measurement-defect-confirmed; failure-autowire-partially-proven)
+
+### 2026-11-22T00:12:17.944Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+**Independent bounded review — issue-review-sweeper, wake-fefc3ae78b7c, 2026-11-22T00:1xZ UTC.**
+Read-only: no source edited, no build or run started, no fix claimed, no proof recorded.
+
+**Readiness / proof status (observed)**
+- `issue readiness`: ready=false, score 1/8. Missing reproduction, expected_behavior, acceptance, paths, evidence, proof_expectation, risk. Owner `launch-latency-investigation` is inactive ("session ended" 2026-11-20T06:50:10Z); neither task has an active owner.
+- `task_proofs` has zero rows for `latency-wait-occurrences` and `launch-report-issue-autowire`; both tasks remain `open`/unproven and there is no proof exemption for this issue.
+
+**Observed facts (latest artifacts)**
+- Successful dashboard launch `.dev/launch-reports/2026-11-21T22-40-58.595Z` (dashboard-e0f0a1c2, run 20261121_224058, generation-437 DLL) reached `result=succeeded`: accept_latency_ms 288.0, queue_wait_ms 459.1, total ~28.21 s, with correlated per-stage rows. A successful correlated path is possible.
+- Failure autowire is live for at least one case: launch `2026-11-21T21-52-37.115Z` failed at `mode_start` (`mode_start_timeout`); `finish_launch(create_issue=True)` created `issue-150c895a1d99` and wrote `report.md` with "Automatic issue: created". So the failure-issue half of `launch-report-issue-autowire` works.
+
+**Measurement defect (confirmed, in scope)**
+- Across the 40 newest `stages.jsonl` reports, `stage_elapsed_ms` equals cumulative `elapsed_ms` (never a per-stage delta) for these stages, with occurrence counts: artifact_selection 40/40, artifact_validation 40/40, launch_configuration 40/40, client_reconciliation 40/40, complete 39/39, build_identity_match 31/31, server_reuse 18/18, server_gameplay_readiness 15/15, server_reconciliation 4/4, stable_launch_activation 4/4.
+- Root cause: `stage()` at devscripts/dev-loop.py:4332-4353 computes `stage_elapsed_ms = now - (stage_started if provided else launch_started)`. The call sites for the above stages omit `stage_started`, so the field records cumulative elapsed. Only request_accepted (first), firewall_preflight, stable_launch_stage, versioninfo, server_process_start, server_logger_readiness, client_process_start, client_logger_readiness, client_connection, mode_start, and hot_client_gate pass an explicit start and produce correct deltas.
+- Consequence: the issue's central objective ("trace each step ... log all those times") is not met for the readiness-critical stages. In 2026-11-21T22-40-58, the recorded server_gameplay_readiness 20244.9 ms is cumulative; the true delta vs prior server_logger_readiness row is ~17855.7 ms. Any "dominant stage" read directly from `stage_elapsed_ms` is wrong for these rows.
+
+**Inference / uncertainty**
+- Autowire creates the issue, but its detail is low quality: `issue-150c895a1d99` human_quote/detail/failure_detail is the `[GAME BUILD] revision=...` banner and the `mode_start` stage row's `reason` is empty, so the actual timeout reason ("last completed stage and exact exception" from task acceptance) is not captured.
+- `report.md` is written only on failure (devscripts/dev_loop/launch_report.py:215-216); successful launches have only launch.json + stages.jsonl. If acceptance literally requires report.md for every launch, that is a gap; otherwise acceptance wording should be clarified.
+- I did not open the server/client runtime journals for these runs, so whether the ~17.9 s gameplay-readiness and the 45.3 s mode_start are required or avoidable is not determined here.
+
+**Contrary evidence**
+- The 21:52 failure produced a linked issue plus report.md and the 22:40 reattempt succeeded, so neither "autowire is broken" nor "launch never completes" is supported.
+- All stage types that pass `stage_started` do record correct durations, so the defect is localized to specific call sites, not the whole recorder.
+
+**Next discriminating check (smallest)**
+1. Add explicit `stage_started` to the identified `stage()` call sites (artifact_selection/validation, launch_configuration, client/server reconciliation, server_reuse, server_gameplay_readiness, build_identity_match, complete, stable_launch_activation) and re-run one dashboard launch; confirm each `stage_elapsed_ms` is a delta, not equal to `elapsed_ms`.
+2. Capture the mode_start (or first-failure) reason into the stage row and into auto-issue failure_detail instead of the trailing game-build banner.
+3. Have the owner record `runtime_proven`/reasoned exemption for both tasks; until then the tracker stays unproven.

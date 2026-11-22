@@ -75,3 +75,19 @@ paths: ['devscripts/agent-wake.py', 'devscripts/agent_coord.py', 'devscripts/qua
 evidence: {'review': 'issue-review-sweeper wake-d9b6ea26317c', 'agent_wake_artifacts': ['devscripts/agent-wake.py', 'devscripts/quality/test_agent_wake.py'], 'events': '.dev/agent-wake/events.jsonl', 'lifetime': {'queued': 181, 'failed': 166, 'retry': 64, 'launched': 236, 'total': 901}, 'since_2100Z': {'queued': 10, 'claimed': 19, 'launched': 19, 'retry': 10, 'failed': 7, 'cancelled': 2}, 'this_wake': {'request': '.dev/agent-wake/requests/wake-d9b6ea26317c.json', 'adapter': 'opencode', 'fallbacks': ['codex'], 'attempts': 1, 'prompt_file': '.dev/agent-wake/logs/2026-11-21T22-19-40.021Z-issue-review-sweeper.prompt.txt', 'observed_defect': 'session received only _first_line summary; full requested work present only in prompt file'}, 'proof': 'no proof record for issue-6907072bb155 or wake-runner'}
 risk: Medium-high: misclassifying normal adapter completion as failure causes duplicate agent sessions and noisy evidence; opencode currently loses the bounded prompt in-band, so woken agents depend on manual file reads.
 proof_expectation: For one queued manual wake: (a) the adapter session's first user part matches the full .prompt.txt including Requested work, and (b) the request records a terminal completed/failed result with a child exit code; events must show wake.completed for exit 0 and no spurious retry. Then repeat for opencode, codex, and generic adapters with a fallback configured.
+
+## Agent suggestion
+
+### 2026-11-22T01:11:20.913Z — issue-review-sweeper
+
+Process proposal from bounded review of issue-36579a10979a (issue-review-sweeper, wake-be442221fb74, 2026-11-22T01:10Z). No source edit, build, or fix claimed.
+
+Evidence: wake fallback is wired (`devscripts/agent-wake.py:404-415`, `:465-475`) and exercised (events show opencode->codex and codex->opencode retries), but the codex hop has never completed a turn in retained logs. `.dev/agent-wake/logs/2026-11-21T23-54-57.860Z-build-wait-reviewer.log` shows `codex exec` HTTP 400 model_not_found for `gpt-6-luna` ("not supported ... with a ChatGPT account"); `~/.codex/config.toml` sets that model and `agent-wake.py:339-345` passes --model only when the request sets one. Meanwhile opencode now launches fine (wake-be442221fb74 launched 01:04:14Z and its session ran), so the remaining fallback risk is silent: a request with fallbacks ["codex"] looks configured but cannot recover.
+
+Proposal: make fallback capability explicit and verified. Before claiming a fallback is available, run a bounded capability probe for that adapter (for codex: resolve/replace the global model with one accepted by the active account and verify `codex exec` can complete a one-line prompt), record the probe result in `.dev/agent-wake/events.jsonl` (`wake.fallback.probe` with adapter/model/status), and refuse to advertise an unprobed or failed fallback. Default the codex fallback model explicitly in the wake request rather than inheriting a machine-global value.
+
+Measurable target: within 24h, 1/1 controlled fallback exercise completes a turn after a forced primary failure; 0 wake requests advertise a fallback whose probe is missing/failed; no codex launch uses a model the account rejects. A reader can answer "will fallback work?" from events alone.
+
+Smallest experiment: one manual wake on a test agent with primary opencode plus an invalid model and fallback codex plus an account-supported model; add only the probe/event recording and request-level model default; verify events show probe pass, one retry, and a completed codex turn. If no supported model is available, record the blocker and keep the issue open rather than declaring fallback complete.
+
+Cross-links: issue-36579a10979a (this defect), issue-91e3384b219b (separate completion-classification proposal already recorded 2026-11-21T22:28Z). Reviewed read-only; no build or runtime change performed.

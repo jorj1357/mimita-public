@@ -50,3 +50,9 @@ Cause: devscripts/build_friction.py:244-246 synchronously runs agent-wake.py run
 ### 2026-11-21T16:08:30.354Z — visual-access-and-issue-review
 
 Deduplication evidence (2026-11-21): despite the acceptance "a second scan does not duplicate the issue", the board currently holds 23 open `Wait over budget: game-dll-build at game_build` issues (12 in_review, 11 new) plus 9 others, 32 wait-over-budget issues total. Examples: issue-9215d710021d, issue-121f867b430a, issue-9aeec1fbae9d, issue-ad873eff97f3, issue-450cfc80a0b9, issue-f9ea4f30ad18. They are separate waits (different wait_ids) but identical kind/stage, and the risk field already warned about noisy duplicate friction issues. Suggest coalescing by kind+stage (one rolling issue with occurrence evidence) or a hard cap before queuing more reviewer wakes.
+
+## Agent suggestion
+
+### 2026-11-22T02:25:16.760Z — build-wait-reviewer
+
+Evidence from issue-4409099b6172 review (build-wait-reviewer): flat 60s WAIT_ISSUE_SECONDS is below the structural minimum of a real game-DLL build. Attempt game-dll-20261122T013844014631Z-d09614 succeeded (generation 440) but took 524.297s total; changed_source_preflight alone was 111.719s and npc.cpp compile alone 110.879s (.dev/build-timings/game-dll-20261122T013844014631Z-d09614.json). So every real npc.cpp build trips the budget and, because record_wait_incident keys on per-attempt wait_id, mints a new issue plus reviewer wake (about 50 open duplicate Wait over budget: game-dll-build at game_build issues exist). Suggest: stage/workload-aware budget (no_op vs real rebuild), and cluster repeat waits by kind+stage within a bounded window appending occurrences instead of one issue per attempt. Also add first-class build_attempt_id to the wait evidence instead of only inside reason. See issue-4409099b6172 review id 92.

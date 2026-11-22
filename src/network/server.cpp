@@ -1635,32 +1635,63 @@ int runServer(const LaunchOptions& options)
                 ? budget.outOverBudget != 0
                 : (projectileMs > 4.0 || contactMs > 4.0 ||
                    npcPhaseMs > 10.0);
+            // Keep the useful over-budget signal without writing a large JSON
+            // record for every 60 Hz tick while a phase remains over budget.
+            static auto phaseBudgetWindowStart = tickStart;
+            static std::uint64_t phaseBudgetOverrunTicks = 0;
+            static double phaseBudgetMaxProjectileMs = 0.0;
+            static double phaseBudgetMaxContactMs = 0.0;
+            static double phaseBudgetMaxNpcMs = 0.0;
             if (phaseOverBudget)
             {
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Performance, StructuredLevel::Important,
-                    "performance.server-phase-budget", "server",
-                    "server phase exceeded its 60 Hz share", tick,
-                    nlohmann::json{
-                        {"tick", tick},
-                        {"projectile_ms", projectileMs},
-                        {"projectile_budget_ms", projectileBudgetMs},
-                        {"physical_contact_ms", contactMs},
-                        {"physical_contact_budget_ms", contactBudgetMs},
-                        {"npc_ms", npcPhaseMs},
-                        {"npc_budget_ms", npcBudgetMs},
-                        {"projectile_over", projectileMs > projectileBudgetMs},
-                        {"contact_over", contactMs > contactBudgetMs},
-                        {"npc_over", npcPhaseMs > npcBudgetMs},
-                        {"defer_npc", budgetPolicyApplied
-                            ? (budget.outDeferNpc != 0) : false},
-                        {"defer_contacts", budgetPolicyApplied
-                            ? (budget.outDeferContacts != 0) : false},
-                        {"policy_generation", budgetPolicyApplied
-                            ? budget.outGeneration : 0u},
-                        {"npcs", npcs.size()},
-                        {"players", players.size()}},
-                    __FILE__, __LINE__, __FUNCTION__);
+                ++phaseBudgetOverrunTicks;
+                phaseBudgetMaxProjectileMs = std::max(
+                    phaseBudgetMaxProjectileMs, projectileMs);
+                phaseBudgetMaxContactMs = std::max(
+                    phaseBudgetMaxContactMs, contactMs);
+                phaseBudgetMaxNpcMs = std::max(phaseBudgetMaxNpcMs, npcPhaseMs);
+            }
+
+            const double phaseBudgetWindowSeconds =
+                std::chrono::duration<double>(tickStart - phaseBudgetWindowStart)
+                    .count();
+            if (phaseBudgetWindowSeconds >= 1.0)
+            {
+                if (phaseBudgetOverrunTicks > 0)
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Performance, StructuredLevel::Important,
+                        "performance.server-phase-budget", "server",
+                        "server phase exceeded its 60 Hz share (one-second summary)",
+                        tick,
+                        nlohmann::json{
+                            {"tick", tick},
+                            {"window_s", phaseBudgetWindowSeconds},
+                            {"over_budget_ticks", phaseBudgetOverrunTicks},
+                            {"max_projectile_ms", phaseBudgetMaxProjectileMs},
+                            {"projectile_budget_ms", projectileBudgetMs},
+                            {"max_physical_contact_ms", phaseBudgetMaxContactMs},
+                            {"physical_contact_budget_ms", contactBudgetMs},
+                            {"max_npc_ms", phaseBudgetMaxNpcMs},
+                            {"npc_budget_ms", npcBudgetMs},
+                            {"projectile_over", phaseBudgetMaxProjectileMs > projectileBudgetMs},
+                            {"contact_over", phaseBudgetMaxContactMs > contactBudgetMs},
+                            {"npc_over", phaseBudgetMaxNpcMs > npcBudgetMs},
+                            {"defer_npc", budgetPolicyApplied
+                                ? (budget.outDeferNpc != 0) : false},
+                            {"defer_contacts", budgetPolicyApplied
+                                ? (budget.outDeferContacts != 0) : false},
+                            {"policy_generation", budgetPolicyApplied
+                                ? budget.outGeneration : 0u},
+                            {"npcs", npcs.size()},
+                            {"players", players.size()}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+                phaseBudgetWindowStart = tickStart;
+                phaseBudgetOverrunTicks = 0;
+                phaseBudgetMaxProjectileMs = 0.0;
+                phaseBudgetMaxContactMs = 0.0;
+                phaseBudgetMaxNpcMs = 0.0;
             }
 
             accumulator -= (double)SERVER_DT;

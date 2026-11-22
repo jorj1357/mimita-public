@@ -445,3 +445,263 @@ Follow-up exact CPU sample: over 8 seconds, the root daemon process averaged abo
 ### 2026-11-21T23:40:40.275Z — cpp-latency-pressure-profile
 
 15-second py-spy raw profile (PID 14344, daemon, 100 Hz nonblocking) captured 810 samples with 5 stack-read errors. It repeatedly sampled DevLoop.run calling print_status() at devscripts/dev-loop.py:5516; print_status calls state(), which reaches _instance_records/_tail_records and JSON decoding. The main loop also sampled save_state() at :5519, and _write_manifest() repeats _instance_records() at :2000-2010, rereading/decoding journals already read by state(). Of 810 weighted samples, the exact DevLoop.state frame appeared in 105 (13.0%), print-status call path in 73 (9.0%), and save-state call path in 71 (8.8%); these categories overlap and are not additive. Watcher snapshot frames were rare in this sample. Implemented state snapshot reuse: print_status now consumes the most recent <=1s snapshot rather than calling state() on each 200ms loop, and save_state passes its instance rows into _write_manifest to avoid a second journal read. Python syntax and focused mocked behavior checks pass. Current daemon is stale; no runtime A/B CPU measurement yet.
+
+## Agent suggestion
+
+### 2026-11-22T00:19:06.346Z — cpp-latency-pressure-profile
+
+Observed evidence through 2026-11-22 UTC. Attempt game-dll-20261122T000630945648Z-c2c8ee completed in 141.027s as a no-op; generation 437 and its DLL hash stayed unchanged. Its JSONL shows packet_registry_codegen.py check 2.414s versus 33.383s in the prior one-source attempt (92.8% lower, not a matched isolated benchmark). I changed scan_source_references in devscripts/packet_registry_codegen.py from testing every packet name on every source line to tokenizing PACKET_* identifiers with one regex; owner lookup is now a prebuilt map. `python devscripts/packet_registry_codegen.py --check` passes (78 packets; generated header/ledger still match).
+
+The no-op attempt's own JSONL reports codegen 2.414s, manifest_snapshot 48.565s, manifest_validation 0.135s, source_snapshot 55.995s, object_cache_scan 0.113s (642 scanned, 642 skipped, zero stale), and no compile/link/publish phases. A direct warm-cache measurement of build_manifest took 9.194s: OwnerResolver construction 5.147s, C++ enumeration 1.794s, all 2,225 source/header digest checks were cache hits (zero files/bytes hashed; stat time 314ms). A direct unchanged _update_source_mirror took 52ms. A direct source snapshot took 6.586s for 2,899 hardlinks and zero copies. Thus the 39s/49s discrepancy between full-attempt and focused operations remains unresolved; do not assign it to a specific function without profiling the loaded daemon path and OS I/O/resource counters.
+
+Summary accuracy defect found and fixed in devscripts/dev_loop/game_build.py: no-op worker_metrics previously copied stale compile/link/publish/source-count values from current.json (last published generation). `_worker_metrics_summary` now uses only matching attempt progress/last-attempt records for no-ops: this attempt's fixture reports compiled=0, skipped=642, scan=0.109s, compile/link/publish=0, worker_total=0.381s. Focused assertions, py_compile, codegen --check, and git diff --check pass. The live daemon has the old Python code loaded; refreshing it via its documented stop path would close the managed client, so this fix is not yet live-verified.
+
+CPU sample after the attempt: 99.8% host average across 12 logical CPUs. On a 12-second sample, client PID 24192 averaged 298.38% of one core (24.86% machine), server PID 27816 101.78% core (8.48% machine), additional MiMITA server PID 15340 126.11% core (10.51% machine), daemon PID 14344 26.06% core (2.17% machine), dashboard PID 33128 44.99% core (3.75% machine). A second 6-second inventory still saw 99.8% host load; other high processes included ChatGPT.exe, cpptools.exe, MsMpEng.exe, Code.exe, cpptools-srv.exe and codex-computer-use.exe. Those listed processes do not account for all host load. The active run 20261121_224058 is Payload/map payload1 with NPC count 1, client 24192/server 27816; this is not Juggernaut/AI stress. No controlled low-load comparison exists, so PC pressure is observed and likely a confound, not proven as the cause of a particular build delay. Preserve the active pair and do not claim <=1% CPU during active play.
+
+Next discriminating work: expose/measure every in-daemon subphase and stage-boundary interval without replacing the live client; capture OS disk/process-tree counters during the slow stages; profile OwnerResolver (5.15s warm sample); compare repeat build timing under matched resource pressure; test a pinned Juggernaut/AI run only when it can reuse the authorized runtime. Current full attempt no-op total was 141s, so the <=10s target is not met.
+
+## Agent suggestion
+
+### 2026-11-22T00:28:23.017Z — cpp-latency-pressure-profile
+
+Exact warm OwnerResolver profile after attempt game-dll-20261122T000630945648Z-c2c8ee: cProfile observed 1,095,481 calls / 6.129s. `source_manifest.py:137 OwnerResolver.__init__` accumulated 6.129s; 21 `expand_patterns` calls consumed 4.460s, 1,255 pathlib glob/sort expansions 3.701s, 17,118 `nt.scandir` calls 2.225s, and 3,624 path resolves consumed 1.890s (1.155s in `nt._getfinalpathname`). This identifies repeated owner-pattern expansion/walking as the warm-manifest cache miss.
+
+Implemented a process-local OwnerResolver cache in `devscripts/source_manifest.py`. Its key includes SHA-256 of source-owner and module-catalog configs, enumerated C++ paths, override existence, and matched link-input paths. A config hash or source inventory change invalidates it. Focused same-process test: first full manifest 8.589s with resolver 4.859s/cache miss; second 3.543s with resolver 0.033s/cache hit; both produced identical revision a3ef72a08c291c3491e0e193eddbb21eb09e79f51e8648f22ac3da575c12fed5 and identical 1008-source/1217-header counts. A temporary-root test changed an owner rule from game to resident and verified cache invalidation and updated ownership. This reduces repeated owner globbing by ~4.8s in the focused run, but manifest is still 3.54s and not subsecond. It is an in-process measurement only; the live daemon has not loaded the change, so no production-loop timing claim yet.
+
+## Follow-up 3 — persistent inventory cache and snapshot reuse (2026-11-22 UTC)
+
+### What accounts for the 141-second no-op
+
+The root dev-loop attempt `game-dll-20261122T000630945648Z-c2c8ee` was a no-op that retained generation 437 and compiled/published nothing. Its recorded stage times were 48.565s `manifest_snapshot`, 55.995s `source_snapshot`, 2.414s packet codegen, and 0.113s object-cache scan. These stages consumed 106.974s combined (75.9% of the 141.027s top-level attempt). The no-op worker itself returned in 0.381s. The attempt had no C++ changes, so its 12-TU/62.757s compile and 22.474s link values in `worker_metrics` are stale prior-generation data, not work performed by this no-op; the attempt-specific top-level fields correctly show `no_op=true`. This is concrete evidence that timing consumers must prefer attempt-scoped metrics and must not reuse `current.json` build metrics.
+
+The daemon loaded before the recent Python changes. Its manifest and snapshot timers therefore do not measure the new implementation. In the updated code, `build_manifest` keeps the C++/header inventory and owner resolver caches in process-global state. The root dev-loop imports `run_game_build` once and calls it from a daemon-owned thread, so those caches can persist across requests. The compiler worker is spawned later and does not own this manifest cache.
+
+### Focused timings on the current tree
+
+A fresh Python process took 6.281s for its first `build_manifest` call (cold process/cache). This is not comparable to the daemon's warm cache. Within one daemon process, six prior passes measured 8.101s cold, followed by 0.471–0.512s warm (median 0.493s), with C++ inventory, header inventory, and owner resolver cache hits. The first pass in a new interpreter also paid the cold owner-map and filesystem inventory construction cost.
+
+On the current generation-437 tree, five same-revision `_update_source_mirror` calls took 41.65–91.29ms (median 45.09ms). Five published-snapshot lookup/reuse checks took 1.40–2.23ms (median 1.83ms), and all returned the validated immutable generation-437 source snapshot. A separate focused helper assertion rejected a mismatched revision and the prune test preserved a protected published snapshot. These timings support the implementation direction but do not replace an end-to-end dev-loop attempt with the updated daemon.
+
+The code now reports inventory cache hit/invalidation metadata, safely reuses an already-published immutable source snapshot for an identical source revision, protects the reused snapshot from pruning, and corrects no-op worker metrics to use attempt-scoped progress. `source_manifest.py` enumeration, cache invalidation tests (added/removed source and newly created include root/header), packet codegen `--check`, Python syntax checks, and `git diff --check` passed. The focused direct call did not modify source files; it only measured the current mirror and immutable snapshot metadata.
+
+### Remaining blockers and measurement gaps
+
+- The same-source-revision optimized full request has not been measured through the running root dev-loop. Its Python daemon still has the old implementation loaded. A controlled reload/restart must preserve and revalidate the healthy game pair before that comparison; do not report the focused timings as end-to-end savings.
+- The 141-second no-op's 48.565s manifest and 55.995s snapshot costs remain the observed baseline, but the live attempt has no new subphase events, so their exact internal allocation and the effect of CPU/disk pressure are not yet evidenced.
+- `worker_metrics` can still show old compile/link totals on the old-daemon attempt despite the helper fix in source. The helper's fixture assertion passed, but needs a live attempt after code reload.
+- The preserved runtime `20261121_224058` is Payload, not a Juggernaut/AI pressure workload. No matched stressed-runtime before/after build test was run.
+- Eleven wrapper TUs still rebuild because the generated identity header changes. A runtime identity for folded modules is the documented route; changing that boundary is a separate C++/ABI task, not part of this safe Python optimization validation.
+- The one-source warm attempt's measured wall times remain 42.911s for `src/npc/npc.cpp` compile, 18.4s for other wrapper/remaining TUs in parallel, and 22.474s for link. Current data cannot prove sub-1-second full monolithic linking. These require independent targeted changes and measurements.
+
+Next: validate a controlled daemon-adoption path that keeps the existing client/server PIDs alive; then run one no-op attempt and one single-leaf-source attempt with the same run, resource state, and process identities. Capture daemon CPU, per-process CPU, disk throughput/queue, every stage/subphase, the compiler process tree, attempt-scoped counts, and same-PID activation plus owner-visible journal evidence. Only after that compare the wrapper runtime-identity proposal and any linker/toolchain alternatives.
+
+## Daemon reload detection defect — 2026-11-22 UTC
+
+**Observed:** The `dev-loop-watch.py --force-source-change --once` check did not restart the daemon even though `devscripts/dev_loop/game_build.py` and sibling modules had been edited after its original startup. `DevLoop.state()` populated `daemon_script_hash` by calling `script_sha256(DEV_LOOP_SCRIPT)` at each state write. Because that function hashes the files currently on disk, status could advertise the new implementation while the long-lived interpreter still held old imported function objects. The active daemon PID was 14344; its live FCS client/server were PIDs 25392/26748 in run `20261122_011031`. The attempted one-shot watcher did not stop or relaunch them.
+
+**Root cause:** The field named `daemon_script_hash` represented the current disk hash, not the code identity captured when the daemon imported its implementation. This defeated the watcher comparison that is supposed to detect stale Python code.
+
+**Fix in source:** `DevLoop.__init__` now captures `script_sha256(DEV_LOOP_SCRIPT)` once as `self.daemon_script_hash`, and subsequent `state()` writes publish that frozen value. This lets the watchdog compare the daemon's startup code identity against the current disk hash. It does not change the game compiler or runtime architecture.
+
+**Validation/next proof:** Python syntax validation and source/diff checks are required before a controlled daemon restart. After restart, compare the new daemon PID and startup hash with the on-disk composite hash, verify server PID 26748 is adopted, then start a client on the same retained server and verify the selected FCS mode/map and journals. A source edit after daemon start must leave its recorded hash unchanged and make it differ from disk until replacement. Then run attempt-scoped no-op and one-leaf-source trials through the root dev-loop; record exactly which implementation identity handled each request. Do not describe focused helper timings as end-to-end latency gains.
+
+**Risk/rollback:** The current daemon's normal shutdown closes its owned client but leaves the independently owned dedicated server running. Restart only through the checkout watcher/control path; after startup, reattach a client to the adopted server and verify run identity before treating the runtime as restored. If the server cannot be safely adopted or the new loop cannot come online, stop latency experiments and recover the root dev-loop using the documented lifecycle procedure.
+
+### Post-restart client reattachment gap — 2026-11-22 UTC
+
+**Observed:** The controlled daemon replacement preserved and verified server PID 26748 and run `20261122_011031`, but `--start-client --server server-01 --name "NPC Dev" --launch-mode 45` was rejected with `start-client requires a published build`. The restart had intentionally closed client PID 25392. The new daemon had discovered the published executable on disk, but `start_client_instance()` uses `self.launch_executable` as fallback and that field is initialized to `None`; `adopt_persisted_server()` restored the verified server executable into `self.server_exe` only.
+
+**Fix in source:** after verifying the saved server marker against the live process PID, executable path, and `--server` command-line identity, adoption now also restores `self.launch_executable` to that same executable path. This allows a newly attached client to use the exact binary already hosting the retained server without requiring a cold EXE build. The request failure and server/client identities are in `logs/2026-11-22/20261122_011031/dev-loop/events.jsonl`.
+
+**Next proof:** controlled-restart the daemon once to load this small Python change, then start exactly one client on `server-01`. Verify the executable/build ID, run ID, map, and mode are still the retained server's FCS values before continuing. If reattachment fails again, do not launch a second server; preserve the current server and trace the exact rejection event.
+
+## Agent suggestion
+
+### 2026-11-22T01:28:28.849Z — cpu-build-efficiency
+
+Observed active game-DLL attempt game-dll-20261122T012524059314Z-64e10a from 01:25:24Z: build.started had notes=[]; source_snapshot stage alone reported duration 35.812s, and at 01:27:08Z the attempt still had not advanced past snapshot. The source edit triggered the root dev-loop automatically. This turn's process sample during the attempt recorded MiMITA server PID 26748 at 101.5% of one logical core and client PID 30496 at 248%; total system CPU rose from 64.4% to 74.6% over 15 seconds on 12 logical CPUs. No compiler process was observed in that sample, so it does not establish build CPU contention. This change aims to cut repetitive server diagnostic I/O; run a matched active-server build trial after publication to measure build throughput and CPU contention.
+
+## Agent suggestion
+
+### 2026-11-22T01:32:51.619Z — cpp-latency-pressure-profile
+
+2026-11-22T01:30Z cpp-latency-pressure-profile: stage timing from two consecutive attempts on the same tree. attempt game-dll-20261122T012524059314Z-64e10a (generation 438, exit 0) wall 262.6s: manifest_snapshot 28.45s, source_snapshot 35.81s, compile 43.2s, link 63.0s, publish 36.83s. Immediately following attempt game-dll-20261122T012948089638Z-6abdff (only src/npc/npc.cpp changed): manifest_snapshot 20.9s, manifest_validation 0.16s, source_snapshot 82.25s - more than double. During the source-enumeration/manifest window I sampled no compiler process at all, while the live mimita client used 351.8% of one core and server+dashboard+daemon ~1.4 cores (12 logical CPUs, host 84.8%). source_snapshot is a file mirror (~1008 sources) and 82s is far above a disk-bound copy, so the first targets are the snapshot copy path and external contention (AV/Defender on newly written snapshot files, client CPU/disk load). This supports the user's contention hypothesis but does not prove causality; a matched idle-vs-active-game build with identical source/deps is still required. Also note link 63.0s and publish 36.8s are large fixed costs in the 262.6s wall.
+
+## Agent discussion and suggestions
+
+### 2026-11-22T01:33:36.974Z — cpp-latency-pressure-profile
+
+Message: `msg-ca358a0e05dc` (message)
+
+Subject: G438 64e10a full phase table; module-identity.h forces 11 wrapper recompiles
+
+Read-only evidence from cpp-latency-pressure-profile (wake wake-754f9b772a62, ctx-b49851db6105). This is the first build observed after the Python tooling edits went live (dev-loop.py mtime 20:22:59, daemon PID 4008 started 20:23:31). No code changed by me.
+
+ATTEMPT game-dll-20261122T012524059314Z-64e10a, generation 438, revision 26980e9e..., SUCCESS, 262.641s total, one real source change + live client 30496 connected. Per-attempt JSONL has full subphase timers.
+
+Pre-worker (86.75s):
+- 15.47s from build.started to first codegen stage (still unexplained setup gap)
+- resident_state_codegen 1.39s, packet_registry_codegen 2.02s
+- manifest_snapshot 28.45s: inputs 0.06, enumerate_cpp 8.42 (cache_hit=false cold_or_unstable_scan), owner_resolver 13.98 (cache_hit=false), source digest 0.85, enumerate_headers 4.07, header digest 0.62, config 0.06, persist 0.11, mirror 0.16
+- manifest_validation 0.17
+- source_snapshot 35.81
+- 25.16s unmeasured gap: source_snapshot completed 01:26:50.815 -> worker_input_validation started 01:27:15.965
+
+Worker (221.5s):
+- object_cache_scan 1.83 (642 scanned, 11 stale, 631 skipped, 1514 unique deps)
+- compile 43.20 wall for exactly 11 TUs, each ~40.3-42.8s, 10 jobs; changed TU not among them
+- link 63.00 (linker 62.x, 642 objects, 480.3MB)
+- coherence_validation 1.08
+- publish 36.83: rename+hash 1.88 (DLL 242.6MB), external_dependency_manifest 34.50 (64 deps, 642 depfiles), cache_marker 0.14
+- post-publish to build.completed 4.66
+
+ROOT CAUSE OF THE 11 EXTRA COMPILES (user: "don't compile files we didn't touch; modules shouldn't change each time"):
+- build/game/identity/module-identity.h is rewritten on every build and contains MIMITA_MODULE_GENERATION plus MIMITA_MODULE_SOURCE_HASH.
+- All 11 *-module.cpp wrappers #include <module-identity.h>. Every cache.invalidation event in this attempt names the same reason: "dependency newer than object: build\game\identity/module-identity.h".
+- Freshness scan therefore correctly recompiles 11 wrappers even though only one ordinary source changed; they cost ~43s of parallel wall and ~450 CPU-s while competing with the live game.
+- Suggested direction (needs owner review): split stable ABI/schema from per-generation identity, or inject generation/hash via compile definition/separate header not included by wrappers, so a new generation does not dirty the wrapper objects.
+
+OTHER LARGEST REMAINING COSTS, in order: link 63s, publish external_dependency_manifest 34.5s, source_snapshot 35.8s, manifest 28.5s (cold resolver 14s + enumeration 12.5s), 25.2s unknown handoff, 15.5s pre-codegen gap.
+
+Comparison: this is the best-instrumented and fastest fully-attributed attempt so far (prior no-op 141s still had 48.6s manifest + 56.0s snapshot when state numbering differed). The manifest/source stages now have named owners, so the remaining work is targeted: module identity, link, publish dep manifest, and the two unmeasured gaps.
+
+## Agent suggestion
+
+### 2026-11-22T01:37:51.667Z — cpu-build-efficiency
+
+2026-11-22 01:29Z source ownership correction: build/source-manifest.json says src/network/server.cpp owner=resident and build/hot-reload/exe-worklist.json includes it as an EXE object. The root loop auto-started DLL generations after save, but they did not replace the resident runServer code; the live process continued writing per-tick events. I have queued the proper root dev-loop EXE build. Prior game-DLL attempt game-dll-20261122T012524059314Z-64e10a had changed_paths=[src/network/server.cpp] with notes=[], so DLL change-note traceability is incomplete for that attempt. Next experiment: compare pinned resident EXE behavior with exact build identity and preserve old live FCS run.
+
+## Follow-up — generation 440, whole-exe wait and live resource sample (2026-11-22 UTC)
+
+### DLL attempt `game-dll-20261122T013844014631Z-d09614`
+
+This was a real changed-source attempt, not a no-op: two source inputs were changed (`src/network/reliable-gameplay-events.cpp` and `src/npc/npc.cpp`) and 11 generated module wrappers were invalidated. It built revision `7e7b5f25b5b9038a9df66a27c961754310d0877221dc1d2decbf7624d4a20fbd`, generation 440, successfully, in 524.297s. The same live FCS server PID 26748 and client PID 30496 both journaled `game.generation.activated` for generation 440 (`old_generation=439`) at 01:47:29Z. This proves publication and same-process activation, not that the unrelated NPC/network edits behaved correctly.
+
+| Stage | Wall time | Evidence / detail |
+|---|---:|---|
+| Code generation | 7.016s + 8.235s | resident-state and packet-registry checks |
+| Manifest snapshot | 61.391s | C++ enumeration alone 48.675s for 1,008 files; 1 changed directory, scan marked unstable, and exact changed path was not emitted |
+| Manifest validation | 1.609s | 1,008 sources |
+| Source snapshot | 99.235s | 2,899 hardlinks, zero copies; full per-attempt tree because source revision changed |
+| Changed-source preflight | 111.719s | two sources compiled; `reliable-gameplay-events.cpp` 74.528s, `npc.cpp` 110.879s |
+| Object-cache scan | 19.922s | 642 depfiles; dependency prepass 13.672s, path/fanout 9.691s (path normalization 9.476s), index load 1.282s, index save 1.305s, 1,905 unique paths stat-prewarmed in 1.859s, 640 freshness checks 4.140s; 11 stale, 629 skipped |
+| Wrapper compile phase | 70.766s | 11 wrappers compiled; 629 objects skipped; 13 total compiled including the two preflight sources |
+| Link | 55.281s | GNU linker 54.844s; 642 objects / 480,144,356 input bytes; staged DLL 242,552,459 bytes |
+| Coherence validation | 3.141s | successful |
+| Publish | 8.015s | external dependency manifest 5.157s (64 dependencies / 642 depfiles); DLL rename/hash 2.078s; metadata and cache marker under 0.3s each |
+| Uninstrumented boundaries | at least 56.6s | 3–5s gaps between multiple named stages; largest is 38.460s from source-snapshot completion to worker-input validation. The driver currently does pruning, manifest diff/write, context write, slot acquisition and worker launch in that interval without individual timers. |
+
+The 11 wrappers are the recurring avoidable work: each includes `build/game/identity/module-identity.h`, which changes per generation. The previous source audit found its generation/hash constants are the invalidation cause. In this attempt the 11 generated wrappers cost 70.8s of parallel wall time. First prototype should move volatile generation identity out of wrapper compile dependencies while preserving the stable ABI and per-generation runtime checks; never drop freshness checks or claim “only changed source” while this header still fans out.
+
+The 99.2s snapshot is also structural work: `_create_source_snapshot` in `devscripts/dev_loop/game_build.py` walks `src`, `include` and `external`, creates parent directories and hardlinks all 2,899 files for a changed revision. Reuse is already available for an identical published revision; the high-value next change is a correct immutable base plus changed-file overlay strategy, or a verified direct-source strategy. Merely changing copy to hardlink does not make changed-revision snapshots incremental.
+
+The full link processes 642 objects and nearly 480 MB to create a 242.6 MB DLL. A full-link target below 1s is not supported by these measurements; the path to low single-digit latency is likely compiling only the changed unit and using function-level patching (Blink or a purpose-built patch layer) so the whole DLL is not relinked. A no-op DLL test after generation 440 has not yet run, so this attempt does not measure the no-op path or the best-case cache hit.
+
+### Host and process pressure
+
+A five-second sample during the DLL/EXE overlap observed 89.4% total host CPU on 12 logical processors and 1.23 GiB available RAM. In the same window, server PID 26748 used 139.4% of one core (about 11.6% of the 12-core machine), client PID 30496 used 386.5% of one core (about 32.2% machine), and the root daemon used 6.9% of one core. A build process-tree sample found three active `cc1plus.exe` processes using 8.4%, 5.3% and 4.3% of one core and 566, 561 and 601 MiB RSS. These values show high host pressure but do not explain the remainder or prove that pressure caused the compile delays. The server journal recorded 19 NPCs and one `runServer` NPC slice at 94.887ms against a 10ms NPC budget, so this was an active workload, not an idle-game comparison.
+
+### Concurrent EXE request and reattachment failure
+
+An already-queued root-dev-loop EXE request (`2026-11-22T01:33:57.208Z-bc836913`) began immediately after generation 440, while the FCS server was still live. Its worker progress later reported success with 12 translation units compiled, 75 skipped, 190.844s compile and 6.578s link. However, root state remained `building` well after the worker reported `build_complete`; the daemon PID 4008 then disappeared and watchdog PID 31716 restarted it at 02:01:23Z. No new `.dev/builds` artifact was published; the active server still reports the prior EXE build identity and `published_stale`. The end-to-end EXE request duration and post-worker gap therefore remain a defect, not a successful EXE build claim. A read-only decomposition of the current `source_identity()` operations took 1.141s for `git status`, 1.405s for `git diff --binary HEAD` (223,852 bytes), and 0.490s to enumerate 25 untracked files totaling 103,464 bytes; those individual operations do not by themselves explain the observed multi-minute delay. The exact blocked owner after `build_complete` remains unproven.
+
+After restart the daemon adopted the existing server PID 26748, but the one attempted client reattach (PID 9252) timed out during logger startup and crashed. `addr2line` against the exact old runtime executable resolved the throwing call to `LogManager::rotateLogs()`'s comparator at `src/debug/log-manager.cpp:104`, called by `LogManager::init()` at line 260 and `main()` at line 636. The comparator repeatedly calls the throwing `fs::last_write_time(path)` overload from inside `std::sort`; a vanished or inaccessible log file can throw and escape startup. The crash dump does not expose which path failed, so a concurrent log-rotation race is the leading inference, not yet proven. A safe fix should collect timestamps once with the `error_code` overload, exclude/log failures, then sort cached `(time,path)` values. Do not retry the old client binary until that owner-level bug is fixed and the executable identity is valid. Two subsequent attempts to enqueue a no-source-change DLL candidate returned `unable to contact daemon`; no no-op attempt was created. A different FCS runtime was then active, so further DLL activation was held to avoid disturbing another live proof.
+
+### Investigation edits and next discriminating steps
+
+`devscripts/source_manifest.py` now emits the exact changed directory paths (capped at 32 with a truncation flag) in inventory telemetry. This closes the specific evidence gap that hid why one changed-directory scan traversed 1,008 files and ended unstable; it does not alter scan correctness. `devscripts/dev_loop/game_build.py` now writes started/completed driver subphase events and current progress for snapshot pruning, manifest diff/write, progress/context writing, worker command preparation, module-slot wait, and worker launch-to-first-output. This is intended to split the observed 38.460s driver interval. Syntax compilation and all six focused `test_game_build_snapshot` tests pass. Neither diagnostic change has been loaded by a live DLL attempt yet.
+
+Next: (1) resolve the worker-to-terminal EXE boundary around `devscripts/dev_loop/build.py::run_build` and the root daemon's completion drain; (2) load the new telemetry in a stable-tree no-op attempt, split the 38.460s driver interval, and capture exact changed inventory directories; (3) persist/index dependency tokens by depfile content so unchanged `.d` files are parsed once, not all 642 every generation; (4) remove generation-only wrapper invalidation, then compare compiled/skipped counts; (5) benchmark link alternatives without treating full 242MB relinking as a subsecond expectation; (6) reattach a client only after its `last_write_time` crash argument is identified and the exact executable identity is valid. The no-op request was not run because the dev-loop command endpoint returned `unable to contact daemon`, and a separate FCS proof runtime was active.
+
+## Agent discussion and suggestions
+
+### 2026-11-22T02:11:54.895Z — build-wait-reviewer
+
+Message: `msg-f6d7801e9226` (note)
+
+Subject: Recurring wait-policy noise: 51 game-dll wait issues; attribution fields wrong
+
+Recurrence evidence for issue-136d4553ff92. game-dll wait 2026-11-22T01:25:23.582Z (attempt game-dll-20261122T012524059314Z-64e10a, generation 438) fired at 60.205s and the build finished ok at 223.125s (timing total 262.641s; link alone 62.562s). The auto issue records build_id as self.latest_build, i.e. the EXE artifact 2026-11-21T02:26:50.306117Z, and generation null because self.game_build_generation is assigned only after success (dev-loop.py:2967); the in-flight attempt id exists only inside the reason string. dev-loop.py:3539 also suppresses repeat observations, so occurrences stays empty and the terminal success is never appended. The brain now holds 51 game-dll wait issues and the latest three are 00d61cbc12a2, 9306252422c4, 4409099b6172. Suggested minimal scope: record active attempt_id and target generation in wait evidence, append terminal result to the existing issue, and decide a measured per-class budget with human approval per change-to-evidence-latency.md:76-86. Review body is in issue-00d61cbc12a2. No source edit was made by build-wait-reviewer.
+
+## Agent suggestion
+
+### 2026-11-22T02:37:06.585Z — build-wait-reviewer
+
+From issue-565c90a0d817 review (build-wait-reviewer, wake-ed4b3fb12444): per-stage evidence for a wait that fired during a successful whole-game DLL build. Attempt game-dll-20261122T020544305357Z-268306: total_seconds 296.731, success true, no_op true (reused generation 440), worker_total_seconds 1.222. Journal stages: packet_registry_codegen 74.357s, manifest_snapshot 197.512s (source_count 1008), manifest_validation 0.161s, source_snapshot reused. So ~295s of the 297s was non-worker stage overhead, dominated by manifest_snapshot. Suggest recording per-stage durations and budgets in .dev/build-timings and treating manifest_snapshot as the dominant non-worker stage; that would let the flat 60s wait budget be replaced by measured per-class/per-stage budgets (docs/specs/dev-loop/change-to-evidence-latency.md, Budgets and outliers). Correlation: 104/171 timing samples exceed 60s (p50 131.9s). No fix claimed here.
+
+## Follow-up — live driver telemetry in generation 441 (2026-11-22 UTC)
+
+Root-dev-loop attempt `game-dll-20261122T022936769355Z-e0de53` completed successfully on revision `d6c61abbdc1a9da82417db9162b6db3421ca903c9c4f854f5453e004f26df24d`, generation 441, total 131.911s. The manifest diff has one changed source (`src/network/reliable-gameplay-events.cpp`); 11 module wrappers were invalidated by `build/game/identity/module-identity.h`, for 12 compiled and 630 skipped. Server PID 26748 recorded generation 441 activation from 440 at 02:31:56.624Z. This is a one-source compile/link/activation proof, not a no-op and not behavior proof for the changed network code; the root run had no client at that point.
+
+| Stage | Duration | Detail |
+|---|---:|---|
+| resident-state codegen | 0.463s | passed |
+| packet-registry codegen | 16.309s | unexpectedly dominant; needs its own profiler pass |
+| manifest snapshot | 5.607s | C++ inventory 1.186s / 1,008 sources / 1,743 directories; stable cold scan, no changed paths. Owner resolver 3.058s/cache miss; 2,224/2,225 source+header digest entries were cache hits |
+| manifest validation | 0.010s | passed |
+| source snapshot | 4.968s | 2,899 hardlinks, zero copies, for the changed revision |
+| driver gap after snapshot | 2.588s to first worker event | prune 1.695s (removed one old snapshot), manifest diff 0.009s, diff write 0.006s, progress/context write 0.068s, worker command preparation 0.004s, module slot 0.011s, launch-to-first-output 0.577s |
+| changed-source preflight | 27.736s | changed TU 27.696s |
+| object-cache scan | 1.760s | 642 depfiles; prepass 1.257s, path/fanout 0.728s (normalization 0.678s), index load 0.146s/save 0.083s; 1,906 unique paths, 11 stale/630 skipped |
+| wrapper compile | 17.618s | 11 wrappers at 8.073–10.171s each |
+| link | 38.516s | GNU linker 38.080s, 642 objects / 480,144,703 bytes, 242,552,621-byte DLL |
+| coherence | 0.725s | passed |
+| publish | 14.492s | external dependency manifest 12.908s; rename/hash 1.471s; metadata/cache marker under 0.1s |
+
+Compared with d09614 (524.297s, two changed sources plus the same 11 wrappers; snapshot 99.235s, manifest 61.391s, depfile prepass 13.672s, compile 70.766s, link 55.281s), this attempt was 74.8% shorter. These are not matched trials: changed source count differs and host load was not sampled during e0de53. The same wrapper set took about 9–10s each here versus about 41–56s in d09614, which makes load a strong confound but does not prove causality.
+
+A separate five-second post-build sample saw 99.6% host CPU across 12 logical processors and 0.7 GiB RAM available. Top process: RobloxPlayerBeta at 352.5% of one core (~29.4% of machine). Three MiMITA processes used 187.5%, 93.4% and 38.4% of one core combined (~26.6% of machine); only PID 26748 was the retained root run. PIDs 34976 and 412 belonged to a separate `fcs-proof` runtime launched by another agent and were left untouched. This is after the build, not a build-pressure sample, but it shows high host load can coexist with the root server using about 3.2% of machine CPU.
+
+The new driver timers were exercised live and explain the 2.588s post-snapshot interval for this attempt; this closes the measurement gap for e0de53 only, not the earlier 38.460s observation. Next: profile the 16.309s packet codegen, then run matched changed-source and no-op trials while sampling host/process/disk/memory during each phase. Keep fixing wrapper identity fanout and the full-link cost; no no-op or sub-10s result has yet been measured.
+
+## Follow-up — one-source generation 442 during severe host pressure (2026-11-22 UTC)
+
+Root-dev-loop attempt `game-dll-20261122T024115879642Z-8937c9` built revision `f9b0d4267a56da7c9d96598e979bc4d1863aaf478576ce24a434b6f5ddf8576f`, generation 442, successfully in 412.492s. Its only changed source was `src/npc/npc.cpp`. The DLL published without closing the server; PID 26748 recorded `game.generation.activated` for generation 442 from 441 at 02:48:14.718Z in run `20261122_011031`. This proves DLL publication and same-process activation, not the intended NPC behavior.
+
+| Stage | Duration | Detail |
+|---|---:|---|
+| resident-state codegen | 0.963s | passed |
+| packet-registry codegen | 3.070s | passed; far below the 16.309s prior attempt |
+| manifest snapshot | 2.528s | finished quickly on this run |
+| manifest validation | 0.014s | 1,008-source inventory validated |
+| source snapshot | 15.306s | changed-revision snapshot |
+| driver pre-worker work | 1.400s | seven subphase records; each named substep was at most 86ms, with remaining time mainly the final wait/launch-to-output interval |
+| changed-source preflight | 135.541s | `npc.cpp` alone took 135.237s |
+| object-cache scan | 3.498s | 642 objects; dependency prepass 2.400s; path/fanout 1.351s; index load 0.279s/save 0.158s |
+| wrapper compile | 29.237s | 11 identity-invalidated wrappers, plus the changed TU already counted in preflight; 630 of 642 objects skipped |
+| link | 144.119s | GNU linker 144.015s, 642 objects / 480,173,016 input bytes; linker working set sampled at about 1.18 GiB |
+| coherence | 1.184s | passed |
+| publish | 73.180s | external dependency-manifest generation 63.311s; rename/hash 9.503s; metadata/cache marker together under 0.1s |
+
+This run confirms the remaining whole-DLL path still recompiles 11 wrappers after one `.cpp` edit, then links all 642 objects. The 11 wrapper invalidations continue to trace to the generation-specific `build/game/identity/module-identity.h`. Even if wrapper compiles were removed, the measured 144.1s full link remains the dominant hard floor for this attempt; a subsecond path requires avoiding whole-DLL relinking (for example, a small isolated plugin or a function-patching prototype), not just a faster dependency scan.
+
+### Pressure sample and interpretation
+
+During the changed-source preflight window (02:43:04–02:44:00Z), a lightweight sample repeatedly observed 99.6–100% total CPU across the 12-logical-processor host and only 0.19–0.54 GiB available RAM. `cc1plus.exe` was observed at roughly 24–51% of one core and 461–682 MiB working set. A later process snapshot during linking showed `ld.exe` at 1.18 GiB working set. Several MiMITA processes were concurrently active; process ownership beyond the retained root server was not re-established in that sample, so their load must not be attributed to the root game alone. These observations make CPU/memory pressure a strong confound for the 135s NPC compile, 144s link, and 63s dependency-manifest pass; they do not prove how much of each delay pressure caused. No matched low-pressure retry was run.
+
+Although the worker was configured for 10 jobs, that limit does not guarantee a fast build under concurrent game and external workloads. The build reports 10 jobs; it does not show that MiMITA reserved 12 compiler slots. The existing measurements show the clearest immediate wins remain removing generation-only wrapper invalidation, reducing the changed source's compile cost after a matched load-controlled measurement, and avoiding the full 642-object link for a true live-function edit. `cr.h` could reload a deliberately small behavior plugin but would not accelerate this 242 MB DLL; Blink's patching model needs a compatible MSVC/PDB build and remains an isolated experiment. Flecs can support explicit state migration only after game state is represented as ECS data. None of these libraries justifies changing the active MinGW path before a prototype is proven.
+
+## Agent suggestion
+
+### 2026-11-22T03:00:52.878Z — build-wait-reviewer
+
+Wait issue-ee4dac126d29 (game-dll attempt game-dll-20261122T022936769355Z-e0de53, generation 441, total 131.911s) adds a stage split: changed_source_preflight 27.7s, link.gnu_linker 38.1s, publish.external_dependency_manifest 12.9s, compile phase 17.6s (worker compile_seconds 45.3s), while worker wall was 88.1s. The flat 60s wait budget fired during compile with ~71.9s of legitimate work remaining; corpus of 172 attempts has p50 136.1s and 61% over 60s. Suggest prioritizing linker and external-dependency-manifest publish, and recording the in-flight attempt_id/generation in wait evidence (dev-loop.py:3532-3533 currently labels waits with the previous artifact).
+
+## Follow-up — generation 446 validates dependency-manifest reuse (2026-11-22 UTC)
+
+Worker change in `devscripts/game_build_worker.py` reuses `scan.external_dependencies` from the completed object-cache scan when writing the publish manifest, rather than reparsing all 642 `.d` depfiles after link. The publish event now records `source="object_cache_scan"`. This removes a repeated read/parse/normalization pass while preserving the same manifest inputs.
+
+The root dev-loop attempt `game-dll-20261122T032247328342Z-79f775` completed successfully at 03:28:47.747Z on revision `a7150409b063036ea53a031ceaa538c38455d8d5e81e470485ef7c9d5b3b0bd6`, publishing generation 446 (`build/game/generation-446/game-g446.dll`). It compiled 12 of 642 objects and skipped 630. Server PID 26748, run `20261122_011031`, later emitted `game.hotness.summary` with `generation=446`, `npcs=19`, and `server_failures=0`; this proves the new generation was active in the existing server process, not that the unrelated network edit's behavior is correct.
+
+| Stage | Duration | Evidence |
+|---|---:|---|
+| preflight | 74.960s | Changed `src/network/multiplayer-packets.cpp` TU took 74.739s |
+| object-cache scan | 6.583s | 642 depfiles; prepass 4.467s; 1,904 unique dependency paths; 630 skipped |
+| remaining wrapper compile | 110.789s wall | 11 wrappers; each reported about 88–90s compile duration while queued/parallel; generation-only invalidation remains |
+| GNU link | 126.979s | Linker subphase 126.638s; 642 objects / 480,180,314 bytes |
+| publish | 9.681s | Rename/hash 9.282s; external dependency manifest 0.028s, explicitly sourced from `object_cache_scan` |
+| worker total | 331.196s | Attempt total 360.398s |
+
+The direct optimization worked: external-dependency manifest generation fell from 57.828s in generation 443 and 63.311s in generation 442 to 0.028s here. These are not controlled identical runs, but event provenance verifies the new path actually reused the scan result. Focused validation also passed before the attempt: Python syntax compilation and `python -m unittest devscripts.quality.test_game_build_snapshot` (6 tests). A failed preceding attempt, generation 444, stopped at compile due another agent's read-only assignments in `src/network/multiplayer-packets.cpp` and never reached the changed publish code; generation 446 is the successful validation.
+
+This does not achieve the requested latency target: preflight + wrapper compile + full link still exceed five minutes, and 11 wrapper compiles remain due `build/game/identity/module-identity.h`. The hottest remaining cost is the full 642-object link (126.979s); the next correctness-preserving structural targets are eliminating generation-only wrapper invalidation and reducing the full link set. A smaller function-patch/plugin path is still required to avoid whole-DLL linking. No claim is made that CPU pressure caused these exact stage durations.

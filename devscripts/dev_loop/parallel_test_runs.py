@@ -41,6 +41,22 @@ def _read_json(path: Path) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def _same_process_start_time(actual: str, expected: str) -> bool:
+    """Compare OS and manifest start times at the manifest's millisecond precision."""
+    try:
+        actual_time = datetime.datetime.fromisoformat(
+            str(actual).replace("Z", "+00:00"))
+        expected_time = datetime.datetime.fromisoformat(
+            str(expected).replace("Z", "+00:00"))
+        actual_ms = actual_time.astimezone(datetime.timezone.utc).replace(
+            microsecond=(actual_time.microsecond // 1000) * 1000)
+        expected_ms = expected_time.astimezone(datetime.timezone.utc).replace(
+            microsecond=(expected_time.microsecond // 1000) * 1000)
+        return actual_ms == expected_ms
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
 def _atomic_json(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(path.suffix + ".tmp")
@@ -849,7 +865,9 @@ def stop_parallel_run(run_id: str, process_identity) -> dict:
         role = str(row.get("role") or "")
         if (not identity or not row.get("process_started_utc") or
                 os.path.normcase(actual_exe) != os.path.normcase(expected_exe) or
-                str(identity.get("process_started_utc") or "") != str(row.get("process_started_utc")) or
+                not _same_process_start_time(
+                    str(identity.get("process_started_utc") or ""),
+                    str(row.get("process_started_utc") or "")) or
                 ((role == "server") != ("--server" in command_line))):
             failures.append({"pid": pid, "reason": "process identity does not match run manifest"})
             continue

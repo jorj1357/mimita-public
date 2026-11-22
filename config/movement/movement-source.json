@@ -195,6 +195,7 @@
     //
     // Matches the fast Source preset.
     "landing_overspeed_bleed": 0.0,
+    // "landing_overspeed_bleed": 1.0,
 
     // ── MiMITA dash extensions ────────────────────────────────────────────
     //
@@ -220,6 +221,8 @@
     //
     // Matches the fast Source preset.
     "dash_grace_seconds": 1.0,
+    // "dash_grace_seconds": 99.0,
+    // "dash_grace_seconds": 0.1,
 
     // Ground-friction multiplier during dash grace.
     //
@@ -288,7 +291,8 @@
     // decay/friction behavior begins.
     //
     // Gives impacts a short, clearly visible pop.
-    "impulse_carry_seconds": 0.1,
+    // "impulse_carry_seconds": 0.1,
+    "impulse_carry_seconds": 0.01,
 
     // ── Misc ──────────────────────────────────────────────────────────────
 

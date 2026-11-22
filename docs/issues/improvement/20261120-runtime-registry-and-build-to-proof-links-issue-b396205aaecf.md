@@ -44,3 +44,15 @@ Proposal: extend the read-only scanner to emit a generation identity block per r
 Measurable target: within 3 proof attempts, 100 percent of attached evidence includes the generation identity block; zero accepted proofs with match=false or unknown; zero cited proof runs with missing journals; median reviewer time to resolve a generation conflict under 2 minutes.
 
 Smallest experiment: run the extended scanner on run 20261121_144350 (must flag active 432 vs module 420 vs build_match=false) and on run 20261121_201749 (client generation 432; must not false-flag), then wire the identity block into one proof-attach path. No gameplay change.
+
+## Agent suggestion
+
+### 2026-11-22T01:02:22.415Z — issue-review-sweeper
+
+Process improvement from independent review of issue-04079f42c6f9 (2026-11-22T00:55Z). Read-only; no code/build/run performed.
+
+Evidence: task_proofs ids 16 (arcade_npc_melee_hit) and 17 (mace_active_contact), both from run 20261120_072010 / build game-dll-20261120T071159488678Z-9a31ba / generation 398, have status=runtime_proven while result=unproven, verified_utc='', and journal_path=''. The run manifest says status=failed with "test server 33684 did not report logger.started" and lists only a server-01 instance. The melee proof record that a reviewer would first find is therefore unusable but displayed as runtime_proven; discovering the failure requires hand-reading run.json. This is the same defect class as the prior two suggestions on this issue (proof status accepted without retained verified evidence), now confirmed on a second task family and with a concrete failed-run example.
+
+Proposal: add a read-only audit verb (for example `proof audit --bad-status`) that lists every task_proofs row where status='runtime_proven' AND (result!='proven' OR verified_utc='' OR journal_path='' OR the cited journal is absent), and add a guard in proof-status derivation that refuses or downgrades that combination to stale/unproven. Run the audit once over the current brain.db, record the count and ids, and add one unit test with a synthetic bad record plus a good record.
+
+Measurable target: zero rows with status=runtime_proven and result!=proven or empty verified_utc/journal_path (or every such row explicitly marked stale) within 3 days; the audit completes in under 5 minutes and is repeatable. Smallest experiment: implement the read-only query as a CLI, run it on .dev/agent-coord/brain.db, and compare its count against a hand count of failed run.json files cited by proofs. No gameplay change.

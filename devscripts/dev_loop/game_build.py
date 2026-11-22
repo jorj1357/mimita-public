@@ -278,6 +278,30 @@ def _base_snapshot_for_generation(root: Path, generation: int) -> Path:
     raise RuntimeError(f"base snapshot for generation {generation} is missing")
 
 
+def _reusable_published_snapshot(root: Path, revision: str) -> tuple[int, Path] | None:
+    """Return the immutable snapshot for an already-published identical revision."""
+    current = _read_json(root / "build" / "game" / "current.json")
+    if (str(current.get("status") or "") != "ok"
+            or str(current.get("revision") or "") != revision):
+        return None
+    try:
+        generation = int(current.get("generation") or 0)
+        metadata_path = (root / "build" / "game" / f"generation-{generation}"
+                         / "generation.json")
+        metadata = _read_json(metadata_path)
+        if (generation <= 0 or str(metadata.get("revision") or "") != revision):
+            return None
+        snapshot = _base_snapshot_for_generation(root, generation).resolve()
+        snapshot.relative_to((root / ".dev" / "build-snapshots").resolve())
+        marker = _read_json(snapshot / ".snapshot.json")
+        if (not marker or str(marker.get("attempt_id") or "")
+                != snapshot.parent.name):
+            return None
+        return generation, snapshot
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return None
+
+
 def _create_overlay_snapshot(root: Path, base: Path, overlay_paths: list[str],
                              attempt_id: str) -> Path:
     destination_root = _snapshot_root(root, attempt_id)
@@ -327,13 +351,15 @@ def _create_overlay_snapshot(root: Path, base: Path, overlay_paths: list[str],
     return destination_root
 
 
-def _prune_snapshots(root: Path, keep: int = 5) -> int:
+def _prune_snapshots(root: Path, keep: int = 5,
+                     protect_attempts: list[str] | None = None) -> int:
     snapshots = root / ".dev" / "build-snapshots"
     if not snapshots.is_dir():
         return 0
     protected = {path.name for path in sorted(
         (item for item in snapshots.iterdir() if item.is_dir()),
         key=lambda item: item.stat().st_mtime, reverse=True)[:max(1, keep)]}
+    protected.update(str(value) for value in (protect_attempts or []) if value)
     removed = 0
     for path in snapshots.iterdir():
         if not path.is_dir() or path.name in protected:
@@ -373,6 +399,47 @@ def _env_float(name: str, default: float) -> float:
         return float(os.environ.get(name, str(default)) or default)
     except ValueError:
         return float(default)
+
+
+def _worker_metrics_summary(current: dict, worker_progress: dict,
+                            last_attempt: dict, attempt_id: str,
+                            no_op: bool) -> dict:
+    """Summarize this attempt; never reuse prior-generation metrics for a no-op."""
+    metric_keys = (
+        "source_count", "compiled", "skipped", "jobs", "object_scan_seconds",
+        "dependency_check_ms", "scan_parse_ms", "scan_stat_ms",
+        "scan_unique_dependencies", "changed_source_preflight_seconds",
+        "compile_seconds", "link_seconds", "publish_seconds", "total_seconds",
+        "worker_total_seconds", "slowest_compiles",
+    )
+    metrics = {key: current.get(key) for key in metric_keys}
+    if not no_op or worker_progress.get("build_attempt_id") != attempt_id:
+        return metrics
+
+    # A no-op has no current compile/link/publish measurements. `current.json`
+    # intentionally continues to describe the last published generation, so
+    # reading worker totals from it falsely attributes old work to this attempt.
+    worker_seconds = last_attempt.get("worker_total_seconds", 0.0)
+    metrics.update({
+        "source_count": worker_progress.get("scan_scanned", 0),
+        "compiled": 0,
+        "skipped": worker_progress.get("skipped", 0),
+        "jobs": worker_progress.get("jobs", 0),
+        "object_scan_seconds": worker_progress.get("object_scan_s", 0.0),
+        "dependency_check_ms": worker_progress.get("dependency_check_ms", 0.0),
+        "scan_parse_ms": worker_progress.get("scan_parse_ms", 0.0),
+        "scan_stat_ms": worker_progress.get("scan_stat_ms", 0.0),
+        "scan_unique_dependencies": worker_progress.get(
+            "scan_unique_dependencies", 0),
+        "changed_source_preflight_seconds": 0.0,
+        "compile_seconds": 0.0,
+        "link_seconds": 0.0,
+        "publish_seconds": 0.0,
+        "total_seconds": worker_seconds,
+        "worker_total_seconds": worker_seconds,
+        "slowest_compiles": [],
+    })
+    return metrics
 
 
 def _consume_build_notes(root: Path, attempt_id: str) -> list[dict]:
@@ -515,6 +582,79 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
             on_output("[GAME_STAGE] " + json.dumps(
                 {**entry, "build_attempt_id": attempt_id}, separators=(",", ":")))
 
+    def set_driver_subphase(name: str, state: str, started: float,
+                            **fields) -> None:
+        now = time.monotonic()
+        entry = {
+            "phase": "driver_pre_worker",
+            "subphase": name,
+            "state": state,
+            "time_utc": _utc_now(),
+            "elapsed_ms": round((now - attempt_started) * 1000.0, 3),
+            "build_attempt_id": attempt_id,
+        }
+        if state == "completed":
+            entry["duration_ms"] = round((now - started) * 1000.0, 3)
+        entry.update(fields)
+        progress["phase"] = "driver_pre_worker"
+        progress["driver_subphase"] = entry
+        progress["updated_utc"] = entry["time_utc"]
+        progress["elapsed_s"] = round(now - attempt_started, 3)
+        try:
+            _write_json(progress_path, progress)
+            _append_timing(timing_path, {
+                "event": f"driver.subphase.{state}", **entry,
+            })
+        except OSError:
+            # Telemetry must not turn a valid build into a failed build.
+            pass
+
+    def set_manifest_subphase(event: dict) -> None:
+        """Persist bounded manifest subphase progress for the dashboard."""
+        now = time.monotonic()
+        utc = _utc_now()
+        name = str(event.get("subphase") or "unknown")
+        state = str(event.get("state") or "progress")
+        previous = progress.get("subphase")
+        if state == "started":
+            started_monotonic = now
+        elif (isinstance(previous, dict) and previous.get("subphase") == name
+              and isinstance(previous.get("started_monotonic"), (int, float))):
+            started_monotonic = float(previous["started_monotonic"])
+        else:
+            started_monotonic = now
+        entry = {**event, "phase": "manifest_snapshot", "time_utc": utc,
+                 "started_monotonic": started_monotonic,
+                 "elapsed_ms": (round((now - started_monotonic) * 1000.0, 3)
+                                if state in ("started", "progress")
+                                else float(event.get("elapsed_ms") or 0))}
+        progress["subphase"] = entry
+        progress["updated_utc"] = utc
+        progress["last_progress_utc"] = utc
+        progress["elapsed_s"] = round(now - attempt_started, 3)
+        file_total = int(event.get("files_total") or 0)
+        file_completed = int(event.get("files_completed") or 0)
+        progress["manifest_progress"] = {
+            "subphase": name,
+            "completed": file_completed,
+            "total": file_total,
+            "percent": (min(100, round(file_completed * 100 / file_total))
+                        if file_total > 0 else None),
+        }
+        if state == "completed":
+            durations = progress.setdefault("subphase_durations_ms", {})
+            if isinstance(durations, dict):
+                durations[f"manifest_snapshot.{name}"] = float(event.get("elapsed_ms") or 0)
+        try:
+            _write_json(progress_path, progress)
+            _append_timing(timing_path, {
+                "event": f"manifest.subphase.{event.get('state', 'progress')}",
+                **entry, "build_attempt_id": attempt_id,
+            })
+        except OSError:
+            # Timing I/O must not turn a valid source snapshot into a failed build.
+            pass
+
     def run_stage(name: str, command: list[str],
                   timeout: float | None = None) -> int:
         started = time.monotonic()
@@ -558,8 +698,17 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                 **fields}
 
     worker_output_tail: list[str] = []
+    first_worker_output_recorded = False
+    worker_startup_started: float | None = None
 
     def report_output(line: str) -> None:
+        nonlocal first_worker_output_recorded
+        if (worker_startup_started is not None
+                and not first_worker_output_recorded):
+            first_worker_output_recorded = True
+            set_driver_subphase(
+                "worker_launch_to_first_output", "completed",
+                worker_startup_started, first_output_prefix=line[:96])
         if not on_output:
             return
         for prefix in ("[GAME_NOTE] ", "[GAME_FILE] ", "[GAME_STAGE] ",
@@ -626,10 +775,16 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
 
     set_stage("manifest_snapshot", "started")
     manifest_started = time.monotonic()
+    inputs_started = time.monotonic()
     old_manifest = _read_json(manifest_path)
     hash_cache_path = root / ".dev" / "source-hash-cache.json"
     hash_cache = _read_json(hash_cache_path)
     source_mirror = _mirror_dir(root)
+    set_manifest_subphase({
+        "subphase": "manifest_inputs_load", "state": "completed",
+        "elapsed_ms": round((time.monotonic() - inputs_started) * 1000.0, 3),
+        "hash_cache_entries": len(hash_cache),
+    })
     manifest: dict = {}
     snapshot_errors: list[str] = []
     snapshot_retries = 0
@@ -640,12 +795,44 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
         snapshot_attempts = 3
     for snapshot_try in range(snapshot_attempts):
         snapshot_retries = snapshot_try
-        manifest = build_manifest(root, hash_cache=hash_cache)
+        manifest_started_one = time.monotonic()
+        set_manifest_subphase({
+            "subphase": "build_manifest", "state": "started",
+            "elapsed_ms": 0.0, "snapshot_try": snapshot_try + 1,
+            "snapshot_attempts": snapshot_attempts,
+        })
+        manifest = build_manifest(root, hash_cache=hash_cache,
+                                  progress_callback=set_manifest_subphase)
+        set_manifest_subphase({
+            "subphase": "build_manifest", "state": "completed",
+            "elapsed_ms": round((time.monotonic() - manifest_started_one) * 1000.0, 3),
+            "snapshot_try": snapshot_try + 1,
+            "source_count": len(manifest.get("sources", [])),
+            "header_count": len(manifest.get("headers", [])),
+        })
+        cache_started = time.monotonic()
+        set_manifest_subphase({"subphase": "hash_cache_persist", "state": "started",
+                               "elapsed_ms": 0.0, "entries": len(hash_cache)})
         try:
             _write_json(hash_cache_path, hash_cache)
-        except OSError:
-            pass
+        except OSError as error:
+            set_manifest_subphase({"subphase": "hash_cache_persist", "state": "failed",
+                                   "elapsed_ms": round((time.monotonic() - cache_started) * 1000.0, 3),
+                                   "error": str(error)[:240]})
+        else:
+            set_manifest_subphase({"subphase": "hash_cache_persist", "state": "completed",
+                                   "elapsed_ms": round((time.monotonic() - cache_started) * 1000.0, 3),
+                                   "entries": len(hash_cache)})
+        mirror_started = time.monotonic()
+        set_manifest_subphase({"subphase": "source_mirror_update", "state": "started",
+                               "elapsed_ms": 0.0, "snapshot_try": snapshot_try + 1})
         snapshot_errors = _update_source_mirror(root, source_mirror, manifest)
+        set_manifest_subphase({"subphase": "source_mirror_update",
+                               "state": "failed" if snapshot_errors else "completed",
+                               "elapsed_ms": round((time.monotonic() - mirror_started) * 1000.0, 3),
+                               "snapshot_try": snapshot_try + 1,
+                               "mismatch_count": len(snapshot_errors),
+                               "mismatches": snapshot_errors[:4]})
         if not snapshot_errors:
             break
     snapshot_duration_ms = round((time.monotonic() - manifest_started) * 1000, 3)
@@ -666,12 +853,14 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                             errors=errors[:20], warnings=warnings[:20])
 
     _write_json(manifest_path, manifest)
+    revision = str(manifest.get("revision", ""))
     set_stage("manifest_validation", "completed",
               duration_ms=round((time.monotonic() - validation_started) * 1000, 3),
               source_count=len(manifest.get("sources", [])))
     set_stage("source_snapshot", "started")
     snapshot_started = time.monotonic()
     metadata = build_metadata or {}
+    reused_generation = 0
     try:
         if (str(metadata.get("kind") or "") == "preview" and
                 metadata.get("overlay_paths")):
@@ -681,21 +870,44 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                 root, base, [str(value) for value in metadata["overlay_paths"]],
                 attempt_id)
         else:
-            source_snapshot = _create_source_snapshot(
-                root, source_mirror, attempt_id)
+            reusable = _reusable_published_snapshot(root, revision)
+            if reusable is not None:
+                reused_generation, source_snapshot = reusable
+            else:
+                source_snapshot = _create_source_snapshot(
+                    root, source_mirror, attempt_id)
     except (OSError, RuntimeError, ValueError) as error:
         return fail_attempt(f"source snapshot failed: {error}",
                             failed_phase="source_snapshot")
     set_stage("source_snapshot", "completed",
               duration_ms=round((time.monotonic() - snapshot_started) * 1000, 3),
-              path=str(source_snapshot.relative_to(root)))
+              path=str(source_snapshot.relative_to(root)),
+              reused_generation=reused_generation or None)
     progress["source_snapshot"] = str(source_snapshot.relative_to(root))
-    _prune_snapshots(root, 5)
-    revision = str(manifest.get("revision", ""))
+    driver_phase_started = time.monotonic()
+    set_driver_subphase("snapshot_prune", "started", driver_phase_started)
+    pruned_snapshots = _prune_snapshots(
+        root, 5, protect_attempts=[source_snapshot.parent.name])
+    set_driver_subphase("snapshot_prune", "completed", driver_phase_started,
+                        removed_count=pruned_snapshots)
+    driver_phase_started = time.monotonic()
+    set_driver_subphase("manifest_diff", "started", driver_phase_started)
     change_report = diff_manifests(old_manifest, manifest) if old_manifest else {}
+    set_driver_subphase("manifest_diff", "completed", driver_phase_started,
+                        old_manifest_available=bool(old_manifest),
+                        changed_count=len(change_report.get("changed", [])),
+                        added_count=len(change_report.get("added", [])),
+                        changed_header_count=len(change_report.get(
+                            "changed_headers", [])))
     if change_report:
         change_report["generated_utc"] = _utc_now()
+        driver_phase_started = time.monotonic()
+        set_driver_subphase("manifest_diff_write", "started", driver_phase_started)
         _write_json(change_report_path, change_report)
+        set_driver_subphase("manifest_diff_write", "completed", driver_phase_started)
+    driver_phase_started = time.monotonic()
+    set_driver_subphase("attempt_progress_and_context_write", "started",
+                        driver_phase_started)
     progress["revision"] = revision
     progress["changed_paths"] = list(dict.fromkeys(
         str(path) for key in ("changed", "added", "changed_headers")
@@ -731,7 +943,12 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
             "notes": notes,
             "changed_paths": changed_paths[:40],
         }, separators=(",", ":")))
+    set_driver_subphase("attempt_progress_and_context_write", "completed",
+                        driver_phase_started,
+                        changed_path_count=len(progress["changed_paths"]))
 
+    driver_phase_started = time.monotonic()
+    set_driver_subphase("worker_command_prepare", "started", driver_phase_started)
     command = [
         sys.executable,
         "-u",
@@ -748,6 +965,8 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
         command.extend(["--change-report", str(change_report_path)])
     if str(mode).lower() == "release":
         command.extend(["--build-mode", "release"])
+    set_driver_subphase("worker_command_prepare", "completed", driver_phase_started,
+                        argument_count=len(command))
 
     if on_output:
         on_output(f"building whole-game revision {revision[:12]}")
@@ -756,17 +975,31 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     _write_json(progress_path, progress)
     build_timeout = _env_float("MIMITA_GAME_BUILD_TIMEOUT", 3600.0)
     slot_timeout = _env_float("MIMITA_GAME_BUILD_SLOT_TIMEOUT", 600.0)
+    driver_phase_started = time.monotonic()
+    set_driver_subphase("module_slot_wait", "started", driver_phase_started,
+                        timeout_seconds=slot_timeout)
     slot = acquire_build_slot("module", "game-dll", timeout=slot_timeout,
                               metadata={"lane": os.environ.get("MIMITA_LANE_ID", ""),
                                         "root": str(root),
                                         "attempt": attempt_id})
+    set_driver_subphase("module_slot_wait", "completed", driver_phase_started,
+                        acquired=slot is not None,
+                        timeout_seconds=slot_timeout)
     if slot is None:
         return fail_attempt("build_slot_timeout: no free module build slot",
                             failed_phase="build_slot_timeout")
+    worker_startup_started = time.monotonic()
+    set_driver_subphase("worker_launch_to_first_output", "started",
+                        worker_startup_started)
     try:
         return_code = _run_checked(root, command, report_output,
                                    timeout=build_timeout)
     finally:
+        if (worker_startup_started is not None
+                and not first_worker_output_recorded):
+            set_driver_subphase(
+                "worker_launch_to_first_output", "completed",
+                worker_startup_started, output_seen=False)
         slot.release()
     if return_code == 124:
         set_stage("worker_supervised", "failed", reason="timeout",
@@ -858,15 +1091,8 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
             "slowest": worker_progress.get("dependency_check_slowest", []),
         },
         "worker_metrics": {
-            **{key: current.get(key) for key in
-               ("source_count", "compiled", "skipped", "jobs",
-                "object_scan_seconds", "dependency_check_ms",
-                "scan_parse_ms", "scan_stat_ms",
-                "scan_unique_dependencies",
-                "changed_source_preflight_seconds",
-                "compile_seconds", "link_seconds", "publish_seconds",
-                "total_seconds", "worker_total_seconds",
-                "slowest_compiles")},
+            **_worker_metrics_summary(current, worker_progress, last_attempt,
+                                      attempt_id, no_op),
             "compile_sum_ms": worker_progress.get("compile_sum_ms", 0.0),
             "compile_min_ms": worker_progress.get("compile_min_ms"),
             "compile_max_ms": worker_progress.get("compile_max_ms", 0.0),

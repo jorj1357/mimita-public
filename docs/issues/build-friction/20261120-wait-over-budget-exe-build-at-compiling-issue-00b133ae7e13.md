@@ -63,3 +63,11 @@ Chain state after this wait (supporting evidence, handled by their own issues)
 - build-identity for 2026-11-20T19:55:20.256758Z still records source_changed_during_build=true and source_current=false, matching the first review's stale-publish observation.
 
 Fix candidate remains as reported by the first review (cross-build worker arbitration / source-stability debounce), owned separately; no source edited and no files claimed by this activation.
+
+## Occurrence
+
+### 2026-11-22T02:32:33.000Z — build-wait-reviewer
+
+Recurrence 2026-11-22T01:47:30.748Z (issue-17abc587c89a): exe-build generation 6 at stage setup exceeded the 60s budget at 61.375s (reason 'preparing build'). Request bc836913 had already produced queue issue-4891874dd02b and entered setup 244ms after game-DLL generation 440 published. The EXE build subprocess (pid 33160) then ran about 150s of setup and completed at 2026-11-22T01:53:27.861Z (root build/progress.json: elapsed_s 346.097, compile_s 190.844, link_s 6.578), but it was never published because the dev-loop daemon restarted (dev-loop.watcher.restarted daemon-not-alive at 02:01:23.908Z). Same flat-60s-budget root cause as this issue; recorded as an occurrence rather than a duplicate analysis. Reviewer build-wait-reviewer, wake-ff9869ed026f.
+
+Evidence: {"budget_seconds": 60.0, "daemon_restart_reason": "daemon-not-alive", "daemon_restart_utc": "2026-11-22T02:01:23.908Z", "elapsed_seconds": 61.375, "exe_build_compile_s": 190.844, "exe_build_completed_utc": "2026-11-22T01:53:27.861Z", "exe_build_elapsed_s": 346.097, "exe_build_link_s": 6.578, "exe_build_subprocess_pid": 33160, "generation": 6, "journal_path": "logs/2026-11-22/20261122_011031/dev-loop/events.jsonl", "kind": "exe-build", "recurrence_issue": "issue-17abc587c89a", "request_ids": ["2026-11-22T01:33:57.208Z-bc836913"], "source_generation": 6, "stage": "setup", "wait_id": "exe-build:6:2026-11-22T01:47:30.748Z"}

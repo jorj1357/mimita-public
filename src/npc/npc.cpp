@@ -1,6 +1,6 @@
 // 08 09 2026, 14 30
 /* purpose
-* Main NPC system: per-frame update loop, sensing, and input-state building.
+* Main NPC system: update loop, sensing, and input-state building.
 * Builds the two facing modes (aim-at-target vs face-movement) with config-driven
 * turn speed, and drives NPC physics through the shared player movement code.
 * Does NOT own NPC state selection, per-state movement, combat/firing, or config parsing.
@@ -2733,7 +2733,37 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 &commitmentSettings);
             npc.hasStaggeredNavResult = true;
         } else ++npcNavigationSkipped;
-        const NpcNavResult& nav = npc.staggeredNavResult;
+        NpcNavResult& mutableNav = npc.staggeredNavResult;
+        bool objectivePlanFallback = false;
+        const bool objectiveTravelGoal =
+            npc.utility.currentGoal == UtilityGoalKind::MoveToObjective ||
+            npc.utility.currentGoal == UtilityGoalKind::PlantObjective ||
+            npc.utility.currentGoal == UtilityGoalKind::DefuseObjective ||
+            npc.utility.currentGoal == UtilityGoalKind::RetakeSite ||
+            npc.utility.currentGoal == UtilityGoalKind::RotateToSite ||
+            npc.utility.currentGoal == UtilityGoalKind::DefendSite;
+        if (replanThisTick && mutableNav.planFailed && !npc.sensors.hasTarget &&
+            objectiveTravelGoal) {
+            const glm::vec3 toGoal(mutableNav.destination.x - npc.body.pos.x,
+                                   mutableNav.destination.y - npc.body.pos.y, 0.0f);
+            if (glm::length(toGoal) > 0.1f) {
+                MovementCommitmentSettings objectiveSettings = commitmentSettings;
+                objectiveSettings.openDistanceBias = 1.0f;
+                objectiveSettings.forwardBias = 8.0f;
+                objectiveSettings.targetProgressBias = 20.0f;
+                const glm::vec3 openDir = npc.navigator.chooseBestOpenDirection(
+                    npc, toGoal, toGoal, world, nearCandidates, objectiveSettings,
+                    npc.sensors.time,
+                    NpcDifficultyConfig::instance().settings().searchMemorySeconds);
+                if (glm::length(openDir) > 0.1f) {
+                    mutableNav.dir = openDir;
+                    mutableNav.blocked = false;
+                    mutableNav.detour = true;
+                    objectivePlanFallback = true;
+                }
+            }
+        }
+        const NpcNavResult& nav = mutableNav;
         npcNavigatorMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - npcNavStart).count();
         emitNavPlanEvents(npc, nav, navSettings);
@@ -2856,11 +2886,20 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     // a known route when no enemy is visible. Shared ability availability and
     // cooldown still decide whether a requested dash can execute.
     const bool safeObjectiveRushRoute = npc.staggeredNavResult.valid &&
-        !npc.staggeredNavResult.blocked &&
+        npc.staggeredNavResult.hasPath && !npc.staggeredNavResult.planFailed &&
+        !npc.staggeredNavResult.blocked && !npc.movementStuckEpisodeActive &&
         !NpcNavigation::isStuck(npc) && npc.stateMachine.stuckTimer <= 0.0f &&
         !npc.navigator.localCorrectionActive &&
         !npc.navigator.areaEscapeActive && !npc.navigator.backtrackActive &&
         glm::length(moveDir) > 0.1f;
+    const bool objectiveRushNoEnemy = npc.behavior.active &&
+        npc.behavior.objectiveRush && npc.utilityContext.objectiveKnown &&
+        !npc.sensors.hasTarget;
+    // Module and traversal requests are evaluated earlier. In FCS, a blind
+    // objective dash is only safe while following a live, unblocked route;
+    // stale module/traversal requests must not launch the actor into a corner.
+    if (objectiveRushNoEnemy && !safeObjectiveRushRoute)
+        dash = false;
     if (!dash && safeObjectiveRushRoute &&
         npc.behavior.active && npc.behavior.objectiveRush &&
         npc.utilityContext.objectiveKnown && !npc.sensors.hasTarget &&
@@ -2966,9 +3005,27 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         {
             const auto& navCfg = NpcDifficultyConfig::instance().settings();
             const glm::vec3 requestedDir = moveDir;
+            // Objective travel has no visible target, so the combat-only
+            // correction consumer below does not run. Keep following the
+            // navigator's saved local correction here; otherwise the route
+            // direction is restored next tick and can repeatedly point into
+            // the same corner.
             const bool requestedBlocked = navCfg.wallAvoidanceEnabled &&
                 NpcNavigation::obstacleInDirection(
                     npc, requestedDir, navCfg.wallCastDistance, world, nearCandidates);
+            if (!npc.sensors.hasTarget && npc.navigator.localCorrectionActive) {
+                const glm::vec3 correction = npc.navigator.localCorrectionDirection;
+                const bool correctionOpen = glm::length(correction) > 0.01f &&
+                    !NpcNavigation::obstacleInDirection(
+                        npc, correction, navCfg.wallCastDistance, world, nearCandidates);
+                if (correctionOpen && requestedBlocked) {
+                    moveDir = correction;
+                } else {
+                    // Resume corridor following as soon as its original
+                    // direction opens; do not hold a stale side step.
+                    npc.navigator.clearLocalCorrection();
+                }
+            }
             const glm::vec3 steeringBefore = moveDir;
             moveDir = NpcNavigation::wallAvoidDirection(npc, moveDir, world, nearCandidates);
 
@@ -2989,6 +3046,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     if (npc.movementStuckEpisodeActive)
                         ++npc.movementStuckWallAvoidCount;
                     npc.navigator.startLocalCorrection(adjustedN, 1.0f);
+                    if (!npc.sensors.hasTarget && npc.navigator.localCorrectionActive)
+                        moveDir = npc.navigator.localCorrectionDirection;
                     if (newAvoidDir) {
                         StructuredLogger::instance().writeEvent(
                             StructuredCategory::NpcMovement, StructuredLevel::Verbose,
@@ -3091,8 +3150,36 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 // the most open local direction first, then optionally jump
                 // (still gated by the policy below), then request a fresh route.
                 // The actor never keeps pushing the blocked direction.
-                const glm::vec3 openDir = NpcNavigation::unstuckDirection(
-                    npc, npc.rngState, world, nearCandidates);
+                const bool objectiveRecovery = npc.behavior.active &&
+                    npc.behavior.objectiveRush && !npc.sensors.hasTarget &&
+                    npc.utilityContext.objectiveKnown &&
+                    npc.staggeredNavResult.valid;
+                glm::vec3 openDir{0.0f};
+                const glm::vec3 objectiveTarget =
+                    npc.staggeredNavResult.destination;
+                const glm::vec3 toObjective(
+                    objectiveTarget.x - npc.body.pos.x,
+                    objectiveTarget.y - npc.body.pos.y, 0.0f);
+                const float objectiveDistance = glm::length(toObjective);
+                const char* recoveryStrategy = "random_open_direction";
+                if (objectiveRecovery && objectiveDistance > 0.1f) {
+                    MovementCommitmentSettings objectiveSettings = commitmentSettings;
+                    objectiveSettings.openDistanceBias = 1.0f;
+                    objectiveSettings.forwardBias = 8.0f;
+                    objectiveSettings.targetProgressBias = 20.0f;
+                    openDir = npc.navigator.chooseBestOpenDirection(
+                        npc, toObjective, toObjective, world, nearCandidates,
+                        objectiveSettings, npc.sensors.time,
+                        NpcDifficultyConfig::instance().settings().searchMemorySeconds);
+                    if (glm::length(openDir) > 0.1f)
+                        recoveryStrategy = "objective_progress_open_direction";
+                }
+                if (glm::length(openDir) <= 0.1f) {
+                    openDir = NpcNavigation::unstuckDirection(
+                        npc, npc.rngState, world, nearCandidates);
+                    if (objectiveRecovery)
+                        recoveryStrategy = "objective_boxed_in_escape";
+                }
                 if (glm::length(openDir) > 0.1f)
                 {
                     moveDir = openDir;
@@ -3134,7 +3221,11 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                             {"preset", npc.actorPresetId},
                             {"team", npc.body.matchTeam},
                             {"policy", policy ? policy->blockedBehavior : "none"},
+                            {"recovery_strategy", recoveryStrategy},
                             {"open_dir", {openDir.x, openDir.y}},
+                            {"objective_target", {objectiveTarget.x,
+                                                   objectiveTarget.y,
+                                                   objectiveTarget.z}},
                             {"move_input", {npc.lastMoveInput.x, npc.lastMoveInput.y}},
                             {"velocity", {npc.body.vel.x, npc.body.vel.y, npc.body.vel.z}},
                             {"support_actor_key", npc.body.collision.supportActorKey},
@@ -3560,6 +3651,14 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     {"profile", npc.behaviorProfileId},
                     {"difficulty", npc.difficulty},
                     {"target_distance", npc.sensors.targetDistance},
+                    {"target_visible", npc.sensors.hasTarget},
+                    {"objective_rush_no_enemy", objectiveRushNoEnemy},
+                    {"objective_route_safe", safeObjectiveRushRoute},
+                    {"module_dash_requested", npc.moduleDash},
+                    {"nav_path_active", npc.staggeredNavResult.hasPath},
+                    {"nav_plan_failed", npc.staggeredNavResult.planFailed},
+                    {"stuck_episode_active", npc.movementStuckEpisodeActive},
+                    {"local_correction_active", npc.navigator.localCorrectionActive},
                     {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
                 __FILE__, __LINE__, __FUNCTION__);
         }

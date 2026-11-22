@@ -35,6 +35,7 @@ INBOUND_RE = re.compile(r"\b(?:header|h)->type\s*(?:==|!=)\s*(PACKET_[A-Z0-9_]+)
 PACKET_LOCAL_RE = re.compile(r"\bpacketType\s*(?:==|!=)\s*(PACKET_[A-Z0-9_]+)")
 CASE_RE = re.compile(r"^\s*case\s+(PACKET_[A-Z0-9_]+)\s*:")
 CALL_RE = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
+PACKET_REFERENCE_RE = re.compile(r"(PACKET_[A-Z0-9_]+)")
 CALL_SKIP = {
     "if", "else", "for", "while", "switch", "return", "sizeof", "reinterpret_cast",
     "static_cast", "const_cast", "std", "memcpy", "memset", "snprintf", "printf",
@@ -79,11 +80,11 @@ def parse_protocol_version(path: Path) -> int:
         return 0
 
 
-def owner_for(manifest: dict, source: str) -> str:
-    for row in manifest.get("sources", []):
-        if str(row.get("path", "")).replace("\\", "/") == source:
-            return str(row.get("owner", "unknown"))
-    return "unknown"
+def owner_map(manifest: dict) -> dict[str, str]:
+    return {
+        str(row.get("path", "")).replace("\\", "/"): str(row.get("owner", "unknown"))
+        for row in manifest.get("sources", [])
+    }
 
 
 def handler_after(lines: list[str], index: int) -> str:
@@ -100,13 +101,13 @@ def handler_after(lines: list[str], index: int) -> str:
     return ""
 
 
-def scan_dispatch(path: Path, direction: str, manifest: dict) -> dict[str, dict]:
+def scan_dispatch(path: Path, direction: str, owners: dict[str, str]) -> dict[str, dict]:
     found: dict[str, dict] = {}
     if not path.is_file():
         return found
     lines = path.read_text(encoding="utf-8").splitlines()
     source = path.relative_to(ROOT).as_posix()
-    owner = owner_for(manifest, source)
+    owner = owners.get(source, "unknown")
     path_kind = "dll" if owner == "game" else ("resident" if owner == "resident" else "unknown")
     for index, line in enumerate(lines):
         names: list[str] = []
@@ -128,14 +129,14 @@ def scan_dispatch(path: Path, direction: str, manifest: dict) -> dict[str, dict]
     return found
 
 
-def scan_source_references(packets: list[dict], manifest: dict) -> dict[str, dict]:
+def scan_source_references(packets: list[dict], owners: dict[str, str]) -> dict[str, dict]:
     by_name = {packet["name"]: packet["id"] for packet in packets}
     found: dict[str, dict] = {}
     for path in sorted((ROOT / "src").rglob("*.cpp")):
         source = path.relative_to(ROOT).as_posix()
         if source.startswith("src/host/generated/") or source.endswith("packet-registry-v1.h"):
             continue
-        owner = owner_for(manifest, source)
+        owner = owners.get(source, "unknown")
         if owner == "unknown":
             continue
         try:
@@ -143,29 +144,37 @@ def scan_source_references(packets: list[dict], manifest: dict) -> dict[str, dic
         except OSError:
             continue
         for index, line in enumerate(lines):
-            for name in by_name:
-                if name not in line:
-                    continue
-                previous = found.get(name)
-                if previous is not None and previous["owner"] == "game":
-                    continue
-                if previous is not None and owner != "game":
-                    continue
-                found[name] = {
-                    "source": source,
-                    "line": index + 1,
-                    "owner": owner,
-                    "path": "dll" if owner == "game" else "resident",
-                }
+            # The old loop tested every packet name against every source line.
+            # Tokenize only packet identifiers present in the line instead.
+            for match in PACKET_REFERENCE_RE.finditer(line):
+                token = match.group(1)
+                # Preserve the previous substring semantics for identifiers
+                # that extend a packet name, while checking all names only for
+                # the comparatively rare PACKET_* tokens rather than every line.
+                names = ([token] if token in by_name else
+                         [name for name in by_name if name in token])
+                for name in names:
+                    previous = found.get(name)
+                    if previous is not None and previous["owner"] == "game":
+                        continue
+                    if previous is not None and owner != "game":
+                        continue
+                    found[name] = {
+                        "source": source,
+                        "line": index + 1,
+                        "owner": owner,
+                        "path": "dll" if owner == "game" else "resident",
+                    }
     return found
 
 
 def generate(packets: list[dict], protocol_version: int, manifest: dict) -> tuple[str, str]:
+    owners = owner_map(manifest)
     scans = {
-        direction: scan_dispatch(ROOT / relative, direction, manifest)
+        direction: scan_dispatch(ROOT / relative, direction, owners)
         for direction, relative in DISPATCH.items()
     }
-    references = scan_source_references(packets, manifest)
+    references = scan_source_references(packets, owners)
     rows: list[dict] = []
     for packet in sorted(packets, key=lambda item: item["id"]):
         row = {"id": packet["id"], "name": packet["name"]}

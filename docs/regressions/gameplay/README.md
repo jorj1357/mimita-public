@@ -164,8 +164,8 @@ Entries: 44
 ## Entry 22 — Regression: website auth database outage on 2026-09-16
 
 - Recorded: unknown
-- Status: see detail
-- Summary: Sign-in and sign-up failed while the website/API still appeared online. The Node process was healthy from PM2's perspective, but PostgreSQL 14/main was down and port 5432 had no listener.
+- Status: RECOVERED AFTER APPROVED LOG CLEANUP — PostgreSQL accepts connections and auth reaches it; prevention, health route, and email alerts remain pending; exact stop cause unverified
+- Summary: The 2026-11-21 recurrence had the API online while PostgreSQL 14/main was down and root disk full. After approved truncation of the runaway rotated syslog, PostgreSQL started and public invalid-credentials auth returned HTTP 401. Readiness remains 404; watchdog and email alerting are not live.
 - Detail: [website-auth-database-REG-2026-09-16.md](website-auth-database-REG-2026-09-16.md)
 
 ## Entry 23 — Ragdoll per-death presentation regression — Attempt 1

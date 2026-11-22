@@ -1319,8 +1319,12 @@ class DevLoop:
         # Weapon-set override for scenario launches (server --weapon-set).
         self.override_weapon_set = ""
         # Daemon source identity, surfaced in the status record so a stale daemon
-        # (whose on-disk dev-loop.py hash changed) is detectable.
+        # (whose loaded implementation predates the on-disk source) is detectable.
         self.daemon_started_utc = utc_now()
+        # Capture the implementation identity once. Recomputing this in state()
+        # would report newly edited files as loaded even though this interpreter
+        # is still executing the functions imported at startup.
+        self.daemon_script_hash = script_sha256(DEV_LOOP_SCRIPT)
         # The last real build/lifecycle status written to the status record.
         # Read-only status queries reuse it instead of reporting the literal
         # query label as the build phase.
@@ -1497,6 +1501,10 @@ class DevLoop:
             return
         self.server_pid = pid
         self.server_exe = expected_exe
+        # A reattached client must use the exact executable that owns the
+        # adopted server. Without restoring this path, start-client rejects
+        # after a daemon restart even when the server marker proves identity.
+        self.launch_executable = expected_exe
         self.server_build_id = str(marker.get("build_id", ""))
         self.server_local_port = int(marker.get("local_port", 0) or 0)
         self.room_code = str(marker.get("room_code", "")) or None
@@ -2202,7 +2210,7 @@ class DevLoop:
             "launch_mode_name": self.launch_mode.get("name", "unnamed"),
             "launch_mode_config": str(LAUNCH_MODE_PATH),
             "daemon_pid": os.getpid(),
-            "daemon_script_hash": script_sha256(DEV_LOOP_SCRIPT),
+            "daemon_script_hash": self.daemon_script_hash,
             "daemon_started_utc": self.daemon_started_utc,
         }
 

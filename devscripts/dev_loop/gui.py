@@ -452,6 +452,12 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
     phase = str(progress.get("phase") or progress_status or "unknown").upper()
     scan_phase = str(progress.get("scan_phase") or "").lower()
     active = progress_status in ("preparing", "running")
+    manifest_progress = progress.get("manifest_progress")
+    if not isinstance(manifest_progress, dict):
+        manifest_progress = {}
+    manifest_subphase = progress.get("subphase")
+    if not isinstance(manifest_subphase, dict):
+        manifest_subphase = {}
     revision = str(progress.get("revision") or "—")
     current_revision = str(current.get("revision") or "")
     source_count = int(progress.get("total") or 0)
@@ -478,6 +484,16 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
     elif scan_phase == "dependency_prepass":
         parsed_text = f"{scan_parsed}/{scan_total}" if scan_total else str(scan_parsed)
         headline = f"Game DLL: DEPENDENCY PREPASS {parsed_text}  ·  {health}"
+    elif active and phase == "MANIFEST_SNAPSHOT":
+        manifest_subphase_name = str(manifest_subphase.get("subphase") or "starting")
+        manifest_done = int(manifest_progress.get("completed") or 0)
+        manifest_total = int(manifest_progress.get("total") or 0)
+        manifest_percent = manifest_progress.get("percent")
+        if manifest_total > 0 and manifest_percent is not None:
+            headline = (f"Game DLL: MANIFEST {manifest_subphase_name} "
+                        f"{manifest_done}/{manifest_total} ({int(manifest_percent)}%)  ·  {health}")
+        else:
+            headline = f"Game DLL: MANIFEST {manifest_subphase_name}  ·  {health}"
     elif active and percent is not None:
         headline = f"Game DLL: {phase} {completed}/{source_count} ({percent}%)  ·  {health}"
     else:
@@ -491,6 +507,22 @@ def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
     ]
     if isinstance(progress.get("worker_elapsed_s"), (int, float)):
         details.append(f"worker elapsed {float(progress['worker_elapsed_s']):.3f}s")
+    if isinstance(progress.get("elapsed_s"), (int, float)):
+        attempt_elapsed_s = float(progress["elapsed_s"]) + (progress_age_s or 0.0)
+        details.append(f"attempt elapsed {attempt_elapsed_s:.1f}s")
+    if active and phase == "MANIFEST_SNAPSHOT" and manifest_subphase:
+        started_monotonic = manifest_subphase.get("started_monotonic")
+        if isinstance(started_monotonic, (int, float)):
+            subphase_elapsed_s = max(0.0, time.monotonic() - float(started_monotonic))
+        else:
+            subphase_elapsed_s = float(manifest_subphase.get("elapsed_ms") or 0) / 1000.0
+        subphase_text = (f"manifest {manifest_subphase.get('subphase', 'unknown')} "
+                         f"· {subphase_elapsed_s:.1f}s")
+        if int(manifest_progress.get("total") or 0) > 0:
+            subphase_text += (f" · {int(manifest_progress.get('completed') or 0)}"
+                              f"/{int(manifest_progress.get('total') or 0)}"
+                              f" ({int(manifest_progress.get('percent') or 0)}%)")
+        details.append(subphase_text)
     active_sources = progress.get("active_sources")
     if isinstance(active_sources, list) and active_sources:
         details.append("compiling: " + ", ".join(str(item) for item in active_sources[:3]))

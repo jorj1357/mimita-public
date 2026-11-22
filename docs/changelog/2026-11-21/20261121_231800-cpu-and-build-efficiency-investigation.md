@@ -1,0 +1,15 @@
+# CPU and Build Efficiency Investigation
+
+## Findings and source change
+
+- The user requested near-zero MiMITA CPU use even during active gameplay. Literal 0% is incompatible with rendering and simulation. A reversible 240 FPS cap command was tried on the primary client and then restored to its prior 999 cap; the non-matched process samples did not show a CPU benefit, so no persistent cap was applied.
+- In active Fun Counter Strike with 19 NPCs and one player, a 10-second sample measured client CPU at 314% and server CPU at 54% of one logical core. FPS was about 222; the server reported NPC phase time of 27–139 ms against a 10 ms budget. This identifies substantial active workload, especially NPC phase time, but does not isolate the NPC substage. A concurrent agent owns the NPC source changes, so this investigation did not edit that code.
+- `src/network/server.cpp::runServer` now aggregates `performance.server-phase-budget` over one-second windows instead of logging every over-budget tick. The summary includes over-budget tick count and maximum phase times. This reduces repetitive diagnostic writes while preserving the 60 Hz simulation; it is not a demonstrated reduction in gameplay CPU cost.
+- The file is a resident EXE input, not proved active by the published game-DLL generations. A root-dev-loop EXE build request was accepted at 2026-11-22T01:33:57Z. Its worker reported success after about 346 seconds, but the dev-loop remained in `build_complete` / `building` with no new EXE artifact for over 12 minutes. The old EXE remained active, so no runtime proof of the logging change was possible.
+- Candidate game-DLL generations 439 and 440 each took roughly 525–530 seconds wall time (13 TUs compiled, 629 skipped). Generation 439 spent about 127.5 seconds in changed-source preflight, 103.5 seconds compiling, 92.7 seconds linking, 12.2 seconds publishing, and 19.2 seconds scanning objects. Build pressure is documented in issue `issue-17abc587c89a`; CPU contention as the cause of these delays is not established.
+- Process samples during a 240 FPS cap trial were not matched to equivalent workload/build phases and showed no clear savings. The original 999 cap was restored. No configuration cap change was retained.
+- Process error: `src/network/server.cpp` was included in a DLL attempt without the required pre-edit `build-note.py` note. The attempt `game-dll-20261122T012524059314Z-64e10a` records the changed path with no note; this lapse is documented in the issue discussion and cannot be repaired after the attempt.
+
+## Status and next proof
+
+No claim of 0% active-game CPU or resolved build contention is supported. Keep the CPU issue open and unproven. Once the root EXE build publishes, pin that artifact and generation 440 in an isolated FCS dev-loop test, inspect the exact run journal for the one-second summary, and measure CPU plus frame/tick health. Do not replace the shared active run. Build completion and runtime behavior must remain separate evidence claims.

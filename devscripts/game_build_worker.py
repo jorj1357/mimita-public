@@ -778,15 +778,6 @@ def is_external_dependency(token: str) -> bool:
     return True
 
 
-def collect_external_dependencies(entries: list[tuple[dict, Path, Path]]) -> list[str]:
-    found: set[str] = set()
-    for _item, _obj, dep in entries:
-        for token in parse_depfile(dep) or ():
-            if is_external_dependency(token):
-                found.add(token)
-    return sorted(found)
-
-
 def parse_depfile(dep: Path) -> list[str] | None:
     try:
         if dep.stat().st_size == 0:
@@ -2128,11 +2119,14 @@ def build(args: argparse.Namespace) -> int:
                           path=str((generation_dir / "generation.json").relative_to(ROOT)))
     dependency_manifest_started = progress.subphase_start(
         "publish.external_dependency_manifest")
-    external_dependencies = collect_external_dependencies(entries)
+    # scan_entries already parsed the depfiles and classified their tokens.
+    # Reuse that complete result instead of rereading all depfiles after link.
+    external_dependencies = list(scan.get("external_dependencies") or ())
     progress.subphase_end("publish.external_dependency_manifest",
                           dependency_manifest_started,
                           dependency_count=len(external_dependencies),
-                          depfile_count=len(entries))
+                          depfile_count=len(entries),
+                          source="object_cache_scan")
     cache_marker_started = progress.subphase_start("publish.cache_marker")
     write_cache_marker(
         object_dir, revision=revision, generation=generation,

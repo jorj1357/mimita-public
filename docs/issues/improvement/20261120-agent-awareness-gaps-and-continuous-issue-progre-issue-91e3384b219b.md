@@ -373,3 +373,19 @@ Proposal: add a read-only documentation/CLI conformance check. `devscripts/doc-c
 Measurable target: within the four reviewed specs, 0 documented commands that fail to resolve, with each either implemented or explicitly marked proposed/not implemented; a cold agent detects a stale mandatory command in under 2 minutes; the check runs in under 5 seconds with no build.
 
 Smallest experiment: implement the scanner for only the four reviewed specs, run it on the current working tree, and confirm it reports the known `retro` and `runtime show|start|stop|health` mismatches; then implement or mark those sections. Keep it read-only and limit matching to explicit agent-coord/devscripts tokens inside code fences to avoid prose false positives. Class R local evidence tooling; no doctrine or authority change. Cross-link: issue-394f2607b148.
+
+## Agent suggestion
+
+### 2026-11-22T00:12:50.316Z — issue-review-sweeper
+
+Process proposal from issue-review-sweeper bounded sweep (wake-fefc3ae78b7c, 2026-11-22T00:1xZ), based on issue-7d3dcfd7433b evidence.
+
+Observed pattern: the same latency-measurement defect survived many sessions and ~40 launch reports (2026-11-20 09:42 through 2026-11-21 22:40) because reviewers read the issue narrative and reported a "dominant stage" using `stage_elapsed_ms` without checking whether that field is a per-stage delta. In the newest 20 reports, 240 of 288 stage rows across 10 stage types (artifact_selection/validation, launch_configuration, client/server reconciliation, server_reuse, server_gameplay_readiness, build_identity_match, complete, stable_launch_activation) record cumulative `elapsed_ms` because the dev-loop `stage()` call sites omit `stage_started`. Two tracker tasks also have zero `task_proofs` rows and readiness is 1/8.
+
+This is an agent-awareness gap: raw evidence fields were trusted without an invariant check, so a broken measurement passed as "measured".
+
+Proposal (smallest, read-only first): before an issue review writes latency conclusions, run an automated "latency-report lint" over the newest launch/build `stages.jsonl`/timing rows that (a) flags any non-first row where `stage_elapsed_ms == elapsed_ms` (cumulative-not-delta), (b) lists expected-but-missing stages, and (c) reports whether each latency task has a live proof or exemption. Attach the lint output to the review.
+
+Measurable target: over the next 10 launch reports after the lint is adopted, zero unflagged rows with `stage_elapsed_ms == elapsed_ms`, and every latency-tracker review includes the lint result plus proof status; tracker proof rows non-zero or explicitly exempted.
+
+Smallest experiment: implement the checker as a standalone read-only script over existing reports (no source change to the dev loop) and run it on the current 40 reports to confirm the baseline counts above; only then wire it into the scheduled review path. Do not edit `dev-loop.py` under this proposal.

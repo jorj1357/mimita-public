@@ -216,3 +216,75 @@ suspected cause of PostgreSQL's earlier outage.
 
 Follow-up implementation and latest VPS evidence: [2026-11-02 VPS storage and
 verified Drive backup follow-up](../../changelog/2026-11-02/20261102_154606-vps-storage-drive-backup-followup.md).
+
+### Confirmed live recurrence — 2026-11-21
+
+Observed at `2026-11-21T23:58:51Z` through `2026-11-21T23:59:31Z` from the
+public HTTPS endpoint and read-only `ssh mimita-vps` checks:
+
+- `https://mimita.fun/` returned HTTP 200.
+- `GET /api/health/ready` returned HTTP 404 (`Cannot GET`), so the current
+  public API does not expose the readiness route present in local source.
+- A credential-free invalid sign-in probe to `/api/auth/signin` returned HTTP
+  500 with `database connection failed. check server logs.` It did not submit a
+  real account or password.
+- `postgresql@14-main` was failed, `pg_lsclusters` reported cluster `14/main`
+  down, and `pg_isready` reported no response. `mimita-api` remained online in
+  PM2.
+- `/` was 100% used with zero available bytes. The VPS `mimita-api` checkout
+  reported branch `8292026stash`, commit
+  `f94b5636ff3431806b91e4966f85d2ecaa38a738`; the local checkout has the
+  readiness router and HTTP 503 `database_unavailable` handler, which are not
+  present in the live behavior. The documented watchdog executable and systemd
+  unit were absent on the VPS.
+- `/var/log/syslog.1` was 4,806,849,520 bytes. `/etc/turnserver.conf` had its
+  standalone `verbose` directive enabled. In only the last 1 MiB of the rotated
+  syslog, bounded counts found 6,127 `turnserver` and 1,555 `BINDING` strings.
+  This strongly implicates verbose Coturn logging as a major disk consumer,
+  consistent with the prior occurrence, but does not establish the exact
+  PostgreSQL stop cause.
+- The PostgreSQL data directory was 373 MiB. Root cause for the remaining disk
+  use and the precise PostgreSQL shutdown/error are still unverified; no raw
+  logs, database contents, or environment values were copied into this record.
+
+The event chain is confirmed through the unavailable database: public page
+served -> readiness route absent -> sign-in query failed -> PostgreSQL stopped
+with the root filesystem full. This is a recurrence of the prior outage pattern
+and the production safeguards are not deployed. Do not restart PostgreSQL while
+the documented 5 GiB free-space floor is unmet. No production files were edited,
+no files were deleted, and no service was restarted during this investigation.
+Recovery, exact PostgreSQL stop cause, reviewed deployment, and external down and
+recovery email proof remain open under issue
+`issue-1759b2cc6e65`.
+
+### Recovery after approved log cleanup — 2026-11-22
+
+At 2026-11-22T00:33Z–01:01Z UTC the user-approved cleanup and recovery were
+completed. Before cleanup, `/var/log/syslog.1` was verified as a regular,
+non-symlink file of 4,806,849,520 bytes, not open by a process. Root free space
+was 892,751,872 bytes. Only that exact log was truncated; afterward it was 0
+bytes and root had 5,699,633,152 bytes available (76%), above the documented
+5 GiB PostgreSQL start floor. One `systemctl start postgresql@14-main.service`
+was attempted. A later read-only check confirmed the unit active with
+`Result=success`, active since 2026-11-22T00:33:25Z, and `pg_isready` accepting
+connections. No second start attempt was made.
+
+Public checks after recovery: `/` returned HTTP 200; one invalid-credentials
+sign-in returned HTTP 401 with the expected invalid username/email response,
+confirming the auth query reached PostgreSQL. That probe recorded one failed
+login/analytics event; it did not create or change an account. The public
+`/api/health/ready` still returns 404. On the VPS, the documented watchdog
+script/unit remain absent, `/etc/turnserver.conf` still enables Coturn
+`verbose`, and logrotate remains daily. UptimeRobot's sign-in page loaded, but
+authentication was required; no monitor or notification settings were changed.
+
+The local branch already contains readiness/503 handling, the database
+watchdog/timer, and a safe storage configuration helper; those safeguards are
+not live. The VPS checkout has sparse checkout disabled and includes 854
+tracked game source files, so a full branch pull would violate the website-only
+VPS policy. No website source/configuration was deployed. Coturn verbosity and
+disk pressure remain the leading explanation for the outage pattern, but
+PostgreSQL's precise stop cause is still unproven. Keep this regression and
+issue `issue-1759b2cc6e65` open until a policy-safe reviewed deployment exposes
+health/readiness, installs prevention, and down plus recovery emails are
+observed.

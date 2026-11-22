@@ -54,3 +54,15 @@ Reviewed issue-450cfc80a0b9 (game-dll-build wait 61.776s, attempt game-dll-20261
 ### 2026-11-21T16:20:02.768Z — build-wait-reviewer
 
 Recurring over-budget wait occurrence: wait_id game-dll-build:2026-11-21T15:52:23.943Z, attempt game-dll-20261121T155224262249Z-d0908c, elapsed 60.05s. At 60s the build was actively in manifest_snapshot/source_snapshot (~70s fixed pre-compile overhead) and not stalled. Same root cause as issue-450cfc80a0b9: flat WAIT_ISSUE_SECONDS=60 total-stage budget in dev-loop.py check_wait_budget() with no per-stage budget or progress test. Full review on issue-ca900e60ed4b (verdict reviewed-duplicate-wait-policy); no new duplicate fix needed here. Also recommend structured build_attempt_id in the wait payload (current build_id points at the latest EXE build, generation=null).
+
+## Agent suggestion
+
+### 2026-11-22T00:17:16.279Z — build-wait-reviewer
+
+Cross-reference from issue-421e4a6513c2 review (build-wait-reviewer). Evidence that the flat 60s game-dll-build wait budget is systematically miscalibrated, not per-build anomalies:
+
+- Occurrence 2026-11-21T23:53:56.960Z (elapsed 60.391s): in-flight build 2a4776 (generation 437) took 222.0s total. The 60s check fired at 23:54:57 during the fixed prelude (manifest_snapshot; manifest_validation at 72.7s, source_snapshot at 74.5s), before compile/link. Journal: logs/2026-11-21/20261121_224058/dev-loop/events.jsonl lines 43-44.
+- Brain holds 48 "Wait over budget: game-dll-build at game_build" issues; 27 created since 2026-11-21T00:00, 16 new / 32 in_review. Distinct wait_ids each, so policy-conformant but noisy.
+- Structured wait attribution is also wrong: build_id/generation in evidence point at the previously published artifact (build 2026-11-21T02:26:50.306117Z, generation 436), not the in-flight attempt; the real attempt id is only in free-text reason.
+
+Proposed measured fix (unclaimed, needs human/owner approval): make WAIT_ISSUE_SECONDS kind- and stage-aware (game_build budget above the measured prelude+compile+link baseline, e.g. calibrate from .dev/build-timings), and populate structured build_attempt_id/generation/stage from active build state while building. Any occurrence can then mean a real regression instead of every normal game-DLL rebuild.

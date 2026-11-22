@@ -55,6 +55,7 @@ HEADER_EXCLUDE_DIRS = {
 HEADER_SUFFIXES = (".h", ".hpp", ".hh", ".hxx", ".inl", ".ipp")
 HEADER_ROOTS = ("src", "include")
 ALLOWED_OWNERS = {"game", "resident", "bootstrap", "launcher", "tool", "test", "vendor"}
+_INVENTORY_CACHE: dict[tuple[Path, str], tuple[tuple[str, ...], dict[str, int]]] = {}
 
 
 def sha256_file(path: Path) -> str:
@@ -98,37 +99,180 @@ def expand_patterns(root: Path, patterns) -> list[Path]:
 
 
 def relative(root: Path, path: Path) -> str:
-    return path.resolve().relative_to(root.resolve()).as_posix()
+    root = Path(root).resolve()
+    path = Path(path)
+    # Paths produced by os.walk/rglob are already lexically rooted here. Avoid
+    # resolving each ordinary file through Windows final-path APIs; preserve
+    # the canonical containment check for symlinks and external paths.
+    if path.is_relative_to(root) and not path.is_symlink():
+        return path.relative_to(root).as_posix()
+    return path.resolve().relative_to(root).as_posix()
 
 
-def enumerate_repository_cpp(root: Path) -> list[str]:
+def _directory_stamp_changes(root: Path, stamps: dict[str, int]) -> list[str]:
+    changed: list[str] = []
+    for relative_dir, expected in stamps.items():
+        try:
+            current = (root / relative_dir).stat().st_mtime_ns
+        except OSError:
+            changed.append(relative_dir)
+            continue
+        if current != expected:
+            changed.append(relative_dir)
+    return changed
+
+
+def _scan_cpp_inventory(root: Path, start: Path | None = None
+                        ) -> tuple[list[str], dict[str, int]]:
     result: list[str] = []
-    for directory, dirs, files in os.walk(root):
+    stamps: dict[str, int] = {}
+    for directory, dirs, files in os.walk(start or root):
         base = Path(directory)
         if base == root:
             dirs[:] = [name for name in dirs if name not in EXCLUDE_DIRS]
         else:
             dirs[:] = [name for name in dirs if name not in DEEP_EXCLUDE_DIRS]
+        try:
+            stamps[base.relative_to(root).as_posix()] = base.stat().st_mtime_ns
+        except OSError:
+            pass
         for name in files:
             if name.endswith(".cpp"):
                 result.append(relative(root, base / name))
-    return sorted(result)
+    return sorted(result), stamps
+
+
+def _scan_header_inventory(root: Path, start: Path | None = None
+                            ) -> tuple[list[str], dict[str, int]]:
+    result: list[str] = []
+    if start is None:
+        try:
+            stamps: dict[str, int] = {".": root.stat().st_mtime_ns}
+        except OSError:
+            stamps = {}
+        roots = [root / directory for directory in HEADER_ROOTS]
+    else:
+        stamps = {}
+        roots = [start]
+    for base in roots:
+        if not base.is_dir():
+            continue
+        for current, dirs, files in os.walk(base):
+            current_path = Path(current)
+            dirs[:] = [name for name in dirs if name not in HEADER_EXCLUDE_DIRS]
+            try:
+                stamps[current_path.relative_to(root).as_posix()] = current_path.stat().st_mtime_ns
+            except OSError:
+                pass
+            for name in files:
+                path = current_path / name
+                if path.suffix.lower() in HEADER_SUFFIXES:
+                    result.append(relative(root, path))
+    return sorted(set(result)), stamps
+
+
+def _incremental_inventory(root: Path, kind: str, cached_paths: tuple[str, ...],
+                           cached_stamps: dict[str, int],
+                           changed_directories: list[str]
+                           ) -> tuple[list[str], dict[str, int], int] | None:
+    """Refresh changed directory subtrees without walking the whole source tree."""
+    if "." in changed_directories:
+        return None
+    allowed_roots = set(HEADER_ROOTS) if kind == "headers" else None
+    starts: list[tuple[str, Path]] = []
+    for value in sorted(changed_directories,
+                        key=lambda item: (item.count("/"), item)):
+        relative_dir = Path(value)
+        if allowed_roots is not None and not any(
+                relative_dir.parts[:1] == (allowed,) for allowed in allowed_roots):
+            continue
+        candidate = root / relative_dir
+        if not candidate.is_dir():
+            candidate = candidate.parent
+        if not candidate.is_dir():
+            return None
+        try:
+            relative_candidate = candidate.relative_to(root).as_posix()
+        except ValueError:
+            return None
+        if relative_candidate == ".":
+            return None
+        if allowed_roots is not None and not any(
+                Path(relative_candidate).parts[:1] == (allowed,)
+                for allowed in allowed_roots):
+            continue
+        if any(relative_candidate == parent or
+               relative_candidate.startswith(parent + "/")
+               for parent, _ in starts):
+            continue
+        starts.append((relative_candidate, candidate))
+
+    # A large or unrelated invalidation is cheaper and simpler to rebuild in
+    # one pass. A small set of changed source directories is the common case.
+    if not starts or len(starts) > 32:
+        return None
+
+    paths = set(cached_paths)
+    stamps = dict(cached_stamps)
+    rescanned_directories = 0
+    for prefix, start in starts:
+        paths = {path for path in paths
+                 if path != prefix and not path.startswith(prefix + "/")}
+        stamps = {path: stamp for path, stamp in stamps.items()
+                  if path != prefix and not path.startswith(prefix + "/")}
+        scanner = _scan_cpp_inventory if kind == "cpp" else _scan_header_inventory
+        subtree_paths, subtree_stamps = scanner(root, start)
+        paths.update(subtree_paths)
+        stamps.update(subtree_stamps)
+        rescanned_directories += len(subtree_stamps)
+    return sorted(paths), stamps, rescanned_directories
+
+
+def _cached_inventory(root: Path, kind: str) -> tuple[list[str], dict]:
+    key = (root, kind)
+    cached = _INVENTORY_CACHE.get(key)
+    changed_directories = (_directory_stamp_changes(root, cached[1])
+                           if cached is not None else [])
+    if cached is not None and not changed_directories:
+        return list(cached[0]), {"cache_hit": True}
+    scanner = _scan_cpp_inventory if kind == "cpp" else _scan_header_inventory
+    incremental = (_incremental_inventory(root, kind, cached[0], cached[1],
+                                           changed_directories)
+                   if cached is not None and changed_directories else None)
+    if incremental is None:
+        result, stamps = scanner(root)
+        rescanned_directories = len(stamps)
+        incremental_used = False
+    else:
+        result, stamps, rescanned_directories = incremental
+        incremental_used = True
+    # Validate the directory tree after enumerating it. If a file or directory
+    # was added/removed during the scan, return the scan result but do not trust
+    # it as a reusable inventory on the next build.
+    stable = not _directory_stamp_changes(root, stamps)
+    if stable:
+        _INVENTORY_CACHE[key] = (tuple(result), stamps)
+    else:
+        _INVENTORY_CACHE.pop(key, None)
+    return result, {
+        "cache_hit": False,
+        "invalidated_reason": ("directory_stamp_changed" if changed_directories
+                               else "cold_or_unstable_scan"),
+        "changed_directory_count": len(changed_directories),
+        "changed_directories": changed_directories[:32],
+        "changed_directories_truncated": len(changed_directories) > 32,
+        "rescanned_directory_count": rescanned_directories,
+        "incremental": incremental_used,
+        "inventory_stable": stable,
+    }
+
+
+def enumerate_repository_cpp(root: Path) -> list[str]:
+    return _cached_inventory(Path(root).resolve(), "cpp")[0]
 
 
 def enumerate_repository_headers(root: Path) -> list[str]:
-    result: list[str] = []
-    for directory in HEADER_ROOTS:
-        base = root / directory
-        if not base.is_dir():
-            continue
-        for path in base.rglob("*"):
-            if not path.is_file() or path.suffix.lower() not in HEADER_SUFFIXES:
-                continue
-            parts = set(path.relative_to(root).parts)
-            if parts & HEADER_EXCLUDE_DIRS:
-                continue
-            result.append(relative(root, path))
-    return sorted(set(result))
+    return _cached_inventory(Path(root).resolve(), "headers")[0]
 
 
 class OwnerResolver:
@@ -236,6 +380,49 @@ class OwnerResolver:
         return result
 
 
+_RESOLVER_CACHE: dict[Path, tuple[tuple, OwnerResolver]] = {}
+
+
+def _owner_resolver_signature(root: Path, cpp_paths: list[str]) -> tuple:
+    """Fingerprint every input that can change source ownership resolution."""
+    owner_path = root / OWNERS_REL
+    catalog_path = root / CATALOG_REL
+    owner_hash = sha256_file(owner_path) if owner_path.is_file() else ""
+    catalog_hash = sha256_file(catalog_path) if catalog_path.is_file() else ""
+    try:
+        owner_config = read_json(owner_path)
+    except (OSError, json.JSONDecodeError):
+        owner_config = {}
+
+    override_state = tuple(
+        (str(entry.get("path", "")),
+         (root / str(entry.get("path", ""))).is_file())
+        for entry in owner_config.get("overrides", []) or []
+        if isinstance(entry, dict)
+    )
+    link_input_paths: list[str] = []
+    for entries in (owner_config.get("link_inputs", {}) or {}).values():
+        for entry in entries or []:
+            if not isinstance(entry, dict):
+                continue
+            link_input_paths.extend(
+                relative(root, path)
+                for path in expand_patterns(root, [entry.get("path", "")])
+            )
+    return (owner_hash, catalog_hash, tuple(cpp_paths), override_state,
+            tuple(sorted(link_input_paths)))
+
+
+def _cached_owner_resolver(root: Path, cpp_paths: list[str]) -> tuple[OwnerResolver, bool]:
+    signature = _owner_resolver_signature(root, cpp_paths)
+    cached = _RESOLVER_CACHE.get(root)
+    if cached is not None and cached[0] == signature:
+        return cached[1], True
+    resolver = OwnerResolver(root)
+    _RESOLVER_CACHE[root] = (signature, resolver)
+    return resolver, False
+
+
 def build_manifest(root: Path, resolver: OwnerResolver | None = None,
                    hash_cache: dict | None = None,
                    progress_callback: Callable[[dict], None] | None = None) -> dict:
@@ -258,13 +445,6 @@ def build_manifest(root: Path, resolver: OwnerResolver | None = None,
     stats = {"cache_hits": 0, "cache_misses": 0, "files_hashed": 0,
              "bytes_hashed": 0, "stat_ms": 0.0, "hash_ms": 0.0,
              "owner_resolve_ms": 0.0}
-    if resolver is None:
-        phase_started = time.perf_counter()
-        report("owner_resolver", "started", phase_started)
-        resolver = OwnerResolver(root)
-        report("owner_resolver", "completed", phase_started,
-               source_rule_count=len(resolver.rule_assignments),
-               module_owner_count=len(resolver.module_owners))
     used_cache: dict[str, dict] = {}
 
     def digest_for(rel: str) -> tuple[str, int, int]:
@@ -298,8 +478,17 @@ def build_manifest(root: Path, resolver: OwnerResolver | None = None,
 
     phase_started = time.perf_counter()
     report("enumerate_cpp", "started", phase_started)
-    cpp_paths = enumerate_repository_cpp(root)
-    report("enumerate_cpp", "completed", phase_started, files_total=len(cpp_paths))
+    cpp_paths, cpp_inventory = _cached_inventory(root, "cpp")
+    report("enumerate_cpp", "completed", phase_started,
+           files_total=len(cpp_paths), **cpp_inventory)
+    if resolver is None:
+        phase_started = time.perf_counter()
+        report("owner_resolver", "started", phase_started)
+        resolver, cache_hit = _cached_owner_resolver(root, cpp_paths)
+        report("owner_resolver", "completed", phase_started,
+               source_rule_count=len(resolver.rule_assignments),
+               module_owner_count=len(resolver.module_owners),
+               cache_hit=cache_hit)
 
     sources: list[dict] = []
     phase_started = time.perf_counter()
@@ -329,9 +518,9 @@ def build_manifest(root: Path, resolver: OwnerResolver | None = None,
     headers: list[dict] = []
     phase_started = time.perf_counter()
     report("enumerate_headers", "started", phase_started)
-    header_paths = enumerate_repository_headers(root)
+    header_paths, header_inventory = _cached_inventory(root, "headers")
     report("enumerate_headers", "completed", phase_started,
-           files_total=len(header_paths))
+           files_total=len(header_paths), **header_inventory)
 
     phase_started = time.perf_counter()
     report("header_digest", "started", phase_started,

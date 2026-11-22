@@ -2373,9 +2373,9 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
     const uint64_t staleThreshold = (uint64_t)cfg.timeouts.stalePacketThresholdMs;
     const uint64_t hardTimeout = (uint64_t)cfg.timeouts.clientTimeoutMs;
     const uint64_t graceMs = (uint64_t)cfg.retries.reconnectGraceMs;
-    const uint64_t lastHeardAge = ctx.lastHeardServerMs > 0
+    uint64_t lastHeardAge = ctx.lastHeardServerMs > 0
         ? now - ctx.lastHeardServerMs : 0;
-    const uint64_t snapshotAge = ctx.lastSnapshotReceivedMs > 0
+    uint64_t snapshotAge = ctx.lastSnapshotReceivedMs > 0
         ? now - ctx.lastSnapshotReceivedMs : 0;
     const bool heardSinceDisconnect =
         ctx.disconnectStartedMs > 0 && ctx.lastHeardServerMs > ctx.disconnectStartedMs;
@@ -2397,6 +2397,11 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
         ctx.lastHeardServerMs = now;
         if (ctx.lastSnapshotReceivedMs != 0)
             ctx.lastSnapshotReceivedMs = now;
+        // Health ages were sampled before the timestamps were rebased. Use
+        // the new clock for this update too, or a stale pre-swap snapshot can
+        // immediately trigger reconnect after the rebase was meant to forgive it.
+        lastHeardAge = 0;
+        snapshotAge = 0;
     }
 
     const ConnectionState before = ctx.connectionState;
