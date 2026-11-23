@@ -17,7 +17,10 @@ from devscripts import source_manifest as manifest  # noqa: E402
 
 class PersistentSourceCacheTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory(prefix="source-manifest-cache-")
+        temporary_root = ROOT / ".dev" / "tmp"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        self.temp = tempfile.TemporaryDirectory(
+            prefix="source-manifest-cache-", dir=temporary_root)
         self.root = Path(self.temp.name)
         (self.root / "src").mkdir()
         manifest._INVENTORY_CACHE.pop((self.root, "cpp"), None)
@@ -53,6 +56,32 @@ class PersistentSourceCacheTests(unittest.TestCase):
                 break
             time.sleep(0.02)
         self.assertEqual(third, ["src/added.cpp", "src/game.cpp"])
+
+    def test_inventory_reports_memory_persistent_and_process_identity(self) -> None:
+        source = self.root / "src" / "game.cpp"
+        source.write_text("int game;\n", encoding="utf-8")
+
+        first, cold = manifest._cached_inventory(self.root, "cpp")
+        self.assertEqual(first, ["src/game.cpp"])
+        self.assertEqual(cold["cache_origin"], "cold")
+        self.assertFalse(cold["memory_cache_hit"])
+        self.assertEqual(cold["process_id"], os.getpid())
+        self.assertEqual(cold["module_name"], manifest.__name__)
+
+        second, warm = manifest._cached_inventory(self.root, "cpp")
+        self.assertEqual(second, first)
+        self.assertEqual(warm["cache_origin"], "memory")
+        self.assertTrue(warm["memory_cache_hit"])
+        self.assertEqual(warm["module_instance_id"], cold["module_instance_id"])
+        self.assertEqual(warm["inventory_cache_instance_id"],
+                         cold["inventory_cache_instance_id"])
+
+        manifest._INVENTORY_CACHE.pop((self.root, "cpp"), None)
+        third, persistent = manifest._cached_inventory(self.root, "cpp")
+        self.assertEqual(third, first)
+        self.assertEqual(persistent["cache_origin"], "persistent")
+        self.assertFalse(persistent["memory_cache_hit"])
+        self.assertTrue(persistent["persistent_cache_hit"])
 
     def test_owner_resolution_cache_survives_worker_memory_reset_and_invalidates(self) -> None:
         config = self.root / "config"

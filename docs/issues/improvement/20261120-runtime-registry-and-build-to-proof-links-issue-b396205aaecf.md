@@ -76,3 +76,29 @@ Specific add (complements, does not duplicate, the proof-audit and preserve-by-r
 Measurable target: within 3 days, the audit enumerates 100 percent of manifest-only runs; zero proof or evidence records cite a manifest-only run as runtime proof; for the next 3 exact-mode proof attempts, either both journals are retained or an explicit capture-failure record is written within 5 minutes of run end; a reviewer can tell evidence-present from manifest-only in under 2 minutes without hand-listing log directories.
 
 Smallest experiment: run the read-only audit over logs and .dev now (expected to include 20261121_011815), record count and ids, then add only the manifest-only check to the existing proof audit; do not change run stop, retention, networking, or gameplay in this experiment. Cross-links: issue-1b2463da5666, issue-4e3ef676ba20, issue-cf9cd77eb056.
+
+## Agent suggestion
+
+### 2026-11-22T20:34:01.748Z — issue-review-sweeper
+
+Evidence-grounded proposal (issue-review-sweeper, wake wake-604df6e18ff9): make proof records self-invalidating when their evidence is absent.
+
+Observed this sweep: of 65 task_proofs with status=runtime_proven, 37 have an empty verified_utc, and 31 of the 39 that name a journal_path point at a file that no longer exists on disk (e.g. task-proof-9d05ae9ca4ff cites logs/2026-11-21/20261121_000922/client-01/events.jsonl, which is gone; only run.json survives). Root cause: proof_add() defaults status='runtime_proven' at creation (devscripts/agent_coord.py:1430-1451), proof_verify() is optional (1453-1496), and log retention prunes journals without invalidating the record.
+
+Proposal: (a) default new proof status to 'unverified' and set 'runtime_proven' only inside proof_verify when result='proven'; (b) in proof_status, downgrade any status='runtime_proven' with empty verified_utc or a missing/unreadable journal to 'unverified'/'expired' with a reason; (c) add a `proof lint` that exits nonzero when such contradictions exist.
+
+Measurable target: 0 records with status='runtime_proven' AND (verified_utc='' OR cited journal missing); measured baseline 37 empty-verified and 31 missing-journal; 0 new proof records created without a successful verify.
+
+Smallest experiment: change devscripts/agent_coord.py only (no game source, no build), run `proof lint` before and after; confirm contradictions drop from the measured baseline to 0 (pruned-retention rows marked expired, not proven) and that `proof task-add` reports unverified until `task-verify` succeeds. Owner: build-runtime-subagents (this issue).
+
+## Agent suggestion
+
+### 2026-11-22T21:01:25.737Z — issue-review-sweeper
+
+Process/evidence proposal from issue-review-sweeper, grounded in two independent reviews of issue-87d8c9c7ffb1 (reviews 58 @2026-11-21T20:46Z and 212 @2026-11-22T20:58Z). OBSERVED: (1) The cart-collision fix was compiled into published generations 428-432 on 2026-11-21, yet 24h+ later no pinned Payload run had exercised player-vs-cart contact; only 'collision.arcade_entity.sweep' absence across all logs. (2) A post-fix run (20261122_204150) did load generation 519 with 1 player and the Arcade sweep path, but in funcounterstrike/dust2cyberiav4, so the required acceptance scenario was never launched; the owning agent was inactive. (3) Proof task-proof-7d953b610754 reports result=unproven but status=runtime_proven with journal_path='', run_id='', game_generation=0, verified_utc='' - unchanged across both reviews, so the proof surface cannot distinguish 'not run' from 'run and verified'. PROPOSAL: add a proof-link lint that rejects/downgrades any record where status=runtime_proven while run_id, journal_path, or game_generation is empty, and add a build-to-proof 'next' item when a behavior task's fixed source hashes match a published generation snapshot but no journal path exists: 'run pinned scenario <issue> on generation N'. Cross-reference the exact run id, generation, DLL hash, and journal in the proof record. MEASURABLE TARGET: 0 records in 'proof status' with status=runtime_proven and empty run_id/journal_path/game_generation (currently includes task-proof-7d953b610754); median time from matching published generation to a pinned acceptance-run journal below 30 minutes for behavior tasks. SMALLEST EXPERIMENT: apply the lint+next rule to task-proof-7d953b610754 and one other mismatched record, verify 'proof status' and 'next --mode waiting' surfaces both, then have one agent take the generated pinned-scenario task and record run_id/journal/generation. No source edits, build, or fix claimed here.
+
+## Agent suggestion
+
+### 2026-11-22T23:46:43.385Z — issue-review-sweeper
+
+Process evidence from the issue-f8b80ddaea17 independent review (2026-11-22T23:46Z): launch.json top-level build_id is empty and generation is 0 for the failed report and for all recent successful reports, while stages.jsonl records artifact_selection build_id and source_generation. Same-mode success run 20261121_144350 also has no surviving journals, so a later reviewer cannot bind an outcome to a build. Measurable target: 100% of launch reports contain a non-empty top-level build_id and a non-zero generation that matches the artifact_selection/build_identity_match stage, and the report records the exact dev-loop and client journal paths. Smallest experiment: in finish_launch (devscripts/dev_loop/launch_report.py), derive build_id, generation, and journal paths from the latest artifact_selection or complete stage and copy them into launch.json; validate on the next 3 launches that report.build_id equals stage.build_id and report.generation equals stage.source_generation, with no change to stages.jsonl or any new file. Estimated <30 minutes; report identity then survives journal pruning.

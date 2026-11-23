@@ -1,6 +1,10 @@
 import unittest
+import os
+import subprocess
 
 from devscripts.game_build_worker import (
+    PRIORITY_CLASSES,
+    build_tool_creation_flags,
     is_unsupported_time_report,
     parse_gcc_time_report,
 )
@@ -84,6 +88,15 @@ Time variable                                   usr           sys          wall 
             "undefined reference to '-ftime-report'"))
         self.assertFalse(is_unsupported_time_report(
             "g++.exe: fatal error: source file not found"))
+
+    @unittest.skipUnless(os.name == "nt", "Windows process flags only")
+    def test_compiler_child_flags_include_requested_priority(self):
+        flags = build_tool_creation_flags("high")
+
+        self.assertEqual(flags & PRIORITY_CLASSES["high"],
+                         PRIORITY_CLASSES["high"])
+        self.assertEqual(flags & subprocess.CREATE_NO_WINDOW,
+                         subprocess.CREATE_NO_WINDOW)
 
 
 if __name__ == "__main__":

@@ -34,3 +34,17 @@ Windows Performance Recorder's CPU profile could not start; it returned `0xc5585
 ## Next measurement
 
 The largest proven contributor is PID 4540's retained 66-NPC Jugger Horde simulation. Measure again after the old dev-loop server is stopped through its normal control path, and separately measure PID 28664's actual Duel actor count and CPU. Refresh client performance slices in the same interval as process CPU. Native per-call-stack attribution requires an authorized WPR run with system-performance profiling rights.
+
+
+## User correction and recent-change correlation
+
+The user confirmed the 999 FPS cap has been unchanged throughout; do not attribute the CPU increase to a cap change. `config/video-settings.json` history has no `maxFrames` change since Aug 2026, and commit `9ed266ca` changed only `fullscreen` from 6 to 0 in that file, preserving `maxFrames: 999`.
+
+A stronger runtime regression candidate is commit `70f3c051` (2026-11-22 09:28:40 -05). In `src/npc/npc.cpp`, the pre-change `hasLoggedDash` guard limited `npc.dash` event emission to once per actor life; the commit removed the guard and writes the Important event on every dash (current event source line 3741). It also removed the reset at respawn from `src/network/server-npcs.cpp`. The live server log later recorded 1,002 such events in 60 seconds from 54 actors. That proves a large increase in logging work; the share of process CPU caused by serialization/file logging remains unmeasured. The same commit revised objective-navigation fallback, but the live Jugger Horde run does not establish that objective code path as active.
+
+This is distinct from the independently measured 66-NPC zero-player Jugger Horde simulation, which itself overruns the 60 Hz tick budget. The build-only `d89884f6` change selected 10 DLL jobs with high priority; it can add contention during actual builds, but is not the explanation for runtime load after builds finish. A matched before/after build comparison remains open.
+
+
+## Logger flush mechanism
+
+The repeated dash event has a synchronous logging path. `StructuredLogger::writeEvent` builds a JSON record and calls `writeJsonLine` with `flush=true` for Important level events (`src/debug/structured-log.cpp:1553-1581`). The adjacent `tryWriteEvent` comment says per-record `fflush` under the cross-process journal mutex can create fixed-tick stalls (`:1622-1625`); `flushEvent` locks that mutex and calls `fflush` (`:1711-1719`). Commit `70f3c051` made each dash in `src/npc/npc.cpp` an Important event with no per-actor guard. At the observed rate of 1,002 events/minute, this is about 16.7 Important record writes per second from NPC dashes alone. That is a strong mechanism for additional CPU, file I/O, and tick delay, but the CPU share has not been isolated from the 66-NPC AI/physics workload.

@@ -130,3 +130,27 @@ skip the client-only branch safely.
 Status remains `ATTEMPTED FIX (2)` until a fresh dev-loop build starts the
 server, publishes a room code, completes ICE, and accepts the client in a live
 human test.
+
+---
+
+## Regression Occurrence 3 — server access violation after generation 507 hot swap
+
+Time observed: `2026-11-22 17:46:02Z` crash artifact; dev-loop exit observation at `2026-11-22 17:47:40.921Z`.
+
+### Observed
+
+Run `20261122_174002` was an FCS session with server PID 9196 and client PID 34012. The server journal logged `game.generation.activated` for `build/game/generation-507/game-g507.dll` at `17:46:02.130Z`. The crash report `.dev/crashes/20261122_174002/crash-2026-11-22_12-46-02-9196.txt` records `ACCESS_VIOLATION (0xc0000005)`, a read access at `game-g507.dll+0x1649ae`; the matching `.dmp` is 206,640 bytes. The dev-loop later recorded server exit code `3221225477` (`0xc0000005`) and marked the server offline while client PID 34012 remained alive/frozen. The server journal ends at `17:46:02.132Z`, at the hot-swap boundary. The crash report's stack includes `GetMimitaGameServerPolicyV1+0xc1aa` and host frames.
+
+### Attribution status
+
+The published DLL contains DWARF `.debug_info` and `.debug_line` sections. `addr2line` needs the PE preferred image base added to the crash RVA: `0x180000000 + 0x1649ae` maps the faulting instruction to `std::__new_allocator<glm::vec<3, float>>::construct` at MSYS2 `bits/new_allocator.h:203`, through `std::vector<glm::vec3>::push_back`. The crash report's caller frame is `GetMimitaGameServerPolicyV1+0xc1aa`; the export RVA is `0x3d1902`, so its link-time address `0x1803ddbac` maps to `mimita::game::serverRuntimeSimulateWorld(void*)` at `src/game/server-runtime-module.cpp:326`. That line is immediately after the call to `MimitaNet::simulateSharedNpcs(...)` at lines 322-325. This localizes the active path to shared NPC simulation and vector construction, but does not identify the exact project expression that supplied the invalid destination/reference. The DWARF path points into a pruned earlier source snapshot; the current source has the same lines, but the exact generation-507 snapshot is not present. Causation by hot swap or a particular source edit remains unproven. The crash artifact timestamp and the dev-loop's process-exit observation differ by about 99 seconds; preserve both rather than presenting the later monitor observation as the exact fault time.
+
+### Required follow-up
+
+- Preserve the minidump and exact generation-507 DLL; do not overwrite the crash evidence.
+- Preserve the same DLL's DWARF sections and analyze the minidump against it; capture the source snapshot before pruning on future candidates so the mapped path resolves to the exact build input.
+- Trace the `std::vector<glm::vec3>::push_back` call path inside `MimitaNet::simulateSharedNpcs` and identify the exact vector and ownership/lifetime contract before changing code.
+- Compare the generation-507 source snapshot and live persistent state before changing code. Do not infer a layout-migration bug solely from the timing.
+- Reproduce only through the authorized root dev-loop when the active runtime owner permits it; verify candidate load, sustained server health after swap, and that the client reconnects or exits cleanly.
+
+This occurrence is unresolved. It does not negate the observed candidate publication or activation, but it prevents claiming a healthy sustained post-swap runtime.

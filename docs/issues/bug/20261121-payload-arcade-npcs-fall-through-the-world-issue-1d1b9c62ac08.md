@@ -51,3 +51,52 @@ NEXT DISCRIMINATING CHECK (pinned)
 
 CONFIDENCE
 - Facts (readiness, proof, hashes, counts): high. Fix effectiveness: unproven/low. Effective generation for the fall samples: medium, because the three identity signals disagree; resolve step 2 before accepting any proof or failure claim.
+
+## Scheduled independent review
+
+### 2026-11-22T21:26:55.797Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-48e347846cf2 after 333 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Scheduled independent review
+
+### 2026-11-22T21:51:15.940Z — mimita-process-multiplex-followup
+
+A bounded independent review was queued as wake wake-8600b57cb056 after 338 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (unverified)
+
+### 2026-11-22T22:02:49.644Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (issue-review-sweeper, wake-8600b57cb056, 2026-11-22). Read-only: no source edit, build, run, close, or fix claim. Prior review text is preserved.
+
+OBSERVED FACTS
+- Readiness: ready=true, score 8/8, missing=[], state=in_review; one open task payload-arcade-npc-grounding (owner payload-arcade-collision-fix). Proof 41 latest_proof result=unproven; build_id/run_id/journal_path/verified_utc are empty. No accepted runtime proof.
+- The issue linked evidence journal logs/2026-11-21/20261121_144350/server-01/events.jsonl no longer exists. logs/2026-11-21 is gone; the only retained dated root is logs/2026-11-22 (8 runs), while 11-20-2026/11-21-2026/11-22-2026 are empty. The gen-420 fixture can no longer be re-inspected; only the copied fields in issue evidence survive.
+- Current published gen 526 (build/game/generation-526/game-g526.dll, code hash 75ff257e..., published 2026-11-22T21:28:06Z) was built from .dev/build-snapshots/game-dll-20261122T212248194307Z-487aa2/source. Its physics-collision-glb-main.cpp sha256 0abedb32... and physics-collision-glb-sweep-slide.cpp 6b5fd3... are identical to the current working tree and to proof 41/30 recorded collision hashes. Its server-npcs.cpp 8f37f955... differs from the worktree (72e1d221...) only by an uncommitted FCS retaliation-targeting hunk and includes the spawn instrumentation plus resolveSafeStandingSpawn(world, rawSpawn, 0.60f, 2.0f, 128, 25.0). So the candidate collision code is compiled and live in gen 526. Proof 41 is nonetheless stale: its recorded server-npcs.cpp hash 2c0d3e... no longer matches source.
+- New pinned fresh-NPC journal logs/2026-11-22/20261122_214309 (parallel_agent_test, gen 526, exe sha e24aaf16..., mode juggernaut horde, map dust2cyberiav4, --npcs 5, waves up to ~72 actor ids). npc.spawn.resolved fires at t~1.5s (safe_spawn_resolve_ms 0.11-0.17, solid_bounds=485). npc.collision-world.summary: npc_triangles=headless_triangles=5465, removed=0, union=0, solid_ids_aligned=true, unknown_solid_triangles=1534.
+- In that exact run npc.collision.fall-sample persists t=3.37s to ~793s: 5,535 + 7,466 + 7,504 = 20,505 events; 13,471 (65.7%) have candidate_count=0; 18,428 (89.9%) have world_contact=false (2,077 true). Every sample has grounded_this_tick=false by construction: src/physics/movement/physics-collision-glb-main.cpp:615 emits only when !groundedThisFrame && p.vel.z < -5.0f, rate-limited to 30 ticks per actor.
+- Fresh pinned run logs/2026-11-22/20261122_215639 (gen 530, fun counter strike, dust2cyberiav4) also contains 3,115 fall-sample events, same behavior.
+- Per-actor trajectories do NOT show sustained unbounded descent. Example NPC-200000: z=2347.08 at t=15.47, 2354.63 at t=410, 2352.63 at t=409/771, 2349.22 at t=793. Across 72 actors the largest first-to-last z drop is ~-13.4 m (NPC-200064); all actors persist and positions oscillate around ~2347. So the diagnostic fires during ordinary descending/ledge motion, not a continuous fall out of the world.
+- No retained journal is Payload/FunWorld3 Arcade. Every retained 2026-11-22 run is map=dust2cyberiav4 with mode juggernaut horde, fun counter strike, or ssbm server flag. The reported reproduction has not been run on any retained generation.
+
+INFERENCE / UNCERTAINTY
+- fall-sample cannot serve as a positive grounding proof: it only exists when NOT grounded, so an acceptance phrased as world_contact=true and grounded_this_tick=true is unsatisfiable from this event alone. A proof needs a positive grounded/contact event or position-stability evidence.
+- candidate_count=0 with world_contact=false shows the world-triangle query sometimes returns no candidate near a descending NPC capsule on gen 526, consistent with (not proof of) the previously hypothesized gatherGLBTriangles/broadphase gap. The oscillating trajectories and the missing Payload/FunWorld3 run leave the reported bug unproven.
+- The first divergence from the original report cannot be re-confirmed because the linked journal was pruned.
+
+CONTRARY EVIDENCE
+- The gen-420 fixture is gone, so the still-falling claim cannot be re-verified from disk.
+- On gen 526 no actor shows sustained descent; max drift -13 m with recovery, so this run does not reproduce the user report.
+- Some fall-samples have candidate_count up to 8 and world_contact=true, so candidate gathering is not uniformly empty.
+
+NEXT DISCRIMINATING CHECK (pinned)
+1. Via the root dev-loop start one isolated Payload/FunWorld3 Arcade run pinned to the current published generation (526, or the newer republished gen), small fresh NPC count; record run id, EXE sha256, DLL generation+sha256, journal path.
+2. In that exact journal require: latest game.hotness.summary.generation == pinned gen with server_path=dll; npc.spawn.resolved after run start; npc.collision-world.summary; and a positive grounded/contact signal (existing grounded event or an explicit contact sample), because fall-sample alone cannot show grounding.
+3. Pure unit/component self-tests are not substitutes. Fail if fresh-spawn NPC positions descend monotonically below the authored floor z with candidate_count staying 0 and world_contact=false across consecutive samples for the same actor. Pass only if positions stabilize at the floor with grounded/contact true and no sustained negative-z series.
+4. If fresh Payload NPCs still fail, record the first divergence as gatherGLBTriangles/broadphase coverage for the NPC capsule (candidate_count=0) at physics-collision-glb-main.cpp:615-645, not spawn validation (safe spawns landed at z~2360 on the tested map). Capture unknown_solid_triangles=1534 and solid_bounds for the failing map.
+
+CONFIDENCE
+- Facts (readiness, proof, hashes, counts, retention): high. Reported bug status: unproven. Candidate-gathering hypothesis: medium-low. Effective generation for the old samples: unverifiable, because the linked journal was deleted.

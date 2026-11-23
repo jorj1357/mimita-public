@@ -64,3 +64,45 @@ NO NEW EVIDENCE that the deliverable (the standard) is implemented; no fix is cl
 Process proposal from the issue-abac88bacd0d sweep (issue-review-sweeper, wake-b7248bd0b19e). This is evidence of repeated missing evidence, not a one-off: `.dev/dashboard-keepalive/events.jsonl` holds 6,040 events ending 2026-11-21T22:28:36Z, but the only 2026-11-21 sample is that dashboard-restart moment, after a ~32 h gap (2026-11-20T14:29:05Z to 2026-11-21T22:28:36Z); the earlier 2026-11-21T15:50Z independent review on this issue reported the same stale-journal condition. No continuous keepalive process exists. `dev-loop --status` prints `visibility=` from the game-launch policy (dev-loop.py:7668-7671), so the obvious status field is not a dashboard-window measurement. The watchdog only checks dashboard PID liveness (dev-loop-watch.py:123-144), so window-level visibility can be stale, hidden, or on another monitor with no automated, agent-readable health cadence. Result: a human or agent must manually run `devscripts/dashboard-keepalive.py` to learn whether the dashboard window is visible; this is a human-only evidence step repeated across at least two independent reviews.
 
 Proposal: make dashboard window health a first-class, continuously observed fact while `dashboard-policy.json` required=true. Measurable target: window-level health (pid, hwnd, visible, minimized, rect, monitor) is written to `.dev/dashboard-keepalive/events.jsonl` at least every 10 s with zero observation gaps >30 s over a measured 24 h run, a read-only command exposes the latest sample without changing window state, and the run creates zero duplicate dashboards. Smallest experiment: start the existing loop `python devscripts/dashboard-keepalive.py --interval 5` for a measured 10 minutes in this checkout (no `--focus`) and record event cadence, maximum gap, CPU cost, and dashboard count; accept only if maximum gap is <=30 s with one dashboard PID. If acceptable, wire that bounded loop under the existing watchdog tick; if CPU is excessive, replace the per-iteration PowerShell process scan with a native/read-only probe before wiring. This advances this issue's proof-gating goal and gives issue-abac88bacd0d a real reliability dataset instead of a single point-in-time sample.
+
+## Scheduled independent review
+
+### 2026-11-22T17:24:10.076Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-08c3032d2373 after 311 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive)
+
+### 2026-11-22T17:52:56.555Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Bounded independent sweep 2026-11-22 (read-only; no source edit, build, close, fix claim, or issue-state change).
+
+SCOPE
+Re-checked issue readiness, the small-desktop standard task and its proof, the exemplar dashboard monitor-retention proof, current dashboard state, and the keepalive journal, and compared them with the 2026-11-21 sweep.
+
+OBSERVED
+1. Readiness unchanged: issue brief issue-0cdac76fb006 still scores 1/8, ready=false, missing reproduction, expected_behavior, acceptance, paths, evidence, proof_expectation, risk. State=in_review; owner=dashboard-position-proof; the only linked task small-desktop-state-evidence-standard is still state=open.
+2. Deliverable still absent: glob + rg over docs found no reusable small/persistent-desktop proof checklist. Only this issue doc, the generic docs/workflows/issue-intake-and-triage.md and docs/specs/dev-loop/agent-proof-and-verification.md, and the exemplar regression record touch the topic.
+3. Task proof task-proof-bac2b095c7af is still result=unproven, verified_utc empty, evidence empty. Its pinned source hashes are now stale for BOTH files: issue-intake-and-triage.md 56d48ea9... -> f3d370b5..., and agent-proof-and-verification.md 9d2eaefb... -> c05d407e... The second was still 9d2eaefb at the 11-21 sweep, so drift increased.
+4. Exemplar proof task-proof-ed45c1b9e923 is still result=proven in the store but is dynamically reported stale for gui.py. Current gui.py working hash is 267e69ea... (11-21 sweep: 5739625d...). `git diff 935c0e7e^ HEAD -- devscripts/dev_loop/gui.py` contains no hunk touching window_bounds/_window_bounds/_tk_geometry/persist_window_geometry/GetWindowRect; the last commit to touch _window_bounds and the window_bounds persistence is d3368058 (2026-11-20), i.e. the proven fix. devscripts/dashboard-keepalive.py still matches the recorded d3cc3e94....
+5. Dashboard state moved again but is still on primary: `.dev/dashboard-ui.json` mtime 2026-11-22 12:30:57, geometry 786x748+290+46, window_bounds x=290 (11-21 sweep: 786x759+234+25). Dashboard PID 21072 (`dev-loop.py --dev-loop-role=dashboard ... --no-terminal-relaunch`) has run since 2026-11-22 09:08:52.
+6. Keepalive remains non-continuous: `.dev/dashboard-keepalive/events.jsonl` holds 6,040 events - 6,039 on 2026-11-20 and one 2026-11-21 sample at 22:28:36 (rect [-986,40,-200,788]); zero 2026-11-22 samples while PID 21072 runs, and no keepalive process is present. Live 2026-11-22 monitor retention is unobserved.
+
+INFERENCE / UNCERTAINTY
+- x=290 on the primary monitor is NOT proof of a snap: a human move is equally consistent, and the file was written at 12:30:57 while the dashboard had run since 09:08:52.
+- The region-level gui.py reading indicates the proven geometry code is unchanged; this is inference from diff hunks and commit history, not an exact hash match. The store records a working-tree sha256 (20fac330...) while git blobs use LF, so blob equality is not equivalent.
+- No live retention cycle was captured on 11-22, so the 11-20 proof remains point-in-time.
+
+CONTRARY EVIDENCE
+- dashboard-monitor-snap-REG-2026-11-20.md is FIXED with three restart cycles and no newer snapping report; the 11-22 primary placement may be benign.
+- The generic intake/proof workflow already encodes cold handoff, build-vs-runtime separation, and proof expectations; the missing piece is specifically the persistent-desktop checklist and its enforcement.
+
+NEXT DISCRIMINATING CHECK
+Start `python devscripts/dashboard-keepalive.py --interval 5` (no --focus) for one measured 10-minute window with the dashboard already on DISPLAY5 (x<0), then close/reopen the dashboard three times while it runs; record each dashboard.healthy rect and `.dev/dashboard-ui.json` after each cycle. If any cycle lands at x>=0 with no human move, retention regressed; if all stay negative, the 11-22 x=290 is user placement and only the standard remains. In parallel, re-pin task-proof-bac2b095c7af to the current doc hashes (both changed) and re-verify task-proof-ed45c1b9e923 by named geometry region instead of whole-file hash.
+
+PROCESS REVIEW
+None new found in this sweep. The two relevant gaps already have open proposals: continuous dashboard window health is proposed on this issue (2026-11-21T23:39) and now has a second day of confirming evidence; region-scoped staleness plus a named re-check command is proposed on issue-37a27bfdc575 (2026-11-21T15:51). This sweep adds no distinct proposal and does not duplicate them.
+
+No new evidence that the deliverable (the standard) is implemented; nothing is claimed fixed or closed.

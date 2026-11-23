@@ -474,22 +474,40 @@ int serverRuntimePublish(void* rawFrame) {
     auto& vehicleState = *static_cast<MimitaNet::ServerVehicleState*>(
         frame.vehicleState);
 
+    std::uint64_t vehicleTickUs = 0;
+    std::uint64_t snapshotBuildSendUs = 0;
+    std::uint64_t physicalReplicationUs = 0;
+    std::uint64_t vehicleReplicationUs = 0;
+    std::uint64_t disagreementRetryUs = 0;
+    std::uint64_t reliableEventsUs = 0;
+    auto phaseStart = Clock::now();
     MimitaNet::serverTickVehicles(vehicleState, players, &npcWorld,
                                   *frame.nextEntityId, frame.tick);
+    vehicleTickUs = microsecondsSince(phaseStart);
+    phaseStart = Clock::now();
     MimitaNet::buildAndSendSnapshot(sock, players, npcs, frame.tick,
                                     packetsOut);
+    snapshotBuildSendUs = microsecondsSince(phaseStart);
+    phaseStart = Clock::now();
     MimitaNet::serverReplicatePhysicalEntities(
         sock, players, frame.tick, packetsOut,
         *static_cast<MimitaNet::PhysicalEntityReplicationState*>(
             frame.physicalEntityReplication));
+    physicalReplicationUs = microsecondsSince(phaseStart);
+    phaseStart = Clock::now();
     MimitaNet::serverReplicateVehicles(sock, vehicleState, players, frame.tick,
                                        packetsOut);
+    vehicleReplicationUs = microsecondsSince(phaseStart);
+    phaseStart = Clock::now();
     MimitaNet::tickDisagreementRetransmit(
         sock, players,
         *static_cast<MimitaNet::DisagreementRetransmitState*>(
             frame.disagreementRetransmit),
         packetsOut);
+    disagreementRetryUs = microsecondsSince(phaseStart);
+    phaseStart = Clock::now();
     MimitaNet::tickReliableGameplayEvents(sock, players, packetsOut);
+    reliableEventsUs = microsecondsSince(phaseStart);
     if (frame.set_spawn_override) {
         const auto& overrides = MimitaNet::serverGameOverrides();
         frame.set_spawn_override(
@@ -500,6 +518,27 @@ int serverRuntimePublish(void* rawFrame) {
             overrides.spawnOverridePosition.z);
     }
     frame.publish_us = microsecondsSince(start);
+    static Clock::time_point lastSlowPublishDiagnostic{};
+    const auto finishedAt = Clock::now();
+    if (frame.publish_us >= 100000 &&
+        (lastSlowPublishDiagnostic == Clock::time_point{} ||
+         finishedAt - lastSlowPublishDiagnostic >= std::chrono::seconds(1))) {
+        lastSlowPublishDiagnostic = finishedAt;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "performance.server-publish-breakdown", "server-publish",
+            "slow server publish phase split by owner operation", frame.tick,
+            nlohmann::json{{"publish_us", frame.publish_us},
+                           {"vehicle_tick_us", vehicleTickUs},
+                           {"snapshot_build_send_us", snapshotBuildSendUs},
+                           {"physical_replication_us", physicalReplicationUs},
+                           {"vehicle_replication_us", vehicleReplicationUs},
+                           {"disagreement_retry_us", disagreementRetryUs},
+                           {"reliable_events_us", reliableEventsUs},
+                           {"players", players.size()},
+                           {"npcs", npcs.size()}},
+            __FILE__, __LINE__, __func__);
+    }
     return 1;
 }
 

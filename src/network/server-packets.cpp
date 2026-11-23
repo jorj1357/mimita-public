@@ -3101,6 +3101,7 @@ void buildAndSendSnapshot(SOCKET sock,
                           const std::unordered_map<uint32_t, ServerNpc>& npcs,
                           uint32_t tick, uint64_t& totalPacketsOut)
 {
+    const auto snapshotStart = std::chrono::steady_clock::now();
     // Build compact entity list
     CompactEntityData entities[MAX_SNAPSHOT_ENTITIES];
     uint32_t entityCount = 0;
@@ -3295,6 +3296,7 @@ void buildAndSendSnapshot(SOCKET sock,
         }
     };
 
+    const auto sendStart = std::chrono::steady_clock::now();
     for (const auto& kv : players)
     {
         uint64_t peerSentChunks = 0;
@@ -3337,6 +3339,9 @@ void buildAndSendSnapshot(SOCKET sock,
                   {"entity_count", entityCount} },
                 __FILE__, __LINE__, __FUNCTION__);
     }
+    const uint64_t sendUs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - sendStart).count());
     {
         if (capturePeerSends)
         {
@@ -3393,6 +3398,33 @@ void buildAndSendSnapshot(SOCKET sock,
     {
         gPreviousChunks = chunks;
         gPreviousTick = tick;
+    }
+
+    const uint64_t totalUs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - snapshotStart).count());
+    const uint64_t prepareUs = totalUs > sendUs ? totalUs - sendUs : 0;
+    static auto lastSlowSnapshotDiagnostic =
+        std::chrono::steady_clock::time_point{};
+    const auto diagnosticNow = std::chrono::steady_clock::now();
+    if (totalUs >= 100000 &&
+        (lastSlowSnapshotDiagnostic ==
+             std::chrono::steady_clock::time_point{} ||
+         diagnosticNow - lastSlowSnapshotDiagnostic >=
+             std::chrono::seconds(1)))
+    {
+        lastSlowSnapshotDiagnostic = diagnosticNow;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "performance.server-snapshot-breakdown", "server-snapshot",
+            "slow snapshot phase split between build and peer send", tick,
+            nlohmann::json{{"total_us", totalUs}, {"prepare_us", prepareUs},
+                           {"send_us", sendUs}, {"players", players.size()},
+                           {"npcs", npcs.size()}, {"entities", entityCount},
+                           {"chunks", chunks.size()},
+                           {"sent_chunks", sentChunks},
+                           {"failed_chunks", failedChunks}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
     // Best-effort reliability for VIP styles: re-broadcast every few seconds so

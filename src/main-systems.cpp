@@ -178,19 +178,14 @@ namespace {
 
 void postAgentMouseButton(int button, bool down)
 {
-    const DWORD flag = button == GLFW_MOUSE_BUTTON_RIGHT
-        ? (down ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP)
-        : (down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP);
-    mouse_event(flag, 0, 0, 0, 0);
+    InputRouter::ingestMouseButton(
+        button, down ? GLFW_PRESS : GLFW_RELEASE, InputRouter::Source::Agent);
 }
 
 bool postAgentMousePosition(double x, double y)
 {
-    if (!mimita::game::hostFocusWindow() ||
-        !mimita::game::hostSetCursorPos(x, y)) return false;
-    // GLFW may deliver the cursor callback on its next event poll. Publish
-    // the agent move to the canonical input owner now so the click in this
-    // command cannot use the pointer position from the previous frame.
+    // Keep agent pointer state inside this process. Never focus the window,
+    // move the desktop cursor, or emit a system-wide mouse event.
     InputRouter::ingestCursor(x, y, InputRouter::Source::Agent);
     return true;
 }
@@ -758,10 +753,11 @@ void registerAgentCommands()
                 Terminal::instance().addLog("[AGENT] invalid mouse coordinates");
                 return;
             }
-            if (mimita::game::hostSetCursorPos(x, y)) {
+            if (postAgentMousePosition(x, y)) {
                 writeAgentCommandEvent("input.normalized", "agent.mouse_move applied",
                                        {{"source", "agent"}, {"context", "menu_or_gameplay"},
-                                        {"action", "mouse_move"}, {"x", x}, {"y", y}});
+                                        {"action", "mouse_move"}, {"x", x}, {"y", y},
+                                        {"input_scope", "process_local"}});
             }
         }, "2026-11-14", CommandCategory::Debug
     });
@@ -818,11 +814,11 @@ void registerAgentCommands()
                 Terminal::instance().addLog("[AGENT] invalid mouse coordinates");
                 return;
             }
-            postAgentMouseButton(button, true);
-            postAgentMouseButton(button, false);
+            InputRouter::queueAgentMouseClick(button);
             writeAgentCommandEvent("input.normalized", "agent.mouse_click queued",
                 {{"source", "agent"}, {"context", "menu_or_gameplay"},
-                 {"action", "mouse_click"}, {"button", button == GLFW_MOUSE_BUTTON_RIGHT ? "right" : "left"}});
+                 {"action", "mouse_click"}, {"button", button == GLFW_MOUSE_BUTTON_RIGHT ? "right" : "left"},
+                 {"input_scope", "process_local"}});
         }, "2026-11-14", CommandCategory::Debug
     });
 
@@ -840,13 +836,11 @@ void registerAgentCommands()
                 const double y = std::stod(args[1]);
                 const int notches = std::clamp(std::stoi(args[2]), -20, 20);
                 if (notches == 0 || !postAgentMousePosition(x, y)) return;
-                const LONG wheelDelta = static_cast<LONG>(notches * WHEEL_DELTA);
-                mouse_event(MOUSEEVENTF_WHEEL, 0, 0,
-                            static_cast<DWORD>(wheelDelta), 0);
-                writeAgentCommandEvent("input.normalized", "agent mouse scroll injected",
+                writeAgentCommandEvent("agent.mouse.scroll.unsupported",
+                    "process-local scroll injection is not available; no OS input was sent",
                     {{"source", "agent"}, {"context", "menu_or_gameplay"},
                      {"action", "mouse_scroll"}, {"x", x}, {"y", y},
-                     {"notches", notches}, {"wheel_delta", wheelDelta}});
+                     {"notches", notches}, {"input_scope", "process_local"}});
             } catch (...) {
                 Terminal::instance().addLog("[AGENT] invalid scroll coordinates or notches");
             }
@@ -897,12 +891,13 @@ void registerAgentCommands()
     });
 
     Terminal::instance().registerCommand({
-        "agent.gui_button", "Press or release a UI button by its current scanned ID.",
-        "agent.gui_button <element_id> <down|up>",
+        "agent.gui_button", "Click or press/release a UI button by its current scanned ID.",
+        "agent.gui_button <element_id> <click|down|up>",
         [](const std::vector<std::string>& args) {
-            if (args.size() < 2 || (args[1] != "down" && args[1] != "up")) {
+            if (args.size() < 2 || (args[1] != "down" && args[1] != "up" &&
+                                    args[1] != "click")) {
                 Terminal::instance().addLog(
-                    "[AGENT] Usage: agent.gui_button <element_id> <down|up>");
+                    "[AGENT] Usage: agent.gui_button <element_id> <click|down|up>");
                 return;
             }
             const auto& widgets = uiGetTrackedWidgets();
@@ -941,10 +936,13 @@ void registerAgentCommands()
                      {"x", x}, {"y", y}});
                 return;
             }
-            const bool down = args[1] == "down";
-            postAgentMouseButton(GLFW_MOUSE_BUTTON_LEFT, down);
+            if (args[1] == "click")
+                InputRouter::queueAgentMouseClick(GLFW_MOUSE_BUTTON_LEFT);
+            else
+                postAgentMouseButton(GLFW_MOUSE_BUTTON_LEFT, args[1] == "down");
             writeAgentCommandEvent("agent.gui.button", "agent UI button input injected",
                 {{"element_id", found->id}, {"operation", args[1]},
+                 {"input_scope", "process_local"}, {"window_focus_requested", false},
                  {"x", x}, {"y", y}, {"design_rect", {
                      {"x", found->rect.x}, {"y", found->rect.y},
                      {"w", found->rect.w}, {"h", found->rect.h}}}});

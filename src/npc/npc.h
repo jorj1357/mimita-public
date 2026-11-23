@@ -121,6 +121,23 @@ public:
     uint32_t movementStuckRecoveryCount = 0;
     uint32_t movementStuckJumpCount = 0;
     glm::vec3 movementStuckEpisodeStartPos{0.0f};
+    // Bounded per-life movement measurement. Values use the engine/world
+    // scale requested for this game: one world unit equals one metre.
+    bool movementMetricsInitialized = false;
+    glm::vec3 movementMetricsLifeStartPos{0.0f};
+    glm::vec3 movementMetricsPreviousPos{0.0f};
+    glm::vec3 movementMetricsLocalAnchor{0.0f};
+    float movementMetricsLifeSeconds = 0.0f;
+    float movementMetricsDistanceM = 0.0f;
+    float movementMetricsPlanarDistanceM = 0.0f;
+    float movementMetricsLocalDwellSeconds = 0.0f;
+    float movementMetricsMaxLocalDwellSeconds = 0.0f;
+    float movementMetricsIntentSeconds = 0.0f;
+    float movementMetricsBlockedMotionSeconds = 0.0f;
+    float movementMetricsWallAvoidSeconds = 0.0f;
+    float movementMetricsSampleSeconds = 0.0f;
+    uint32_t movementMetricsPoseContactSamples = 0;
+    uint32_t movementMetricsWallAvoidSamples = 0;
     ActorFinalPoseState finalPose;
     uint64_t finalPoseLastPenetrationLogTick = 0;
     uint64_t finalPoseLastPushoutLogTick = 0;

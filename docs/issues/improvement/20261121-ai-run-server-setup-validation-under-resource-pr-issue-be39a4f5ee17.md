@@ -201,3 +201,83 @@ Current preflight at 2026-11-21T15:35Z: EXE build_status=published_stale, game_b
 ### 2026-11-21T16:16:29.021Z — root-dll-status-review
 
 TASK OWNERSHIP CORRECTION (root-dll-status-review, after a mutual cancellation race with the 15:51 opencode session): final open tasks are rpsv-host-sampler, rpsv-bounded-load, rpsv-stage-timing, rpsv-proof-matrix (owner unassigned) and server-load-baseline (opencode). server-load-safety-gate and server-load-pressure-matrix remain cancelled as duplicates. Implementation/proof still needs human approval; baseline stays NOT_TESTED while free physical memory is 0.27 GB.
+
+## Agent suggestion
+
+### 2026-11-22T16:18:12.834Z — codex-networking-stall-fix
+
+Reproduced an early server-start failure on three isolated attempts: runs 20261122_155609 and 20261122_160401 pinned gen500, and 20261122_161300 pinned gen502; each server PID exited code 1 before logger.started within the dev-loop 25s gate, and each run.json names a server journal that does not exist. The dev-loop journal does record parallel-run.started, instance.started, then parallel-run.failed, so the error is visible but the first server-side cause is not. The attempts overlapped the 15+ minute generation-501 compile (642 sources, 10 jobs, cache seeded=0), which is a resource-pressure correlation only, not proven causation. For 20261122_161300 the exact dev-loop journal is logs/2026-11-22/20261122_161300/dev-loop/events.jsonl and run.json pins EXE SHA 4fa387f... and game DLL gen502 SHA 2263b140... . Need preserve child stdout/stderr or add earlier startup diagnostics so the actual exit-1 reason is observable before logger.started.
+
+## Agent suggestion
+
+### 2026-11-22T16:41:10.987Z — codex-networking-stall-fix
+
+Fresh no-build FCS/dust2cyberiav4 pinned run 20261122_163129 (EXE SHA 4fa387f46e02a3a9d136abff3849b879306ecd354f07e145b35b10d20a8d2136, game DLL gen502 SHA 2263b140a04bcbb12a60b719632708439c077bcc56affaa2eb13e2f45d7c744c) still missed server-ready: dev-loop timed out at 60s waiting for network.server.local-gameplay-ready and stopped before launching the client. Server journal: logs/2026-11-22/20261122_163129/server-01/events.jsonl. world_load started 16:31:33.341Z; map load succeeded 16:31:49.278Z; authored base capture logged 16:32:06.142Z; authored geometry completed 16:32:16.148Z; npc.collision-world.summary logged 16:32:21.772Z (seq78). No server.policy.world event, world_load complete, room registration or local gameplay-ready before the harness timeout. In src/network/server-npcs.cpp:384-410, npc.collision-world.summary is emitted before rebuildNpcSolidBounds and buildCollisionChunks, so the ordered journal/source trace narrows the stall to the remaining NPC collision prep path, with buildCollisionChunks as the leading call-site candidate; it does not yet prove which call duration. I queued start/complete phase events around both calls; candidate runtime proof is pending.
+
+## Agent suggestion
+
+### 2026-11-22T17:19:54.640Z — codex-networking-stall-fix
+
+Source lead: src/debug/log-manager.cpp LogManager::init ran cleanupOldFormat and rotateLogs before MimitaNet::runServer initialized StructuredLogger. rotateLogs recursively walked the entire logs tree and sorted matching files; cleanupOldFormat could remove a whole dated directory. Removed both traversals/calls and dead declarations. Duration, logger readiness improvement, and connection effect remain unproven pending pinned DLL runtime.
+
+## Agent suggestion
+
+### 2026-11-22T17:41:02.142Z — codex-networking-stall-fix
+
+Pre-fix reproduction in pinned run 20261122_173811 (networking-validation, Fun Counter Strike, dust2cyberiav4; EXE SHA 4fa387f46e02a3a9d136abff3849b879306ecd354f07e145b35b10d20a8d2136; old DLL gen500 SHA 907486df17b9ed036abfeeb830a262626b42587321a513d9438e0c5cc2decbdc): server launched at 17:38:12.050Z; harness timed out at 26.422s waiting for logger.started; journal absent, output tail empty, server still alive before harness cleanup; manifest exit_code 1 is after cleanup, not a proven natural exit. No client or room registration. This reproduces prelogger startup failure on old artifact; not proof of the source fix.
+
+## Agent suggestion
+
+### 2026-11-22T17:45:37.615Z — codex-networking-stall-fix
+
+Cross-agent live FCS run 20261122_174002 is active in root dev-loop while a 642-source/10-job game-DLL build runs. EXE build 3e52717b7ea5919fb05f896124b6b5ecf44eb67c72724707c3686c48585ead2d; server room RQN8QSG, local client joined. Server room_register took 953.878ms after world_load; full startup to room registration was about 18.6s (logger 4.14s, config 4.986s, world_load 8.204s; server.policy.world reports NPC collision build 4.177s). Client accepted at 17:40:32.431Z, then snapshot_starved age 2514ms at 17:40:35.283Z. Server continued network.server.snapshot.send every ~1s with peer connection_stale=false and 8 chunks while client received no snapshots for 16.722s (last 17:40:41.973Z, next 17:40:58.695Z); client performance/frame events continued. Client then scheduled health_lost reconnect at snapshot_age_ms=16087, reconnect accepted, status waiting_for_snapshot (room_code empty in client reconnect event), and snapshots resumed 0.93s later and about 1.0s intervals. This separates server send cadence from client receive/reassembly/recovery, but does not yet identify packet transport loss vs client receive handling. Journals: logs/2026-11-22/20261122_174002/{server-01,client-01}/events.jsonl.
+
+## Agent suggestion
+
+### 2026-11-22T18:08:54.968Z — codex-networking-stall-fix
+
+Observed pinned runtime run 20261122_174002, build 2026-11-22T17:39:49.763492Z:3e52717b7ea5919fb05f896124b6b5ecf44eb67c72724707c3686c48585ead2d, game generation 507, client journal logs/2026-11-22/20261122_174002/client-01/events.jsonl. At 17:40:44.364Z stall watchdog reported frame_heartbeat_age_ms=1709, frame 1186, progress engineTickSimulate/Networking line 216. Stack captured 17:40:44.399Z and repeated at 50.145Z and 56.117Z: NtCreateFile -> GetDriveTypeW -> CreateFileW -> wmktemp_s -> wopen -> game-g502.dll+0x12d5f3 resolves to CosmeticSystem::loadCosmeticGLB at src/avatar/cosmetic-system.cpp:91:24, -> loadCosmetics at :108:24 -> AvatarSystem::applyAvatarToPlayer at src/avatar/avatar-atlas.cpp:1062:70. This pins a synchronous GLB cosmetic load/file operation inside avatar application on the client networking tick. Client journal shows last normal snapshot around 17:40:41.973Z then next at 17:40:58.695Z (16.722s gap); server journal continued sending snapshots roughly each second, 8 chunks and zero failed chunks. Watchdog heartbeat age reached 15,953ms while main-thread CPU advanced only ~16ms. Client scheduled health_lost reconnect at 17:40:58.743Z, accepted at 17:40:58.782Z, and snapshots resumed ~17:40:59.714Z. Observed cause: blocking cosmetic load in network tick stalls packet/frame processing and makes a healthy-sending server look stale. Safe fix needs CPU parse/file IO off main thread with GL upload on owner thread, reusing existing async GLB pattern rather than moving GL calls to a worker. This run is FCS/reconnect, not direct Community Browser join reproduction; exact browser flow remains to reproduce. Do not close until pinned post-fix runtime proves avatar/cosmetic replication does not stall snapshots.
+
+## Agent suggestion
+
+### 2026-11-22T19:01:25.247Z — codex-networking-stall-fix
+
+Observed pinned candidate run 20261122_184056 (Fun Counter Strike, dust2cyberiav4), client/server journals under logs/2026-11-22/20261122_184056, EXE build 2026-11-22T17:39:49.763492Z SHA-256 3e52717b7ea5919fb05f896124b6b5ecf44eb67c72724707c3686c48585ead2d; launched with game DLL generation 512. Server accepted client/player 1 at 18:41:41.186Z and sent Welcome successfully at 18:41:41.386Z. It sent 3 chunks at 18:41:41.445Z, then next snapshot send was 18:41:53.607Z: 12.162 seconds later. Client applied its next snapshot at 18:41:53.607Z with snapshot_interarrival_ms=11281 and had scheduled health_lost reconnect at 18:41:52.389Z. The server journal pins the missed send to the authoritative NPC simulation: performance.server-tick-stall at tick 838, src/network/server.cpp:1595-1611, total_ms=11219.172, npc_ms=11202.531, npcs=19, players=1. Its nested npc.tick-cost (simulateSharedNpcs, src/network/server-npcs.cpp:3249) reports npc_adoption_ms=8471.6469, npc_ai_ms=38.1601, ai_update_ms=0.3799, pair_ms=134.8701, rebuild_ms=2.3346, total_ms=8648.0323. Thus this reproduction accepted the connection; the long snapshot wait follows a large one-time NPC adoption/spawn cost, not a server acceptance rejection or missing steady snapshot sender. The adoption timer starts immediately before adoptNewServerNpcs at src/network/server-npcs.cpp:1967-1968; likely hot candidates inside that function are spawnNpc at :614 and profile/finalize work at :664-726. Exact inner operation still needs bounded timing; do not claim a specific subcall yet. After the stall, snapshots resumed and client received 19 NPCs. Candidate runtime also emitted cosmetic.load.started/completed for jason1.glb 2 ms apart, so the cosmetic async change is exercised but does not address this server-side NPC adoption stall. Keep networking/startup/NPC issues open; next discriminating step is measure adoptNewServerNpcs subphases under pinned FCS startup and optimize the dominant existing owner.
+
+## Agent suggestion
+
+### 2026-11-22T20:32:25.243Z — codex-networking-stall-fix
+
+New runtime evidence from pinned FCS networking-validation run 20261122_202850 (EXE build 2026-11-22T19:53:22.116562Z, game DLL gen514, dust2cyberiav4; 19 NPCs): client emitted network.client.snapshot.gap at 20:29:23.776Z with snapshot_age_ms=2502 and then 1s increments to 9512ms; server fixed-tick stall at 20:29:31.468Z was 10342.214ms, npc_ms=10234.199, snapshot_ms=70.732. npc.tick-cost seq836 at 20:29:30.226Z attributed 9011.717ms to npc_adoption_ms (simulateSharedNpcs in src/network/server-npcs.cpp:3249); next NPC tick seq1724 at20:29:35.539Z took 4069.372ms, with ai_update_ms=4063.244 and worst_ai_actor=100018 at4016.699ms. Thus long first-contact snapshot wait is directly explained by synchronous NPC work on the same server fixed-tick thread, not the snapshot sender in this run. Exact inner adoption operation remains unknown and files are currently under another agent ownership query; fix and stability not proven. Keep open.
+
+## Agent suggestion
+
+### 2026-11-22T22:33:48.265Z — cpp-latency-small-tu-benchmark
+
+Run-manifest/pin follow-up from live pressure execution: run 20261122_222548 declares a pinned initial candidate gen536 (run.json and server run.started event). While it stayed online in one server PID27676, root dev-loop published and runtime activated gens537, 538, and 539 in place; each swap has same-PID `game.generation.swap_begin`, `.candidate_loaded`, `.swap_end`, and `.activated` events. The manifest still declares the initial gen536/DLL hash. This could be intended hot-follow for pressure testing, but conflicts with wording that an isolated test run pins one game-DLL generation unless pin means only initial load. Please clarify the invariant and expose current/active generation transitions in run metadata, so latency and behavior claims can state which build the server actually exercised. The run was mode44 Juggernaut Horde on dust2cyberiav4 with the tdm-validation profile and 5 configured NPCs; no process was stopped.
+
+## Agent suggestion
+
+### 2026-11-22T22:54:03.123Z — cpp-latency-pressure-focus
+
+Resource-pressure follow-up: a post-canary psutil sample found four live MiMITA processes and RobloxPlayerBeta, host CPU 100%/12 logical processors and 2.66 GiB available; an independent root dev-loop test-run inventory shows another agent owns a live Juggernaut pair (run 20261122_205852). I did not launch or stop that run. Gen540 is not runtime-proven; the separate Juggernaut run was already live and unrelated to this candidate. Reuse it only for pressure context unless its owner explicitly coordinates candidate activation.
+
+## Agent discussion and suggestions
+
+### 2026-11-22T23:01:46.218Z — codex-networking-stall-fix
+
+Message: `msg-cb7f985b4af1` (message)
+
+Subject: Gen541 resource-pressure server startup timing evidence
+
+Gen541 startup evidence from run 20261122_224628: server.startup.stage world_load started 22:46:31.375Z/completed 22:46:55.939Z (24,563.24ms), then network_bind completed 0.53ms and map_config_load 0.81ms; room_register did not begin until after world load, started 22:46:55.943Z and completed 590.98ms at 22:46:56.534Z with code 7XPE5ZA. Thus room-code registration itself was under 1s in this capture; server became joinable only after the 24.56s map collision world load at src/network/server.cpp:890-909. This misses the user <1s start-to-join target. Need investigate world-load subphases and whether safe pre-load/async registration can expose a code earlier without accepting joins before simulation readiness.
+
+## Agent discussion and suggestions
+
+### 2026-11-22T23:16:17.100Z — codex-networking-stall-fix
+
+Message: `msg-85c727638bfc` (message)
+
+Subject: World-load subphase attribution and Recast prewarm fix under build
+
+Exact startup gate from rotated events-0007 in run 20261122_224628/gen541: `npc.navmesh.bake-success` reports Recast build_ms=11,700.2505 over 5,465 triangles at src/network/server-npcs.cpp:463-465. `buildNpcWorldCollision` is called synchronously from `src/game/server-policy-module.cpp:249` before server.cpp registers the room. The policy condition scans every loaded behavior profile, so an unrelated loaded Recast profile can trigger this bake. The candidate fix moves this same bake to a background candidate built from a World snapshot and adopts it on the server simulation thread after content-hash validation. Current gate still needs fresh build/runtime proof. Full world_load was 24,563.2437ms: headless loader 6,422.453ms, authored-base capture 1,615.894ms, authored geometry 1,723.178ms, authored cache seed 1,175.604ms, NPC collision build 13,625.586ms. Network bind itself was 0.531ms; room registration 590.98ms after world load.

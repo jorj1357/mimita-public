@@ -10,6 +10,10 @@ The manifest stage took 5.162s over 1,008 source and 1,217 header paths. Source 
 
 There were 11.432s from `build.started` to `worker_input_validation.started`. Named pre-worker stage durations sum to 7.276s (manifest 5.162s, validation .016s, source snapshot .792s, resident-state codegen cache hit reported 0s, packet-registry codegen 1.306s), leaving 4.156s not represented by those duration fields. The resident-state cache-hit start/end events are .315s apart despite the summary duration being zero. Event gaps and worker handoff account for additional wall time; the exact 1.676s after packet-registry completion and before worker input validation is a priority candidate for the next instrumentation pass.
 
+## Failure boundary check
+
+The optional presentation-DLL path in `build.py` (lines 652-812) already records failures, continues the authoritative EXE build, and caches an unchanged failed input fingerprint for a bounded 30-minute retry interval. Required whole-game DLL compile/link/coherence failures still reject that candidate so stale or partial code cannot publish; the last successful generation remains the runtime fallback. This activation did not inject a new failure or run an EXE build.
+
 ## Validation
 
 - `python -m py_compile devscripts/game_build_worker.py devscripts/quality/test_game_build_time_report.py` — passed.

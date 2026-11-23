@@ -13,9 +13,12 @@ from ctypes import wintypes
 import hashlib
 import json
 import os
+import re
 import subprocess
+import threading
 import time
 import uuid
+from collections import deque
 from pathlib import Path
 
 from devscripts.dev_loop.instances import (
@@ -31,6 +34,11 @@ GAME_CURRENT = ROOT / "build" / "game" / "current.json"
 GAME_READY = ROOT / "build" / "game" / "ready.json"
 PROFILE_ROOT = ROOT / "devscripts" / "dev-profiles"
 LAUNCH_MODES = ROOT / "devscripts" / "dev-launch-modes.json"
+_PROCESS_OUTPUT_SECRET = re.compile(
+    r"(?i)(\b(?:join[_ -]?token|reconnect[_ -]?token|token|password|"
+    r"room[_ -]?code|server[_ -]?code)\b\s*[:=]\s*)"
+    r"(\"[^\"]*\"|'[^']*'|[^\s,;]+)"
+)
 
 
 def _read_json(path: Path) -> dict:
@@ -39,6 +47,35 @@ def _read_json(path: Path) -> dict:
     except (OSError, json.JSONDecodeError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _capture_process_output_tail(process: subprocess.Popen, *, max_lines: int = 24,
+                                 max_line_chars: int = 512):
+    """Drain child output without blocking startup and keep only a redacted tail."""
+    tail = deque(maxlen=max_lines)
+    lock = threading.Lock()
+
+    def read_output() -> None:
+        stream = process.stdout
+        if stream is None:
+            return
+        try:
+            for line in stream:
+                safe = _PROCESS_OUTPUT_SECRET.sub(r"\1[redacted]", line.rstrip())
+                with lock:
+                    tail.append(safe[:max_line_chars])
+        except (OSError, ValueError):
+            return
+        finally:
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+    reader = threading.Thread(
+        target=read_output, name=f"dev-loop-output-{process.pid}", daemon=True)
+    reader.start()
+    return tail, lock, reader
 
 
 def _same_process_start_time(actual: str, expected: str) -> bool:
@@ -437,7 +474,8 @@ def _process_identity(pid: int) -> dict:
 
 
 def _wait_event(journal: Path, event_name: str, pid: int, timeout: float,
-                *, role: str = "", field: str = "", value=None) -> dict | None:
+                *, role: str = "", field: str = "", value=None,
+                process: subprocess.Popen | None = None) -> dict | None:
     deadline = time.monotonic() + timeout
     offset = 0
     while time.monotonic() < deadline:
@@ -463,6 +501,8 @@ def _wait_event(journal: Path, event_name: str, pid: int, timeout: float,
                     return event
         except OSError:
             pass
+        if process is not None and process.poll() is not None:
+            return None
         time.sleep(0.1)
     return None
 
@@ -534,6 +574,9 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
                    "map": map_name}, "isolated test run started under the root dev-loop CLI")
     server: subprocess.Popen | None = None
     client: subprocess.Popen | None = None
+    server_output_capture = None
+    server_logger_started = False
+    server_start_monotonic = 0.0
     try:
         server_args = _server_args(exe, profile, mode, map_name, room_file)
         server_env = {
@@ -548,8 +591,13 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
             **({"MIMITA_GAME_DLL": str(metadata["game_dll"])}
                if metadata.get("game_dll") else {}),
         }
-        server = subprocess.Popen(server_args, cwd=ROOT, env=server_env,
-                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        server_start_monotonic = time.monotonic()
+        server = subprocess.Popen(
+            server_args, cwd=ROOT, env=server_env, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+            errors="replace", bufsize=1,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        server_output_capture = _capture_process_output_tail(server)
         server_identity = _process_identity(server.pid)
         if os.name == "nt" and not server_identity.get("process_started_utc"):
             raise RuntimeError(f"cannot verify test server process identity for pid {server.pid}")
@@ -565,8 +613,9 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
                        "build_id": metadata["build_id"], "journal_path": str(layout.server_journal)},
                       "isolated test server process created")
         if _wait_event(layout.server_journal, "logger.started", server.pid, 25.0,
-                       role="server") is None:
+                       role="server", process=server) is None:
             raise RuntimeError(f"test server {server.pid} did not report logger.started")
+        server_logger_started = True
         if _wait_event(layout.server_journal, "module.host.started", server.pid, 30.0) is None:
             raise RuntimeError("test server did not report module.host.started")
         expected_generation = int(game_identity.get("generation") or 0)
@@ -599,6 +648,7 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
             **os.environ, "MIMITA_EVENTS_FILE": str(layout.client_journal),
             "MIMITA_INSTANCE_ID": "client-01", "MIMITA_LAUNCH_ID": launch_id,
             "MIMITA_DEV_LOOP_SERVER": "1", "MIMITA_RUN_ID": run_id,
+            "MIMITA_AGENT_HEADLESS_GUI": "1",
             "MIMITA_EXPECTED_RUN_ID": run_id,
             "MIMITA_EXPECTED_BUILD_ID": metadata["build_id"],
             "MIMITA_BUILD_ID": metadata["build_id"],
@@ -670,6 +720,7 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
                 "server_journal_path": str(layout.server_journal),
                 "client_journal_path": str(layout.client_journal)}
     except Exception as error:
+        server_exit_code_before_cleanup = server.poll() if server is not None else None
         for process in (client, server):
             if process is not None and process.poll() is None:
                 process.terminate()
@@ -677,6 +728,8 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
                     process.wait(timeout=3.0)
                 except subprocess.TimeoutExpired:
                     process.kill()
+        if server_output_capture is not None:
+            server_output_capture[2].join(timeout=1.0)
         for row in manifest.get("instances", []):
             pid = int(row.get("pid") or 0)
             row["state"] = "failed" if pid else "not_started"
@@ -686,9 +739,23 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
         manifest["status"] = "failed"
         manifest["failure"] = str(error)
         write_run_manifest(layout, manifest)
-        _append_event(layout, "dev-loop.parallel-run.failed",
-                      {"error": str(error), "server_pid": server.pid if server else None,
-                       "client_pid": client.pid if client else None},
+        failure_fields = {
+            "error": str(error), "server_pid": server.pid if server else None,
+            "client_pid": client.pid if client else None,
+        }
+        if server is not None and not server_logger_started:
+            failure_fields.update({
+                "server_exit_code_before_cleanup": server_exit_code_before_cleanup,
+                "server_startup_elapsed_ms": round(
+                    (time.monotonic() - server_start_monotonic) * 1000, 3)
+                    if server_start_monotonic else 0.0,
+                "server_journal_exists": layout.server_journal.is_file(),
+            })
+            if server_output_capture is not None:
+                tail, tail_lock, _ = server_output_capture
+                with tail_lock:
+                    failure_fields["server_startup_output_tail"] = list(tail)
+        _append_event(layout, "dev-loop.parallel-run.failed", failure_fields,
                       "isolated test run failed during readiness")
         if run_lease is not None:
             run_lease[0].CloseHandle(run_lease[1])
@@ -735,6 +802,7 @@ def start_second_client(run_id: str, client_name: str = "") -> dict:
         **os.environ, "MIMITA_EVENTS_FILE": str(journal),
         "MIMITA_INSTANCE_ID": "client-02", "MIMITA_LAUNCH_ID": launch_id,
         "MIMITA_DEV_LOOP_SERVER": "1", "MIMITA_RUN_ID": run_id,
+        "MIMITA_AGENT_HEADLESS_GUI": "1",
         "MIMITA_EXPECTED_RUN_ID": run_id,
         "MIMITA_EXPECTED_BUILD_ID": str(identity.get("build_id") or ""),
         "MIMITA_BUILD_ID": str(identity.get("build_id") or ""),

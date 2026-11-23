@@ -122,7 +122,7 @@ The honest claim is smaller and still useful: when a session has accumulated unr
 
 ## Long-running goals survive turns and session resets
 
-- Status: `RECOMMENDED_PRACTICE` — requested by the project owner and supported by this latency investigation; not yet a controlled measure of agent completion quality.
+- Status: `GOLD REFERENCE / RECOMMENDED_PRACTICE` — requested by the project owner and supported by this latency investigation; not yet a controlled measure of agent completion quality.
 - Audience: agents pursuing a user-authorized goal across multiple turns or work activations.
 - Purpose: keep one durable objective moving for as long as needed, including when the user says only “continue,” without requiring them to repeat the whole request.
 
@@ -135,6 +135,8 @@ Treat a follow-up such as “continue” as steering for the active goal unless 
 5. Keep the goal active while required outcomes remain. A failed optional tool, an elapsed-time boundary, a context reset, or one successful partial optimization does not complete the goal. Mark it complete only when its stated acceptance is met and the required evidence exists; record the remaining blocker if progress needs user input or an external change.
 
 This practice supports long work while retaining the fresh-session handoff above: continuity belongs in the explicit goal, issue, and checkpoint, not in an indefinitely growing chat transcript.
+
+The project owner explicitly praised this behavior during the ongoing C++ edit-to-live latency goal: “add gold behaivor of pursuing goal mode i think thisi s great and should domore like this letting ai work for long long times bc thats what id end up doing just sending same thign anyway continue”. Treat repeated “continue” messages as authorization to keep advancing that same active goal. Do not interpret them as a request to restart the investigation, close a partially completed goal, or ask the owner to repeat already-recorded requirements. This example is evidence of the requested workflow, not evidence that the latency target has been met.
 
 ## Optional tools and accelerators fail open
 
@@ -150,6 +152,10 @@ Keep each optional capability separate from the primary build result:
 - A profiler or optional fast-path failure must not fail an otherwise valid required build or report the goal blocked when safe fallback evidence or execution remains available.
 - Preserve failures in required correctness gates. Compiler, linker, generated-source validation, source-coherence, and cache-freshness failures still fail the build; fail-open applies only to optional capabilities whose failure leaves a valid primary result.
 - Report build, optional-capability, diagnostic, and activation statuses separately so “EXE succeeded, presentation DLL unavailable, live reload not activated” is unambiguous.
+
+For a required live-reload candidate, fail the candidate transaction without taking down a healthy running game: never publish partial objects or advance `current.json` after a required compile, link, coherence, or freshness failure. Keep the last-good generation available, report the exact failed attempt and source revision, and accept a corrected or newer revision as a fresh candidate. Do not mark the requested edit active until the runtime journal proves that exact generation was loaded and committed. This is failure containment, not fail-open compilation: invalid code must remain rejected, while the longer user-authorized goal continues through diagnosis and a corrected attempt.
+
+After the runtime reports activation, keep the proof state separate from sustained health: observe the owned server/client through a defined post-swap window and report any process exit, crash, or frozen peer. A successful build and `game.generation.activated` event prove publication and loading, not that the game stayed healthy afterward. Continue the goal through crash attribution or a verified healthy run; do not restart a peer while another task owns it without coordinating first.
 
 In this investigation, `wpr -start CPU -filemode` returned `0xc5585011` because Windows would not enable system-performance profiling policy. WPR did not start recording and no game build was attempted as part of that call. The investigation continued using the dev-loop timing JSONL, runtime journal, and a Python/psutil process sample. This was a failed optional measurement tool, not a failed build.
 

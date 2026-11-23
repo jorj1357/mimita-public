@@ -31,6 +31,7 @@ from devscripts.dev_loop import game_build as game_build_module  # noqa: E402
 from devscripts import game_build_worker as game_build_worker_module  # noqa: E402
 from devscripts.game_build_worker import (  # noqa: E402
     cached_dependency_tokens,
+    cached_stat,
     dependency_relative,
     identity_provider_text,
     identity_text,
@@ -205,6 +206,32 @@ class SourceSnapshotTests(unittest.TestCase):
             [str(ROOT / "src/a.cpp"), str(ROOT / "src/a.h")])
         self.assertIsNone(cached_dependency_tokens(
             index, "src/a.cpp", "different-hash", dep))
+
+    def test_dependency_freshness_uses_frozen_project_inputs_then_live_fallback(self) -> None:
+        source_root = self.root / ".dev" / "build-snapshots" / "attempt" / "source"
+        source = self.root / "src" / "game.cpp"
+        header = self.root / "include" / "game.h"
+        for path in (source, header,
+                     source_root / "src" / "game.cpp",
+                     source_root / "include" / "game.h"):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(path.as_posix(), encoding="utf-8")
+
+        # Simulate edits made after the build snapshot was frozen.
+        os.utime(source, (200, 200))
+        os.utime(header, (200, 200))
+        os.utime(source_root / "src" / "game.cpp", (100, 100))
+        os.utime(source_root / "include" / "game.h", (100, 100))
+
+        with mock.patch.object(game_build_worker_module, "ROOT", self.root), \
+                mock.patch.object(game_build_worker_module, "SOURCE_ROOT", source_root):
+            cache = {}
+            self.assertEqual(cached_stat(str(source), cache).st_mtime, 100)
+            self.assertEqual(cached_stat("include/game.h", cache).st_mtime, 100)
+
+            # A pruned snapshot keeps the long-lived dependency index usable.
+            (source_root / "src" / "game.cpp").unlink()
+            self.assertEqual(cached_stat("src/game.cpp", {}).st_mtime, 200)
 
     def test_log_prune_keeps_newest_date_directories(self) -> None:
         logs = self.root / "logs"

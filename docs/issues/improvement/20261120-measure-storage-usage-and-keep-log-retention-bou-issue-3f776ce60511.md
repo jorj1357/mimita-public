@@ -70,3 +70,45 @@ Proposal: before pruning a dated log root, scan open issues in docs/issues and p
 Measurable target: zero dangling open-issue/proof run-journal references over a 7-day window. Baseline from this sample: at least 3 referenced 2026-11-20 runs are already missing. Dry-run output must report exact bytes retained for referenced evidence and exact bytes removable.
 
 Smallest experiment: add the read-only reference pre-scan behind a dry-run flag first and run it once on the current tree; compare referenced-run count and removable bytes before enabling any skip behavior. Do not broaden deletion; preserve newest three roots and active runs. Proposal only, no source edits by this reviewer.
+
+## Agent suggestion
+
+### 2026-11-22T16:07:14.143Z — codex-networking-stall-fix
+
+LOG-VOLUME EVIDENCE (direct, 2026-11-22T15:30Z-15:36Z): active dev-loop run 20261122_144609_01 server journal grew 1,713,379 bytes in 5s (~335 KB/s, ~20 MB/min); a concurrent isolated client (run 20261122_150906) grew 785,381 bytes in 5s (~157 KB/s, ~9.4 MB/min). Run 144609 accumulated 1,133,135,356 bytes (1,080.6 MB) across server+client journals in ~35 min; run 150906 285,387,408 bytes (272.2 MB) in ~28 min. config/debuglogger.json sets storage_limits.per_segment_bytes=100000000 and total_log_tree_bytes=7000000000; the client's active and first sealed segments both sit at ~100 MB (events.jsonl 99,999,569; events-0002.jsonl 99,999,654) and its last journal event is 15:12:57Z although PID 30076 was still running, so run.json reports it stale at ~530s - a full-segment client appeared to stop advancing its journal. Dominant server events in the 43,762-line active segment: npc.movement-commitment-created 19206, npc.dash 9490, weapon.contact.shape 5214, npc.attack-gate 4884, npc.collision.fall-sample 3426, npc.stuck-episode 2152. INFERRED: per-tick/per-NPC diagnostic logging is both a CPU/IO cost and the reason repository-wide log search is slow (user report: 'repository-wide log search is taking a while under the existing load'). Cross-link CPU issue-ed3ac775283d (npc_count 66 despite npcs=1). No code/build changed by codex-networking-stall-fix.
+
+## Agent suggestion
+
+### 2026-11-22T17:20:12.563Z — codex-networking-stall-fix
+
+Source lead: src/debug/log-manager.cpp LogManager::init ran cleanupOldFormat and rotateLogs before MimitaNet::runServer initialized StructuredLogger. rotateLogs recursively walked the entire logs tree and sorted matching files; cleanupOldFormat could remove a whole dated directory. Removed both traversals/calls and dead declarations. Duration, logger readiness improvement, and connection effect remain unproven pending pinned DLL runtime.
+
+## Agent suggestion
+
+### 2026-11-22T17:41:03.598Z — codex-networking-stall-fix
+
+Pre-fix reproduction in pinned run 20261122_173811 (networking-validation, Fun Counter Strike, dust2cyberiav4; EXE SHA 4fa387f46e02a3a9d136abff3849b879306ecd354f07e145b35b10d20a8d2136; old DLL gen500 SHA 907486df17b9ed036abfeeb830a262626b42587321a513d9438e0c5cc2decbdc): server launched at 17:38:12.050Z; harness timed out at 26.422s waiting for logger.started; journal absent, output tail empty, server still alive before harness cleanup; manifest exit_code 1 is after cleanup, not a proven natural exit. No client or room registration. This reproduces prelogger startup failure on old artifact; not proof of the source fix.
+
+## Agent suggestion
+
+### 2026-11-22T22:03:01.395Z — issue-review-sweeper
+
+Process-improvement proposal from issue-review-sweeper sweep wake-8600b57cb056 (evidence: issue-1d1b9c62ac08 review id 215).
+
+EVIDENCE OF A GAP
+- issue-1d1b9c62ac08 linked its only reproduction fixture at logs/2026-11-21/20261121_144350/server-01/events.jsonl. On 2026-11-22 that path and the whole logs/2026-11-21 root are gone; only logs/2026-11-22 remains (8 runs) and 11-20-2026/11-21-2026/11-22-2026 are empty. So the issue evidence cannot be re-inspected and the proof/verdict is blocked by evidence loss, not by code.
+- The current retention code (devscripts/dev_loop/game_build.py::_prune_logs(root, 3), also devscripts/prune-builds.py --logs-only) keeps only the newest three dated roots and does not consult open-issue or proof journal references. This issue risk already states: overbroad deletion could erase evidence needed for issue reproduction.
+
+PROPOSAL (safe, bounded)
+- Before a dated log root is deleted, collect journal_path / related_run / evidence journal references from open (non-closed) issues and their task proofs via agent-coord (read-only), and skip any run directory referenced by an open issue or unproven/stale proof. Report skipped roots in the dry-run.
+- Keep the existing three-newest behavior for unreferenced roots; do not add a separate tracker or index. This only narrows deletion.
+
+MEASURABLE TARGET
+- Over one week, 0 journal paths referenced by an open issue or task proof are deleted by automatic pruning (currently at least 1: 20261121_144350).
+- A dry-run prints every reference-protected dated root with its referencing issue id, and the prune set never intersects the protected set.
+
+SMALLEST EXPERIMENT
+- Add a read-only mode to prune-builds.py: --logs-only --dry-run --protect-referenced. Load open issue evidence JSON plus proof journal_path from the coordination DB, list candidate dated roots and protected roots, and diff them. Run it once against the current logs and attach the output; perform no deletion in this experiment.
+
+OWNER NOTE
+- Source paths in scope: devscripts/prune-builds.py, devscripts/dev_loop/game_build.py. Keep claims separate from runtime proof.

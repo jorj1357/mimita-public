@@ -205,3 +205,54 @@ NEXT DISCRIMINATING CHECK (ordered)
 PROCESS REVIEW
 - The gen420 run finished at 14:37 and already contained proof-bearing Mace/NPC/Arcade events; at 17:01 the three proof tasks were still unproven and this sweep was the first to correlate them (~2.4h avoidable delay at proof-correlation, not build/run).
 - One proposal with a measurable target and smallest experiment was appended to issue-b396205aaecf (runtime registry and build-to-proof links).
+
+## Scheduled independent review
+
+### 2026-11-22T19:35:25.151Z — cpp-latency-digest-cache
+
+A bounded independent review was queued as wake wake-1d71f5419186 after 321 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive)
+
+### 2026-11-22T20:18:36.358Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Read-only independent review at 2026-11-22T20:1xZ; no source edit, build, run, close, or fix claim. Prior review text is preserved (append-only).
+
+Scope: issue brief/readiness, proof status, linked artifacts, and the latest relevant journals since the 2026-11-21T17:11Z review.
+
+OBSERVED FACTS
+1. Readiness is 8/8, state=in_review, 3 tasks open. `proof status` still lists arcade_no_weapon_world_collision, arcade_npc_melee_hit, and mace_active_contact as unproven. Each task's latest_proof row still shows status=runtime_proven while result=unproven, verified_utc="", journal_path="", run_id=20261120_072010 (the run whose manifest says the server never reached logger.started). That is the proof-integrity defect already proposed on issue-b396205aaecf (2026-11-22T01:02Z).
+2. No commit touched the issue's melee/arcade source paths or mace config since 2026-11-20T02:56 -0500 (last commit a065471f); `git status` shows those paths clean. So the prior gen420 evidence is still source-current; only the generation number differs.
+3. New runtime exists at the current generation. Five isolated runs on 2026-11-22 exercised arcade collision (all `collision.capsule-world.solve` sampled: arcade_mode=true, zero false):
+   - 20261122_174937 gen507 tdm-validation / juggernaut horde
+   - 20261122_181147 gen508 tdm-validation / juggernaut horde
+   - 20261122_184056 gen512 networking-validation / fun counter strike
+   - 20261122_191248 gen512 tdm-validation / juggernaut horde
+   - 20261122_192457 gen512 tdm-validation / juggernaut horde
+   Counts: `collision.arcade_pose_skipped` 482/959/843/519/511 (total 3314), every one with body_part_count=0 and extra_part_count=0 and skip_reason=arcade_capsule_world_owner. `server.damage.applied` with source=physical_contact, attacker_type=npc, target_actor_type=player: 539/527/0/323/122 events (total 1511, total damage 2780/2423/0/1740/2123). `weapon.contact.result` NPC->player: 11/14/0/28/37 (total 90), including mace 2/3/0/9/0, chainsaw 7/1/0/4/19, swordsword 2/10/0/15/18.
+4. NPC Mace contacts in these journals carry action="" and damage 2-4 (base/inactive values), so they do not demonstrate the 10x active-pose multiplier; they only show the NPC melee path flows under arcade_mode=true.
+5. Zero player melee activity exists anywhere on 2026-11-22: `rg -l 'melee\.contact\.claim\.accepted|melee\.contact\.claim\.rejected|melee\.client\.contact_claim|melee\.client\.action' logs/2026-11-22` returns nothing. So client/server Mace parity and the white active-pose visual have no new evidence; the only parity evidence remains the gen420 run 20261121_140624 from the prior review (283/285 exact, 2 mismatches).
+6. The upstream blocker for player Mace claims, issue-adfeaafa1136 (human melee claims rejected future_contact), is still state=assigned, owner=codex-melee-gold-fix, last updated 2026-11-21T17:01:22Z (~27h before this review). That owner's last activity on the board is "session ended" at 2026-11-21T17:01:40Z. No 2026-11-22 run contains any player melee claim attempt, accepted or rejected.
+7. Source still implements the requested white active pose: src/combat/weapon-viewmodel.cpp:239-245 sets mTint=white when the equipped pose action ends in `_active`, and :618-622 enables uUseColor for maceActivePose. config/weapons/mace/config.json sets contact_max_damage 250.0 and contact_damage_multiplier 10.0 on both mace_swing and mace_physics_slam. src/network/server-packet-handlers.cpp:1526-1527 logs server_action_active and action_active for parity checks.
+
+INFERENCE / UNCERTAINTY
+- arcade_npc_melee_hit has strong new runtime support at the current generation: NPC->player physical_contact damage and NPC->player weapon.contact.result both occur while arcade_mode=true in four independent gen507/508/512 runs. It is not yet marked verified and the runs are juggernaut-horde / FCS, not the acceptance's human Arcade scenario, but Arcade collision is active in them.
+- arcade_no_weapon_world_collision still rests on the source guard plus the stage-run counter; the counter never reports nonzero body/extra parts, so it does not independently prove a nonzero held-weapon pose was skipped. The new runs do not close that gap.
+- mace_active_contact is unchanged and unproven: no player melee claims, no active-pose 10x player contact, no white-pose capture. The unresolved future_contact blocker (issue-adfeaafa1136) is the first failing stage and is currently stalled on an inactive owner.
+- The gen420 parity mismatches (contact_ids 174/344) remain unexplained; no new journal addresses them.
+
+CONTRARY EVIDENCE
+- 0/2026-11-22 runs contain a player melee claim, so there is no evidence that human Mace input works on generation 512.
+- Every arcade_pose_skipped event has zero parts; the new runs add volume but not weapon-specific proof.
+- The proof rows for all three tasks display runtime_proven despite being unusable (failed gen398 run), so the board overstates progress; do not treat that status as evidence.
+
+NEXT DISCRIMINATING CHECK (ordered)
+1. Re-activate or reassign issue-adfeaafa1136 (future_contact tick-epoch reset) and run one pinned current-generation Arcade/TDM scenario with a human or scripted-human client wielding Mace. Require 0 future_contact rejects and at least one accepted active-pose claim, then join client melee.client.contact_claim to server melee.contact.claim.accepted by contact_id and compare predicted vs accepted damage. This is the single check that can move mace_active_contact.
+2. In that same run, satisfy arcade_no_weapon_world_collision with a nonzero `extra_part_count` (or an explicit held-weapon-vs-world counter) in collision.arcade_pose_skipped, not only the zero-part stage counter.
+3. Capture a screenshot at an accepted active-pose tick and verify the Mace viewmodel is white only during `_active`; otherwise record explicit human visual acceptance.
+4. Once a source-current NPC-melee proof row is attached, verify arcade_npc_melee_hit against one of the gen512 journals above (e.g. 20261122_192457: 122 NPC->player physical_contact damage events) rather than the failed gen398 run.
+
+PROCESS REVIEW
+- Repeated delay supported by evidence: mace_active_contact has been blocked on issue-adfeaafa1136 for ~27h while its owner session ended and no new player melee attempt appears; issue-503 stays in_review. One proposal with a measurable target and smallest experiment was appended to issue-91e3384b219b under its existing stale-issue-heartbeat task. No other process change is claimed.

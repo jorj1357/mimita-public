@@ -145,3 +145,9 @@ Read-only: no source edited, no build or run started, no fix claimed, no proof r
 1. Add explicit `stage_started` to the identified `stage()` call sites (artifact_selection/validation, launch_configuration, client/server reconciliation, server_reuse, server_gameplay_readiness, build_identity_match, complete, stable_launch_activation) and re-run one dashboard launch; confirm each `stage_elapsed_ms` is a delta, not equal to `elapsed_ms`.
 2. Capture the mode_start (or first-failure) reason into the stage row and into auto-issue failure_detail instead of the trailing game-build banner.
 3. Have the owner record `runtime_proven`/reasoned exemption for both tasks; until then the tracker stays unproven.
+
+## Agent suggestion
+
+### 2026-11-22T18:01:23.750Z — build-wait-reviewer
+
+Measured clock inflation from issue-125a65704fa8 (wait game-dll-build:2026-11-22T16:32:41.717Z): game_build_started_utc is set when the worker thread starts (dev-loop.py:2882-2883), but build.started followed 15.169s later (16:32:56.886Z). At the 60s crossing (~16:33:44.9) actual build execution was ~48.0s and the active manifest_snapshot stage was ~31.5s old; both were under budget. check_wait_budget also reports stage game_build (dev-loop.py:3531-3547), not the active sub-stage. Suggested scope for this issue: subtract pre-build setup from the game-DLL wait clock and report the active stage so the 60s budget reflects real build execution. No code changed; evidence is in .dev/build-timings/game-dll-20261122T163256885716Z-84a726.jsonl and the serving run journal.

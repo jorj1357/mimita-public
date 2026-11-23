@@ -378,6 +378,11 @@ void GamemodeRegistry::loadDirectory(const std::string& dir)
 
 void GamemodeRegistry::pollReload()
 {
+    // The registry lives in the hot-reloaded game module. A DLL swap can reset
+    // its static state while the host keeps calling pollReload(); restore the
+    // authoritative directory before the first post-reload team/mode lookup.
+    if (directory_.empty())
+        loadDirectory("config/gamemodes");
     if (directory_.empty()) return;
 
     bool changed = false;

@@ -13,6 +13,7 @@
 #include "combat/weapon-runtime.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 #include <glm/gtc/constants.hpp>
@@ -231,6 +232,10 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
          const std::string& weaponId, const std::string& customName)
     : id(npcId), difficulty(std::clamp(npcDifficulty, 0.0f, 10.0f))
 {
+    const auto constructorStart = std::chrono::steady_clock::now();
+    double loadoutInitMs = 0.0;
+    double avatarIdentityMs = 0.0;
+    double wakeupEffectMs = 0.0;
     tuning = tuningForDifficulty(difficulty);
     rngState = 0x9e3779b9u ^ (id * 747796405u);
     attackCooldown = npcSpawnFireDelaySeconds(*this);
@@ -266,13 +271,20 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
     timeSinceLastShot = 1.0f;
 
     // Initialize full weapon loadout from config and equip starting weapon
+    auto phaseStart = std::chrono::steady_clock::now();
     npcInitLoadout(*this);
+    loadoutInitMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - phaseStart).count();
     // Select/store the per-life identity without loading GPU assets here.
     // Rendering queues the avatar through the shared asynchronous path.
+    phaseStart = std::chrono::steady_clock::now();
     avatarName = npcAvatarNameForLife(id, transformEpoch);
+    avatarIdentityMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - phaseStart).count();
 
     // Spawn wakeup visual sphere (30 ticks @ 60 Hz = 0.5s)
     {
+        phaseStart = std::chrono::steady_clock::now();
         EffectPart sphere;
         sphere.position = spawn;
         sphere.replayType = "npc_spawn_sphere";
@@ -285,6 +297,8 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
         sphere.billboardText = false;
         sphere.ownerId = id;
         EffectPartSystem::instance().spawn(sphere);
+        wakeupEffectMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - phaseStart).count();
     }
 
     Debug::log(Debug::Category::General,
@@ -294,6 +308,20 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
                tuning.reactionDelay,
                tuning.aggression,
                tuning.awarenessRange);
+
+    const double constructorMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - constructorStart).count();
+    if (constructorMs >= 50.0) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.spawn.constructor-breakdown", std::to_string(id),
+            "slow server NPC constructor subphase timing", 0,
+            nlohmann::json{{"npc_id", id}, {"constructor_ms", constructorMs},
+                           {"loadout_init_ms", loadoutInitMs},
+                           {"avatar_identity_ms", avatarIdentityMs},
+                           {"wakeup_effect_ms", wakeupEffectMs}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 }
 
 void NpcSystem::spawnPrototypeScene()
@@ -343,12 +371,37 @@ void NpcSystem::spawnNpc(float difficulty)
 void NpcSystem::spawnNpc(uint32_t id, float difficulty, glm::vec3 spawnPos,
                          const std::string& customName)
 {
+    const auto spawnCallStart = std::chrono::steady_clock::now();
+    double constructorMs = 0.0;
+    double audioStart = 0.0;
+    double spawnLogMs = 0.0;
     Perf::ScopedTimer _spawnTimer("NpcSpawn");
     float d = globalDifficulty_ > 0.0f ? globalDifficulty_ : difficulty;
+    auto phaseStart = std::chrono::steady_clock::now();
     npcs.emplace_back(id, d, spawnPos, "revolver", customName);
+    constructorMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - phaseStart).count();
+    phaseStart = std::chrono::steady_clock::now();
     AudioManager::instance().play({"npc_spawn", AudioCategory::NPC, true, spawnPos, 0.8f, 1.0f, 35.0f, id});
+    audioStart = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - phaseStart).count();
+    phaseStart = std::chrono::steady_clock::now();
     Debug::log(Debug::Category::General, "[NPC] spawned id=%u at (%.2f, %.2f, %.2f) (network, diff=%.1f)\n",
                id, spawnPos.x, spawnPos.y, spawnPos.z, d);
+    spawnLogMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - phaseStart).count();
+    const double spawnCallMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - spawnCallStart).count();
+    if (spawnCallMs >= 50.0) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.spawn.call-breakdown", std::to_string(id),
+            "slow network NPC spawn call subphase timing", 0,
+            nlohmann::json{{"npc_id", id}, {"total_ms", spawnCallMs},
+                           {"constructor_ms", constructorMs},
+                           {"audio_ms", audioStart}, {"spawn_log_ms", spawnLogMs}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 }
 
 void NpcSystem::destroySelected(const std::vector<std::uint32_t>& ids)

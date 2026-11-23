@@ -10,12 +10,17 @@
 #include "render/render-command.h"
 #include "render/world-shader.h"
 #include "debug/structured-log.h"
+#include "game/job-bridge-module.h"
+#include "map/map-loader-mesh.h"
+#include "utils/path_utils.h"
+#include "tinygltf/tiny_gltf.h"
 
 namespace r = mimita::game::render;
 
 #include <cstdio>
 #include <algorithm>
 #include <chrono>
+#include <exception>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
@@ -68,11 +73,14 @@ void CosmeticSystem::clear()
 
 bool CosmeticSystem::loadCosmeticGLB(const std::string& choice)
 {
-    if (mCosmetics.find(choice) != mCosmetics.end())
-        return mCosmetics[choice].loaded;
+    const auto existing = mCosmetics.find(choice);
+    if (existing != mCosmetics.end())
+        return existing->second->ready.load(std::memory_order_acquire) &&
+               existing->second->loaded;
 
-    CosmeticInstance inst;
-    inst.choice = choice;
+    auto inst = std::make_shared<CosmeticInstance>();
+    inst->choice = choice;
+    mCosmetics.emplace(choice, inst);
 
     std::string path = (choice.find('/') != std::string::npos ||
                         choice.find('\\') != std::string::npos)
@@ -81,21 +89,53 @@ bool CosmeticSystem::loadCosmeticGLB(const std::string& choice)
     if (path.rfind(".glb") == std::string::npos)
         path += ".glb";
 
-    if (!std::filesystem::exists(path))
-    {
-        printf("[COSMETIC] file not found: %s\n", path.c_str());
-        mCosmetics[choice] = inst;
-        return false;
+    const bool queued = mimita::game::runDetached([inst, path]() {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "cosmetic.load.started", inst->choice,
+            "cosmetic GLB background parse started", 0,
+            {{"choice", inst->choice}, {"path", path}},
+            __FILE__, __LINE__, __FUNCTION__);
+        const std::string resolvedPath = resolveAssetPath(path);
+        std::string error;
+        bool parsed = false;
+        try {
+            tinygltf::TinyGLTF loader;
+            tinygltf::Model model;
+            std::string warning;
+            parsed = loader.LoadBinaryFromFile(
+                &model, &error, &warning, resolvedPath);
+            if (parsed) {
+                std::vector<std::uint32_t> noTextures(model.materials.size(), 0);
+                const int scene = model.defaultScene >= 0 ? model.defaultScene : 0;
+                walkGLBScene(model, noTextures, inst->mesh, scene, nullptr);
+                inst->loaded = !inst->mesh.verts.empty();
+            }
+        } catch (const std::exception& ex) {
+            error = ex.what();
+        } catch (...) {
+            error = "unknown exception while parsing cosmetic GLB";
+        }
+        inst->ready.store(true, std::memory_order_release);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "cosmetic.load.completed", inst->choice,
+            "cosmetic GLB background parse finished", 0,
+            {{"choice", inst->choice}, {"path", path},
+             {"parsed", parsed}, {"loaded", inst->loaded},
+             {"vertices", inst->mesh.verts.size()}, {"error", error}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }, "cosmetic-model-load");
+    if (!queued) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "cosmetic.load.rejected", choice,
+            "cosmetic GLB background load could not be queued", 0,
+            {{"choice", choice}, {"path", path}},
+            __FILE__, __LINE__, __FUNCTION__);
+        inst->ready.store(true, std::memory_order_release);
     }
-
-    inst.mesh = loadGLB(path);
-    inst.loaded = !inst.mesh.verts.empty();
-
-    printf("[COSMETIC] loaded choice=%s path=%s verts=%zu batches=%zu\n",
-           choice.c_str(), path.c_str(), inst.mesh.verts.size(), inst.mesh.batches.size());
-
-    mCosmetics[choice] = inst;
-    return inst.loaded;
+    return false;
 }
 
 void CosmeticSystem::loadCosmetics(const std::vector<CosmeticSlot>& slots)
@@ -127,8 +167,10 @@ std::vector<std::string> CosmeticSystem::scanAvailableCosmetics() const
 const CosmeticInstance* CosmeticSystem::find(const std::string& choice) const
 {
     auto it = mCosmetics.find(choice);
-    if (it != mCosmetics.end() && it->second.loaded)
-        return &it->second;
+    if (it != mCosmetics.end() &&
+        it->second->ready.load(std::memory_order_acquire) &&
+        it->second->loaded)
+        return it->second.get();
     return nullptr;
 }
 

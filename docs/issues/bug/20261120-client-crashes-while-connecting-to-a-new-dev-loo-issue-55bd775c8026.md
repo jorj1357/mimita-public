@@ -202,3 +202,133 @@ Related evidence from a separate host failure mode in run 20261122_141131: serve
 ### 2026-11-22T14:49:09.121Z — codex-networking-stall-fix
 
 Provenance caveat: attached build stamp commit=64b085c predates this checkout current ICE/server implementation (src/network/server-ice.cpp is absent at that commit). Current server.cpp/server-ice.cpp line candidates do not prove the source of the attached run registration failure. This host-side registration problem is a useful parallel branch to the tracked client Welcome/snapshot boundary, not evidence accepted-Hello/no-Welcome-receipt is fixed.
+
+## Agent suggestion
+
+### 2026-11-22T16:02:42.198Z — codex-networking-stall-fix
+
+New user report: in-game community-browser join displays NPC activity but client remains at snapshots N seconds old or says server acceptance failed. This is not yet reproduced against the current pinned artifact; correlate browser lookup -> ICE begin-join -> server JoinRequest/Welcome or JoinAccept -> first client snapshot before assigning cause.
+
+## Agent suggestion
+
+### 2026-11-22T16:11:23.532Z — codex-networking-stall-fix
+
+Read-only source trace: the community-browser status text is state-derived. src/network/multiplayer-packets.cpp:2280-2328 separates WaitJoinAccept (waiting for server acceptance) from WaitingForServer (age of last snapshot); src/network/multiplayer-tick.cpp:1786-1807 emits network.client.join.rejected only on an actual JoinReject packet. This narrows required capture fields but does not reproduce the user's server/browser case.
+
+## Agent suggestion
+
+### 2026-11-22T16:19:45.340Z — community_join_trace
+
+Community-browser follow-up source trace: a public row click forwards e.code as-is through online-menu.cpp:224-235 and gui-main.cpp:1842-1900, without coordinatorIceLookup; manual code entry does call lookup. Existing local direct-connect run 20261122_150906 accepted Hello (server journal line 617) but is not browser or ICE-join proof. Capture the real row click and correlate ICE begin-join, JoinRequest/Welcome, and first snapshot before attributing the user-visible failure.
+
+## Agent suggestion
+
+### 2026-11-22T17:20:07.503Z — codex-networking-stall-fix
+
+Source lead: src/debug/log-manager.cpp LogManager::init ran cleanupOldFormat and rotateLogs before MimitaNet::runServer initialized StructuredLogger. rotateLogs recursively walked the entire logs tree and sorted matching files; cleanupOldFormat could remove a whole dated directory. Removed both traversals/calls and dead declarations. Duration, logger readiness improvement, and connection effect remain unproven pending pinned DLL runtime.
+
+## Agent suggestion
+
+### 2026-11-22T17:28:13.039Z — codex-networking-stall-fix
+
+Source trace for the two UI waits: src/network/multiplayer-tick.cpp sendJoinRequest emits request_sent at lines 1484-1502 while Connecting/WaitJoinAccept; only PACKET_JOIN_ACCEPT switches to Connected at 1669-1729, and PACKET_JOIN_REJECT is logged separately at 1761-1791. Snapshot age text is derived from lastSnapshotReceivedMs and is not itself proof of acceptance. Runtime browser-row correlation is still pending.
+
+## Agent suggestion
+
+### 2026-11-22T17:45:39.397Z — codex-networking-stall-fix
+
+Cross-agent live FCS run 20261122_174002 is active in root dev-loop while a 642-source/10-job game-DLL build runs. EXE build 3e52717b7ea5919fb05f896124b6b5ecf44eb67c72724707c3686c48585ead2d; server room RQN8QSG, local client joined. Server room_register took 953.878ms after world_load; full startup to room registration was about 18.6s (logger 4.14s, config 4.986s, world_load 8.204s; server.policy.world reports NPC collision build 4.177s). Client accepted at 17:40:32.431Z, then snapshot_starved age 2514ms at 17:40:35.283Z. Server continued network.server.snapshot.send every ~1s with peer connection_stale=false and 8 chunks while client received no snapshots for 16.722s (last 17:40:41.973Z, next 17:40:58.695Z); client performance/frame events continued. Client then scheduled health_lost reconnect at snapshot_age_ms=16087, reconnect accepted, status waiting_for_snapshot (room_code empty in client reconnect event), and snapshots resumed 0.93s later and about 1.0s intervals. This separates server send cadence from client receive/reassembly/recovery, but does not yet identify packet transport loss vs client receive handling. Journals: logs/2026-11-22/20261122_174002/{server-01,client-01}/events.jsonl.
+
+## Agent discussion and suggestions
+
+### 2026-11-22T17:45:55.198Z — codex-networking-stall-fix
+
+Message: `msg-941422eb2c02` (question)
+
+Subject: Coordinate GUI commands in live FCS run 174002
+
+I found root dev-loop run 20261122_174002 currently online in Fun Counter Strike with room RQN8QSG and client PID 34012. Are you using this live pair? The user authorized in-game agent.gui_scan/gui_button commands (no Computer Use); I want to inspect Community Browser and click the room if this pair is available, but will preserve it if you are actively testing it.
+
+## Scheduled independent review
+
+### 2026-11-22T18:02:48.467Z — cpu-regression-git-trace
+
+A bounded independent review was queued as wake wake-6d44c4ab144c after 315 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Agent suggestion
+
+### 2026-11-22T18:08:43.872Z — codex-networking-stall-fix
+
+Observed pinned runtime run 20261122_174002, build 2026-11-22T17:39:49.763492Z:3e52717b7ea5919fb05f896124b6b5ecf44eb67c72724707c3686c48585ead2d, game generation 507, client journal logs/2026-11-22/20261122_174002/client-01/events.jsonl. At 17:40:44.364Z stall watchdog reported frame_heartbeat_age_ms=1709, frame 1186, progress engineTickSimulate/Networking line 216. Stack captured 17:40:44.399Z and repeated at 50.145Z and 56.117Z: NtCreateFile -> GetDriveTypeW -> CreateFileW -> wmktemp_s -> wopen -> game-g502.dll+0x12d5f3 resolves to CosmeticSystem::loadCosmeticGLB at src/avatar/cosmetic-system.cpp:91:24, -> loadCosmetics at :108:24 -> AvatarSystem::applyAvatarToPlayer at src/avatar/avatar-atlas.cpp:1062:70. This pins a synchronous GLB cosmetic load/file operation inside avatar application on the client networking tick. Client journal shows last normal snapshot around 17:40:41.973Z then next at 17:40:58.695Z (16.722s gap); server journal continued sending snapshots roughly each second, 8 chunks and zero failed chunks. Watchdog heartbeat age reached 15,953ms while main-thread CPU advanced only ~16ms. Client scheduled health_lost reconnect at 17:40:58.743Z, accepted at 17:40:58.782Z, and snapshots resumed ~17:40:59.714Z. Observed cause: blocking cosmetic load in network tick stalls packet/frame processing and makes a healthy-sending server look stale. Safe fix needs CPU parse/file IO off main thread with GL upload on owner thread, reusing existing async GLB pattern rather than moving GL calls to a worker. This run is FCS/reconnect, not direct Community Browser join reproduction; exact browser flow remains to reproduce. Do not close until pinned post-fix runtime proves avatar/cosmetic replication does not stall snapshots.
+
+## Agent suggestion
+
+### 2026-11-22T19:00:54.094Z — codex-networking-stall-fix
+
+Observed pinned candidate run 20261122_184056 (Fun Counter Strike, dust2cyberiav4), client/server journals under logs/2026-11-22/20261122_184056, EXE build 2026-11-22T17:39:49.763492Z SHA-256 3e52717b7ea5919fb05f896124b6b5ecf44eb67c72724707c3686c48585ead2d; launched with game DLL generation 512. Server accepted client/player 1 at 18:41:41.186Z and sent Welcome successfully at 18:41:41.386Z. It sent 3 chunks at 18:41:41.445Z, then next snapshot send was 18:41:53.607Z: 12.162 seconds later. Client applied its next snapshot at 18:41:53.607Z with snapshot_interarrival_ms=11281 and had scheduled health_lost reconnect at 18:41:52.389Z. The server journal pins the missed send to the authoritative NPC simulation: performance.server-tick-stall at tick 838, src/network/server.cpp:1595-1611, total_ms=11219.172, npc_ms=11202.531, npcs=19, players=1. Its nested npc.tick-cost (simulateSharedNpcs, src/network/server-npcs.cpp:3249) reports npc_adoption_ms=8471.6469, npc_ai_ms=38.1601, ai_update_ms=0.3799, pair_ms=134.8701, rebuild_ms=2.3346, total_ms=8648.0323. Thus this reproduction accepted the connection; the long snapshot wait follows a large one-time NPC adoption/spawn cost, not a server acceptance rejection or missing steady snapshot sender. The adoption timer starts immediately before adoptNewServerNpcs at src/network/server-npcs.cpp:1967-1968; likely hot candidates inside that function are spawnNpc at :614 and profile/finalize work at :664-726. Exact inner operation still needs bounded timing; do not claim a specific subcall yet. After the stall, snapshots resumed and client received 19 NPCs. Candidate runtime also emitted cosmetic.load.started/completed for jason1.glb 2 ms apart, so the cosmetic async change is exercised but does not address this server-side NPC adoption stall. Keep networking/startup/NPC issues open; next discriminating step is measure adoptNewServerNpcs subphases under pinned FCS startup and optimize the dominant existing owner.
+
+## Review (inconclusive - prior slot-erase finding superseded by current source; latest reconnect failure explained by server ACCESS_VIOLATION during generation hot-swap; no client crash reproduced)
+
+### 2026-11-22T19:15:14.348Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Reviewer: issue-review-sweeper (independent, read-only; no source edit, build, close, or fix claimed).
+
+Scope and readiness: issue readiness is ready (8/8, 3 open tasks: new-mode-connect-crash-trace, welcome-delivery-trace, welcome-transport-label). No proof record exists for new-mode-connect-crash-trace or welcome-transport-label. welcome-delivery-trace has task-proof-c796a1b7a2f6 from 2026-11-20 generation 399 (run 20261120_083807) with verified_utc empty and source hashes that predate current source; treat it as stale. No completion claim is supported. Inspected build 2026-11-22T17:39:49.763492Z:3e52717b7ea5919fb05f896124b6b5ecf44eb67c72724707c3686c48585ead2d (source_generation 5; game generations 507-512) and build 2026-11-22T08:00:31.376619Z:4fa387f46e02a3a9d136abff3849b879306ecd354f07e145b35b10d20a8d2136 (game generations 507-508). No compiler or build was invoked.
+
+Observed facts:
+1. Run 20261122_174002 (mode fun counter strike, dust2cyberiav4, server PID 9196, client PID 34012) is the strongest new evidence. The client connected at 2026-11-22T17:40:32Z. A reconnect at 17:40:58Z was accepted: server network.server.reconnect.lookup result=ok reason_code=token_found slot_state=held previous_token_match=false (logs/2026-11-22/20261122_174002/server-01/events.jsonl lines 3471-3472). The server then logged game.generation.swap_begin old_generation=1 -> 507 and hotswap suspend/resume events at 17:46:02.049-17:46:02.132Z, and its last journal event is at 17:46:02.132Z. The crash artifact .dev/crashes/20261122_174002/crash-2026-11-22_12-46-02-9196.txt records an ACCESS_VIOLATION 0xc0000005 in game-g507.dll+0x1649ae (stack 00 game-g507.dll+0x1649ae, 01 GetMimitaGameServerPolicyV1+0xc1aa, 02 mimita.exe+0x35651), with server-loop tick overruns (17.1 Hz, 7.2 Hz, 8.8 Hz) in the seconds before the swap. The client entered Reconnecting at 17:46:14Z, ran attempts 1..10, and reached terminal ReconnectFailed at 17:47:15Z; dev-loop logged dev-loop.instance.exited for server PID 9196 exit_code=3221225477 at 17:47:40.921Z. Because the server had already crashed/silently stopped at 17:46:02Z, the client terminal Disconnected/reconnect-failed message in this run was truthful, not a premature label.
+
+2. Run 20261122_141131 (build 4fa387..., managed server 127.0.0.1:53005) contains the closest adjacent reproduction of started a mode and never connected: at 14:33:13.885Z client-01 queued a connect with map=badhouse remote_endpoint=127.0.0.1:1357 (a different endpoint/port than the managed server-01 at 53005). connection_attempt_id 2 then moved WaitingForServer -> ReconnectFailed at 14:33:31.320Z with server_address empty, join_request_sends=0 and last_heard_age_ms=8948. No matching server-side network.server.reconnect.received/lookup appears in that run server journals. This is suggestive but not a proven new-mode reproduction because the endpoint does not match the managed server and no server record exists.
+
+3. Current source no longer matches the prior review first-divergence claim. src/network/reliable-gameplay-events.cpp:105-153 now explicitly keeps the slot/token after an undeliverable reliable event (action=keep-connection, slot_state=held) and delegates removal to the connection-health owner; the earlier players.erase path is gone. src/network/server-packets.cpp:2359-2366 now also accepts previousReconnectToken until previousReconnectTokenValidUntilMs. The Nov 21 reconnect-token-erase hypothesis should not be re-investigated unless a new journal shows the slot actually being erased; the current 2026-11-22 journals contain no token_not_found at all. This source change has no proof record yet, so it is not proven behavior.
+
+4. Normal connections still succeed on the current builds: run 20261122_174622 Connected 17:46:57Z; 20261122_174842 Connected 17:49:00Z; 20261122_174937 (gen 507) Connected 17:50:08Z and stopped cleanly 18:06:45Z; 20261122_181147 (gen 508) pair ready 18:13:21Z; 20261122_184056 (gen 512) pair ready 18:42:05Z. No 2026-11-22 client exit 3221225477 was found.
+
+Inference and uncertainty:
+- The latest user-visible failure mode on the exact journals is a server-side access violation during an in-process game-generation hot-swap while one client was connected. That is a different failure from the Nov 20 client-side 3221225477 crash and from the Nov 21 reconnect-token theory. Whether the hot-swap crash and the user started-a-new-mode-and-never-connected report share a root cause is unknown.
+- The crash offset game-g507.dll+0x1649ae is the stable signature to group recurrences. The 141131 attempt is not yet attributable because the client targeted 127.0.0.1:1357 rather than the managed server bind.
+- The HUD visual state is still unproven: no screenshots were captured for the Disconnected/Reconnecting labels or for Payload NPC/cart grounding.
+
+Contrary evidence:
+- The 174002 terminal Disconnected was correct after a real server crash; it is not evidence of the show-Disconnected-while-still-connecting symptom.
+- Multiple later runs on both builds connect normally and no token_not_found or failed reconnect.lookup appears in 2026-11-22 journals.
+- The prior review player-slot erase claim is superseded by current source; do not cite it as the current defect.
+
+Next discriminating checks (not performed by this reviewer):
+1. Reproduce the 174002 hot-swap crash on a pinned root-dev-loop run: start with a client connected, trigger a generation swap old=1 -> current, and capture the server journal plus crash .txt/.dmp. If game-g507.dll+0x1649ae recurs, file/annotate it as a hot-swap crash with this offset; then repeat on the current generation (512+) to see whether it is fixed.
+2. For the new-mode-does-not-connect report: use an agent connect command against the managed server actual bind port after leave/restart, and assert client connect.requested -> preflight -> join and server reconnect.received/lookup on the same run. Do not use 127.0.0.1:1357 unless that endpoint is the intended server.
+3. Journal an explicit network.connection-state.changed transition for entering Connecting/Reconnecting attempt N and capture HUD screenshots during retry so the visual claim can be closed.
+
+Process review: this is a repeated evidence-discovery delay. The 17:46:02 server crash artifact and dev-loop.instance.exited record existed, but nothing linked them back to this issue; the prior 2026-11-21 review explicitly reported no crash artifact, and discovering the 2026-11-22 crash required a manual journal/artifact scan. A concrete proposal with a measurable target and smallest experiment is appended to issue-cf9cd77eb056 (end-to-end correlated runtime evidence).
+
+## Agent suggestion
+
+### 2026-11-22T19:24:41.268Z — community_join_trace
+
+Pinned run 20261122_184056 proves its direct local test-client path remained alive: client metrics seq255192 at19:15:28.701Z reports connection_state=Connected, last_heard_age_ms=127, snapshot_age_ms=127, 14 snapshots in 1027ms, 46,028 total, RTT266ms; later applied snapshots are captured on issue-453d. This is not public browser/ICE acceptance: run manifest server binds 127.0.0.1:53021, room code is only registered to GEFS5FF after local-ready, and the scanned UI contains no browser widgets. Do not use this as proof the user-reported community join succeeds.
+
+## Agent suggestion
+
+### 2026-11-22T19:52:44.179Z — community_join_trace
+
+Pinned local test run could not reach the Community Browser: agent.input menu_toggle then fresh scan yielded pause-menu IDs (resumeButton/settingsButton/helpButton/discordButton/inviteButton/resetButton/leaveButton), not Community Browser/serverbrowser rows. A fresh, confirmed leaveButton pair transitioned to leave confirmation (GUI_16, confirmPanel/confirmYes/confirmNo) but next scan returned widget_count=0, so UI driving stopped. No public browser row/code -> join attempt occurred; this run is loopback direct (127.0.0.1:53021), thus no public browser acceptance/rejection can be inferred. Exact evidence in client events-0025.jsonl: down request parallel-3ac97dd303644991 seq493440 19:44:01.275Z; up parallel-16128cb3a6e34540 seq514228 19:46:06.180Z release_applied=true; scan parallel-2e2f267c13be40f5 seq545972 19:49:16.916Z confirmation widgets; scan parallel-4ef9d2571f4a4ba2 seq552158 19:49:57.921Z widget_count=0.
+
+## Agent suggestion
+
+### 2026-11-22T20:20:16.993Z — codex-networking-stall-fix
+
+Control case from fresh pinned run 20261122_195603: agent.gui_scan exposed public row serverbrowser_join_4686QTU (seq 89762), matching agent.gui_button produced accepted ui.button_input (seq 90784), client requested room 4686QTU and preflight passed (seq 90792/90794); connection_id 2 then received snapshots from ice:4686QTU with 20 entities at ~1.0-1.43s and metrics showed 26 snapshots/1003ms, RTT45ms. Confirms this one in-game browser join path works through the agent console. User's reports of server acceptance refusal and stale snapshot waiting remain unreproduced; do not close.
+
+## Agent suggestion
+
+### 2026-11-22T20:25:37.309Z — codex-networking-stall-fix
+
+End-to-end proof correction for browser control case in run 20261122_195603: server validated browser join token seq81206 and emitted network.server.join.accepted seq81216 (player2, join_accept_sent) at 20:09:52.221Z. Client immediately applied a complete snapshot at seq90990 64ms later, containing 20 entities/19 NPCs; next snapshot after 1008ms with snapshots_missed=0. This one GUI-browser path fully worked. It does not reproduce reported acceptance failures. Later same run has an independent 3.081s server tick stall mostly in snapshot_ms (2775.864ms) matching stale snapshot age, tracked in issue-453d0596e294.
+
+## Agent suggestion
+
+### 2026-11-22T20:52:13.790Z — codex-networking-stall-fix
+
+New join symptom cross-post: user's community-browser attempt can show NPC activity while client reports stale snapshots or waiting for server acceptance. Existing pinned run 20261122_204150 did accept client/player 1 (client network.client.join.accepted 20:41:56.828Z) and applied first authoritative snapshot at 20:41:56.830Z; this control does not reproduce rejection. However its later 2.536s Recast mesh setup correlated with a 2.589s server tick and stale-snapshot intervals, so client symptom can arise after successful acceptance. Need capture a failed browser attempt and correlate request/JoinAccept/JoinReject/first snapshot across both journals.

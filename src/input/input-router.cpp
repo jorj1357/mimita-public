@@ -25,6 +25,9 @@ constexpr int kMouseCount = 3;
 std::array<bool, kKeyCount> gKeyDown{};
 std::array<bool, kMouseCount> gMouseDown{};
 std::array<bool, kMouseCount> gMouseInjected{};
+std::array<bool, kMouseCount> gAgentMouseControlled{};
+std::array<int, kMouseCount> gAgentClickFramesRemaining{};
+std::array<bool, kMouseCount> gAgentClickReleasePending{};
 GLFWwindow* gWindow = nullptr;
 bool gFocused = false;
 bool gHasHostKeys = false;
@@ -33,6 +36,7 @@ double gCursorY = 0.0;
 double gLastCursorX = 0.0;
 double gLastCursorY = 0.0;
 bool gHasCursor = false;
+bool gAgentCursorActive = false;
 float gPendingLookX = 0.0f;
 float gPendingLookY = 0.0f;
 std::uint64_t gFrameId = 0;
@@ -57,6 +61,21 @@ void setWindow(GLFWwindow* window) {
 
 GLFWwindow* window() { return gWindow; }
 
+void advanceAgentMouseClick() {
+    for (int button = 0; button < kMouseCount; ++button) {
+        if (gAgentClickFramesRemaining[button] > 0) {
+            gMouseDown[button] = true;
+            gMouseInjected[button] = true;
+            --gAgentClickFramesRemaining[button];
+        } else if (gAgentClickReleasePending[button]) {
+            gMouseDown[button] = false;
+            gMouseInjected[button] = true;
+            gAgentClickReleasePending[button] = false;
+            gAgentMouseControlled[button] = false;
+        }
+    }
+}
+
 void beginFrame(std::uint64_t clientTick, std::uint64_t serverTick) {
     ++gFrameId;
     gClientTick = clientTick;
@@ -64,18 +83,24 @@ void beginFrame(std::uint64_t clientTick, std::uint64_t serverTick) {
     const bool focusedNow = HostInputFallback::gameWindowFocused();
     if (focusedNow && !gFocused) {
         gHasCursor = false;
+        gAgentCursorActive = false;
         gPendingLookX = 0.0f;
         gPendingLookY = 0.0f;
         gLookSource = Source::Unknown;
     }
     gFocused = focusedNow;
+    advanceAgentMouseClick();
     for (int button = 0; button < kMouseCount; ++button) {
-        if (!gMouseInjected[button])
+        if (gAgentMouseControlled[button]) {
+            gMouseDown[button] = true;
+        } else if (!gMouseInjected[button]) {
             gMouseDown[button] = HostInputFallback::mouseDown(button);
+        }
         gMouseInjected[button] = false;
     }
     if (!gFocused) {
-        gHasCursor = false;
+        if (!gAgentCursorActive)
+            gHasCursor = false;
         return;
     }
 
@@ -123,10 +148,26 @@ void ingestKey(int key, int, int action, int, Source source) {
     }
 }
 
-void ingestMouseButton(int button, int action, Source) {
+void ingestMouseButton(int button, int action, Source source) {
     if (button < 0 || button >= kMouseCount) return;
     gMouseDown[button] = action == GLFW_PRESS;
-    if (action == GLFW_PRESS) gMouseInjected[button] = true;
+    if (source == Source::Agent) {
+        gAgentMouseControlled[button] = action != GLFW_RELEASE;
+        gAgentClickFramesRemaining[button] = 0;
+        gAgentClickReleasePending[button] = false;
+        gMouseInjected[button] = true;
+    } else if (action == GLFW_PRESS) {
+        gMouseInjected[button] = true;
+    }
+}
+
+void queueAgentMouseClick(int button) {
+    if (button < 0 || button >= kMouseCount) return;
+    gMouseDown[button] = true;
+    gMouseInjected[button] = true;
+    gAgentMouseControlled[button] = true;
+    gAgentClickFramesRemaining[button] = 2;
+    gAgentClickReleasePending[button] = true;
 }
 
 void ingestCursor(double x, double y, Source source) {
@@ -137,6 +178,10 @@ void ingestCursor(double x, double y, Source source) {
     gCursorX = x;
     gCursorY = y;
     gHasCursor = true;
+    if (source == Source::Agent)
+        gAgentCursorActive = true;
+    else if (source == Source::Host)
+        gAgentCursorActive = false;
     if (source != Source::Host) return;
 
     gHostCursorActive = true;

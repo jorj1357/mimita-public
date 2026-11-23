@@ -10,7 +10,8 @@
 // Elite behavior profiles override the per-actor values in this file.
 {
   "aggressionBonus": 0.20000000298023224,
-  "aimAtTargetMax": 10.0,
+  // Zero disables movement-facing windows so visible targets stay in the firing direction.
+  "aimAtTargetMax": 0.0,
   "aimAtTargetMin": 5.0,
   "areaEscapeHoldSeconds": 5.0,
   "areaEscapeRadiusMeters": 5.0,
@@ -66,7 +67,7 @@
   "perceptionPredictionErrorMeters": 0.4,
   "perceptionPredictionSeconds": 0.15,
   "perceptionReactionTicks": 1,
-  "perceptionSightRange": 99.0,
+  "perceptionSightRange": 1600.0,
   "searchAvoidRadius": 1.0,
   "searchHeadingCommitSeconds": 10.0,
   "searchLookahead": 1.0,
@@ -81,7 +82,7 @@
   "switchCooldown": 0.10000000149011612,
   "targetMode": "player",
   "turnSideBias": 0.75,
-  "turnSpeed": 270.0,
+  "turnSpeed": 1080.0,
   "useNavGraph": true,
   "wallAvoidMinProbe": 10.0,
   "wallAvoidanceEnabled": true,

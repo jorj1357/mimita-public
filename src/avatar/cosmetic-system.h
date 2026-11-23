@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <memory>
+#include <atomic>
 #include <glm/glm.hpp>
 #include "map/map-mesh-types.h"
 
@@ -15,6 +17,7 @@ struct CosmeticInstance
     std::string choice;       // GLB filename (key)
     Mesh mesh;                // loaded GLB render mesh
     bool loaded = false;
+    std::atomic<bool> ready{false}; // worker publishes mesh/load result
 };
 
 class CosmeticSystem
@@ -44,5 +47,5 @@ private:
     // Load a single GLB file as a cosmetic
     bool loadCosmeticGLB(const std::string& choice);
 
-    std::unordered_map<std::string, CosmeticInstance> mCosmetics;
+    std::unordered_map<std::string, std::shared_ptr<CosmeticInstance>> mCosmetics;
 };

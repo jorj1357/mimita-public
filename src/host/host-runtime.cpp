@@ -590,9 +590,13 @@ void* renderDeviceAcquire(void*, std::int32_t width, std::int32_t height,
     if (!gRenderDevice) {
         gRenderDevice = new Renderer(width, height, title ? title : "MiMITA");
         HostRuntime::instance().installInputCallbacks(gRenderDevice->window);
-        // The resident window is created by the host. Give it foreground once
-        // so the key/mouse callbacks are live before normal gameplay starts.
-        if (gRenderDevice->window) {
+        // Automated test clients keep their window hidden and receive input
+        // through the process-local agent queue; they must not steal focus.
+        const char* agentHeadlessEnv =
+            std::getenv("MIMITA_AGENT_HEADLESS_GUI");
+        const bool agentHeadless = agentHeadlessEnv &&
+                                   std::strcmp(agentHeadlessEnv, "1") == 0;
+        if (gRenderDevice->window && !agentHeadless) {
             glfwShowWindow(gRenderDevice->window);
             glfwFocusWindow(gRenderDevice->window);
             if (HWND hwnd = glfwGetWin32Window(gRenderDevice->window)) {

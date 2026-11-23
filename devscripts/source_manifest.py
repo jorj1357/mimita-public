@@ -451,6 +451,7 @@ def _cached_inventory(root: Path, kind: str,
     except OSError:
         pass
     cached = _INVENTORY_CACHE.get(key)
+    memory_hit = cached is not None
     persistent_hit = False
     if cached is None:
         try:
@@ -472,6 +473,20 @@ def _cached_inventory(root: Path, kind: str,
     watcher_cursor = _INVENTORY_WATCHER_CURSORS.get(key)
     watcher_sequence = watcher.sequence if watcher is not None else -1
     changed_directories: list[str] | None = []
+    cache_origin = ("memory" if memory_hit else
+                    "persistent" if persistent_hit else "cold")
+    cache_diagnostics = {
+        "cache_origin": cache_origin,
+        "memory_cache_hit": memory_hit,
+        "persistent_cache_hit": persistent_hit,
+        "process_id": os.getpid(),
+        "module_name": __name__,
+        "module_instance_id": id(sys.modules.get(__name__)),
+        "inventory_cache_instance_id": id(_INVENTORY_CACHE),
+        "inventory_cache_key": str(root),
+        "watcher_id": id(watcher) if watcher is not None else None,
+        "watcher_cursor": watcher_cursor,
+    }
     if cached is not None:
         if watcher is None:
             changed_directories = _directory_stamp_changes(root, cached[1])
@@ -507,6 +522,8 @@ def _cached_inventory(root: Path, kind: str,
             return list(cached[0]), {
                 "cache_hit": True, "watcher_cache": watcher_used,
                 "directory_count": len(cached[1]),
+                **cache_diagnostics,
+                "watcher_sequence": watcher_sequence if watcher is not None else None,
             }
         if _retry < 2:
             return _cached_inventory(root, kind, _retry + 1)
@@ -572,6 +589,7 @@ def _cached_inventory(root: Path, kind: str,
         "watcher_cache": watcher_used,
         "directory_count": len(stamps),
         "watcher_sequence": watcher_sequence if watcher is not None else None,
+        **cache_diagnostics,
     }
 
 

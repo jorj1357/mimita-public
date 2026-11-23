@@ -50,3 +50,9 @@ noop
 ### 2026-11-22T14:46:24.915Z — build-wait-reviewer
 
 related_build: game-dll-20261122T142140783029Z-c00839
+
+## Agent suggestion
+
+### 2026-11-22T22:01:25.178Z — build-wait-reviewer
+
+Recurrence evidence for the flat 60s policy (from issue-8ccf9935c145): game-dll-build at game_build was flagged at 60.043s on 2026-11-22T21:22:48.132Z while the healthy attempt game-dll-20261122T212248194307Z-487aa2 (generation 526) was still inside changed_source_preflight (88.594s, dominated by input-router.cpp at 88.474s); it published ok at 21:28:06.662Z. The coord board now holds 123 open/in_review issues titled Wait over budget: game-dll-build at game_build. The wait evidence also stores the latest EXE artifact as build_id and the last published DLL generation instead of the in-flight attempt (dev-loop.py:3543 and dev-loop.py:2975-2976). Full timings and ID-mismatch details are in the issue-8ccf9935c145 review.

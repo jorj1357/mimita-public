@@ -14,6 +14,8 @@
 #include <cstdint>
 #include <algorithm>
 #include <limits>
+#include <cstdlib>
+#include <cstring>
 
 extern bool gAiLaunchMode;
 #include <string>
@@ -57,7 +59,10 @@ Renderer::Renderer(int w, int h, const char* title) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    if (gAiLaunchMode)
+    const char* agentHeadlessEnv = std::getenv("MIMITA_AGENT_HEADLESS_GUI");
+    const bool agentHeadless = agentHeadlessEnv &&
+                               std::strcmp(agentHeadlessEnv, "1") == 0;
+    if (gAiLaunchMode || agentHeadless)
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
     window = glfwCreateWindow(w, h, title, nullptr, nullptr);
@@ -73,7 +78,7 @@ Renderer::Renderer(int w, int h, const char* title) {
 
     // Keep AI/dev launches from taking over the user's desktop. The window is
     // created hidden, then shown minimized so it remains restorable/playable.
-    if (gAiLaunchMode) {
+    if (gAiLaunchMode && !agentHeadless) {
         glfwShowWindow(window);
         glfwIconifyWindow(window);
     }

@@ -175,10 +175,12 @@ void ModuleHost::poll() {
 }
 
 void ModuleHost::beginFixedTick() {
+    mFixedTickActive.store(true, std::memory_order_release);
     mimita::game::invoke(mimita::host::ModuleOp::BeginFixedTick, nullptr, 0, nullptr, 0);
 }
 
 void ModuleHost::endFixedTick() {
+    mFixedTickActive.store(false, std::memory_order_release);
     mimita::game::invoke(mimita::host::ModuleOp::EndFixedTick, nullptr, 0, nullptr, 0);
 }
 

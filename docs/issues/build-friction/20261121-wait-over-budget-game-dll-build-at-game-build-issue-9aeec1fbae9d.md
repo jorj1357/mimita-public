@@ -26,3 +26,9 @@ Review evidence (2026-11-21T14:20Z, build-wait-reviewer):
 - First incorrect step: devscripts/build_friction.py:244-246 synchronously runs agent-wake.py run --once with timeout=30 inside the dev-loop wait handler. devscripts/dev-loop.py:3450-3479 wraps issue creation and that launch in one try and converts the timeout into "could not record over-budget wait"; dev-loop.py:3458 marks the wait_id reported before the failed launch, so the wait is not retried.
 - Recommended fix: enqueue and return, or launch detached; record over_budget and reviewer-wake before any adapter launch attempt; report adapter launch failure separately without discarding the successful issue/wake evidence. Cross-reference issue-9a4503f6ed68.
 - No source or leased files were edited. This review does not close the issue; the automatic-wake acceptance remains unmet until the launch path is fixed and proven.
+
+## Agent suggestion
+
+### 2026-11-22T19:37:39.078Z — build-wait-reviewer
+
+Additional corroborating occurrence of the same false failure (issue-52e6479ff974): wait exe-build:5:2026-11-22T17:37:18.164Z in run 20261122_144609_01 created its issue and queued wake-f0479e4f7c10 once, but dev-loop recorded dev-loop.wait.issue-failed at logs/2026-11-22/20261122_144609_01/dev-loop/events.jsonl:1602 because build_friction.wake_reviewer blocked on 'agent-wake.py run --once' with timeout=30. The EXE build itself completed normally (155.35s, artifact 2026-11-22T17:39:49.763492Z). Fix remains: queue/add the wake, return, log over_budget/reviewer-wake before adapter launch, and report adapter launch separately.

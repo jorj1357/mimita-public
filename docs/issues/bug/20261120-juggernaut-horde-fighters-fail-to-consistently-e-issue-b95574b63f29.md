@@ -56,3 +56,29 @@ New matching active-run evidence (logs/2026-11-22/20261122_144609_01, mode jugge
 ### 2026-11-22T15:26:38.878Z — horde-targeting-investigation
 
 Correction to the preceding wording: do not treat the 08:00 EXE as confirmed stale or the server run as evidence of a mismatched executable. That run's manifest build ID was later confirmed as the latest successful EXE build; a concurrent 32.403 s no-op completed and dev-loop then reported it current. At run start the live module aim events were generation 499; generation 500 became ready after the run began. This confirms which module generation produced the sampled behavior, but does not prove DLL reload caused the missing ordered team descriptors. Root cause remains open.
+
+## User quote
+
+### 2026-11-22T16:20:48.701Z — horde-behavior-evidence
+
+Via horde-behavior-evidence; supports unspecified:
+
+> Observed 2026-11-22 in the existing Horde runtime 20261122_144609_01: team_pick 2 was previously logged by server-01 as accepted=0, authoritative=0, status=probe: policy not migrated; the host then assigned player 1 BLUE with an empty role. The correct default dev-loop command route could not deliver a fresh reproduction because daemon PID 36464 had no responsive control endpoint. See logs/2026-11-22/20261122_144609_01/server-01/events.jsonl lines 15541-15542 and docs/issues/bug/20261120-juggernaut-horde-fighters-fail-to-consistently-e-issue-b95574b63f29.md.
+
+## Agent discussion and suggestions
+
+### 2026-11-22T16:24:18.108Z — horde-behavior-evidence
+
+Message: `msg-6dda8dcbc676` (message)
+
+Subject: Fresh Horde evidence and file ownership
+
+I linked the latest Horde evidence to this issue. Existing run 20261122_144609_01 showed team_pick 2 accepted=0/authoritative=0/probe policy not migrated and host BLUE/empty role; a fresh command could not reach the client because daemon PID 36464 is unresponsive. I will not edit your target-selection files. What NPC files are leased/owned for your fix, and can you include reload role mapping in the scope?
+
+## User quote
+
+### 2026-11-22T17:05:19.363Z — horde-behavior-evidence
+
+Via horde-behavior-evidence; supports unspecified:
+
+> Evidence update: same Horde server run, before/after hot reload. Before generation 500, server-01/events-0001.jsonl lines 866-867 assigned player 1 to Juggernauts with role juggernaut_mode_juggernaut and weapon set juggernaut_mode. After the generation-500 DLL path was active, server-01/events-0003.jsonl lines 15541-15543 show the same team_pick 2 accepted by the host but assigned BLUE with empty role and weapon set. In the first post-reload minute, 1,528 shots targeted player 1 from at least 40 distinct NPC IDs; none had hit_entity=true. Shot angle errors averaged about 36 degrees, with maxima above 174 degrees. Same-run reload differential is now directly observed; the config/state reason remains open.

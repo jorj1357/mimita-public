@@ -1182,36 +1182,54 @@ int runServer(const LaunchOptions& options)
     ListenServerState registrationResult;
     std::thread registrationThread;
     const auto roomRegistrationStart = std::chrono::steady_clock::now();
+    uint64_t roomRegistrationAttempt = 0;
+    uint64_t registrationRetryAtMs = 0;
+    uint64_t registrationRetryDelayMs = 1000;
+    bool registrationInFlight = false;
+    bool registrationPublished = false;
     logStartupStage("room_register", "started",
                     "registering room with coordinator");
+    if (hostedRoomSession().active)
     {
-        if (hostedRoomSession().active)
-        {
-            printf("[ROOM DUPLICATE ERROR] existingCode=%s attemptedCode=%s caller=headless-server-runServer\n",
-                   hostedRoomSession().roomCode.c_str(), serverCode.c_str());
-        }
+        printf("[ROOM DUPLICATE ERROR] existingCode=%s attemptedCode=%s caller=headless-server-runServer\n",
+               hostedRoomSession().roomCode.c_str(), serverCode.c_str());
+    }
 
-        registrationThread = std::thread([&]() {
-            registrationResult.serverName = dedicatedIceState.serverName;
-            registrationResult.hostPlayerName = dedicatedIceState.hostPlayerName;
-            registrationResult.mapName = dedicatedIceState.mapName;
-            registrationResult.gameMode = dedicatedIceState.gameMode;
-            registrationResult.maxPlayers = dedicatedIceState.maxPlayers;
-            registrationResult.discordNotification = dedicatedIceState.discordNotification;
-            registrationResult.passwordProtected = dedicatedIceState.passwordProtected;
-            registrationResult.password = dedicatedIceState.password;
-            registrationResult.port = dedicatedIceState.port;
-            const bool ok = initServerIceListener(registrationResult);
+        auto startRegistrationAttempt = [&]() {
+            ++roomRegistrationAttempt;
+            registrationResult.serverCode.clear();
+            registrationResult.joinToken.clear();
+            registrationResult.iceSessionId.clear();
+            registrationResult.iceListenerAgent.reset();
+            registrationResult.lastIceCoordinatorPollMs = 0;
             {
                 std::lock_guard<std::mutex> lock(registrationMutex);
-                registrationSucceeded = ok;
-                registrationFinished = true;
+                registrationFinished = false;
+                registrationSucceeded = false;
             }
-            if (!ok)
-                printf("%s [SERVER ICE] registration failed; local server remains available\n",
-                       residentServerTimestamp());
-        });
-    }
+            registrationInFlight = true;
+            registrationThread = std::thread([&]() {
+                registrationResult.serverName = dedicatedIceState.serverName;
+                registrationResult.hostPlayerName = dedicatedIceState.hostPlayerName;
+                registrationResult.mapName = dedicatedIceState.mapName;
+                registrationResult.gameMode = dedicatedIceState.gameMode;
+                registrationResult.maxPlayers = dedicatedIceState.maxPlayers;
+                registrationResult.discordNotification = dedicatedIceState.discordNotification;
+                registrationResult.passwordProtected = dedicatedIceState.passwordProtected;
+                registrationResult.password = dedicatedIceState.password;
+                registrationResult.port = dedicatedIceState.port;
+                const bool ok = initServerIceListener(registrationResult);
+                {
+                    std::lock_guard<std::mutex> lock(registrationMutex);
+                    registrationSucceeded = ok;
+                    registrationFinished = true;
+                }
+                if (!ok)
+                    printf("%s [SERVER ICE] registration failed; local server remains available\n",
+                           residentServerTimestamp());
+            });
+        };
+    startRegistrationAttempt();
     ::StructuredLogger::instance().writeEvent(
         StructuredCategory::Network, StructuredLevel::Important,
         "network.server.local-gameplay-ready", "server",
@@ -1267,6 +1285,8 @@ int runServer(const LaunchOptions& options)
         if (registrationReady && registrationOk)
         {
             registrationThread.join();
+            registrationInFlight = false;
+            registrationPublished = true;
             dedicatedIceState.iceListenerAgent =
                 std::move(registrationResult.iceListenerAgent);
             dedicatedIceState.iceSessionId =
@@ -1283,7 +1303,8 @@ int runServer(const LaunchOptions& options)
                 "room registration completed",
                 std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - roomRegistrationStart).count(),
-                nlohmann::json{{"room_code", serverCode}, {"port", actualPort}});
+                nlohmann::json{{"room_code", serverCode}, {"port", actualPort},
+                               {"attempt_count", roomRegistrationAttempt}});
             printf("%s [SERVER ICE] registered: code=%s\n",
                    residentServerTimestamp(), serverCode.c_str());
             std::vector<uint32_t> startupNpcIds;
@@ -1321,11 +1342,29 @@ int runServer(const LaunchOptions& options)
         else if (registrationReady)
         {
             registrationThread.join();
+            registrationInFlight = false;
+            const uint64_t retryDelayMs = registrationRetryDelayMs;
+            registrationRetryAtMs = nowMs() + retryDelayMs;
+            registrationRetryDelayMs = std::min<uint64_t>(
+                registrationRetryDelayMs * 2, 30000);
             logStartupStage("room_register", "failed",
-                "coordinator room registration failed; local server remains available",
+                "coordinator room registration failed; retry scheduled",
                 std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - roomRegistrationStart).count(),
-                nlohmann::json{{"port", actualPort}});
+                nlohmann::json{{"port", actualPort},
+                               {"attempt", roomRegistrationAttempt},
+                               {"retry_delay_ms", retryDelayMs},
+                               {"local_server_available", true}});
+        }
+        if (!registrationInFlight && !registrationPublished &&
+            registrationRetryAtMs != 0 && nowMs() >= registrationRetryAtMs)
+        {
+            logStartupStage("room_register_retry", "started",
+                "retrying coordinator room registration",
+                0.0, nlohmann::json{{"attempt", roomRegistrationAttempt + 1},
+                                    {"retry_delay_ms", registrationRetryDelayMs}});
+            startRegistrationAttempt();
+            registrationRetryAtMs = 0;
         }
         // Auto-exit when --timeout is set (for CI/agent testing)
         if (options.timeoutSecs > 0 && nowMs() - serverStartMs > (uint64_t)options.timeoutSecs * 1000)

@@ -299,3 +299,58 @@ pc.attack-gate.pos: sorted samples by actor and t; used consecutive 0.05–2.0 s
 ### 2026-11-22T15:28:42.020Z — fcs-npc-speed-combat-investigation
 
 Correction to the prior speed-baseline discussion note: the sampled position event was npc.attack-gate with fields.pos. The full event name is present correctly in the regression detail file; the earlier discussion line lost its initial n due to shell escaping. The reported 8.43 world-units/s weighted mean and other values are unchanged.
+
+## Agent suggestion
+
+### 2026-11-22T15:44:07.486Z — codex-networking-stall-fix
+
+Matched FCS run 20261122_150906, gen500: zero-distance guard events report recast_query_skipped=true for actor100012; across 230 NPC plan-cost entries no recast query exceeded 533.15ms. FCS server still fell to 0.689Hz with NPC tick average 1057ms and snapshot gap 4760ms under pressure. This is partial evidence only for removing the known zero-distance Recast hotspot; objective behavior and total networking reliability remain unproven.
+
+## Review (evidence)
+
+### 2026-11-22T16:22:02.377Z — fcs-npc-speed-combat-investigation
+
+Reviewer: fcs-npc-speed-combat-investigation
+
+Progress on fcs-npc-regression-repro / fcs-npc-speed-combat-investigation (read-only journal inspection; no code edit, no new run).
+
+1) Generation 500 diagnostic exists but is too short for defuse proof. Run 20261122_145137 (mode 'fun counter strike', dust2cyberiav4, EXE 4fa387f4, game DLL generation 500 game-g500.dll sha256 907486df17b9ed036abfeeb830a262626b42587321a513d9438e0c5cc2decbdc). Server journal logs/2026-11-22/20261122_145137/server-01/events.jsonl (2016 lines). It ran only to tick ~2396 (~53s). Counts: round.start/round.go 1 each, team.site-choice 2, objective.carried 2, npc.dash 17, npc.stuck-episode 38, npc.objective-context 20, npc.utility-decision 20, 0 objective.plant-start/planted/defused. npc.simulation.paused=1. So it cannot prove CT defuse; it is a warm-up diagnostic only.
+
+2) The '19 NPCs despite a one-NPC launch setting' report is explained by the mode, not a launch bug. This run used --npcs 1 yet the journal shows 20 roster actors: 1 human (actor 1) + 19 NPCs 100000-100018, all match.actor.identity-assigned reason=objective_roster_build. Owner: src/network/server-gamemode.cpp:3532-3550 sizes each team from roundTeamCapacity(gm, team) (default 5) minus humans, independent of the launch --npcs flag. Fun Counter Strike therefore always populates its ~20-actor objective roster. This is also the load source for the CPU issue (see issue-ed3ac775283d review 187).
+
+3) Defuse-proof attempt on gen500 did not create journals. Run 20261122_150859_fcs-speed-defuse-500 contains only a 461-byte run.json stub (runtime/manifest format) and no server-01/client-01/events.jsonl, so startup never produced a usable journal. Separately, run 20261122_145137's journal is valid but the run was marked failed solely by '[WinError 5] Access is denied: ...run.json.tmp -> ...run.json'. So the trustable identity comes from the run.started record, not run.status.
+
+Blocker / next exact step: request one isolated pinned FCS run on the newest published generation that (a) keeps the full 20-actor roster alive long enough to log objective.plant-start, a CT objective.defuse-start, and objective.defused, and (b) fixes the run.json.tmp->run.json write contention so the manifest does not mark a valid capture failed. Per gen500 CPU evidence, expect a ~3.0s NPC roster-adoption stall at round activation, so readiness/measurement windows must tolerate it without declaring the run failed. No completion claim.
+
+## Agent suggestion
+
+### 2026-11-22T17:33:47.093Z — fcs-npc-speed-combat-investigation
+
+New pinned gen500 baseline from run 20261122_150906 (dust2cyberiav4, 1424.035 s, exe+DLL pinned): sparse npc.attack-gate positions yield 19 actor IDs, 4236 segments/6136.9 sampled seconds, 6.80 m/s weighted 3D and 6.56 planar (assuming user's 1 world unit=1m); 2986 stuck-episode, 1861 progress-failed, only 184 recovery durations (mean/median .30 s); 32 kill.reward, 7 NPC-v-NPC (3,2,0,2 over completed rounds), 138 grenades; objective: 9 plant starts, 3 plants, 8 defuse assignments, 1 defuse start interrupted after .332 s, 0 defused, 3 explosions. For the planted round, CT defuse start was 271.461 s after plant completion. Per-life metric instrumentation is in source and gen503 candidate still building; active stuck timer sample is queued for the next DLL. No new metric runtime proof yet.
+
+## Agent suggestion
+
+### 2026-11-22T17:40:17.623Z — fcs-npc-speed-combat-investigation
+
+Generation 506 build attempt game-dll-20261122T173219711862Z-89e54d failed compiling src/npc/npc.cpp at lines 3841/3843 because a pre-existing dash-log wrapper used StructuredLevel::Debug, which is absent from src/debug/structured-log.h's enum (levels are Off, Errors, Important, Verbose, Trace). No other active agent held the file lease; I corrected only those two severities to Verbose under an edit lease, queued build note ac94e40208d3, and released the lease. Candidate DLL and FCS runtime proof still pending.
+
+## Agent discussion and suggestions
+
+### 2026-11-22T22:59:25.061Z — codex-networking-stall-fix
+
+Message: `msg-b4042fb14007` (message)
+
+Subject: FCS NPC update hotspots observed during rejoin proof
+
+Separate remaining source of FCS snapshot latency in run 20261122_224628 (gen541): performance.server-tick-stall at server tick 426 recorded total 709.387ms, npc_ms 692.652ms. npc.tick-cost reported npc_adoption_ms 208.2475ms at 22:47:03.471Z; server-side NPC phase window around startup reports ai_ms 298.3288ms, worst_actor 100003 at 76.9412ms. Later repeatable hot owners: npc.tick-cost at 22:48:03.570Z npc_ai_ms 98.2585ms, worst actor 100006 95.1337ms; corresponding npc.slow-update shows combat_ms 94.0051ms for shotgun in NpcCombat::tryFire -> WeaponFire::tryFireHitscanDir (src/npc/npc.cpp:4055, src/npc/npc-combat.cpp:303/619, src/combat/weapon-fire-hit.cpp:206). Another event at 22:50:53.014Z shows npc_ai_ms 91.8774ms, worst actor 100018 62.9645ms; npc.slow-update at 22:50:52.983Z assigns animation_ms 56.8837 and physics_ms 59.8471. Server aggregates these before its snapshot stage (src/network/server.cpp:1634), so these stalls are on the server simulation path, not evidence of transport loss. No post-rejoin client snapshot interval >=2.5s in the 131-snapshot capture (max 1.387s), so this run did not trigger stale-peer classification. These are observed high subphase timings; exact underlying callback/collision cost still needs finer attribution and fix.
+
+## Agent discussion and suggestions
+
+### 2026-11-22T23:27:20.519Z — codex-networking-stall-fix
+
+Message: `msg-7b7e84343c55` (message)
+
+Subject: Gen545 rejoin proof and round-start tick stall
+
+Gen545 pinned run 20261122_231658 (FCS/dust2cyberiav4): asynchronous Recast prewarm allowed room P3MTGWS to register in 590.808ms; server reached registration 4.136s after process startup. world_load completed in 3,211ms and NPC collision build fell to 518.597ms. Recast candidate was adopted successfully at 23:17:07.290Z after prewarm start at 23:17:02.528Z. This is a major improvement from gen541's 24,563ms world_load, but still misses the <1s total-start target. GUI commands left the room and rejoined P3MTGWS; server accepted at 23:18:38.377Z, client connected at 23:18:38.379Z. 115 applied snapshots had max gap 1.243s and no >=2.5s gaps, stale-peer events, or reconnects.
+Separate stall: tick 10262 reached 710.704ms, gamemode_us=621.847ms, NPC=88.122ms. `round.start` round 3 was logged at the same tick (23:20:08.054Z) after 12 `gamemode.spawn-resolved` round-reset events, through server.cpp:1598-1603 -> server-runtime-module.cpp:557-580 -> server-gamemode.cpp:3639-3696 and resetGamemodeActorsAtMapSpawn at 5340-5461. This is a strong correlation, not yet proof that actor reset is the entire 621ms; I am adding subphase timing to the existing round-reset owner. No stale peer occurred in this run despite the tick stall.

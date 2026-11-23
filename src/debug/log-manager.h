@@ -35,9 +35,6 @@ private:
     bool createDirectories();
     void writeHeader();
     void writeFooter();
-    void rotateLogs();
-    void cleanupOldFormat();
-
     std::string mPath;
     FILE* mFile = nullptr;
 

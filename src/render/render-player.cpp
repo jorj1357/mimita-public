@@ -403,8 +403,10 @@ void renderPlayerInternal(
     // NPCs carry their own per-life avatar identity. Bind it before queuing
     // the shared async model load; this keeps avatar work out of spawn/update.
     if (!p.avatarName().empty() && !av.isAvatarLoadPending(p.avatarName()) &&
-        (!p.avatarInstance || p.avatarInstance->name != p.avatarName()))
+        (!p.avatarInstance || p.avatarInstance->name != p.avatarName())) {
+        MIMITA_PERF_SCOPE("Rendering::NetworkPlayer::AvatarBind");
         av.applyAvatarToPlayer(p, p.avatarName());
+    }
 
     // Kick async load once per player. Always issue the request here: an avatar
     // instance may be bound while its model request was never queued (for
@@ -422,9 +424,18 @@ void renderPlayerInternal(
             modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
         p.requestModelLoad(modelPath);
     }
-    p.finalizeModelIfReady();
-    ensureActorMeshBounds(p);
-    av.finalizeAtlasIfReady(p);
+    {
+        MIMITA_PERF_SCOPE("Rendering::NetworkPlayer::ModelFinalize");
+        p.finalizeModelIfReady();
+    }
+    {
+        MIMITA_PERF_SCOPE("Rendering::NetworkPlayer::MeshBounds");
+        ensureActorMeshBounds(p);
+    }
+    {
+        MIMITA_PERF_SCOPE("Rendering::NetworkPlayer::AtlasFinalize");
+        av.finalizeAtlasIfReady(p);
+    }
     const char* renderGate = !gRenderer ? "renderer_unavailable"
         : (player.dead && isLocal ? "local_player_dead"
         : (player.dead && !player.deathAnim.active && !player.ragdollModeActive &&

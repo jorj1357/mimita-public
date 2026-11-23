@@ -1,6 +1,5 @@
 #include "log-manager.h"
 
-#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -9,7 +8,6 @@
 #include <fcntl.h>
 #include <io.h>
 #include <unistd.h>
-#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -76,49 +74,6 @@ bool LogManager::openFile()
     return true;
 }
 
-void LogManager::rotateLogs()
-{
-    const int MAX_LOGS = 30;
-    std::vector<fs::path> logFiles;
-
-    std::error_code ec;
-    if (!fs::exists("logs", ec)) return;
-
-    for (auto& entry : fs::recursive_directory_iterator("logs", ec)) {
-        if (!entry.is_regular_file()) continue;
-        std::string name = entry.path().filename().string();
-        if (name.find("_log_") != std::string::npos) {
-            // Only rotate files matching our managed log types
-            bool isOurs = false;
-            for (auto& ft : {"Server_", "Gameterminal_", "Client_", "Game_"}) {
-                if (name.find(ft) == 0) { isOurs = true; break; }
-            }
-            if (isOurs)
-                logFiles.push_back(entry.path());
-        }
-    }
-
-    if ((int)logFiles.size() <= MAX_LOGS) return;
-
-    std::sort(logFiles.begin(), logFiles.end(), [](const fs::path& a, const fs::path& b) {
-        return fs::last_write_time(a) < fs::last_write_time(b);
-    });
-
-    int toDelete = (int)logFiles.size() - MAX_LOGS;
-    mRotationDeleted = 0;
-    for (int i = 0; i < toDelete; ++i) {
-        std::error_code ec2;
-        fs::remove(logFiles[i], ec2);
-        if (!ec2) {
-            printf("[LOG ROTATION] Deleted old log: %s\n", logFiles[i].string().c_str());
-            if (mFile)
-                fprintf(mFile, "[LOG ROTATION] Deleted old log: %s\n",
-                    logFiles[i].string().c_str());
-            mRotationDeleted++;
-        }
-    }
-}
-
 void LogManager::writeHeader()
 {
     if (!mFile) return;
@@ -130,9 +85,6 @@ void LogManager::writeHeader()
         "==================================================\n",
         mLogType.c_str(), timestamp().c_str());
 
-    if (mRotationDeleted > 0) {
-        fprintf(mFile, "\n[LOG ROTATION] Removed %d old logs\n", mRotationDeleted);
-    }
 }
 
 void LogManager::writeFooter()
@@ -208,54 +160,14 @@ static void captureThreadFunc(int readFd, LogManager* mgr, std::atomic<bool>& ru
     }
 }
 
-void LogManager::cleanupOldFormat()
-{
-    std::error_code ec;
-    if (!fs::exists("logs", ec)) return;
-    for (auto& entry : fs::directory_iterator("logs", ec)) {
-        if (!entry.is_directory()) continue;
-        std::string dirName = entry.path().filename().string();
-        // Check for files matching old pattern: HH-MM-SS-log.txt (dashed time + "-log.txt")
-        for (auto& file : fs::directory_iterator(entry.path(), ec)) {
-            if (!file.is_regular_file()) continue;
-            std::string name = file.path().filename().string();
-            if (name.size() > 8 && name.substr(name.size() - 8) == "-log.txt") {
-                fs::remove_all(entry.path(), ec);
-                printf("[LOGMANAGER] Cleaned up old-format log dir: %s\n", dirName.c_str());
-                break;
-            }
-        }
-        // Also delete empty directories whose name matches DD-MM-YYYY with DD > 12
-        // (unambiguously old date format, not MM-DD-YYYY)
-        if (dirName.size() == 10 && dirName[2] == '-' && dirName[5] == '-') {
-            int firstNum = std::atoi(dirName.substr(0, 2).c_str());
-            if (firstNum > 12) {
-                bool empty = true;
-                for (auto& f : fs::directory_iterator(entry.path(), ec)) {
-                    (void)f; empty = false; break;
-                }
-                if (empty) {
-                    if (fs::remove(entry.path(), ec)) {
-                        printf("[LOGMANAGER] Cleaned up old-format empty log dir: %s\n", dirName.c_str());
-                    }
-                }
-            }
-        }
-    }
-}
-
 bool LogManager::init()
 {
     if (mFile) return true;
-
-    cleanupOldFormat();
 
     if (!createDirectories()) {
         printf("[LOGMANAGER] Failed to create log directories\n");
         return false;
     }
-
-    rotateLogs();
 
     if (!openFile())
         return false;

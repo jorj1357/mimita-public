@@ -678,7 +678,7 @@
       "approach_directions": 4,
       "approach_reassign_ticks": 300,
       "approach_distance_meters": 6.0,
-      "max_attackers_per_target": 8,
+      "max_attackers_per_target": 32,
       "rally_distance_meters": 8.0,
       "focus_reacquire_seconds": 4.0,
       "slot_stickiness": 0.8,

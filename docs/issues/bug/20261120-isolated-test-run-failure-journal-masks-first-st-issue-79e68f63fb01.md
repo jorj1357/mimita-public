@@ -60,3 +60,81 @@ Message: `msg-9694eeab34e1` (shared.request)
 Subject: Build note 073 attached to next auto DLL attempt
 
 The first DLL build completed as generation411 at 20:09:36Z, revision f75e8d2c, and compiled physics-collision-glb-sweep-slide.cpp. It was immediately followed by auto-35 attempt game-dll-20261120T200937027322Z-8daf4c, source_generation38; its build.started event lists collision note 073a3ff417e9. Please wait for this next attempt to publish (likely generation412) before the shared startup/collision proof run so the changed code and its note both have traceable generation identity.
+
+## Agent suggestion
+
+### 2026-11-22T15:44:08.762Z — codex-networking-stall-fix
+
+Repeatable isolated-run failure and fix evidence: run 20261122_145240 reached connected FCS gameplay and wrote paired journals, then failed at run.json.tmp -> run.json with WinError 5 during atomic manifest replacement; run 20261122_145137 showed the same. In devscripts/dev_loop/instances.py::write_run_manifest I replaced the fixed temp/os.replace path with the existing shared write_json retrying atomic writer. After this change, gen500 FCS run 20261122_150906 reached status=online, remained readable, and --stop-test-run recorded status=stopped with no failures. This validates the run-manifest path on a real pinned runtime; it does not claim the original OS lock source is proven.
+
+## Agent suggestion
+
+### 2026-11-22T16:17:56.009Z — codex-networking-stall-fix
+
+Reproduced an early server-start failure on three isolated attempts: runs 20261122_155609 and 20261122_160401 pinned gen500, and 20261122_161300 pinned gen502; each server PID exited code 1 before logger.started within the dev-loop 25s gate, and each run.json names a server journal that does not exist. The dev-loop journal does record parallel-run.started, instance.started, then parallel-run.failed, so the error is visible but the first server-side cause is not. The attempts overlapped the 15+ minute generation-501 compile (642 sources, 10 jobs, cache seeded=0), which is a resource-pressure correlation only, not proven causation. For 20261122_161300 the exact dev-loop journal is logs/2026-11-22/20261122_161300/dev-loop/events.jsonl and run.json pins EXE SHA 4fa387f... and game DLL gen502 SHA 2263b140... . Need preserve child stdout/stderr or add earlier startup diagnostics so the actual exit-1 reason is observable before logger.started.
+
+## User quote
+
+### 2026-11-22T16:21:52.752Z — horde-behavior-evidence
+
+Via horde-behavior-evidence; supports unspecified:
+
+> Observed 2026-11-22: isolated pinned Horde run 20261122_155609 used EXE build 2026-11-22T08:00:31.376619Z:4fa387f46e02a3a9d136abff3849b879306ecd354f07e145b35b10d20a8d2136 and DLL generation 500, DLL SHA-256 907486df17b9ed036abfeeb830a262626b42587321a513d9438e0c5cc2decbdc. Server PID 27324 exited code 1 before logger.started; no server/client events.jsonl were created, only logs/2026-11-22/20261122_155609/dev-loop/events.jsonl. run.json records failure test server 27324 did not report logger.started. First startup cause is still masked.
+
+## Agent discussion and suggestions
+
+### 2026-11-22T16:24:51.488Z — horde-behavior-evidence
+
+Message: `msg-dafec323749e` (message)
+
+Subject: Fresh Horde evidence and file ownership
+
+Fresh pinned Horde run 20261122_155609 (EXE ID 2026-11-22T08:00:31.376619Z:4fa387f46e02a3a9d136abff3849b879306ecd354f07e145b35b10d20a8d2136, game gen 500) exited server PID 27324 code 1 before logger.started; only dev-loop journal exists. I appended this occurrence to the issue. I will avoid your owned launch files; what is your active scope?
+
+## Agent suggestion
+
+### 2026-11-22T16:29:42.892Z — codex-networking-stall-fix
+
+The isolated test launcher now captures a bounded 24-line/512-char redacted stdout+stderr tail from its server child in memory and includes it with exit code/readiness duration in the existing dev-loop.parallel-run.failed event when logger.started was never observed; the first wait also returns immediately if the server process exits. This is an observability/fail-fast change only. It is not runtime-proven yet; next pinned control run must show whether it exposes the exit-1 reason and whether startup is repeatably successful without a concurrent build.
+
+## User quote
+
+### 2026-11-22T17:41:05.999Z — horde-behavior-evidence
+
+Via horde-behavior-evidence; supports unspecified:
+
+> Isolated Horde attempt logs/2026-11-22/20261122_155609/run.json pins EXE build 2026-11-22T08:00:31.376619Z and DLL gen500 SHA256 907486df17b9ed036abfeeb830a262626b42587321a513d9438e0c5cc2decbdc; server PID27324 exited code1 before logger.started, so no server/client events.jsonl were emitted. Retry without --test-game-generation was rejected because pinned EXE requires an explicit DLL generation; that rejection is expected validation, not a separate defect. The retry did not replace the missing startup-cause journal.
+
+## User quote
+
+### 2026-11-22T19:12:29.514Z — horde-behavior-evidence
+
+Via horde-behavior-evidence; supports runtime:
+
+> Run-control limitation confirmed: a dev-loop `--command team_pick 2` sent with `--run-id 20261122_144609_01` was rejected because that older Horde runtime was not a managed parallel test run. The command was not delivered and no terminal.command.completed event exists for that attempt. Use a managed parallel run for command-level proof; broader runtime command routing is a separate capability gap.
+
+## Agent suggestion
+
+### 2026-11-22T19:24:35.016Z — community_join_trace
+
+Fresh pinned run 20261122_184056 exposes a separate manifest metadata gap: server-01/events-0017.jsonl seq180 (room_register complete) and seq182 (network.room.registered) both have room_code=GEFS5FF at 18:41:25.197Z, PID8196; room-code.txt contains GEFS5FF. Yet run.json updated 18:42:05.583Z still stores instance room_code empty. Source: devscripts/dev_loop/parallel_test_runs.py:636-639 reads the file once at local-gameplay-ready, before room registration, then writes the row; list_parallel_runs:875-889 only returns the stale manifest value. Track as separate run-metadata/readiness evidence; no manifest file corruption or failed room registration occurred in this run.
+
+## User quote
+
+### 2026-11-22T19:49:29.237Z — horde-behavior-evidence
+
+Via horde-behavior-evidence; supports runtime:
+
+> Verified run 20261122_155609: logs/2026-11-22/20261122_155609/run.json records an explicit game generation 500, server PID 27324, exit code 1, and failure "did not report logger.started". The server-01 and client-01 directories are empty; only dev-loop/events.jsonl exists. That journal records parallel-run.started, instance.started, then parallel-run.failed at 2026-11-22T15:56:35.974Z, with no server logger event. parallel_test_runs.py waits for logger.started at lines 578-617 and times out/fails there. This confirms failure happened before game-level journaling, but surviving evidence does not expose the child process exit reason, so startup root cause is still unresolved.
+
+## Agent suggestion
+
+### 2026-11-22T19:52:52.641Z — community_join_trace
+
+Separate manifest metadata issue confirmed: run 20261122_184056 server events-0017.jsonl seq180-182 at 18:41:25.197Z registered room GEFS5FF and room-code.txt contains GEFS5FF, but run.json at 18:42:05.583Z and test-run listing keep instances.server-01.room_code empty. Source: devscripts/dev_loop/parallel_test_runs.py lines555-566,636-639,875-889. This is test-run observability, not a public browser join failure; please cross-link dedicated issue when filed.
+
+## Agent suggestion
+
+### 2026-11-22T19:54:03.487Z — community_join_trace
+
+Dedicated dev-loop metadata issue created: issue-2aeb1b5d1e22 (Isolated test-run manifest misses room code registered after local readiness). This is separate from issue-79's missing first startup journal symptom; evidence shows server registered GEFS5FF while run.json/listing retained empty room_code, source parallel_test_runs.py lines555-566,636-639,875-889.

@@ -3641,8 +3641,10 @@ void beginObjectiveRound(ServerGamemodeState& d,
                          std::unordered_map<uint32_t, ServerNpc>& npcs,
                          NpcSystem& npcSystem,
                          HeadlessWorld& world,
-                         uint32_t currentTick)
+                         uint32_t currentTick,
+                         double rosterBuildMs)
 {
+    const auto roundSetupStarted = std::chrono::steady_clock::now();
     ++d.duelId;
     ++d.respawnSequence;
     ++d.stateVersion;
@@ -3668,7 +3670,11 @@ void beginObjectiveRound(ServerGamemodeState& d,
     // at GO. Newly adopted roster bodies get the same hold in
     // the server NPC phase gate (the gate now pauses all NPC updates).
     d.roundCountdownFreeze = true;
+    const auto actorResetStarted = std::chrono::steady_clock::now();
     resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
+    const double actorResetMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - actorResetStarted).count();
+    const auto objectiveAssignmentStarted = std::chrono::steady_clock::now();
     if (d.payloadMode) {
         MimitaGamemode::payloadRuntimeReset(d.payloadRuntime);
         if (d.payloadCartEntityId != 0) {
@@ -3680,6 +3686,8 @@ void beginObjectiveRound(ServerGamemodeState& d,
     } else {
         assignObjectiveCarrier(d, players, npcs);
     }
+    const double objectiveAssignmentMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - objectiveAssignmentStarted).count();
     Debug::warn(Debug::Category::Duel,
         "[ROUND] begin mode=%s round=%u version=%u wins=%d-%d toWin=%d tick=%u\n",
         d.matchMode.c_str(), d.roundNumber, d.roundVersion,
@@ -3693,7 +3701,33 @@ void beginObjectiveRound(ServerGamemodeState& d,
             {"round_version", d.roundVersion},
             {"wins", {d.roundWins[0], d.roundWins[1]}},
             {"rounds_to_win", d.roundsToWin},
-            {"countdown_seconds", d.countdownSeconds}});
+            {"countdown_seconds", d.countdownSeconds},
+            {"participants", d.participants.size()},
+            {"roster_build_ms", rosterBuildMs},
+            {"actor_reset_ms", actorResetMs},
+            {"objective_assignment_ms", objectiveAssignmentMs},
+            {"setup_ms", std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - roundSetupStarted).count()}});
+}
+
+void logObjectiveRoundTransitionTiming(const ServerGamemodeState& d,
+                                       uint32_t tick,
+                                       double rosterBuildMs,
+                                       double stateBroadcastMs,
+                                       std::chrono::steady_clock::time_point started)
+{
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "round.transition-phases", std::to_string(d.duelId),
+        "round transition phase timing", tick,
+        nlohmann::json{
+            {"mode", d.matchMode},
+            {"round", d.roundNumber},
+            {"participants", d.participants.size()},
+            {"roster_build_ms", rosterBuildMs},
+            {"state_broadcast_ms", stateBroadcastMs},
+            {"transition_ms", std::chrono::duration<double, std::milli>(
+                 std::chrono::steady_clock::now() - started).count()}});
 }
 
 // Decide a round. Awards the round win to `winnerTeam` (or -1 for a draw),
@@ -8910,6 +8944,34 @@ void serverGamemodeTick(SOCKET sock,
         d.pendingKillerIsNpc = event.killerEntityType == ENTITY_NPC;
         d.pendingVictimIsNpc = event.victimEntityType == ENTITY_NPC;
         d.hasPendingKill = true;
+        // In Fun Counter Strike, a human who just killed a teammate is an
+        // authoritative enemy sighting for the victim's squad. Share that
+        // target with the existing team brain so respawned/nearby teammates
+        // do not immediately forget the player and switch to another NPC.
+        if (d.matchMode == "funcounterstrike" &&
+            event.killerEntityType == ENTITY_PLAYER &&
+            event.victimEntityType == ENTITY_NPC &&
+            event.killerId != 0 && event.victimId != 0) {
+            const auto victimTeam = d.matchTeams.find(event.victimId);
+            if (victimTeam != d.matchTeams.end() &&
+                victimTeam->second >= 0 && victimTeam->second < 2) {
+                TeamBrain& brain = victimTeam->second == 0
+                    ? d.teamBrainA : d.teamBrainB;
+                brain.reportEnemySighting(event.killerId, event.killerPos,
+                                          1.0f, false);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcCombat, StructuredLevel::Important,
+                    "npc.team-retaliation", std::to_string(event.victimId),
+                    "player kill shared as hostile team target", tick,
+                    nlohmann::json{{"team", victimTeam->second},
+                                   {"killer_actor", event.killerId},
+                                   {"victim_actor", event.victimId},
+                                   {"killer_position", {event.killerPos.x,
+                                                         event.killerPos.y,
+                                                         event.killerPos.z}}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
         // NPC kills of players can arrive from server-damage without an NPC
         // map pointer. Resolve their team heal here, where the authoritative
         // NPC registry is available for every kill source.
@@ -9190,9 +9252,20 @@ void serverGamemodeTick(SOCKET sock,
                     }
                 d.warmup = false;
                 // Rebuild a clean roster and spawn at team spawns for the round.
+                const auto roundTransitionStarted = std::chrono::steady_clock::now();
+                const auto rosterBuildStarted = std::chrono::steady_clock::now();
                 buildObjectiveRoster(d, players, npcs, npcSystem);
-                beginObjectiveRound(d, players, npcs, npcSystem, world, tick);
+                const double rosterBuildMs = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - rosterBuildStarted).count();
+                beginObjectiveRound(d, players, npcs, npcSystem, world, tick,
+                                    rosterBuildMs);
+                const auto stateBroadcastStarted = std::chrono::steady_clock::now();
                 broadcastDuelState(sock, d, players, totalPacketsOut);
+                const double stateBroadcastMs = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - stateBroadcastStarted).count();
+                logObjectiveRoundTransitionTiming(d, tick, rosterBuildMs,
+                                                  stateBroadcastMs,
+                                                  roundTransitionStarted);
             }
             else if (tick - d.lastBroadcastTick >= 30)
             {
@@ -9276,6 +9349,9 @@ void serverGamemodeTick(SOCKET sock,
             d.phaseTimer -= SERVER_DT;
             if (d.phaseTimer <= 0.0f)
             {
+                const auto roundTransitionStarted = std::chrono::steady_clock::now();
+                double rosterBuildMs = 0.0;
+                bool startedNextRound = false;
                 if (!d.endlessRounds &&
                     (d.matchOver || (d.maxRounds > 0 && (int)d.roundNumber >= d.maxRounds)))
                 {
@@ -9294,11 +9370,26 @@ void serverGamemodeTick(SOCKET sock,
                 else
                 {
                     // Next round: rebuild roster only if unlocked, then countdown.
+                    startedNextRound = true;
                     if (!d.rosterLocked)
+                    {
+                        const auto rosterBuildStarted = std::chrono::steady_clock::now();
                         buildObjectiveRoster(d, players, npcs, npcSystem);
-                    beginObjectiveRound(d, players, npcs, npcSystem, world, tick);
+                        rosterBuildMs = std::chrono::duration<double, std::milli>(
+                            std::chrono::steady_clock::now() - rosterBuildStarted).count();
+                    }
+                    beginObjectiveRound(d, players, npcs, npcSystem, world, tick,
+                                        rosterBuildMs);
                 }
+                const auto stateBroadcastStarted = std::chrono::steady_clock::now();
                 broadcastDuelState(sock, d, players, totalPacketsOut);
+                if (startedNextRound) {
+                    const double stateBroadcastMs = std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - stateBroadcastStarted).count();
+                    logObjectiveRoundTransitionTiming(d, tick, rosterBuildMs,
+                                                      stateBroadcastMs,
+                                                      roundTransitionStarted);
+                }
             }
             else if (tick - d.lastBroadcastTick >= 30)
             {

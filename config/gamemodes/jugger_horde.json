@@ -236,7 +236,7 @@
   "npc_behavior_profile": "",
   "npc_targeting": {
     "enabled": true,
-    "mode": "opposite_team",
+    "mode": "player",
     "include_players": true,
     "include_npcs": true
   },

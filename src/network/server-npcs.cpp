@@ -54,11 +54,16 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <future>
 #include <limits>
+#include <memory>
 #include <string>
 #include <utility>
 
 namespace MimitaNet {
+
+static std::future<RecastNavMeshCandidate> gNpcRecastPrewarm;
+static std::shared_ptr<World> gNpcRecastPrewarmWorld;
 
 // How long a killed online NPC stays dead before respawning at its spawn
 // point. Kept above the 180-tick (3s) fall-over death animation so clients see
@@ -306,6 +311,48 @@ static void runRecastIsolatedSelfTest(const World& npcWorld,
                        hw.boundsMax + glm::vec3(5000.0f), profile));
 }
 
+static void pollNpcRecastPrewarm(const World& world)
+{
+    if (!gNpcRecastPrewarm.valid() ||
+        gNpcRecastPrewarm.wait_for(std::chrono::seconds(0)) !=
+            std::future_status::ready)
+        return;
+
+    try {
+        RecastNavMeshCandidate candidate = gNpcRecastPrewarm.get();
+        gNpcRecastPrewarmWorld.reset();
+        const RecastNavigationResult nav = candidate.diagnostics();
+        const bool adopted = nav.available &&
+            RecastNavigationBackend::instance().adopt(
+                world, std::move(candidate));
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            adopted ? "npc.navmesh.bake-success" : "npc.navmesh.bake-failed",
+            "server", adopted ? "prepared" :
+                (nav.failure.empty() ? "prewarm_candidate_not_adopted"
+                                     : nav.failure.c_str()),
+            0,
+            nlohmann::json{{"available", nav.available},
+                           {"adopted", adopted},
+                           {"backend", "recast_detour"},
+                           {"build_ms", nav.buildMilliseconds},
+                           {"coordinate_system", nav.coordinateSystem},
+                           {"failure", nav.failure},
+                           {"navmesh_polys", nav.navMeshPolyCount},
+                           {"navmesh_verts", nav.navMeshVertCount},
+                           {"triangle_count", nav.sourceTriangleCount},
+                           {"walkable_triangles", nav.walkableTriangleCount}},
+            __FILE__, __LINE__, __FUNCTION__);
+    } catch (const std::exception& e) {
+        gNpcRecastPrewarmWorld.reset();
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.navmesh.bake-failed", "server", "prewarm_worker_exception",
+            0, nlohmann::json{{"failure", e.what()}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+}
+
 static void rebuildNpcSolidBounds(World& npcWorld)
 {
     auto& mesh = npcWorld.collisionMesh;
@@ -398,7 +445,28 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw,
         __FILE__, __LINE__, __FUNCTION__);
     npcWorld.collisionChunkSize = hw.collisionChunkSize;
     ++npcWorld.renderRevision;
+    const auto logCollisionBuildPhase = [&](const char* phase,
+                                            bool started,
+                                            double durationMs) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.collision-world.phase", phase,
+            started ? "NPC collision preparation phase started"
+                    : "NPC collision preparation phase completed",
+            0,
+            nlohmann::json{{"phase", phase},
+                           {"result", started ? "started" : "complete"},
+                           {"duration_ms", durationMs},
+                           {"headless_triangles", hw.triangles.size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+    };
+
+    auto phaseStarted = std::chrono::steady_clock::now();
+    logCollisionBuildPhase("solid_bounds", true, 0.0);
     rebuildNpcSolidBounds(npcWorld);
+    double solidBoundsMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - phaseStarted).count();
+    logCollisionBuildPhase("solid_bounds", false, solidBoundsMs);
 
     // Build the same acceleration grids the client builds: chunk cells PLUS
     // the coarse large-triangle grid + sub-grids. Reusing the client builder
@@ -407,7 +475,12 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw,
     // chunks, e.g. chainofjudgement's arena floor and walls) were silently
     // dropped by appendChunkTrianglesForAABB, so server NPCs fell through the
     // floor and shot through walls.
+    phaseStarted = std::chrono::steady_clock::now();
+    logCollisionBuildPhase("collision_chunks", true, 0.0);
     buildCollisionChunks(npcWorld, nullptr);
+    const double collisionChunksMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - phaseStarted).count();
+    logCollisionBuildPhase("collision_chunks", false, collisionChunksMs);
 
     printf("[SERVER NPC WORLD] built CPU collision: triangles=%zu chunks=%zu "
            "largeTris=%zu largeChunks=%zu treeNodes=%zu\n",
@@ -435,33 +508,33 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw,
     if (allowRecastPrewarm &&
         (compareEnabled || recastBackendEnabled || profileWantsRecast)) {
         NavigationAgentProfile profile;
-        const RecastNavigationResult nav =
-            RecastNavigationBackend::instance().prepare(npcWorld, profile);
-        // A successful bake only proves the navmesh was built. It deliberately
-        // does not claim a route exists; route success is reported per query by
-        // npc.nav.compare. Walkable/poly counts prove the converted geometry
-        // produced a usable surface (a Z-up/Y-up mismatch yields zero).
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::NpcMovement, StructuredLevel::Important,
-            nav.available ? "npc.navmesh.bake-success" : "npc.navmesh.bake-failed",
-            "server", nav.available ? "prepared" :
-                (nav.failure.empty() ? "failed" : nav.failure.c_str()), 0,
-            nlohmann::json{
-                {"backend", "recast_detour"},
-                {"coordinate_system", nav.coordinateSystem},
-                {"available", nav.available},
-                {"navmesh_version", nav.navmeshVersion},
-                {"triangle_count", npcWorld.collisionMesh.triangles.size()},
-                {"walkable_triangles", nav.walkableTriangleCount},
-                {"navmesh_polys", nav.navMeshPolyCount},
-                {"navmesh_verts", nav.navMeshVertCount},
-                {"recast_bounds_min", {nav.recastBoundsMin.x, nav.recastBoundsMin.y,
-                                       nav.recastBoundsMin.z}},
-                {"recast_bounds_max", {nav.recastBoundsMax.x, nav.recastBoundsMax.y,
-                                       nav.recastBoundsMax.z}},
-                {"build_ms", nav.buildMilliseconds},
-                {"failure", nav.available ? "" : nav.failure}},
-            __FILE__, __LINE__, __FUNCTION__);
+        if (!gNpcRecastPrewarm.valid()) {
+            try {
+                gNpcRecastPrewarmWorld = std::make_shared<World>(npcWorld);
+                const auto snapshot = gNpcRecastPrewarmWorld;
+                gNpcRecastPrewarm = std::async(
+                    std::launch::async, [snapshot, profile] {
+                        return RecastNavMeshCandidate::build(*snapshot, profile);
+                    });
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcMovement, StructuredLevel::Important,
+                    "npc.navmesh.prewarm", "server",
+                    "navmesh prewarm queued off the startup path", 0,
+                    nlohmann::json{{"result", "started"},
+                                   {"triangle_count",
+                                    npcWorld.collisionMesh.triangles.size()}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            } catch (const std::exception& e) {
+                gNpcRecastPrewarmWorld.reset();
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcMovement, StructuredLevel::Important,
+                    "npc.navmesh.prewarm", "server",
+                    "navmesh prewarm worker could not start", 0,
+                    nlohmann::json{{"result", "start_failed"},
+                                   {"failure", e.what()}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
     }
 
     runRecastIsolatedSelfTest(npcWorld, hw);
@@ -525,6 +598,9 @@ struct NpcSpawnResolution
     bool rawInside = false;
     bool safeInside = false;
     bool cached = false;
+    double safeSpawnResolveMs = 0.0;
+    double rawInsideMs = 0.0;
+    double safeInsideMs = 0.0;
 };
 
 static NpcSpawnResolution resolveNpcSpawnCached(const World& world,
@@ -555,10 +631,22 @@ static NpcSpawnResolution resolveNpcSpawnCached(const World& world,
     // bad raw spawn cannot stall gameplay. Spawn resolution must inspect more
     // nearby lift/ring candidates before it falls back to the raw point; keep
     // the existing 25 ms time bound so this cannot consume a whole extra tick.
+    const auto safeSpawnStart = std::chrono::steady_clock::now();
     resolution.safeSpawn =
         resolveSafeStandingSpawn(world, rawSpawn, 0.60f, 2.0f, 128, 25.0);
+    const double safeSpawnResolveMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - safeSpawnStart).count();
+    const auto rawInsideStart = std::chrono::steady_clock::now();
     resolution.rawInside = worldPointInsideSolid(world, rawSpawn);
+    const double rawInsideMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - rawInsideStart).count();
+    const auto safeInsideStart = std::chrono::steady_clock::now();
     resolution.safeInside = worldPointInsideSolid(world, resolution.safeSpawn);
+    const double safeInsideMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - safeInsideStart).count();
+    resolution.safeSpawnResolveMs = safeSpawnResolveMs;
+    resolution.rawInsideMs = rawInsideMs;
+    resolution.safeInsideMs = safeInsideMs;
     cache[npcId] = CacheEntry{rawSpawn, resolution, geometrySignature};
     return resolution;
 }
@@ -568,24 +656,46 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                                std::unordered_set<uint32_t>& npcIdsAlive,
                                const World& world)
 {
+    const auto adoptionStart = std::chrono::steady_clock::now();
+    double simulatedIdLookupMs = 0.0;
+    double spawnResolutionMs = 0.0;
+    double npcSpawnMs = 0.0;
+    double roleProfileResolveMs = 0.0;
+    double npcProfileApplyMs = 0.0;
+    double structuredLogMs = 0.0;
+    double modeRoleAssignmentMs = 0.0;
+    size_t adoptionCandidates = 0;
+    size_t newlySimulated = 0;
     for (const auto& kv : npcs)
     {
+        ++adoptionCandidates;
         bool alreadySimulated = false;
+        auto phaseStart = std::chrono::steady_clock::now();
         for (const Npc& n : npcSystem.all())
         {
             if (n.id == kv.first) { alreadySimulated = true; break; }
         }
+        simulatedIdLookupMs += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - phaseStart).count();
         const bool alreadyTracked = npcIdsAlive.find(kv.first) != npcIdsAlive.end();
         if (alreadyTracked && !alreadySimulated)
             continue;
         npcIdsAlive.insert(kv.first);
         if (!alreadySimulated)
         {
+            ++newlySimulated;
             const glm::vec3 rawSpawn = kv.second.pos;
+            phaseStart = std::chrono::steady_clock::now();
             const NpcSpawnResolution resolved =
                 resolveNpcSpawnCached(world, kv.first, rawSpawn);
+            spawnResolutionMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - phaseStart).count();
             const glm::vec3& safeSpawn = resolved.safeSpawn;
+            phaseStart = std::chrono::steady_clock::now();
             npcSystem.spawnNpc(kv.first, kv.second.difficulty, safeSpawn);
+            npcSpawnMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - phaseStart).count();
+            phaseStart = std::chrono::steady_clock::now();
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::NpcMovement, StructuredLevel::Important,
                 "npc.spawn.resolved", std::to_string(kv.first),
@@ -599,14 +709,22 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                     {"raw_inside_solid", resolved.rawInside},
                     {"safe_inside_solid", resolved.safeInside},
                     {"cached", resolved.cached},
+                    {"safe_spawn_resolve_ms", resolved.safeSpawnResolveMs},
+                    {"raw_inside_query_ms", resolved.rawInsideMs},
+                    {"safe_inside_query_ms", resolved.safeInsideMs},
+                    {"collision_triangles", world.collisionMesh.triangles.size()},
+                    {"solid_bounds", world.collisionMesh.solidBounds.size()},
                     {"corrected_m", glm::length(safeSpawn - rawSpawn)}},
                 __FILE__, __LINE__, __FUNCTION__);
+            structuredLogMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - phaseStart).count();
         }
         // Map-mode startup NPCs can exist before the managed match roster is
         // built. Give them the configured NPC team role before resolving their
         // spawn profile, so role movement presets apply in Sandbox too.
         ServerGamemodeState& modeState = serverGamemodeState();
         bool assignedModeRole = false;
+        phaseStart = std::chrono::steady_clock::now();
         if (modeState.matchActors.find(kv.first) == modeState.matchActors.end()) {
             const Gamemode& mode = GamemodeRegistry::instance().get(modeState.matchMode);
             for (size_t teamIndex = 0; teamIndex < mode.teams.size(); ++teamIndex) {
@@ -630,16 +748,22 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                 break;
             }
         }
+        modeRoleAssignmentMs += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - phaseStart).count();
         if (alreadySimulated && !assignedModeRole)
             continue;
         // Apply the role profile (health, movement, avatar, behavior, loadout)
         // so a roster NPC gets its intended first life. Shared with the
         // gamemode spawn-reset path; no CS-only branch.
+        phaseStart = std::chrono::steady_clock::now();
         const ActorSpawnProfile profile = serverResolveActorSpawnProfile(kv.first);
+        roleProfileResolveMs += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - phaseStart).count();
         const Gamemode& mode = GamemodeRegistry::instance().get(modeState.matchMode);
         const auto actorProfile = modeState.matchActors.find(kv.first);
         const int resolvedTeam = actorProfile != modeState.matchActors.end()
             ? actorProfile->second.teamId : kv.second.matchTeam;
+        phaseStart = std::chrono::steady_clock::now();
         StructuredLogger::instance().writeEvent(
             StructuredCategory::NpcCombat, StructuredLevel::Important,
             "npc.roster-profile-resolved", std::to_string(kv.first),
@@ -658,7 +782,10 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                 {"weapons", profile.weapons},
                 {"source", "serverResolveActorSpawnProfile"}},
             __FILE__, __LINE__, __FUNCTION__);
+        structuredLogMs += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - phaseStart).count();
         // Apply the healthall override to the newly adopted real NPC body.
+        phaseStart = std::chrono::steady_clock::now();
         for (Npc& n : npcSystem.all())
         {
             if (n.id == kv.first)
@@ -700,6 +827,29 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                 finalizeServerNpcSpawn(n, ActorSpawnReason::NpcCreate);
             }
         }
+        npcProfileApplyMs += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - phaseStart).count();
+    }
+    const double adoptionMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - adoptionStart).count();
+    if (adoptionMs >= 50.0)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.adoption.breakdown", "server",
+            "server NPC adoption subphase timing", 0,
+            nlohmann::json{{"total_ms", adoptionMs},
+                           {"candidate_count", adoptionCandidates},
+                           {"newly_simulated_count", newlySimulated},
+                           {"npc_system_size", npcSystem.all().size()},
+                           {"simulated_id_lookup_ms", simulatedIdLookupMs},
+                           {"spawn_resolution_ms", spawnResolutionMs},
+                           {"npc_spawn_ms", npcSpawnMs},
+                           {"role_profile_resolve_ms", roleProfileResolveMs},
+                           {"npc_profile_apply_ms", npcProfileApplyMs},
+                           {"structured_log_ms", structuredLogMs},
+                           {"mode_role_assignment_ms", modeRoleAssignmentMs}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 }
 
@@ -893,6 +1043,21 @@ static void respawnServerNpc(Npc& npc, const World& world)
     npc.movementStuckWallAvoidCount = 0;
     npc.movementStuckRecoveryCount = 0;
     npc.movementStuckJumpCount = 0;
+    npc.movementMetricsInitialized = false;
+    npc.movementMetricsLifeStartPos = npc.body.pos;
+    npc.movementMetricsPreviousPos = npc.body.pos;
+    npc.movementMetricsLocalAnchor = npc.body.pos;
+    npc.movementMetricsLifeSeconds = 0.0f;
+    npc.movementMetricsDistanceM = 0.0f;
+    npc.movementMetricsPlanarDistanceM = 0.0f;
+    npc.movementMetricsLocalDwellSeconds = 0.0f;
+    npc.movementMetricsMaxLocalDwellSeconds = 0.0f;
+    npc.movementMetricsIntentSeconds = 0.0f;
+    npc.movementMetricsBlockedMotionSeconds = 0.0f;
+    npc.movementMetricsWallAvoidSeconds = 0.0f;
+    npc.movementMetricsSampleSeconds = 0.0f;
+    npc.movementMetricsPoseContactSamples = 0;
+    npc.movementMetricsWallAvoidSamples = 0;
     npc.lastNavFailureTick = 0;
     npc.lastNavFailureGoalKind = -1;
     npc.lastNavFailureReason.clear();
@@ -1262,11 +1427,22 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
                                 NpcSystem& npcSystem,
                                 std::unordered_set<uint32_t>& npcIdsAlive)
 {
+    static uint64_t lastNpcAvatarRefreshMs = 0;
+    const uint64_t avatarRefreshNowMs = nowMs();
+    const bool pollEmptyNpcAvatars =
+        avatarRefreshNowMs - lastNpcAvatarRefreshMs >= 1000;
+    if (pollEmptyNpcAvatars)
+        lastNpcAvatarRefreshMs = avatarRefreshNowMs;
     std::unordered_map<uint32_t, ServerNpc> next;
     next.reserve(npcs.size());
     npcIdsAlive.clear();
     for (Npc& n : npcSystem.all())
     {
+        // Avatar catalog discovery is asynchronous. Retry empty identities at
+        // a low cadence so a completed catalog becomes authoritative without
+        // putting filesystem enumeration on every fixed tick.
+        if (pollEmptyNpcAvatars && n.avatarName.empty())
+            n.avatarName = npcAvatarNameForLife(n.id, n.transformEpoch);
         // Dead NPCs stay in the broadcast (health 0) so clients render their
         // full fall-over death animation before the NPC respawns. Alive NPCs
         // and freshly-respawned ones are broadcast as before.
@@ -1882,6 +2058,7 @@ void simulateSharedNpcs(SOCKET sock,
                         uint32_t tick,
                         uint64_t& totalPacketsOut)
 {
+    pollNpcRecastPrewarm(world);
     const auto simStart = std::chrono::steady_clock::now();
     const auto loggerIoBefore = StructuredLogger::instance().ioStats(false);
     double recoveryMs = 0.0;
@@ -1896,6 +2073,7 @@ void simulateSharedNpcs(SOCKET sock,
     uint32_t worstAiActor = 0;
     uint32_t recoveryActor = 0;
     double collisionConfigPollMs = 0.0;
+    double npcDifficultyConfigPollMs = 0.0;
     double npcAdoptionMs = 0.0;
     double damageSyncMs = 0.0;
     double modeProfileSyncMs = 0.0;
@@ -1906,6 +2084,21 @@ void simulateSharedNpcs(SOCKET sock,
     ActorCollisionConfig::instance().pollHotReload(tick);
     collisionConfigPollMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - preludeStageStart).count();
+    preludeStageStart = std::chrono::steady_clock::now();
+    const bool npcDifficultyReloaded =
+        NpcDifficultyConfig::instance().pollReload();
+    npcDifficultyConfigPollMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - preludeStageStart).count();
+    if (npcDifficultyReloaded) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcCombat, StructuredLevel::Important,
+            "npc.difficulty-config.reloaded", "npc-difficulty",
+            "NPC difficulty settings loaded or hot-reloaded", tick,
+            nlohmann::json{{"revision",
+                            NpcDifficultyConfig::instance().revision()},
+                           {"tick", tick}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     preludeStageStart = std::chrono::steady_clock::now();
     adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive, world);
     npcAdoptionMs = std::chrono::duration<double, std::milli>(
@@ -2213,6 +2406,26 @@ void simulateSharedNpcs(SOCKET sock,
             // profile; the legacy nearest-hostile path is used without one.
             const NpcBehaviorTuning& b = n.behavior;
             bool moduleHandled = false;
+            const ServerGamemodeState& targetModeState =
+                serverGamemodeState();
+            const bool fcsRetaliationTargeting =
+                targetModeState.matchMode == "funcounterstrike" &&
+                (myTeam == 0 || myTeam == 1);
+            const TeamBrain& targetTeamBrain = myTeam == 0
+                ? targetModeState.teamBrainA : targetModeState.teamBrainB;
+            auto playerThreat = [&](uint32_t playerId) {
+                float threat = 0.5f;
+                if (fcsRetaliationTargeting) {
+                    if (const EnemyReport* report =
+                            targetTeamBrain.bestReport(playerId)) {
+                        // A fresh, shared report that this player killed a
+                        // teammate should outweigh ordinary NPC threat,
+                        // while still allowing closer targets when stale.
+                        threat += 3.0f * report->confidence;
+                    }
+                }
+                return threat;
+            };
             {
                 mimita_npc_behavior::TargetSelectV1 request{};
                 request.version = mimita_npc_behavior::ABI_VERSION;
@@ -2249,7 +2462,7 @@ void simulateSharedNpcs(SOCKET sock,
                     if (!npcTargetingIsHostile(targeting, myTeam, playerTeamOf(p)))
                         continue;
                     addCandidate(p.id, p.pos, p.health,
-                                 std::max(1, p.maxHealth), 0.5f);
+                                 std::max(1, p.maxHealth), playerThreat(p.id));
                 }
                 if (allowNpcTargets) for (Npc& other : npcSystem.all())
                 {
@@ -2313,7 +2526,9 @@ void simulateSharedNpcs(SOCKET sock,
                 ServerPlayer& p = kv.second;
                 if (p.dead || p.downed || p.connectionStale) continue;
                 if (!npcTargetingIsHostile(targeting, myTeam, playerTeamOf(p))) continue;
-                float s = scoreCandidate(p.pos, p.health, std::max(1, p.maxHealth), 0.5f);
+                float s = scoreCandidate(p.pos, p.health,
+                                         std::max(1, p.maxHealth),
+                                         playerThreat(p.id));
                 const bool isCurrent = (p.id == n.serverTargetId);
                 if (isCurrent) s += b.targetStickiness;
                 if (s > bestScore) { bestScore = s; nearestPlayer = &p; nearestNpc = nullptr; }
@@ -3168,6 +3383,7 @@ void simulateSharedNpcs(SOCKET sock,
                            {"worst_ai_actor", worstAiActor},
                            {"recovery_ms", recoveryMs},
                            {"collision_config_poll_ms", collisionConfigPollMs},
+                           {"npc_difficulty_config_poll_ms", npcDifficultyConfigPollMs},
                            {"npc_adoption_ms", npcAdoptionMs},
                            {"damage_sync_ms", damageSyncMs},
                            {"mode_profile_sync_ms", modeProfileSyncMs},

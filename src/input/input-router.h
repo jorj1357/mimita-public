@@ -17,8 +17,12 @@ enum class Source : std::uint32_t { Unknown, Host, Win32, Agent, Scenario };
 void setWindow(GLFWwindow* window);
 GLFWwindow* window();
 void beginFrame(std::uint64_t clientTick, std::uint64_t serverTick);
+// Advance queued agent clicks from the interactive UI pass as well as the
+// simulation pass, so a paused menu can still release a synthetic press.
+void advanceAgentMouseClick();
 void ingestKey(int key, int scancode, int action, int mods, Source source);
 void ingestMouseButton(int button, int action, Source source);
+void queueAgentMouseClick(int button);
 void ingestCursor(double x, double y, Source source);
 void ingestText(unsigned int codepoint, Source source);
 void ingestFocus(bool focused, Source source);

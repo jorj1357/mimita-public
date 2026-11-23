@@ -3682,6 +3682,124 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         npc.lastFrictionDelta = input.movementPressed ? 0.0f : planarSpeedAfter - planarSpeedBefore;
         npc.lastFinalSpeed = glm::length(npc.body.vel + npc.body.externalImpulse);
 
+        // One bounded, per-life FCS measurement per second. Displacement is
+        // authoritative world-space motion; the user-defined scale is exactly
+        // one world unit per metre, so these derived speeds are m/s.
+        if (npc.behaviorProfileId == "fun_cs_rush" ||
+            npc.behaviorProfileId == "fun_cs_rush_easy") {
+            const glm::vec3 measuredPos = npc.body.pos;
+            if (!npc.movementMetricsInitialized) {
+                npc.movementMetricsInitialized = true;
+                npc.movementMetricsLifeStartPos = measuredPos;
+                npc.movementMetricsPreviousPos = measuredPos;
+                npc.movementMetricsLocalAnchor = measuredPos;
+            }
+            const glm::vec3 measuredDelta =
+                measuredPos - npc.movementMetricsPreviousPos;
+            const float planarDistanceM =
+                glm::length(glm::vec2(measuredDelta.x, measuredDelta.y));
+            const float distanceM = glm::length(measuredDelta);
+            const float localDistanceM = glm::length(
+                glm::vec2(measuredPos.x - npc.movementMetricsLocalAnchor.x,
+                          measuredPos.y - npc.movementMetricsLocalAnchor.y));
+            npc.movementMetricsLifeSeconds += safeDt;
+            npc.movementMetricsDistanceM += distanceM;
+            npc.movementMetricsPlanarDistanceM += planarDistanceM;
+            npc.movementMetricsSampleSeconds += safeDt;
+            if (input.movementPressed) {
+                npc.movementMetricsIntentSeconds += safeDt;
+                if (planarDistanceM < 0.02f)
+                    npc.movementMetricsBlockedMotionSeconds += safeDt;
+            }
+            if (localDistanceM <= 10.0f) {
+                npc.movementMetricsLocalDwellSeconds += safeDt;
+                npc.movementMetricsMaxLocalDwellSeconds = std::max(
+                    npc.movementMetricsMaxLocalDwellSeconds,
+                    npc.movementMetricsLocalDwellSeconds);
+            } else {
+                npc.movementMetricsLocalAnchor = measuredPos;
+                npc.movementMetricsLocalDwellSeconds = 0.0f;
+            }
+            if (!poseResult.contacts.empty())
+                ++npc.movementMetricsPoseContactSamples;
+            if (glm::length(npc.lastWallAvoidDir) > 0.01f)
+            {
+                ++npc.movementMetricsWallAvoidSamples;
+                npc.movementMetricsWallAvoidSeconds += safeDt;
+            }
+            npc.movementMetricsPreviousPos = measuredPos;
+
+            if (npc.movementMetricsSampleSeconds >= 1.0f) {
+                const glm::vec3 netDisplacement =
+                    measuredPos - npc.movementMetricsLifeStartPos;
+                const float lifeSeconds = std::max(
+                    npc.movementMetricsLifeSeconds, 0.0001f);
+                const bool probableWallBlock = input.movementPressed &&
+                    planarDistanceM < 0.02f &&
+                    glm::length(npc.lastWallAvoidDir) > 0.01f;
+                nlohmann::json fields{
+                    {"actor", npc.id},
+                    {"team", npc.body.matchTeam},
+                    {"profile", npc.behaviorProfileId},
+                    {"meters_per_world_unit", 1.0f},
+                    {"measurement_scope", "current_life"},
+                    {"life_elapsed_seconds", npc.movementMetricsLifeSeconds},
+                    {"life_planar_distance_m",
+                     npc.movementMetricsPlanarDistanceM},
+                    {"life_distance_3d_m", npc.movementMetricsDistanceM},
+                    {"life_average_speed_3d_mps",
+                     npc.movementMetricsDistanceM / lifeSeconds},
+                    {"life_average_planar_speed_mps",
+                     npc.movementMetricsPlanarDistanceM / lifeSeconds},
+                    {"current_planar_speed_mps", planarDistanceM / safeDt},
+                    {"velocity_planar_mps", glm::length(glm::vec2(
+                        npc.body.vel.x + npc.body.externalImpulse.x,
+                        npc.body.vel.y + npc.body.externalImpulse.y))},
+                    {"life_net_displacement_m", glm::length(netDisplacement)},
+                    {"life_net_planar_displacement_m",
+                     glm::length(glm::vec2(netDisplacement.x,
+                                           netDisplacement.y))},
+                    {"local_radius_m", 10.0f},
+                    {"local_dwell_seconds",
+                     npc.movementMetricsLocalDwellSeconds},
+                    {"max_local_dwell_seconds",
+                     npc.movementMetricsMaxLocalDwellSeconds},
+                    {"stuck_episode_active",
+                     npc.movementStuckEpisodeActive},
+                    {"stuck_seconds_current_episode",
+                     npc.stateMachine.stuckTimer},
+                    {"movement_intent_seconds",
+                     npc.movementMetricsIntentSeconds},
+                    {"blocked_motion_seconds",
+                     npc.movementMetricsBlockedMotionSeconds},
+                    {"blocked_motion_ratio_of_intent",
+                     npc.movementMetricsIntentSeconds > 0.0f
+                         ? npc.movementMetricsBlockedMotionSeconds /
+                               npc.movementMetricsIntentSeconds
+                         : 0.0f},
+                    {"probable_wall_block_this_tick", probableWallBlock},
+                    {"pose_penetration_contact_samples",
+                     npc.movementMetricsPoseContactSamples},
+                    {"wall_avoid_samples",
+                     npc.movementMetricsWallAvoidSamples},
+                    {"near_wall_avoid_seconds",
+                     npc.movementMetricsWallAvoidSeconds},
+                    {"exact_wall_contact_count_available", false},
+                    {"objective_known", npc.utilityContext.objectiveKnown},
+                    {"objective_distance_m",
+                     npc.utilityContext.objectiveKnown
+                         ? glm::length(npc.utilityContext.objectivePos - measuredPos)
+                         : -1.0f}};
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcMovement,
+                    StructuredLevel::Important, "npc.movement-metric",
+                    std::to_string(npc.id), "one_second_sample",
+                    static_cast<uint32_t>(npc.sensors.time * 60.0f),
+                    fields, __FILE__, __LINE__, __FUNCTION__);
+                npc.movementMetricsSampleSeconds -= 1.0f;
+            }
+        }
+
         if (DebugConfig::DEBUG_NPC)
         {
             std::string cmdKey = "npc-cmd-" + std::to_string(npc.id);
@@ -3719,11 +3837,13 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             ? static_cast<float>(npc.behavior.dashCooldownTicks) / 60.0f
             : (0.80f - difficulty01(npc.difficulty) * 0.62f);
         EffectPartSystem::instance().spawnDash(npc.body.pos);
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::NpcMovement, StructuredLevel::Important,
-            "npc.dash", std::to_string(npc.id), "shared_dash",
-            (uint32_t)(npc.sensors.time * 60.0f),
-            nlohmann::json{
+        if (StructuredLogger::instance().shouldLog(
+                StructuredCategory::NpcMovement, StructuredLevel::Verbose)) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Verbose,
+                "npc.dash", std::to_string(npc.id), "shared_dash",
+                (uint32_t)(npc.sensors.time * 60.0f),
+                nlohmann::json{
                 {"actor", npc.id},
                 {"team", npc.body.matchTeam},
                 {"profile", npc.behaviorProfileId},
@@ -3738,7 +3858,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 {"stuck_episode_active", npc.movementStuckEpisodeActive},
                 {"local_correction_active", npc.navigator.localCorrectionActive},
                 {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
-            __FILE__, __LINE__, __FUNCTION__);
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 
     if (wantDownDash && downDashAvailableBefore && !npc.body.dash.downDashAvailable)

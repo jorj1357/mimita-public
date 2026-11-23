@@ -136,6 +136,8 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
         gBatchVertices.reserve(8192);
     if (gOwnsHoverInput)
         gHoverOwnerKey.clear();
+    if (gOwnsHoverInput)
+        InputRouter::advanceAgentMouseClick();
     gMouseDown = InputRouter::mouseDown(0);
     // Mouse edge state belongs to the one interactive UI pass. Rendering-only
     // passes must observe the edge without consuming it before buttons run.

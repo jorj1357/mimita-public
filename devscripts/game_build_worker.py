@@ -63,6 +63,13 @@ IDENTITY_ONLY_SOURCES = {
 }
 IDENTITY_SOURCE_PATHS = set(FOLDED_MODULE_SYMBOLS) | IDENTITY_ONLY_SOURCES
 
+# This narrow adapter has a deliberately small include surface. Loading the
+# full game PCH costs more than parsing its own headers, so benchmark it without
+# the PCH while keeping the opt-out isolated to this source and cache key.
+PCH_EXCLUDED_SOURCES = {
+    "src/npc/npc-world-query.cpp",
+}
+
 INCLUDE_DIRS = [
     "include",
     "src",
@@ -239,14 +246,48 @@ def is_unsupported_time_report(output: str) -> bool:
         "unknown argument", "unknown option", "unsupported option"))
 
 
-def set_process_priority(level: str) -> None:
+def set_process_priority(level: str) -> dict:
     if os.name != "nt":
-        return
+        return {"requested": level, "status": "unsupported"}
     try:
-        kernel32 = ctypes.windll.kernel32
-        kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), PRIORITY_CLASSES[level])
-    except Exception:  # noqa: BLE001 - priority is best effort
-        pass
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetCurrentProcess.argtypes = []
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.SetPriorityClass.restype = wintypes.BOOL
+        kernel32.GetPriorityClass.argtypes = [wintypes.HANDLE]
+        kernel32.GetPriorityClass.restype = wintypes.DWORD
+        process = kernel32.GetCurrentProcess()
+        requested_class = PRIORITY_CLASSES[level]
+        applied = bool(kernel32.SetPriorityClass(process, requested_class))
+        effective_class = int(kernel32.GetPriorityClass(process))
+        error_code = ctypes.get_last_error() if not applied else 0
+        return {
+            "requested": level,
+            "requested_class": requested_class,
+            "applied": applied,
+            "effective_class": effective_class,
+            "status": ("applied" if applied and effective_class == requested_class
+                       else "mismatch" if applied else "failed"),
+            "winerror": error_code,
+        }
+    except Exception as error:  # noqa: BLE001 - priority is best effort
+        return {"requested": level, "status": "error",
+                "error": str(error)[:240]}
+
+
+def build_tool_creation_flags(level: str) -> int:
+    """Set the configured priority on compiler/linker child processes too.
+
+    Windows defaults new compiler processes to NORMAL unless CreateProcess gets
+    a priority-class flag. The parent worker's priority is not sufficient.
+    """
+    if os.name != "nt":
+        return 0
+    return (getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            | PRIORITY_CLASSES[level])
 
 
 class Progress:
@@ -715,7 +756,16 @@ def verify_coherent(root: Path, sources: list[dict]) -> list[str]:
 
 
 def object_key(item: dict) -> str:
-    return hashlib.sha256(f"{item['path']}:{item['sha256']}".encode("utf-8")).hexdigest()[:20]
+    path = str(item["path"]).replace("\\", "/")
+    identity = f"{path}:{item['sha256']}"
+    if path in PCH_EXCLUDED_SOURCES:
+        identity += ":pch-off-v1"
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
+
+
+def source_uses_pch(path: str, enabled: bool) -> bool:
+    normalized_path = str(path).replace("\\", "/")
+    return enabled and normalized_path not in PCH_EXCLUDED_SOURCES
 
 
 def flags_identity(cxx: str, base_flags: list[str], build_mode: str, pch: bool) -> str:
@@ -1012,16 +1062,34 @@ def dependency_relative(token: str) -> str:
 
 def cached_stat(token: str, cache: dict[str, os.stat_result | None]) -> os.stat_result | None:
     path = Path(token)
+    relative = None
     if path.is_absolute():
-        # Dependency files produced from a frozen source snapshot keep absolute
-        # snapshot paths. Resolve them against the live tree so the cache stays
-        # usable after the snapshot is removed.
-        try:
-            path = ROOT / path.relative_to(SOURCE_ROOT)
-        except ValueError:
-            path = Path(token)
+        for base in (SOURCE_ROOT, ROOT):
+            try:
+                relative = path.relative_to(base)
+                break
+            except ValueError:
+                continue
+        if relative is None:
+            relative = None
     else:
-        path = ROOT / path
+        relative = path
+
+    if relative is not None:
+        relative = Path(os.path.normpath(str(relative)))
+        if (relative.parts and relative.parts[0] in {"src", "include", "external"}
+                and ".." not in relative.parts):
+            # Cache validity must describe the exact inputs this attempt built.
+            # A live edit after snapshot creation cannot invalidate an object
+            # compiled from the older frozen source. Once snapshots are pruned,
+            # fall back to ROOT so the persistent dep index remains usable.
+            snapshot_path = SOURCE_ROOT / relative
+            live_path = ROOT / relative
+            path = snapshot_path if snapshot_path.is_file() else live_path
+        else:
+            path = ROOT / relative
+    # Non-project dependencies (toolchain/system headers, generated paths, etc.)
+    # keep their original absolute path and are still checked for freshness.
     key = os.path.normcase(os.path.normpath(str(path)))
     if key not in cache:
         try:
@@ -1061,7 +1129,7 @@ def seed_object_cache(out_root: Path, object_dir: Path) -> int:
     return copied
 
 
-def dep_is_stale(obj: Path, dep: Path) -> bool:
+def dep_is_stale(obj: Path, dep: Path, *, use_pch: bool = True) -> bool:
     if not obj.is_file() or not dep.is_file():
         return True
     try:
@@ -1080,9 +1148,10 @@ def dep_is_stale(obj: Path, dep: Path) -> bool:
     match = re.match(r"^.*?\.o\s*:\s*(.*)$", text, re.S)
     if not match:
         return True
-    pch = ROOT / "src" / "pch.h.gch"
-    if pch.exists() and pch.stat().st_mtime >= object_time:
-        return True
+    if use_pch:
+        pch = ROOT / "src" / "pch.h.gch"
+        if pch.exists() and pch.stat().st_mtime >= object_time:
+            return True
     for token in match.group(1).split():
         if token.endswith(":") or token.endswith("pch.h.gch"):
             continue
@@ -1309,7 +1378,13 @@ def build(args: argparse.Namespace) -> int:
         return early_fail("toolchain_setup", f"toolchain unavailable: {error}", 4)
     toolchain_seconds = round(time.monotonic() - toolchain_started, 3)
 
-    set_process_priority(args.priority)
+    worker_priority = set_process_priority(args.priority)
+    compiler_creationflags = build_tool_creation_flags(args.priority)
+
+    def run_build_tool(command, **kwargs):
+        if os.name == "nt":
+            kwargs["creationflags"] = compiler_creationflags
+        return run_tool(command, **kwargs)
 
     setup_started = time.monotonic()
     jobs = args.jobs if args.jobs > 0 else (os.cpu_count() or 1)
@@ -1376,6 +1451,13 @@ def build(args: argparse.Namespace) -> int:
                 object_cache=object_cache_rel, seeded_objects=seeded, jobs=jobs)
     progress = Progress(out_root, revision, len(sources), jobs,
                         args.priority, object_dir, seeded, attempt_context)
+    progress.set(worker_priority=worker_priority,
+                 compiler_creationflags=compiler_creationflags)
+    progress.log(
+        f"[PRIORITY] worker requested={args.priority} "
+        f"status={worker_priority.get('status')} "
+        f"effective_class={worker_priority.get('effective_class', 'unknown')}; "
+        f"compiler_child_flags=0x{compiler_creationflags:x}")
     progress.worker_started_monotonic = worker_entry_started
     progress.data["worker_started_utc"] = worker_entry_utc
     progress.data["phase"] = "toolchain_setup"
@@ -1438,7 +1520,16 @@ def build(args: argparse.Namespace) -> int:
             # stable header dependency.
             return [*ccache_prefix, cxx, "-std=c++17", "-O0", "-g0",
                     f"-I{identity_dir}", "-c", item["path"], "-o", str(obj)]
-        command = [*ccache_prefix, cxx, *base_flags,
+        source_flags = base_flags
+        if not source_uses_pch(source_path, args.pch):
+            source_flags = list(base_flags)
+            pch_path = str(ROOT / "src" / "pch.h")
+            for flag_index in range(len(source_flags) - 1):
+                if (source_flags[flag_index] == "-include"
+                        and source_flags[flag_index + 1] == pch_path):
+                    del source_flags[flag_index:flag_index + 2]
+                    break
+        command = [*ccache_prefix, cxx, *source_flags,
                    *module_extra_flags(source_path)]
         if time_report:
             # Diagnostic-only: this flag does not change generated code or the
@@ -1462,7 +1553,7 @@ def build(args: argparse.Namespace) -> int:
         source_path = normalized(item["path"])
         report_requested = source_path in timing_report_paths
         report_started = time.perf_counter()
-        result = run_tool(compile_command(
+        result = run_build_tool(compile_command(
                               item, obj, dep, time_report=report_requested),
                           cwd=str(SOURCE_ROOT),
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -1478,7 +1569,7 @@ def build(args: argparse.Namespace) -> int:
                 # when the compiler clearly rejected that diagnostic option.
                 first_output = output
                 fallback_started = time.perf_counter()
-                result = run_tool(compile_command(item, obj, dep),
+                result = run_build_tool(compile_command(item, obj, dep),
                                   cwd=str(SOURCE_ROOT),
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, text=True)
@@ -1694,6 +1785,7 @@ def build(args: argparse.Namespace) -> int:
                     is_stale = True
                     stale_reason = "object file is empty"
                 if (not is_stale and pch_stat is not None
+                        and source_uses_pch(source_path, args.pch)
                         and pch_stat.st_mtime >= object_stat.st_mtime):
                     is_stale = True
                     stale_reason = "precompiled header is newer than object"
@@ -1983,7 +2075,9 @@ def build(args: argparse.Namespace) -> int:
 
     if changed_entries:
         to_build = [entry for entry in changed_entries
-                    if args.force or dep_is_stale(entry[1], entry[2])]
+                    if args.force or dep_is_stale(
+                        entry[1], entry[2],
+                        use_pch=source_uses_pch(entry[0]["path"], args.pch))]
         progress.set_phase("changed_source_preflight",
                            preflight_candidates=len(to_build))
         preflight_started = time.monotonic()
@@ -1991,7 +2085,9 @@ def build(args: argparse.Namespace) -> int:
             run_compile_batch(to_build, min(jobs, len(to_build)))
             preflight_handled = {
                 normalized(item["path"]) for item, obj, dep in to_build
-                if not dep_is_stale(obj, dep)}
+                if not dep_is_stale(
+                        obj, dep,
+                        use_pch=source_uses_pch(item["path"], args.pch))}
         preflight_seconds = round(time.monotonic() - preflight_started, 3)
         if failures:
             failure = failures[0]
@@ -2127,7 +2223,7 @@ def build(args: argparse.Namespace) -> int:
             glad_source.stat().st_mtime > glad_object.stat().st_mtime):
         progress.log("[VENDOR] compiling src/glad.c for diagnostic link")
         vendor_started = time.monotonic()
-        result = run_tool(
+        result = run_build_tool(
             ["gcc", "-O2", "-g", "-c", "src/glad.c", "-o", str(glad_object),
              "-Iinclude", "-Isrc"],
             cwd=str(SOURCE_ROOT), stdout=subprocess.PIPE,
@@ -2241,7 +2337,7 @@ def build(args: argparse.Namespace) -> int:
         object_input_count=len(objects),
         linker_argument_count=len(link_lines),
         response_file=str(response.relative_to(ROOT)))
-    link_result = run_tool(link_command, cwd=str(ROOT), stdout=subprocess.PIPE,
+    link_result = run_build_tool(link_command, cwd=str(ROOT), stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, text=True)
     link_seconds = round(time.monotonic() - link_start, 3)
     progress.subphase_end(f"link.{args.linker}_linker", link_command_started,

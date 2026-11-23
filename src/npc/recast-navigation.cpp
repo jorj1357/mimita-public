@@ -43,6 +43,27 @@ size_t baseCollisionTriangleCount(const World& world)
     return tail > 0 && tail <= total ? total - tail : total;
 }
 
+void logFixedTickRebuildDeferred(const char* operation, bool hasMesh,
+                                 bool contentSame, std::size_t dirtyTiles)
+{
+    static auto lastDiagnostic = std::chrono::steady_clock::time_point{};
+    const auto now = std::chrono::steady_clock::now();
+    if (lastDiagnostic != std::chrono::steady_clock::time_point{} &&
+        now - lastDiagnostic < std::chrono::seconds(1))
+        return;
+    lastDiagnostic = now;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        "npc.navmesh.rebuild-deferred", "fixed-tick",
+        "full navmesh rebuild deferred outside authoritative fixed tick", 0,
+        nlohmann::json{{"operation", operation},
+                       {"inside_fixed_tick", true},
+                       {"has_published_mesh", hasMesh},
+                       {"collision_content_same", contentSame},
+                       {"dirty_tile_count", dirtyTiles}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 glm::vec3 toRecast(const glm::vec3& v)
 {
     return glm::vec3(v.x, v.z, -v.y);
@@ -165,8 +186,11 @@ float horizontalLength(const glm::vec3& a, const glm::vec3& b)
 dtPolyRef nearestPolyEscalated(dtNavMeshQuery* query, const dtQueryFilter* filter,
                                const float* point,
                                const NavigationAgentProfile& profile,
-                               float* nearestOut, float* projectionDistance)
+                               float* nearestOut, float* projectionDistance,
+                               int* attemptsUsed)
 {
+    if (attemptsUsed)
+        *attemptsUsed = 0;
     const float baseH = std::max(profile.radius * 4.0f, 1.5f);
     const float baseV = std::max(profile.height, 1.5f);
     const float attempts[3][3] = {
@@ -175,6 +199,8 @@ dtPolyRef nearestPolyEscalated(dtNavMeshQuery* query, const dtQueryFilter* filte
         {40.0f, 40.0f, 40.0f},
     };
     for (const auto& extents : attempts) {
+        if (attemptsUsed)
+            ++*attemptsUsed;
         float nearest[3]{};
         dtPolyRef ref = 0;
         const dtStatus status =
@@ -1052,6 +1078,28 @@ RecastNavigationResult RecastNavigationBackend::prepare(
                 std::chrono::steady_clock::now() - begin).count();
             return result;
         }
+        // A full Recast bake can take seconds on large maps. Even if the
+        // optional hot-reload policy module is unavailable or permits work,
+        // never perform that bake in the authoritative fixed tick. Keep the
+        // last published mesh (if any) and let the navigator's bounded custom
+        // fallback handle this query until prepare() can rebuild off-tick.
+        if (ModuleHost::instance().insideFixedTick()) {
+            logFixedTickRebuildDeferred("prepare", mState->mesh != nullptr,
+                                         contentSame,
+                                         mState->dirtyTiles.size());
+            result.available = mState->mesh != nullptr;
+            result.failure = "rebuild_deferred_fixed_tick";
+            result.navmeshVersion = mState->version;
+            result.sourceTriangleCount = mState->sourceTriangleCount;
+            result.walkableTriangleCount = mState->walkableTriangleCount;
+            result.navMeshPolyCount = mState->navMeshPolyCount;
+            result.navMeshVertCount = mState->navMeshVertCount;
+            result.recastBoundsMin = mState->recastBoundsMin;
+            result.recastBoundsMax = mState->recastBoundsMax;
+            result.queryMilliseconds = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - begin).count();
+            return result;
+        }
         mimita_navigation_policy::NavigationPolicyV1 policy{};
         policy.version = mimita_navigation_policy::ABI_VERSION;
         policy.structSize = sizeof(policy);
@@ -1234,14 +1282,24 @@ RecastNavigationResult RecastNavigationBackend::query(
     if (!mState) mState = new State();
 
     const auto begin = std::chrono::steady_clock::now();
+    const auto hashBegin = std::chrono::steady_clock::now();
     const std::uint64_t contentHash = collisionContentHash(world, profile);
+    const double contentHashMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - hashBegin).count();
     const size_t baseCount = baseCollisionTriangleCount(world);
+    const auto meshSetupBegin = std::chrono::steady_clock::now();
     // Reuse the published navmesh when the collision content is unchanged even
     // if a map commit replaced the World object address.
     const bool contentSame = mState->mesh &&
         mState->collisionHash == contentHash &&
         mState->triangleCount == baseCount;
     const bool needsBuild = !contentSame || !mState->dirtyTiles.empty();
+    const bool hadMeshBeforeSetup = mState->mesh != nullptr;
+    const bool tiledBeforeSetup = mState->tiled;
+    const std::size_t dirtyTileCountBeforeSetup = mState->dirtyTiles.size();
+    bool navigationPolicyHandled = false;
+    bool navigationPolicyAllowedRebuild = false;
+    bool fullMeshBuildAttempted = false;
     if (!needsBuild)
         mState->world = &world;
     if (needsBuild) {
@@ -1293,6 +1351,28 @@ RecastNavigationResult RecastNavigationBackend::query(
                 std::chrono::steady_clock::now() - begin).count();
             return result;
         }
+        // A full Recast bake can take seconds on large maps. Even if the
+        // optional hot-reload policy module is unavailable or permits work,
+        // never perform that bake in the authoritative fixed tick. Keep the
+        // last published mesh (if any) and let the navigator's bounded custom
+        // fallback handle this query until prepare() can rebuild off-tick.
+        if (ModuleHost::instance().insideFixedTick()) {
+            logFixedTickRebuildDeferred("query", mState->mesh != nullptr,
+                                         contentSame,
+                                         mState->dirtyTiles.size());
+            result.available = mState->mesh != nullptr;
+            result.failure = "rebuild_deferred_fixed_tick";
+            result.navmeshVersion = mState->version;
+            result.sourceTriangleCount = mState->sourceTriangleCount;
+            result.walkableTriangleCount = mState->walkableTriangleCount;
+            result.navMeshPolyCount = mState->navMeshPolyCount;
+            result.navMeshVertCount = mState->navMeshVertCount;
+            result.recastBoundsMin = mState->recastBoundsMin;
+            result.recastBoundsMax = mState->recastBoundsMax;
+            result.queryMilliseconds = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - begin).count();
+            return result;
+        }
         mimita_navigation_policy::NavigationPolicyV1 policy{};
         policy.version = mimita_navigation_policy::ABI_VERSION;
         policy.structSize = sizeof(policy);
@@ -1307,8 +1387,10 @@ RecastNavigationResult RecastNavigationBackend::query(
             std::abs(profile.radius - mState->buildProfile.radius) > 0.001f ||
             std::abs(profile.height - mState->buildProfile.height) > 0.001f;
         policy.inFixedTick = ModuleHost::instance().insideFixedTick() ? 1u : 0u;
-        if (ModuleHost::instance().navigationPolicy(&policy) &&
-            !policy.outAllowRebuild) {
+        navigationPolicyHandled =
+            ModuleHost::instance().navigationPolicy(&policy);
+        navigationPolicyAllowedRebuild = policy.outAllowRebuild != 0;
+        if (navigationPolicyHandled && !navigationPolicyAllowedRebuild) {
             // The custom planner remains authoritative when no published
             // navmesh exists. Never block a fixed tick on a full bake; defer it
             // to a non-tick context instead of stalling snapshots for seconds.
@@ -1328,6 +1410,7 @@ RecastNavigationResult RecastNavigationBackend::query(
         invalidate();
         std::string error;
         const auto buildBegin = std::chrono::steady_clock::now();
+        fullMeshBuildAttempted = true;
         if (!buildTiledNavMesh(world, profile, mState->mesh,
                                mState->tileRefs, mState->tileOrigin,
                                mState->tileCountX, mState->tileCountY,
@@ -1364,6 +1447,8 @@ RecastNavigationResult RecastNavigationBackend::query(
         }
     }
 
+    const double meshSetupMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - meshSetupBegin).count();
     const bool profileMismatch =
         std::abs(profile.radius - mState->buildProfile.radius) > 0.001f ||
         std::abs(profile.height - mState->buildProfile.height) > 0.001f ||
@@ -1410,12 +1495,22 @@ RecastNavigationResult RecastNavigationBackend::query(
         const float s[3] = {sRecast.x, sRecast.y, sRecast.z};
         const float d[3] = {dRecast.x, dRecast.y, dRecast.z};
         float nearestStart[3]{}, nearestDest[3]{};
+        int startSearchAttempts = 0;
+        int destSearchAttempts = 0;
+        double findPathMs = 0.0;
+        double straightPathMs = 0.0;
+        auto stageBegin = std::chrono::steady_clock::now();
         dtPolyRef startRef = nearestPolyEscalated(
             mState->query, &filter, s, profile, nearestStart,
-            &result.startProjectionDistance);
+            &result.startProjectionDistance, &startSearchAttempts);
+        const double nearestStartMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - stageBegin).count();
+        stageBegin = std::chrono::steady_clock::now();
         dtPolyRef destRef = nearestPolyEscalated(
             mState->query, &filter, d, profile, nearestDest,
-            &result.destProjectionDistance);
+            &result.destProjectionDistance, &destSearchAttempts);
+        const double nearestDestMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - stageBegin).count();
 
         result.startPolyFound = startRef != 0;
         result.destPolyFound = destRef != 0;
@@ -1439,9 +1534,12 @@ RecastNavigationResult RecastNavigationBackend::query(
         } else {
             dtPolyRef polys[256]{};
             int polyCount = 0;
+            stageBegin = std::chrono::steady_clock::now();
             const dtStatus pathStatus = mState->query->findPath(
                 startRef, destRef, nearestStart, nearestDest, &filter, polys,
                 &polyCount, 256);
+            findPathMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - stageBegin).count();
             if (dtStatusFailed(pathStatus)) {
                 result.failure = "find_path_query_failed";
             } else if (polyCount <= 0) {
@@ -1452,9 +1550,12 @@ RecastNavigationResult RecastNavigationBackend::query(
                 unsigned char flags[256]{};
                 dtPolyRef refs[256]{};
                 int pointCount = 0;
+                stageBegin = std::chrono::steady_clock::now();
                 const dtStatus straightStatus = mState->query->findStraightPath(
                     nearestStart, nearestDest, polys, polyCount, straight,
                     flags, refs, &pointCount, 256);
+                straightPathMs = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - stageBegin).count();
                 if (dtStatusFailed(straightStatus) || pointCount <= 0) {
                     result.failure = "straight_path_failed";
                 } else {
@@ -1471,6 +1572,45 @@ RecastNavigationResult RecastNavigationBackend::query(
                     }
                 }
             }
+        }
+        const double queryMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - begin).count();
+        static auto lastSlowQueryDiagnostic =
+            std::chrono::steady_clock::time_point{};
+        const auto diagnosticNow = std::chrono::steady_clock::now();
+        if (queryMs >= 100.0 &&
+            (lastSlowQueryDiagnostic == std::chrono::steady_clock::time_point{} ||
+             diagnosticNow - lastSlowQueryDiagnostic >= std::chrono::seconds(1))) {
+            lastSlowQueryDiagnostic = diagnosticNow;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.nav.recast-query-breakdown", "recast-query",
+                "slow Recast query split by mesh and Detour stage", 0,
+                nlohmann::json{{"query_ms", queryMs},
+                               {"content_hash_ms", contentHashMs},
+                               {"mesh_setup_ms", meshSetupMs},
+                               {"nearest_start_ms", nearestStartMs},
+                               {"nearest_dest_ms", nearestDestMs},
+                               {"find_path_ms", findPathMs},
+                               {"straight_path_ms", straightPathMs},
+                               {"start_search_attempts", startSearchAttempts},
+                               {"dest_search_attempts", destSearchAttempts},
+                               {"start_poly_found", result.startPolyFound},
+                               {"dest_poly_found", result.destPolyFound},
+                               {"polygon_count", result.polygonCount},
+                               {"source_triangles", baseCount},
+                               {"navmesh_polygons", mState->navMeshPolyCount},
+                               {"content_same", contentSame},
+                               {"needs_build", needsBuild},
+                               {"had_mesh_before_setup", hadMeshBeforeSetup},
+                               {"tiled_before_setup", tiledBeforeSetup},
+                               {"dirty_tiles_before_setup", dirtyTileCountBeforeSetup},
+                               {"navigation_policy_handled", navigationPolicyHandled},
+                               {"navigation_policy_allowed_rebuild", navigationPolicyAllowedRebuild},
+                               {"full_mesh_build_attempted", fullMeshBuildAttempted},
+                               {"inside_fixed_tick", ModuleHost::instance().insideFixedTick()},
+                               {"failure", result.failure}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
     }
     result.queryMilliseconds = std::chrono::duration<double, std::milli>(

@@ -72,3 +72,15 @@ Proposed measured fix (unclaimed, needs human/owner approval): make WAIT_ISSUE_S
 ### 2026-11-22T03:47:02.138Z — build-wait-reviewer
 
 EXE-build wait evidence (2026-11-22T02:34:20.132Z, issue-8aae0621645f; follow-up issue-ae248907f1f1). The no-op gen-1 EXE build took 143.118s (build-metrics) / 138.527s (progress) with only 0.655s in measured compile+PCH+staging+scheduler phases; build/output.log shows the optional presentation-DLL subprocess ran and failed, and build/mimita-game.dll (2026-11-13T00:00:19Z) is older than src/effects/effect-part.cpp (2026-11-18T09:09:54Z), so it repeats. build.py writes one 'setup' line at build.py:631 and no sub-stage until build.py:843, so ~142s is unattributed. Suggest: emit presentation_dll/source_scan sub-stages, skip a known-failing optional DLL with a recorded reason, and do not let the optional DLL block the EXE.
+
+## Agent suggestion
+
+### 2026-11-22T23:06:27.202Z — build-wait-reviewer
+
+Recurring occurrence recorded under issue-956990a15eb2 (review false-positive-flat-wait-budget, 2026-11-22T23:06Z): game-dll-build wait 2026-11-22T22:25:57.280Z, elapsed 60.625s. The in-flight attempt game-dll-20261122T222557307822Z-3cc471 succeeded in 88.52s (generation 538, exit_code 0); at the 60s crossing it was compiling then linking. Confirms the flat 60s game_build budget is miscalibrated; the wait evidence generation 537 and build_id also lag the in-flight attempt 538. Same signature as prior suggestions here. No code claimed.
+
+## Agent suggestion
+
+### 2026-11-22T23:39:21.110Z — build-wait-reviewer
+
+Recurring over-budget wait occurrence recorded under issue-be83fb5843ba (build-wait-reviewer, 2026-11-22T23:38Z): game-dll-build wait game-dll-build:2026-11-22T22:42:14.381Z, elapsed 60.994s. In-flight attempt game-dll-20261122T224214407127Z-4d2a9b succeeded in 212.411s (generation 541, 26 TUs recompiled due to src/input/input-router.h header fanout; slowest TU engine-tick-net 107.7s). At the 60s crossing it was actively compiling/scanning, not stalled. Confirms the flat WAIT_ISSUE_SECONDS=60 miscalibration (dev-loop.py:109-110, check_wait_budget dev-loop.py:3486-3577) and the payload-attribution lag: build_id points at the last published EXE artifact and generation lags (540 vs 541), with the real attempt id only in free-text reason. Same signature as prior suggestions here. docs/issues/build-friction now holds 129 of these game_build wait issues (82 on 2026-11-22). No new fix issue created; policy fix remains unclaimed. No code edited.

@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <random>
 #include <string>
 #include <vector>
@@ -39,6 +40,8 @@ std::filesystem::file_time_type gLastWrite{};
 bool gLoaded = false;
 std::vector<std::string> gAvatarChoices;
 std::chrono::steady_clock::time_point gAvatarChoicesLastRefresh{};
+std::chrono::steady_clock::time_point gAvatarChoicesRefreshStarted{};
+std::future<std::vector<std::string>> gAvatarChoicesRefresh;
 bool gAvatarChoicesLoaded = false;
 
 void loadConfig()
@@ -83,12 +86,59 @@ std::string forcedAvatarName()
 const std::vector<std::string>& avatarChoices()
 {
     const auto now = std::chrono::steady_clock::now();
-    if (!gAvatarChoicesLoaded ||
-        now - gAvatarChoicesLastRefresh >= std::chrono::seconds(1)) {
-        MIMITA_PERF_SCOPE("NpcAvatar::RefreshChoices");
-        gAvatarChoices = AvatarSystem::instance().listAvatars();
+    if (gAvatarChoicesRefresh.valid() &&
+        gAvatarChoicesRefresh.wait_for(std::chrono::seconds(0)) ==
+            std::future_status::ready) {
+        try {
+            gAvatarChoices = gAvatarChoicesRefresh.get();
+            gAvatarChoicesLoaded = true;
+            gAvatarChoicesLastRefresh = now;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "npc.avatar-catalog.refresh", "npc-avatar-catalog",
+                "background NPC avatar catalog refresh completed", 0,
+                nlohmann::json{{"result", "complete"},
+                               {"elapsed_ms", std::chrono::duration<double, std::milli>(
+                                    now - gAvatarChoicesRefreshStarted).count()},
+                               {"avatar_count", gAvatarChoices.size()}},
+                __FILE__, __LINE__, __FUNCTION__);
+        } catch (const std::exception& e) {
+            gAvatarChoices.clear();
+            gAvatarChoicesLoaded = true;
+            gAvatarChoicesLastRefresh = now;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "npc.avatar-catalog.refresh", "npc-avatar-catalog",
+                "background NPC avatar catalog refresh failed", 0,
+                nlohmann::json{{"result", "failed"}, {"error", e.what()}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
+    if (!gAvatarChoicesRefresh.valid() &&
+        (!gAvatarChoicesLoaded ||
+         now - gAvatarChoicesLastRefresh >= std::chrono::seconds(60))) {
         gAvatarChoicesLastRefresh = now;
-        gAvatarChoicesLoaded = true;
+        gAvatarChoicesRefreshStarted = now;
+        try {
+            gAvatarChoicesRefresh = std::async(std::launch::async, [] {
+                return AvatarSystem::instance().listAvatars();
+            });
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Verbose,
+                "npc.avatar-catalog.refresh", "npc-avatar-catalog",
+                "background NPC avatar catalog refresh started", 0,
+                nlohmann::json{{"result", "started"}},
+                __FILE__, __LINE__, __FUNCTION__);
+        } catch (const std::exception& e) {
+            gAvatarChoices.clear();
+            gAvatarChoicesLoaded = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "npc.avatar-catalog.refresh", "npc-avatar-catalog",
+                "background NPC avatar catalog worker could not start", 0,
+                nlohmann::json{{"result", "start_failed"}, {"error", e.what()}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
     return gAvatarChoices;
 }

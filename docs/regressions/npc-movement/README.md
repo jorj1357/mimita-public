@@ -91,3 +91,9 @@ Entries: 10
   accepted shots targeted player 1, but none registered an entity hit and
   measured aim error averaged 36.85 degrees.
 - Detail: [jugger-horde-team-role-and-npc-aim-REG-2026-11-22.md](jugger-horde-team-role-and-npc-aim-REG-2026-11-22.md)
+- Evidence update 2026-11-22: same-run before/after reload now reproduces the
+  role regression (`Juggernauts`/role before; `BLUE`/empty role after
+  generation 500). In the first post-reload minute, 1,528 shots from at least
+  40 distinct NPC IDs targeted player 1; none recorded an entity hit, and
+  target-to-shot angular error averaged about 36 degrees. Exact intervals and
+  projectile/damage limitations are in the detail record.

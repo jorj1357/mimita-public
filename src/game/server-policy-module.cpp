@@ -8,6 +8,7 @@
 #include "host/abi/game-server-abi.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -216,17 +217,38 @@ int serverPolicyWorldLoad(const mimita::host::ServerWorldLoadV1* request,
     const std::string mapPath = request->mapPath ? request->mapPath : "";
     const std::string gameMode = request->gameMode ? request->gameMode : "";
 
+    using StartupClock = std::chrono::steady_clock;
+    auto phaseStarted = StartupClock::now();
     const bool loaded = MimitaNet::loadHeadlessWorld(mapPath.c_str(), world);
+    const double headlessLoadMs = std::chrono::duration<double, std::milli>(
+        StartupClock::now() - phaseStarted).count();
     result->mapLoaded = loaded ? 1u : 0u;
+    double authoredBaseCaptureMs = 0.0;
+    double authoredGeometryApplyMs = 0.0;
+    double authoredCacheSeedMs = 0.0;
     if (loaded) {
+        phaseStarted = StartupClock::now();
         MimitaNet::serverCaptureAuthoredBaseWorld(world, mapName);
+        authoredBaseCaptureMs = std::chrono::duration<double, std::milli>(
+            StartupClock::now() - phaseStarted).count();
+
+        phaseStarted = StartupClock::now();
         applyAuthoredMapGeometry(
             world, mapName,
             GamemodeRegistry::instance().get(gameMode).worldStreaming.enabled);
+        authoredGeometryApplyMs = std::chrono::duration<double, std::milli>(
+            StartupClock::now() - phaseStarted).count();
+
+        phaseStarted = StartupClock::now();
         MimitaNet::serverSeedAuthoredCache(world);
+        authoredCacheSeedMs = std::chrono::duration<double, std::milli>(
+            StartupClock::now() - phaseStarted).count();
     }
 
+    phaseStarted = StartupClock::now();
     MimitaNet::buildNpcWorldCollision(npcWorld, world);
+    const double npcCollisionBuildMs = std::chrono::duration<double, std::milli>(
+        StartupClock::now() - phaseStarted).count();
     result->triangleCount = static_cast<std::uint32_t>(world.triangles.size());
     result->spawnCount = static_cast<std::uint32_t>(world.spawnPoints.size());
     result->npcCollisionTriangles =
@@ -244,7 +266,12 @@ int serverPolicyWorldLoad(const mimita::host::ServerWorldLoadV1* request,
                        {"map_loaded", loaded},
                        {"triangles", result->triangleCount},
                        {"spawn_points", result->spawnCount},
-                       {"npc_collision_triangles", result->npcCollisionTriangles}},
+                        {"npc_collision_triangles", result->npcCollisionTriangles},
+                        {"headless_load_ms", headlessLoadMs},
+                        {"authored_base_capture_ms", authoredBaseCaptureMs},
+                        {"authored_geometry_apply_ms", authoredGeometryApplyMs},
+                        {"authored_cache_seed_ms", authoredCacheSeedMs},
+                        {"npc_collision_build_ms", npcCollisionBuildMs}},
         __FILE__, __LINE__, __func__);
     return 1;
 }
