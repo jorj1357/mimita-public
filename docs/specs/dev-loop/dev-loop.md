@@ -94,17 +94,20 @@ or maybe like putting all the  moves u want to do in a .json smoewhere, so its j
 ## 1. Purpose and outcome
 
 The development loop's **priority 1 job** is to reduce the time between a saved
-change and trying that change in MiMITA. It stays available, notices relevant
-saved inputs automatically, starts incremental work without waiting for a
-person to request a build, and keeps showing progress while the person or AI
-continues working. It is an orchestration tool, not a second game
-implementation.
+change and trying that change in MiMITA. It stays available and records saved
+compiler inputs into a visible pending batch. The default Mode 3 policy does
+not compile on save; the root coordinator seals the ready batch with one
+explicit dev-loop request, then the loop builds and reports progress. Mode 1
+automatic-on-save remains an explicit fallback. The loop is an orchestration
+tool, not a second game implementation.
 
 The loop owns this sequence:
 
 ```text
 observe source change
- -> debounce and queue a build
+ -> record a pending source batch
+ -> wait for explicit coordinator seal
+ -> queue one build wave
  -> invoke the canonical build system
  -> publish an immutable, UTC-identified build artifact
  -> report build identity and result
@@ -358,22 +361,26 @@ only module builder for module-owned sources. Agents never invoke `build.py`,
 root dev-loop's status and control interface. The authoritative workflow is
 [`agent-lanes-build-authority.md`](agent-lanes-build-authority.md).
 
-Mode 1 shared checkout is the active workflow. Mode 2 lanes are retired for
-normal work. Do not create or start lanes; preserve existing lane files while
-their edits are reviewed. Only the root dev-loop should watch and build the
-shared checkout.
+Mode 3 shared-checkout batch triggering is the active default. Mode 2 lanes are
+retired for normal work. Do not create or start lanes; preserve existing lane
+files while their edits are reviewed. Only the root dev-loop should watch and
+build the shared checkout. `MIMITA_BUILD_TRIGGER_MODE=auto` selects the Mode 1
+automatic-on-save fallback for the daemon process; the default is `batch`.
 
-The EXE scheduler lock remains active in Mode 1. It ensures one EXE build at a
-time and protects shared build outputs; it is a safety guard, not a build
-request. The root dev-loop watches compiler inputs, debounces saved changes,
-and coalesces edits into one build generation.
+The EXE scheduler lock ensures one EXE build at a time and protects shared
+build outputs; it is a safety guard, not a build request. The root dev-loop
+coalesces saved compiler inputs into a pending batch. The root coordinator
+confirms readiness and seals it with `python devscripts/dev-loop.py --request
+batch-build`; existing explicit `build` or `game-dll` requests also seal the
+pending batch. A save alone never queues a native build in the default mode.
 
-On daemon startup, an existing artifact is marked unverified but does not
-queue a build by itself. A saved compiler-input change queues an incremental
-build; an explicit build or launch request also queues validation before the
-artifact is used. If no valid artifact exists, the initial build is queued so
-the loop has something it can launch. This keeps a stale artifact from being
-silently launched while avoiding a compile solely because the daemon restarted.
+On daemon startup, an existing artifact is marked unverified but does not queue
+a build by itself. A saved compiler-input change creates a pending Mode 3 batch.
+An explicit batch/build request seals that work; an explicit launch request may
+also queue validation when the artifact is stale. If no valid artifact exists,
+the initial build is queued so the loop has something it can launch. This keeps
+a stale artifact from being silently launched while avoiding a compile solely
+because the daemon restarted.
 
 ### Per-agent runtimes (shared source, one build)
 
@@ -406,8 +413,9 @@ The whole-game DLL build compiles a frozen per-attempt snapshot under
 `.dev/build-snapshots/<attempt-id>/source`, created by hardlinking the verified
 source mirror. The mirror refresh uses temp-file replacement so an existing
 snapshot keeps its old inode. A source or header save during a build therefore
-does not abort it; the save queues the next generation. Compile
-includes resolve inside the snapshot while the cache identity is computed from
+does not abort it; in Mode 3 it joins the next pending batch, which requires a
+new explicit seal before another build starts. Compile includes resolve inside
+the snapshot while the cache identity is computed from
 the historical repository paths, so an unchanged tree keeps its existing object
 cache and only changed translation units rebuild. `src/pch.h` and its precompiled
 header remain the repository copy; all other headers come from the snapshot. A
@@ -595,33 +603,40 @@ active build's source generation and show pending/building/failed/published
 state, elapsed time, and a concise recent output/error summary. It must not
 invent a percentage when the compiler provides no reliable progress measure.
 
-“Build on edit” means the watcher detects saved inputs, applies the documented
-debounce, and starts one incremental build that compiles affected translation
-units and links/publishes a verified artifact. It does not mean a separate
-compiler process per file or a new build for every keystroke. The dashboard
-must keep reporting build phase and identity while the compiler runs, and the
-daemon must remain able to accept launch/status/control requests during that
-time.
+"Mode 3 batch build" means the watcher detects and coalesces saved inputs into
+a pending revision without starting a compiler. An explicit root-dev-loop
+`batch-build` request seals that revision and starts the required incremental
+build target or targets. It does not mean a separate compiler process per file
+or a new build for every keystroke. The dashboard shows trigger mode, pending
+targets/files, active batch, build phase, and identity. The daemon remains able
+to accept launch/status/control requests while building. A root request is the
+current manual readiness confirmation; per-agent ready acknowledgements and
+timeout/escalation remain future coordination work.
 
 ### 5.2.1 One build process per checkout at a time
 
 The daemon owns all build queuing. Agents and tools edit and observe; they do
-not submit build requests, do not start a competing compiler or linker, and do
-not wait for a build. A saved compiler input is the normal build trigger. The
-daemon coalesces changes and runs at most one follow-up build for the newest
-source generation.
+not start a competing compiler or linker. In default Mode 3, a saved compiler
+input only updates the pending batch; it does not submit a build request. After
+every compiler-input owner is ready, the root coordinator issues one
+`--request batch-build` to seal the newest source generation. Existing explicit
+`--request build` and `--request game-dll` calls also seal a pending batch.
+Saves made after sealing form a new pending batch and never start a follow-up
+automatically. Use `MIMITA_BUILD_TRIGGER_MODE=auto` only to deliberately return
+the daemon to Mode 1.
 
 The agent workflow is:
 
 1. confirm the single root daemon is online with `--status`, or start/verify it
    with `--ensure-running`;
-2. edit and save source files;
-3. continue reviews, documentation, or other non-conflicting work while the
-   daemon builds;
-4. read status and the journal once when build identity or runtime evidence is
-   needed. Do not poll in a loop.
+2. edit and save source files; the dashboard records pending paths and targets
+   but starts no build;
+3. coordinate until compiler-input owners are ready, then issue one
+   `python devscripts/dev-loop.py --request batch-build`;
+4. use status and the journal to identify build and runtime evidence. Do not
+   launch another build request while the sealed batch is active.
 
-Only a human may explicitly request a manual build with
+Only a human may explicitly request a manual compiler invocation with
 `MIMITA_BUILD_OVERRIDE=1`. Multiple simultaneous builds in one checkout, build
 processes launched outside that checkout's daemon, and queued duplicate
 requests for the same source generation are invalid. Independent agent worktrees
@@ -809,9 +824,10 @@ must match. Launching a stale artifact is an explicit user action and must be
 visible as such; automatic restart/recovery must never select stale artifacts
 without a new explicit launch request.
 
-Automatic watcher builds publish only. They do not replace the running client
-or server unless an explicit auto-restart policy is enabled and the policy is
-shown in status.
+Build publication does not replace the running client or server unless an
+explicit auto-restart policy is enabled and the policy is shown in status.
+Mode 1 automatic watcher builds publish only; they do not apply in default
+Mode 3.
 
 ## 8. Process and server lifecycle
 
@@ -1091,8 +1107,10 @@ changes.
 
 ### Implemented in the current source
 
-- Source changes mark the latest published build stale and queue a background
-  build after debounce.
+- Mode 3 is the default build trigger: saved compiler inputs accumulate in a
+  pending batch; only an explicit batch/build request starts native compilation.
+- `MIMITA_BUILD_TRIGGER_MODE=auto` selects the Mode 1 automatic-on-save
+  fallback before the daemon starts.
 - Background builds publish timestamped artifacts but do not replace the running
   client or server unless an explicit launch request is pending.
 - `[1]` selects the last successfully published artifact immediately, including
@@ -2912,21 +2930,19 @@ The journal may rotate into sealed `events-NNNN.jsonl` segments plus the active
 ## Agent build modes: 1, 2, and 3
 
 These modes describe who owns source and builds, and how quickly saved code
-can reach a running game. The current project workflow is Mode 1: the shared
-checkout. Mode 2 is retired for ordinary agent development by the current
-repository policy. Mode 3 is a staged direction, not a feature that is fully
-implemented.
+can reach a running game. The current project workflow is Mode 3: the shared
+checkout with an explicit batch-build seal. Mode 1 is the automatic-on-save
+fallback. Mode 2 is retired for ordinary agent development by the current
+repository policy.
 
-### Mode 1: shared checkout (current workflow)
+### Mode 1: shared checkout, automatic-on-save fallback
 
-All work uses the coordinator's checkout, its dev-loop, its build files, and
-its runtime. The dev-loop detects compiler-input changes, groups nearby file
-writes with a short debounce, and incrementally builds the changed source
-generation. If a build is active, later edits are accepted and coalesced into
-one follow-up build. There is one compiler/linker job at a time in this
-checkout, so agents using it share that build owner and can wait on one another.
-The published executable becomes the launch choice; a running game is not
-automatically replaced by the executable build.
+This fallback uses the same shared checkout, root dev-loop, build files, and
+runtime, but saved compiler-input changes automatically queue incremental
+builds after a short debounce. It remains available by setting
+`MIMITA_BUILD_TRIGGER_MODE=auto` for the daemon process. Default agent work uses
+Mode 3 below. The published executable becomes the launch choice; a running
+game is not automatically replaced by the executable build.
 
 ### Mode 2: repository-local agent lanes (historical, not active)
 
@@ -2956,36 +2972,94 @@ dependents, and updated objects still have to be linked into an executable or
 module. A build proves compilation/linking, not correct runtime behavior; use
 that lane's executable and journal for behavior evidence.
 
-### Mode 3: save-triggered compile and safe live activation (future direction)
+### Mode 3: coordinated batch build and live activation (active default)
 
-The goal is for saving a file (for example, Ctrl+S) to start a debounced,
-background check for the shared checkout. Unsaved keystrokes do not start a
-compiler. The system determines affected translation units, compiles them,
-links the affected replaceable module, reports errors to the owning lane, and
-keeps accepting edits while a check runs. If inputs change during a check, it
-finishes or safely cancels that work and coalesces a follow-up for the latest
-saved source; it never starts competing compilers against the same lane's
-incremental outputs.
+Mode 3 keeps one shared checkout and the root dev-loop as the only build
+authority. It changes the build trigger from “every saved compiler input” to
+“one explicitly sealed batch is ready.” This batch trigger is active by
+default. The invoking root build request acts as the current manual readiness
+confirmation; the dev-loop does not yet collect per-agent ready flags. It does
+not revive Mode 2 lanes or allow agents to invoke compilers, build scripts, or
+separate dev-loops.
 
-When the changed code can be safely replaced, a validated immutable module is
-activated at a safe runtime boundary and the running game keeps its state. If
-it cannot be replaced safely, mode 3 can still report compile/check results,
-but that code needs a complete executable build before it can run. The
-long-term goal is to move every C++ edit into a replaceable workflow. Achieving
-that requires stable interfaces, explicit ownership of persistent state,
-dependency-aware module linking, compatibility checks, and rollback. The
-current hot DLL covers only a small source set; mode 3 does not yet make every
-C++ file live-reloadable or eliminate the final integrated stable build.
+#### Batch lifecycle
+
+1. **Collecting:** A saved compiler input records the changed path and source
+   generation in the shared pending batch. In Mode 3 this signal does not
+   enqueue or start native compilation. Unsaved keystrokes do
+   not count as saved changes. Independently specified data/config hot reload
+   may continue.
+2. **Ready and sealed:** The root coordinator confirms that compiler-input
+   owners are ready, then issues `--request batch-build`. The dev-loop records
+   the request ID, exact source generation, changed paths, target classes, and
+   seal time. This is a manual confirmation today; per-agent ready flags are
+   not yet enforced by the dev-loop. A save after the seal belongs to the next
+   batch and cannot mutate the sealed inputs.
+3. **Build once:** The root dev-loop issues one build attempt for that sealed
+   revision. It uses the dependency/object cache and builds the appropriate
+   target. A game-only batch uses the existing whole-game DLL route and keeps
+   the MinGW path and last-known-good DLL as fallback. Host, cold, or ABI
+   changes use the root-owned EXE route. Mixed batches follow the existing
+   cold-change classification and safe target sequence; no agent starts a
+   second build to get around classification.
+4. **Publish and activate:** The artifact is published atomically. For a
+   replaceable game DLL, the already-running process activates the exact
+   generation at its safe boundary and retains game state. If activation is
+   unsafe or rejected, keep the prior active generation and report the reason;
+   a cold executable change requires the existing EXE launch path.
+5. **Drain and prove:** Before starting pinned proof runs, confirm that all
+   compiler/linker children owned by this attempt have exited. The dev-loop
+   itself and healthy game processes remain alive. Test the exact artifact in
+   isolated, journaled runs. A task that passes its required proof leaves the
+   next batch; failed or unproven work returns with its evidence. A long soak
+   test may continue separately when it does not compete with the next build.
+
+The dashboard/status exposes trigger mode, pending batch age, paths/targets,
+active batch, build state, and the last batch result. The current version does
+not yet enumerate unready owners or enforce a readiness timeout; the root
+coordinator is responsible for confirming readiness before sealing. Any future
+automated readiness gate needs a bounded wait/escalation path and a build-now
+override that records who is not ready. Every phase and wait contributes to
+edit-to-evidence latency; batching is not allowed to hide pre-seal time from
+the metric.
+
+#### Goals and limits
+
+The target is one focused build wave after edits are ready, with no save-driven
+build churn and no overlapping proof/build resource burst. The primary
+latency target remains at most 10 seconds from the oldest included edit to
+runtime evidence for a declared small one-source behavior change, measured
+under the specified live workload. Batch waiting, queueing, compile, link,
+publish, activation, and proof all count. Multi-source edits and header fanout
+are reported as separate workload classes; they are not silently excluded.
+Use safe measured resource limits and a bounded priority boost only where the
+OS and current policy support it. Do not use real-time priority or starve the
+desktop/game services needed to observe the result.
+
+Batching is a scheduling policy, not a compilation or hot-reload optimization:
+it cannot by itself eliminate an expensive translation-unit compile or the
+monolithic game-DLL link. It does not migrate arbitrary C++ object layouts,
+make every C++ source replaceable, or guarantee a 10-second result. Stable
+interfaces, persistent-state ownership, dependency-aware linking, activation
+checks, rollback, and runtime evidence remain required. See
+[`agent-build-queue.md`](agent-build-queue.md),
+[`change-to-evidence-latency.md`](change-to-evidence-latency.md),
+[`build-time-observability.md`](build-time-observability.md), and
+[`hotreload.md`](../hotreload/hotreload.md).
 
 ### Commands and integration
 
-Mode 1 is the active workflow for agents and the human coordinator. Mode 2 is
-retired for normal work. Mode 3 is a future live-activation direction; it is
-not a selectable command.
+Mode 3 batch triggering is the active default. Use
+`python devscripts/dev-loop.py --request batch-build` after the compiler-input
+owners are ready. Existing explicit `build` and `game-dll` requests also seal a
+pending batch. Set `MIMITA_BUILD_TRIGGER_MODE=auto` before starting the daemon
+to use the Mode 1 automatic-on-save fallback. Mode 2 is retired for normal
+work.
 
 ```text
 python devscripts/dev-loop.py --status
 python devscripts/dev-loop.py --ensure-running
+python devscripts/dev-loop.py --request batch-build
 ```
 
 Existing lane-management commands and promotion procedures below are

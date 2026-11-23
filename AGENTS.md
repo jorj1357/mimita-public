@@ -15,15 +15,22 @@ Read these gates before doing anything else:
    file.
    Agents request builds and isolated test runs through the root dev-loop; they
    never invoke a compiler, `build.py`, a module worker, or a second loop
-   directly. The root dev-loop remains the only builder. A saved compiler input
-   still triggers the normal automatic build.
+   directly. The root dev-loop remains the only builder. Mode 3 batch triggering
+   is the default: a saved compiler input joins the visible pending batch and
+   does not start compilation. After the compiler-input owners report ready,
+   the root coordinator issues one `dev-loop.py --request batch-build` to seal
+   that batch. An explicit `--request build` or `--request game-dll` also seals
+   a pending batch. `MIMITA_BUILD_TRIGGER_MODE=auto` is the deliberate Mode 1
+   automatic-on-save fallback.
    Forbidden: `build.py`, `build_agent.py`, `buildv2.py`,
    `module-build-worker.py`, `ccache`, a compiler, and starting a second
    dev-loop. Do not set `MIMITA_BUILD_OVERRIDE=1`; that emergency variable is
    human-only.
-   Allowed and automatic: `dev-loop.py --request build`, `--request game-dll`,
-   `--request cold-link-trial`, `--start-test-run`, and the one-shot agent test
-   path. Every request records the agent, task, permit, build ID, and test run.
+   Allowed through the root dev-loop: `dev-loop.py --request batch-build`,
+   `--request build`, `--request game-dll`, `--request cold-link-trial`,
+   `--start-test-run`, and the one-shot agent test path. In Mode 3, issue one
+   build request only after the batch is ready; do not request a build on each
+   save. Every request records the agent, task, permit, build ID, and test run.
    One EXE build runs at a time. Candidate game-DLL builds may be requested as
    often as needed and run concurrently only within configured CPU/memory
    limits. Isolated test runs pin one EXE artifact and one game-DLL generation

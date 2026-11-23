@@ -1558,3 +1558,43 @@ FCS pinned runtime finding to carry into connection reliability: run 20261122_23
 ### 2026-11-23T05:52:09.873Z — cpp-latency-pressure-focus
 
 A bounded independent review was queued as wake wake-82854ea8a215 after 361 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (evidence-gap: latest pinned run fails client-stall acceptance; proof unlinked)
+
+### 2026-11-23T06:01:40.243Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (read-only) — issue-review-sweeper — 2026-11-23T06:00Z. No source, config, build, stop, or runtime mutation was performed by this reviewer. The dev-loop watcher restarted the daemon and launched a new root run during the review; that was automatic, not reviewer action.
+
+Scope: issue brief/readiness, proof status, linked artifacts, and the newest relevant journals. Readiness: ready=true, score=8, missing=[], state=in_review, 12 tasks, 2 prior reviews. `python devscripts/agent-coord.py proof list --issue issue-cf9cd77eb056` returns `[]`: no proof record is linked to this issue. The issue's `related_build` still names EXE 2026-11-22T02:37:06.972018Z (game generation 446), while the newest isolated pinned run in `logs/` is 20261122_231658 on game generation 545 and the dev-loop has published generation 546. Evidence is rich but unlinked; a cold reader cannot tell what artifact the issue's claims refer to.
+
+Observed facts (verified in the journals cited)
+1. Latest isolated pinned run 20261122_231658: `run.json` pins EXE SHA e24aaf16cbfb97461c3d51e25f7f1424c56865155889c6be816a7bc9b9b44e82, game generation 545, game DLL SHA 430a6182bfbfc83c503be67eec8e73557a1cc14af12a7eaaeea50e67bb79300b, FCS/dust2cyberiav4, 19 NPCs, server PID 34312, client PID 32040.
+2. Startup in that run (`server-01/events-0004.jsonl`): configuration_load 322.4111 ms; world_load 3211.1439 ms; network_bind 0.9173 ms; room_register 590.8082 ms and room P3MTGWS at 23:17:03.126Z. Server process started 23:16:58.717Z, so code existed ~4.41 s after process start (~4.14 s after logger init). This supports "registration under 1 s" but not "total start-to-join under 1 s".
+3. Client 231658 (`client-01` rotated journals): 1641 `network.client.snapshot.applied`; maximum `snapshot_interarrival_ms` 1493; zero intervals >= 2500 ms; zero `network.client.snapshot.gap`; two `network.connection-state.changed` events, Connecting->Connected at 23:17:07.872Z and again at 23:18:38.379Z after an intentional leave/rejoin. The reconnect/stale-peer path was not exercised in this run.
+4. The acceptance phrase "no >250ms client stall" is not met by the same run: 7564 `performance.frame-slice` samples include 83 with `frame_max_ms` > 250 ms and 1412 > 100 ms. Maximum `frame_max_ms` was 2854.109619 at 23:17:08.862Z (fields `frames=2`, `npcs=0`, `players=1`), immediately after first connect; next largest were 912.95 ms at 23:33:16.333Z and 882.05 ms at 23:18:39.671Z. These are client frame stalls, not server snapshot gaps.
+5. Server 231658 had 635 `performance.server-tick-stall` events > 100 ms: 72 > 250 ms, 16 > 500 ms, one 1036.77 ms at 23:42:31.386Z. The round-start tick 10262 at 23:20:08.054Z was 710.704 ms total with gamemode_ms 621.847, npc_ms 88.122, snapshot_ms 0.265. The largest stalls are outside the snapshot stage, consistent with the absence of client snapshot gaps in this run.
+6. Agent-facing status was false at 2026-11-23T05:56:12Z: `python devscripts/dev-loop.py --status` reported `run=RUNNING uptime=01:27:51`, `server pid=29536 alive=True`, `client pids=[17508]` for run 20261122_231306. Direct checks found no `mimita` process, no listener on 64494, `run.json` last updated 00:40:58Z, and the client's `logger.stopped` at 00:21:52.851Z. At 05:56:58.944Z `dev-loop.watcher.restarted` recorded `reason=daemon-not-alive old_daemon_pid=35436 new_daemon_pid=23824`. So the status surface was stale for roughly five hours before the watcher replaced the daemon. Cross-owner: issue-c481ab36713a (live process metadata contract).
+7. The watcher then launched run 20261123_055730_01 (EXE e24aaf16..., game generation 546 loaded: `game.host.probe.started` seq6 `dll=build\game\generation-546\game-g546.dll`). By 05:58:52.924Z its client was `online` with `snapshot_age_ms` 525. This is positive current join/snapshot evidence on the newest generation.
+8. That same current run is mode 44 juggernaut horde with `server.policy.startup` `npc_count=1`, `map_config_load` `startup_npcs=1`, and one observed `npc.spawn.resolved` (npc_id 1000) in the inspected slice. The gamemode policy says `fighters` capacity 64, `juggernauts` capacity 4, and `npc_spawn_max=67`. The launch args in `dev-loop/events.jsonl` line 12 include `--npcs 1`, plus `--mode ssbm` followed by `--mode jugger_horde --gamemode jugger_horde`. Server tick 1 was 1267.519 ms total with npc_ms 1265.158 for one NPC.
+
+Inference and uncertainty
+- The 83 >250 ms client frames are a client-timing fact, but this review did not attribute them to rendering, asset upload, networking, or swap. The acceptance wording does not distinguish; as written the criterion fails. If the intended criterion is networking-only stalls, the acceptance should say so.
+- The status output was stale, but the bounded review did not trace whether `--status` reads a dead daemon's cached state file or a stale manifest. The watcher event proves the daemon was not alive; the exact source path remains unverified.
+- The "horde loads only 1 NPC" symptom is reproduced by launch configuration, not proven as a gamemode spawn defect: this run explicitly passes `--npcs 1`, and the server reports `npc_count=1`/`startup_npcs=1`. The duplicate `--mode` (ssbm then jugger_horde) and the forced `--npcs 1` are strong launch-profile leads, but the intended horde roster has not been tested here.
+- Generation 546 has no isolated pinned test `run.json` (no `logs/2026-11-22/**/run.json` reports game_generation 546); it is only exercised by the shared root run launched by the watcher. The newest instrumentation is therefore not proof-clean.
+
+Contrary evidence
+- 231658 had zero client snapshot gaps and zero interarrivals >= 2.5 s, so the snapshot/reconnect protocol did not fail there despite 72 server ticks > 250 ms.
+- Earlier gen541/gen545 evidence showed successful in-game browser rejoin with accepted button input and clean post-rejoin cadence. The reliability surface is not uniformly broken.
+
+Next discriminating checks
+1. On a fresh isolated pinned gen546 run, capture client `performance.frame-slice` scopes for the >250 ms frames (Swap, Rendering::Actors::NetworkEntities, Networking, asset upload). Decide whether the acceptance failure is render or network, then either split the acceptance criterion or fix the dominant scope.
+2. For horde: launch mode 44 with the gamemode's intended roster (remove the forced `--npcs 1` and duplicate `--mode`) and verify `server.policy.startup.npc_count`, `map_config_load.startup_npcs`, and `npc.spawn.resolved` count against the 64+4 capacities. If the intended roster is 1, say so explicitly.
+3. For status truthfulness: with owner approval, kill one managed server and immediately query `--status` and `run.json`; require stopped/unknown with last-seen age within 5 s, not RUNNING/alive. Reviewer did not perform this mutation.
+4. Link a proof record for the run this issue intends to use (e.g. 231658) with required events and journal paths, or record a reasoned exemption; the current empty proof list plus gen446 `related_build` cannot support a cold handoff.
+
+Confidence: high on the quoted event values, file paths, and the absence of `mimita` processes at 05:56:12Z; medium on the causal interpretation of the client frame stalls; low on the status root-cause path and on whether the horde launch profile is the only reason for one NPC.
+
+Development-process note: the stale RUNNING/alive status is a safe AI capability gap and is proposed for the existing live-metadata issue issue-c481ab36713a, not duplicated here.

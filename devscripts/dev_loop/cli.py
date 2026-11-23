@@ -84,14 +84,14 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-map", default="")
     parser.add_argument("--no-runtime-client", action="store_true",
                         help="start the runtime server without a local client")
-    parser.add_argument("--request", choices=("launch", "build", "game-dll", "agent-build", "cold-link-trial", "stop-client", "stop-server", "stop", "start-runtime", "stop-runtime", "reload-runtime", "list-runtimes"),
-                        help="send a command to the already-running dev-loop daemon and exit; agents may request build/game-dll/cold-link-trial and are recorded by MIMITA_AGENT_ID")
+    parser.add_argument("--request", choices=("launch", "build", "game-dll", "batch-build", "agent-build", "cold-link-trial", "stop-client", "stop-server", "stop", "start-runtime", "stop-runtime", "reload-runtime", "list-runtimes"),
+                        help="send a command to the running dev-loop; Mode 3 is default, so save changes then request batch-build when all editing owners are ready")
     parser.add_argument("--build-request", default="",
                         help="approved coordination build request ID for --request agent-build")
     parser.add_argument("--wait-for-build", action="store_true",
                         help="wait for the requested build to finish; allowed for agent requests")
     parser.add_argument("--build-mode", choices=("debug", "release"), default="debug",
-                        help="configuration for --request build")
+                        help="configuration for --request build or batch-build")
     parser.add_argument("--game-dll-linker", choices=("auto", "gnu", "lld"), default="auto",
                         help="candidate DLL linker for --request game-dll; auto prefers LLD and falls back to GNU when LLD is absent")
     parser.add_argument("--build-timeout", type=float, default=36000.0,

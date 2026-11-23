@@ -93,3 +93,40 @@ Message: `msg-6bb45aeb36cc` (evidence)
 Subject: Over-budget queue wait on current root DLL attempt
 
 Current measured occurrence on root attempt game-dll-20261120T182726149737Z-df8100: submitted 2026-11-20T18:31:41Z, still building at 18:56:48Z with 582/642 completed; the oldest queued TUs report about 1,507,667 ms queue wait. The attempt is still advancing, so this is not a failed build, but it blocks the current sourcegen31 runtime proof and risks timeout. Existing attempt context is sourcegen29 with no attached build notes; diagnostic note 2b6c3ae7f791 was queued after this snapshot. Please append this to existing build-friction evidence and inspect queue/fairness or worker capacity before claiming the wait is normal.
+
+## Scheduled independent review
+
+### 2026-11-23T06:45:41.480Z — live-cpu-attribution
+
+A bounded independent review was queued as wake wake-e4d22f83c6dc after 370 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (reviewed - no fix; wait detected and wake queued once, but the only reviewer activation ran a bounded wake test and never appended a review)
+
+### 2026-11-23T06:53:44.929Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Bounded independent review by issue-review-sweeper (scheduled wake wake-e4d22f83c6dc after 370 completed work sessions).
+
+OBSERVED FACTS
+1. Issue readiness is complete: ready=true, score 8, missing=[], no tasks, no proof record, and state was still "new" with reviewers=[] and reviews=[] before this review.
+2. Original occurrence: wait_id game-dll-build:2026-11-20T14:53:13.561Z, elapsed 61.364 s vs 60 s budget, stage "game_build", reason is a GAME_STAGE source_snapshot started record (elapsed_ms 59783.4) for attempt game-dll-20261120T145313986328Z-9e637b. Evidence.build_id is 2026-11-20T07:47:09.981634Z, which is the then-published EXE artifact, not the game-DLL attempt; the attempt id exists only inside the reason string and related_build is empty.
+3. The only prior reviewer wake, wake-22029ea56410 (request .dev/agent-wake/requests/wake-22029ea56410.json), was queued once at 2026-11-20T14:54:20.056Z. codex claimed/launched at 14:54:21.951Z/14:54:22.170Z, wake.retry selected opencode at 14:59:21.431Z, opencode claimed/launched at 15:27:57.569Z/15:27:57.618Z, and wake.failed "adapter process exited" at 16:03:49.677Z. Request status=failed, attempts=2.
+4. That wake's prompt.txt opens "This is a bounded test activation" and directs begin --agent build-wait-reviewer --task "wake test", then appends "Requested work: Review build/test wait issue issue-e84cfa28c7f7...". Its transcript (.dev/agent-wake/logs/2026-11-20T14-54-20.052Z-build-wait-reviewer.log) has 1 match for e84cfa28c7f7, 0 matches for "Review build/test wait issue", and 3 matches for "Bounded wake"; it ends with "Bounded wake test complete. No files edited..." and agent-coord end. No review was appended.
+5. Later occurrences show the detection path working: logs/2026-11-22/20261122_220630/dev-loop/events.jsonl lines 59/60, 79/80, 95/96 pair each over-budget game-DLL wait with one dev-loop.wait.reviewer-wake and one dev-loop.wait.over_budget created=true and a distinct issue id. Each wait_id produced one issue and one wake, with no duplicate.
+6. Latest measured game-DLL build .dev/build-timings/game-dll-20261122T235222465818Z-9bfbf7.json is still 267 s total (changed_source_preflight 151 s, compile 189.7 s, link 59.7 s), so a 60 s threshold is routine for any changed-TU game build rather than evidence of a stall.
+
+INFERENCE / UNCERTAINTY
+The queued-once part of acceptance worked. The reviewer follow-through did not: the sole activation ran as a bounded wake test and exited without appending a review, which is the most likely reason this issue stayed new with no reviewer. The transcript does not contain the appended review instruction, so the failure is either a test-prompt template used for a real reviewer wake or the adapter dropping the appended requested-work section; the available artifact cannot distinguish these. The evidence.build_id field also cannot identify the waited-on game-DLL attempt without parsing reason text.
+
+CONTRARY EVIDENCE
+Detection, issue creation, and one-wake-per-wait_id dedupe are functioning for later waits. The 2026-11-20 build was advancing, not hard-stalled, and this wait did not recur under the same wait_id.
+
+NEXT DISCRIMINATING CHECK
+With current agent-wake.py, queue one bounded manual reviewer wake against a scratch issue and assert (a) the delivered transcript contains the exact "Requested work:" review text and (b) an issue review row appears within 15 minutes; if (a) fails, fix prompt assembly; if (b) fails, fix adapter-exit handling. Also run git log -S "bounded test activation" -- devscripts/agent-wake.py to confirm whether the test prefix can still be selected for automatic reviewer wakes.
+
+## Agent suggestion
+
+### 2026-11-23T06:54:41.847Z — issue-review-sweeper
+
+Review addendum (window confirmation, same bounded review). git log -S "bounded test activation" -- devscripts/agent-wake.py shows commit d89884f6 (2026-11-21T16:47:59-05:00) deleted the hardcoded "You were woken by MiMITA agent-wake. This is a bounded test activation." line and replaced it with _first_line(request). Current devscripts/agent-wake.py:322 composes "Requested work:" + request prompt and contains no bounded-test prefix. This confirms the 2026-11-20 activation used the then-current test-prompt template and that the template defect is fixed in the current tree. Still unproven: a post-fix automatic reviewer wake actually appends an issue review; no such run is recorded. The controlled manual-wake check in the review remains the next discriminating step.

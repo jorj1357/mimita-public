@@ -3,6 +3,7 @@
 * specify how EXE and whole-game DLL builds expose progress and account for elapsed time
 * identify whether time is spent waiting, compiling, linking, or publishing
 * turn repeated build measurements into evidence for focused improvements
+* measure host and process resource pressure alongside build and live-runtime phases
 * this file DOES NOT change build authority, scheduling limits, or build inputs
 * this file DOES NOT promise an accurate completion percentage
 * this file DOES NOT make timing data proof of runtime or gameplay behavior
@@ -611,6 +612,61 @@ is append-only; a human makes the final decision on the resolution.
 
 No budget is lowered to make a result pass. A build success is not runtime
 evidence; build time and event-proof time are reported separately.
+
+## Batch-mode and resource-pressure evidence
+
+Mode 3's batch policy is specified in [`dev-loop.md`](dev-loop.md). Its
+measurements must include the complete oldest-edit-to-runtime-evidence interval,
+including time waiting for participants to become ready and for the batch to
+seal. Do not report only the worker duration as the batch's edit-to-live time.
+
+For each Mode 3 attempt, record a resource sidecar under the attempt's
+`.dev/build-timings/` directory (or an equivalent canonical per-attempt
+location), keyed to the build ID, source generation, root dev-loop run ID, and
+any pinned runtime run IDs. Keep append-only UTC samples with monotonic
+timestamps at approximately one-second intervals from baseline through the
+build burst and return to baseline. Capture:
+
+- host logical CPU count, whole-machine CPU utilization, available/committed
+  memory, paging/pagefile activity, and disk activity;
+- each relevant process's PID, parent PID, role, executable/command identity,
+  CPU time/utilization normalized both to one logical CPU and to total machine
+  capacity, resident/private memory, and lifetime;
+- MiMITA server/client process identity, exact live mode and workload from the
+  runtime journal, player/NPC counts, FPS or server tick data when available;
+- active build stage, compiler/linker child processes, concurrent attempts,
+  and the top competing processes during each sample.
+
+Take a baseline with the same game workload before the build; sample while the
+build is active; record the owned compiler/linker process-tree exit boundary;
+and continue sampling until host and game resource use return to the matched
+baseline window. This distinguishes game cost, build burst, and unrelated
+processes. Missing samples or unavailable counters are explicit unknowns, not
+zero. Do not attribute a slow build to CPU or memory pressure without
+time-aligned resource samples covering the slow phase.
+
+Compare Mode 1 and Mode 3 using the same source edit class, cached/uncached
+condition, live game mode and workload, process set, and proof target. Alternate
+trial order to reduce warm-cache bias. Start with at least five paired
+screening trials for a small one-translation-unit edit, a multi-source edit,
+and a header-fanout edit; require at least twenty paired trials per mode before
+making p95 claims. Add multi-client/resource-pressure trials only when the
+available-memory guard says the test can run safely. Report all failed,
+superseded, and timed-out attempts, not only successful fast samples.
+
+The comparison reports p50/p95 and sample counts for oldest edit to batch
+seal, seal to worker, preflight/scan, each changed and skipped compile unit,
+link, publish, activation, and activation to decisive owner-level runtime
+event. Also report complete edit-to-evidence time, attempt count per batch,
+compiler-present duty cycle, peak and average host/process CPU and memory,
+pagefile activity, and time to return to baseline. A Mode 3 acceptance sample
+must show no native build request between save and seal, one attempt for the
+sealed revision, no owned compiler/linker child at proof start, the exact
+published DLL generation active in the intended same-PID runtime (when the
+target is a DLL), and the expected behavior event in that run's journal. Report
+the <=10-second target against the complete interval and its declared change
+class; a faster worker does not pass if readiness wait or runtime proof exceeds
+the target.
 ## Revision-gated queue and dependency cache
 
 The whole-game queue is keyed by source revision, not by request ID. Requests

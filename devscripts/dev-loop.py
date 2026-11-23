@@ -1291,6 +1291,13 @@ class DevLoop:
     ):
         self.profile = profile
         self.hot_client = bool(hot_client)
+        self.build_trigger_mode = str(
+            os.environ.get("MIMITA_BUILD_TRIGGER_MODE", "batch")
+        ).strip().lower()
+        if self.build_trigger_mode not in {"batch", "auto"}:
+            raise SystemExit(
+                "MIMITA_BUILD_TRIGGER_MODE must be 'batch' or 'auto'"
+            )
         try:
             self.max_mimita_processes = max(1, int(profile.get("max_mimita_processes", 1)))
         except (TypeError, ValueError):
@@ -1336,6 +1343,13 @@ class DevLoop:
         self.generation = 0
         self.last_snapshot = snapshot_inputs()
         self.last_changed_paths: list[dict] = []
+        self.batch_pending = False
+        self.batch_generation = 0
+        self.batch_targets: set[str] = set()
+        self.batch_changed_paths: dict[str, dict] = {}
+        self.batch_started_utc: str | None = None
+        self.active_batch: dict | None = None
+        self.last_batch_result: dict = {}
         self.processes: list[subprocess.Popen] = []
         # Durable independent-server record, mirroring the GUI external-server
         # contract. This is intentionally NOT part of self.processes (which is
@@ -1388,7 +1402,7 @@ class DevLoop:
         self.active_build_started_monotonic: float | None = None
         self.active_build_detail = (
             "waiting for initial build" if self.latest_build is None else
-            "idle; waiting for a source change or explicit build/launch request"
+            "idle; waiting for explicit batch-build or launch request"
         )
         self.active_build_phase = ""
         self.active_build_progress: dict = {}
@@ -2054,6 +2068,21 @@ class DevLoop:
             build_snapshot = {
                 "build_status": self.build_status,
                 "build_pending": self.build_pending,
+                "build_trigger_mode": self.build_trigger_mode,
+                "batch_pending": self.batch_pending,
+                "batch_generation": self.batch_generation,
+                "batch_targets": sorted(self.batch_targets),
+                "batch_changed_paths": list(self.batch_changed_paths.values()),
+                "batch_started_utc": self.batch_started_utc,
+                "last_batch_result": dict(self.last_batch_result),
+                "active_batch": ({
+                    "request_id": self.active_batch.get("request_id"),
+                    "requested_by": self.active_batch.get("requested_by"),
+                    "generation": self.active_batch.get("generation"),
+                    "targets": sorted(self.active_batch.get("targets", set())),
+                    "completed": sorted(self.active_batch.get("completed", set())),
+                    "failed": bool(self.active_batch.get("failed")),
+                } if self.active_batch else None),
                 "active_build_generation": self.active_build_generation,
                 "active_build_mode": self.active_build_mode,
                 "pending_build_mode": self.pending_build_mode,
@@ -2149,6 +2178,14 @@ class DevLoop:
             "status": status,
             "build_status": build_snapshot["build_status"],
             "build_pending": build_snapshot["build_pending"],
+            "build_trigger_mode": build_snapshot["build_trigger_mode"],
+            "batch_pending": build_snapshot["batch_pending"],
+            "batch_generation": build_snapshot["batch_generation"],
+            "batch_targets": build_snapshot["batch_targets"],
+            "batch_changed_paths": build_snapshot["batch_changed_paths"],
+            "batch_started_utc": build_snapshot["batch_started_utc"],
+            "last_batch_result": build_snapshot["last_batch_result"],
+            "active_batch": build_snapshot["active_batch"],
             "active_build_generation": build_snapshot["active_build_generation"],
             "active_build_mode": build_snapshot["active_build_mode"],
             "pending_build_mode": build_snapshot["pending_build_mode"],
@@ -2752,7 +2789,143 @@ class DevLoop:
             self.build_requests = dict(list(self.build_requests.items())[-32:])
         return True
 
+    def queue_batch_build(self, request_id: str, linker: str = "auto",
+                          build_mode: str = "debug",
+                          requested_by: str = "") -> tuple[bool, str]:
+        """Seal saved inputs and queue one explicit Mode 3 build wave."""
+        request_id = request_id or f"batch-{uuid.uuid4().hex[:12]}"
+        with self.lock:
+            if self.active_batch:
+                return False, (
+                    f"batch {self.active_batch.get('request_id')} is still building"
+                )
+            if not self.batch_pending or not self.batch_targets:
+                return False, "there are no saved compiler inputs waiting in the batch"
+            generation = self.batch_generation
+            targets = set(self.batch_targets)
+            paths = list(self.batch_changed_paths.values())
+            self.active_batch = {
+                "request_id": request_id,
+                "requested_by": str(requested_by or "unknown"),
+                "generation": generation,
+                "targets": targets,
+                "completed": set(),
+                "failed": False,
+                "paths": paths,
+            }
+            self.batch_pending = False
+            self.batch_targets.clear()
+            self.batch_changed_paths.clear()
+            self.batch_started_utc = None
+            self.last_batch_result = {
+                "request_id": request_id, "status": "building",
+                "generation": generation, "targets": sorted(targets),
+            }
+
+        cold_request = f"{request_id}:mode3:cold"
+        game_request = f"{request_id}:mode3:game"
+        queued = True
+        if "cold" in targets:
+            queued = self.queue_build_request(cold_request, build_mode) and queued
+        if "game" in targets:
+            queued = self.queue_game_dll_request(
+                game_request,
+                {"linker": linker, "batch_id": request_id,
+                 "batch_generation": generation, "changed_paths": paths},
+                revision=generation, force=True,
+            ) and queued
+
+        if not queued:
+            with self.lock:
+                batch = self.active_batch
+                if batch and batch.get("request_id") == request_id:
+                    self._restore_batch_locked(batch)
+                    self.active_batch = None
+                    self.last_batch_result = {
+                        "request_id": request_id, "status": "failed",
+                        "generation": generation, "targets": sorted(targets),
+                    }
+            return False, "the root dev-loop could not queue every target in the batch"
+
+        if "game" in targets and "cold" not in targets:
+            self.start_game_build_worker()
+        target_text = "+".join(sorted(targets))
+        message = (
+            f"Mode 3 sealed generation {generation} ({target_text}); "
+            f"queued {len(paths)} changed compiler input(s)"
+        )
+        self.last_message = message
+        self.record_runtime_event(
+            "dev-loop.batch.sealed",
+            {"request_id": request_id,
+             "requested_by": str(requested_by or "unknown"),
+             "generation": generation,
+             "targets": sorted(targets), "changed_paths": paths},
+            "explicit root-dev-loop Mode 3 batch request",
+        )
+        self.save_state("batch_build_queued")
+        return True, message
+
+    def _restore_batch_locked(self, batch: dict,
+                              targets: set[str] | None = None) -> None:
+        """Return a failed sealed batch to the visible pending batch."""
+        restore_targets = set(targets or batch.get("targets") or set())
+        self.batch_pending = True
+        self.batch_generation = max(
+            self.batch_generation, int(batch.get("generation") or 0), self.generation)
+        self.batch_targets.update(restore_targets)
+        for row in batch.get("paths") or []:
+            path = str(row.get("path") or "")
+            if path and str(row.get("target") or "") in restore_targets:
+                self.batch_changed_paths[path] = dict(row)
+        if self.batch_started_utc is None:
+            self.batch_started_utc = utc_now()
+
+    def finish_batch_target(self, request_ids: list[str], target: str,
+                            success: bool, generation: int) -> None:
+        expected_suffix = f":mode3:{target}"
+        with self.lock:
+            batch = self.active_batch
+            if not batch:
+                return
+            expected_request = f"{batch.get('request_id')}{expected_suffix}"
+            if expected_request not in request_ids:
+                return
+            batch_generation = int(batch.get("generation") or 0)
+            if generation != batch_generation or not success:
+                batch["failed"] = True
+                if not success:
+                    batch.setdefault("failed_targets", set()).add(target)
+            batch.setdefault("completed", set()).add(target)
+            if batch["completed"] >= batch.get("targets", set()):
+                if batch.get("failed"):
+                    self._restore_batch_locked(
+                        batch, set(batch.get("failed_targets") or batch["targets"]))
+                    self.last_batch_result = {
+                        "request_id": batch.get("request_id"), "status": "failed",
+                        "generation": batch_generation,
+                        "targets": sorted(batch.get("targets", set())),
+                    }
+                    self.last_message = (
+                        f"Mode 3 batch {batch.get('request_id')} failed; "
+                        "saved inputs remain pending for an explicit retry"
+                    )
+                else:
+                    self.last_batch_result = {
+                        "request_id": batch.get("request_id"), "status": "success",
+                        "generation": batch_generation,
+                        "targets": sorted(batch.get("targets", set())),
+                    }
+                    self.last_message = (
+                        f"Mode 3 batch {batch.get('request_id')} completed "
+                        f"generation {batch_generation}"
+                    )
+                self.active_batch = None
+        self.save_state("batch_build_failed" if not success else "batch_target_completed")
+
     def _retry_transient_game_build(self, revision: str, error: str) -> None:
+        if self.build_trigger_mode == "batch":
+            return
         text = str(error or "").lower()
         transient = any(token in text for token in (
             "permissionerror", "access is denied", "publish",
@@ -2872,6 +3045,10 @@ class DevLoop:
                 return
             if self.build_worker is not None or self.active_build_generation is not None:
                 return
+            if (self.active_batch and not self.active_batch.get("failed")
+                    and "cold" in self.active_batch.get("targets", set())
+                    and "cold" not in self.active_batch.get("completed", set())):
+                return
             request_ids = list(self.pending_game_build_request_ids)
             active_revision = self.game_build_pending_revision or str(
                 self.generation)
@@ -2987,6 +3164,11 @@ class DevLoop:
                     self.game_build_status = "failed"
                     self.game_build_detail = str(result.get("error") or "game build failed")
                     self.last_message = self.game_build_detail
+            self.finish_batch_target(
+                request_ids, "game", success,
+                int(completed_revision) if str(completed_revision).isdigit()
+                else self.generation,
+            )
             if not success:
                 self._retry_transient_game_build(
                     completed_revision, self.game_build_detail)
@@ -3078,6 +3260,20 @@ class DevLoop:
                         request, "completed" if launched else "failed", self.last_message
                     )
                     self.save_state("launch_latest" if launched else "launch_failed")
+            elif (action == "batch-build" or
+                  (action in ("build", "game-dll")
+                   and self.build_trigger_mode == "batch"
+                   and self.batch_pending)):
+                accepted, message = self.queue_batch_build(
+                    request_id,
+                    str(request.get("game_dll_linker") or "auto"),
+                    str(request.get("build_mode") or "debug"),
+                    str(request.get("requested_by") or request.get("agent") or "ai"),
+                )
+                self.last_message = message
+                self.record_control_event(
+                    request, "accepted" if accepted else "rejected", message)
+                self.save_state("batch_build_queued" if accepted else "batch_build_rejected")
             elif action == "build":
                 mode = str(request.get("build_mode", "debug"))
                 if not self.queue_build_request(request_id, mode):
@@ -3435,38 +3631,55 @@ class DevLoop:
                 self.save_state("request_rejected")
 
     def record_source_change(self, paths: list[str]) -> None:
-        """Classify a save and start the correct automatic build target."""
+        """Record a save and trigger a build only under the selected policy."""
         targets, rows = classify_changed_paths(paths)
         game_target = "game" in targets
         cold_target = "cold" in targets
         with self.lock:
             self.generation += 1
             self.last_changed_paths = rows
+            if self.build_trigger_mode == "batch":
+                self.batch_pending = True
+                self.batch_generation = self.generation
+                self.batch_targets.update(targets)
+                for row in rows:
+                    path = str(row.get("path") or "")
+                    if path:
+                        self.batch_changed_paths[path] = dict(row)
+                if self.batch_started_utc is None:
+                    self.batch_started_utc = utc_now()
             if cold_target:
                 self.latest_stale = self.latest_build is not None
-                self.build_pending = True
-                self.build_status = "pending"
+                if self.build_trigger_mode == "auto":
+                    self.build_pending = True
+                    self.build_status = "pending"
             if game_target and cold_target:
-                self.last_message = (
-                    f"source changed, generation {self.generation}: game + cold")
+                target_message = "game + cold"
             elif game_target:
+                target_message = "game DLL"
+            else:
+                target_message = "EXE"
+            if self.build_trigger_mode == "batch":
                 self.last_message = (
-                    f"game source changed, generation {self.generation}: game DLL")
+                    f"Mode 3 batch pending: generation {self.generation}, "
+                    f"{target_message}; run --request batch-build when edits are ready")
             else:
                 self.last_message = (
-                    f"cold source changed, generation {self.generation}: EXE")
+                    f"source changed, generation {self.generation}: {target_message}")
         self.record_runtime_event(
             "hot.build.plan",
             {
                 "generation": self.generation,
                 "targets": sorted(targets),
-                "game_auto": game_target,
-                "cold_auto": cold_target,
+                "build_trigger_mode": self.build_trigger_mode,
+                "game_auto": game_target and self.build_trigger_mode == "auto",
+                "cold_auto": cold_target and self.build_trigger_mode == "auto",
+                "batch_pending": self.batch_pending,
                 "changed": rows[:64],
             },
-            "automatic hot/cold build decision",
+            "source change build-trigger decision",
         )
-        if game_target:
+        if game_target and self.build_trigger_mode == "auto":
             self.queue_game_dll_request(
                 f"auto-{self.generation}", revision=self.generation)
         self.change_event.set()
@@ -3850,6 +4063,7 @@ class DevLoop:
                 if pending_launch:
                     self.launch_after_build = False
 
+            self.finish_batch_target(request_ids, "cold", success, generation)
             if success:
                 # Publish the required build result before optional report-only
                 # scans. Do this after releasing self.lock because save_state()
@@ -5661,6 +5875,10 @@ class DevLoop:
         client_pids = snapshot.get("client_pids", [])
         lines = [
             f"[DEV STATUS] MODE: {snapshot.get('launch_mode')} ({self.launch_mode.get('name', 'unnamed')})",
+            f"[DEV STATUS] BUILD POLICY: {snapshot.get('build_trigger_mode', 'batch')}  "
+            f"pending={snapshot.get('batch_pending')} targets={snapshot.get('batch_targets') or '-'} "
+            f"files={len(snapshot.get('batch_changed_paths') or [])} "
+            f"active={(snapshot.get('active_batch') or {}).get('request_id') or '-'}",
             f"[DEV STATUS] BUILD: phase={snapshot.get('build_status')} detail={snapshot.get('active_build_phase') or snapshot.get('active_build_detail') or '-'} active-source={snapshot.get('active_build_generation') or '-'} latest-id={snapshot.get('latest_successful_build_id') or '-'} stale={snapshot.get('latest_build_stale')} elapsed={self._duration_text(snapshot.get('active_build_elapsed_seconds'))}",
             f"[DEV STATUS] BUILD DETAIL: {snapshot.get('active_build_detail') or snapshot.get('last_build_result') or '-'}",
             f"[DEV STATUS] GAME BUILD: phase={(snapshot.get('game_build') or {}).get('status') or '-'} detail={(snapshot.get('game_build') or {}).get('detail') or '-'} generation={(snapshot.get('game_build') or {}).get('generation') or '-'}",
@@ -5722,7 +5940,12 @@ class DevLoop:
         print(f"[DEV] root={ROOT}")
         print(f"[DEV] control=127.0.0.1:{self.control_port}")
         print(f"[DEV] status={STATE_PATH}")
-        print("[DEV] one build at a time; edits during a build queue another build")
+        print(
+            f"[DEV] build trigger={self.build_trigger_mode}; "
+            "Mode 3 saves wait for an explicit batch-build seal"
+            if self.build_trigger_mode == "batch" else
+            "[DEV] build trigger=auto; saved changes queue incremental builds"
+        )
 
         try:
             while not self.stop_event.is_set():
@@ -6961,7 +7184,7 @@ def _recent_activity(events_path: str, limit: int = 10) -> list[str]:
 
 
 DASHBOARD_CONTROLS_LINE = (
-    "Controls : [1] launch latest  [2] launch mode  [V] client visible/headless  "
+    "Controls : [1] launch latest  [2] launch mode  [B] build ready batch  [V] client visible/headless  "
     "[A] auto-restart  [Q] stop daemon  [X] close view  [P] freeze  [R] resume"
 )
 
@@ -7086,6 +7309,11 @@ def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str
         f"latest={state.get('latest_successful_build_id') or state.get('latest_successful_build') or '-'}@{state.get('latest_successful_source_generation', '-')}  "
         f"stale={state.get('latest_build_stale')}  "
         f"elapsed={DevLoop._duration_text(state.get('active_build_elapsed_seconds'))}",
+        f"Build policy: Mode {3 if state.get('build_trigger_mode', 'batch') == 'batch' else 1} "
+        f"{state.get('build_trigger_mode', 'batch')}  pending={state.get('batch_pending')} "
+        f"targets={state.get('batch_targets') or '-'} "
+        f"files={len(state.get('batch_changed_paths') or [])} "
+        f"active={(state.get('active_batch') or {}).get('request_id') or '-'}",
         f"Build detail: {state.get('active_build_detail') or state.get('last_build_result') or '-'}",
         *[f"Build output: {line}" for line in (state.get('build_output_tail') or [])[-2:]],
         f"Runtime  : build={state.get('running_build_id') or state.get('running_build') or '-'}  match={state.get('builds_match')}",
@@ -7501,6 +7729,8 @@ def run_dashboard(args: argparse.Namespace) -> int:
                 elif key == "2":
                     picker.update({"open": True, "input": "", "modes": launch_mode_table()})
                     view_status = "launch-mode picker open"
+                elif key == "b":
+                    control(current, "batch-build")
                 elif key == "v":
                     control(current, "toggle-visibility")
                 elif key == "a":
@@ -7837,10 +8067,18 @@ def wait_for_build_request(request_id: str, timeout: float) -> int:
         current = read_current_run() or {}
         state_read_seconds += time.monotonic() - read_started
         poll_count += 1
-        status = (current.get("build_requests") or {}).get(request_id)
-        game_build = current.get("game_build") or {}
-        if status is None:
-            status = (game_build.get("requests") or {}).get(request_id)
+        active_batch = current.get("active_batch") or {}
+        batch_result = current.get("last_batch_result") or {}
+        if (str(active_batch.get("request_id") or "") == request_id
+                and active_batch):
+            status = "building"
+        elif str(batch_result.get("request_id") or "") == request_id:
+            status = str(batch_result.get("status") or "")
+        else:
+            status = (current.get("build_requests") or {}).get(request_id)
+            game_build = current.get("game_build") or {}
+            if status is None:
+                status = (game_build.get("requests") or {}).get(request_id)
         if status == "success":
             print(f"[DEV CONTROL] build request={request_id} result=success "
                   f"build={current.get('latest_successful_build')} "
@@ -7937,7 +8175,7 @@ def run_ai_match(args: argparse.Namespace) -> int:
     return run_scenario_file(args, scenario)
 
 
-_MANUAL_BUILD_ACTIONS = frozenset({"build", "game-dll", "cold-link-trial"})
+_MANUAL_BUILD_ACTIONS = frozenset({"build", "game-dll", "batch-build", "cold-link-trial"})
 
 
 def _manual_build_override_enabled() -> bool:
@@ -8004,7 +8242,8 @@ def run_control_client(args: argparse.Namespace) -> int:
     if args.scenario_file and getattr(args, "scenario_explain", False):
         return run_scenario_file(args)
 
-    if action in ("command", "scenario-file", "launch", "build", "start-server",
+    if action in ("command", "scenario-file", "launch", "build", "game-dll",
+                  "batch-build", "start-server",
                   "start-client", "stop-instance", "restart-instance",
                   "start-runtime", "stop-runtime", "reload-runtime",
                   "list-runtimes") or args.ensure_running:
@@ -8056,9 +8295,9 @@ def run_control_client(args: argparse.Namespace) -> int:
         request["agent"] = requested_by or "ai"
     if getattr(args, "hot_client", False):
         request["hot_client"] = True
-    if action == "build":
+    if action in ("build", "batch-build"):
         request["build_mode"] = args.build_mode
-    if action == "game-dll":
+    if action in ("game-dll", "batch-build"):
         request["game_dll_linker"] = getattr(args, "game_dll_linker", "auto")
     if action == "agent-build":
         request["build_request"] = getattr(args, "build_request", "") or ""
@@ -8132,7 +8371,7 @@ def run_control_client(args: argparse.Namespace) -> int:
         print(f"[DEV CONTROL] events={_terminal_file_link(events_path)}")
         return 0 if result["completed"] else 1
 
-    if action in ("build", "game-dll") and response.get("accepted") and args.wait_for_build:
+    if action in ("build", "game-dll", "batch-build") and response.get("accepted") and args.wait_for_build:
         agent = str(request.get("agent") or request.get("requested_by") or "ai")
         _work_wait(agent, "build_wait",
                    reason=f"{action} {request['request_id']}",

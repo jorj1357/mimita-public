@@ -902,3 +902,117 @@ UNKNOWNS
 - AV/OS/other process CPU, disk I/O, and exact per-core pinning during the build were not captured. A concurrent build-phase sample with a process tree would close this.
 
 Latency relevance: even a ~1 s thin C++ TU cannot meet <=10 s while the whole-game DLL link is 8 s at low pressure and ~60 s under this load. No action requested beyond your CPU ownership; I am pursuing the structural 10 s path separately.
+
+## Context
+
+### 2026-11-23T06:18:47.790Z — live-cpu-trace
+
+related_build: 2026-11-22T21:32:48.195707Z:e24aaf16cbfb97461c3d51e25f7f1424c56865155889c6be816a7d9d
+related_run: 20261123_055730_01
+context_id: ctx-0fdb20c0d6ba
+
+## 2026-11-23 live WPR CPU capture (source-resolved)
+
+### Direct observations
+- Capture: `.dev/perf-captures/mimita-live-cpu.etl`; 352,321,536 bytes (336 MiB); SHA-256 `45D6DA0F1FFB14F875C672C9ECDFF0B2A2F7AE2DEECFF660E1510D8F49666535`.
+- WPR reported successful save. `xperf -a tracestats` shows UTC interval `2026-11-23T06:05:07.464Z`–`06:05:39.138Z` (31.674 s), with zero lost buffers/events. One invalid classic event was flagged; it does not change the zero lost-buffer/event counters.
+- Host: 12 logical CPUs. xperf per-core profile windows averaged 54.01% host utilization over the trace (window min 35.21%, max 77.61%). A separate 8.002 s process CPU sample at `06:06:58.405Z`–`06:07:06.407Z` measured PID 8804 server at 12.9% whole-machine capacity and PID 3600 client at 20.5%, combined 33.4% (4.006 of 12 logical-core equivalents). These measurements are different windows and must not be treated as one matched interval.
+- Runtime identity: run `20261123_055730_01`, build ID `2026-11-22T21:32:48.195707Z:e24aaf16cbfb97461c3d51e25f7f1424c56865155889c6be816a7d9d`, game DLL generation 546 (`build/game/generation-546/game-g546.dll`), client PID 3600, server PID 8804. The GUI launch setting said one NPC, but the live journal during this capture shows `jugger_horde`, map `dust2cyberiav4`, one player and 67 roster NPCs. This is active gameplay and not an idle or one-NPC sample.
+- Journals: `logs/2026-11-23/20261123_055730_01/server-01/events.jsonl` and `logs/2026-11-23/20261123_055730_01/client-01/events.jsonl`. Nearby server phase windows reported `npc_sim_ms` 417–579 ms/s and `physical_contact_ms` 144–178 ms/s; NPC phase was over its 10 ms budget on 18–50 of 58–62 ticks. Nearby client windows reported average frame 9.73–14.71 ms and p95 15.36–23.18 ms.
+- xperf stackwalk instrumentation itself accounts for a large share of sampled kernel stacks (`EtwpTraceStackWalk` about 33–35% exclusive and `KeExpandKernelStackAndCalloutInternal` about 31–33% for these process stack sets). Do not count this as MiMITA workload. xperf module usage attributed approximately 10.66% whole-machine CPU to server PID 8804 and 19.30% to client PID 3600 in the trace's profile accounting; the pair's ~29.96% must be treated as approximate because stack capture overhead contaminates the capture.
+- Debug DLL generation 546 embeds DWARF line data. Resolving xperf's exclusive game-DLL stack samples with `addr2line` identified function/source locations despite no separate PDB or MAP file. Client top DLL-exclusive sample hits: `ma_linear_resampler_interpolate_frame_f32` 518/6,318 (8.20%), `ma_linear_resampler_process_pcm_frames_f32_upsample` 343/6,318 (5.43%), `ma_copy_and_apply_volume_factor_per_channel_f32` 188/6,318 (2.98%), followed by mixing/conversion functions. These are percentages of that process's game-DLL-exclusive stack hits, not total CPU. Current source: `include/miniaudio.h:53264-53279`, `53522-53560`; application audio voice creation starts at `src/audio/audio.cpp:450-455`, with setup/voice initialization around lines 500-585.
+- Server's 3,708 game-DLL-exclusive hits resolved across many functions; no single function dominates. `AabbTree::overlaps` had 170 hits (4.58% of DLL-exclusive hits), `getCachedTriangles` 64 (1.73%), `NpcSystem::updateOneNpc` 47 (1.27%), and collision cache helpers also appeared. Most source mappings point to the exact build snapshot under `.dev/build-snapshots/...`; verify those snapshot lines against current source before edits.
+- Artifacts: `.dev/perf-captures/mimita-live-cpu-profile.txt`, `.dev/perf-captures/mimita-live-cpu-util.txt`, `.dev/perf-captures/mimita-live-cpu-server-symbols.html`, `.dev/perf-captures/mimita-live-cpu-client-symbols.html`.
+- No compiler process was identified in the capture and the dev-loop build phase was idle; this trace is not evidence about CPU contention during a build.
+
+### Inferences
+- Audio resampling/mixing is the clearest client-side code lead from this capture. Server CPU is spread across NPC simulation and collision work; current phase telemetry independently confirms NPC simulation/contact costs. Neither result proves a 1% fix or a single dominant source line.
+- The GUI's one-NPC launch parameter did not describe the live Juggernaut Horde workload. Future matched comparisons must capture the exact in-game mode and live actor count from the journal.
+
+### Unknowns and next proof
+- Stack-walk overhead materially perturbs system CPU and is not separable from game activity with this single trace. The WPR CPU profile identified useful function locations but does not provide uncontaminated before/after function CPU milliseconds.
+- Next: repeat a shorter, matched workload with the mode/NPC roster held fixed and lower-overhead sampling; collect per-thread CPU time and audio active-voice/sample-rate data alongside server phase windows. Then A/B the audio and NPC/contact leads separately. Keep baseline and candidate runs pinned to the same generation/runtime conditions; do not use this capture alone to justify a code change.
+
+## Same-trace function CPU estimates (2026-11-23)
+
+Re-analysis combines xperf's module CPU usage from `mimita-live-cpu-profile.txt` with exclusive function stack-hit ratios from the per-process symbol reports. This gives a concrete, same-trace estimate rather than treating a percentage of DLL-only samples as a percentage of the PC.
+
+Formula: `estimated host CPU % = xperf module host CPU % × (function exclusive hits / module stack hits)`. Approximate CPU milliseconds use `host CPU % × 12 logical CPUs × 31.6738 s`. This is a statistical estimate: xperf module usage is weighted while the stack-hit ratio is unweighted, so frequency/weight variation can affect the result.
+
+Direct measurements from this trace: xperf module rows sum to **10.66% host CPU for server PID 8804** and **19.30% for client PID 3600** (29.96% combined). The one-second per-core utilization series averaged **54.01% host CPU**. These are same-trace measures but are different xperf reports; the remaining host load includes other processes/system work and report/sampling variance. No compiler was active.
+
+| Role | Exclusive function | Stack hits / module hits | Estimated host CPU | Estimated CPU time in trace |
+|---|---|---:|---:|---:|
+| Client | `EtwpTraceStackWalk` (WPR overhead) | 40,899 / 103,045 | 3.084% | 11,722 ms |
+| Client | `KeExpandKernelStackAndCalloutInternal` (WPR overhead) | 39,271 / 103,045 | 2.961% | 11,255 ms |
+| Server | `EtwpTraceStackWalk` (WPR overhead) | 16,541 / 40,815 | 1.706% | 6,485 ms |
+| Server | `KeExpandKernelStackAndCalloutInternal` (WPR overhead) | 15,677 / 40,815 | 1.617% | 6,146 ms |
+| Client | `ma_linear_resampler_interpolate_frame_f32` | 518 / 6,318 | 0.380% | 1,446 ms |
+| Client | `ma_linear_resampler_process_pcm_frames_f32_upsample` | 343 / 6,318 | 0.252% | 957 ms |
+| Server | `cosl` | 256 / 3,708 | 0.179% | 680 ms |
+| Client | `ma_copy_and_apply_volume_factor_per_channel_f32` | 188 / 6,318 | 0.138% | 525 ms |
+| Server | `glm::vec<4,float>::vec` | 173 / 3,708 | 0.121% | 459 ms |
+| Server | `AabbTree::overlaps` | 170 / 3,708 | 0.119% | 451 ms |
+| Client | `buildReceiveTimeRender` | 99 / 6,318 | 0.073% | 276 ms |
+| Client | `ma_mix_f32_fast` | 92 / 6,318 | 0.068% | 257 ms |
+| Client | `ma_pcm_s16_to_f32__reference` | 84 / 6,318 | 0.062% | 234 ms |
+| Client | `PerfScopeGuard` | 83 / 6,318 | 0.061% | 232 ms |
+| Client | `ma_mix_pcm_frames_f32` | 81 / 6,318 | 0.059% | 226 ms |
+| Client | `ma_dr_mp3_L3_huffman` | 73 / 6,318 | 0.054% | 204 ms |
+| Client | `AabbTree::overlaps` | 72 / 6,318 | 0.053% | 201 ms |
+| Server | `getCachedTriangles` | 64 / 3,708 | 0.045% | 170 ms |
+| Server | `NpcSystem::updateOneNpc` | 47 / 3,708 | 0.033% | 125 ms |
+| Server | `getCachedSuperset` | 46 / 3,708 | 0.032% | 122 ms |
+| Server | `cacheTriangles` | 41 / 3,708 | 0.029% | 109 ms |
+
+The largest rows are the ETW stack-walk functions themselves, not MiMITA gameplay. They estimate to about **9.37 percentage points of host CPU combined** in this capture, which demonstrates why this trace cannot be used as an unperturbed game baseline. Among MiMITA code, client audio resampling is the largest identified individual function (about 0.38% of whole-machine capacity); server work is divided among many functions. These figures help rank leads, but do not demonstrate before/after savings or identify one function responsible for a 30–40% machine load.
+
+Full rows and the formula inputs are retained in `.dev/perf-captures/mimita-live-cpu-function-estimates.csv`. For a fix decision, next capture must reduce/measure profiler overhead or use bounded thread CPU-time instrumentation, and compare identical mode, NPC roster, frame/tick, and process set. Source-level CPU milliseconds should be reported separately from sample-derived estimates.
+
+## WPR overhead reduction and audio-mode clarification (2026-11-23)
+
+### Direct observations
+- The existing WPR `CPU` capture has exclusive kernel samples in `EtwpTraceStackWalk` and `KeExpandKernelStackAndCalloutInternal`. The previous module-weight reconciliation estimated these two stack-walking routines at about 9.37 percentage points of whole-machine CPU combined across client/server during the capture. Treat this as capture-induced work, not MiMITA game logic.
+- Current `config/audio/spatial-audio.json` says `"mode": "legacy"` and has last-write time `2026-11-01T03:04:50Z`. A later `audio.spatial.applied` event in run `20261123_055730_01` at `2026-11-23T06:52:22.169Z` reports mode `legacy`. The WPR interval was `06:05:07`–`06:05:39Z`; its client journal has no audio-mode event in that interval, so the exact loaded mode at those 32 seconds is not directly journal-proven.
+- Code path: `src/audio/audio.cpp:506-508` sets `wantsSpatial` only when the sound is world-positioned, spatial config is enabled, and mode is `Spatial`; `:350-366` applies the legacy attenuation path. The filter/reverb chain is created only in the `active->spatial` branch (`:544-582`), and `audioUpdate` skips voices with `!active->spatial` (`:683-690`). The miniaudio engine still starts at `:604`, the decoder is initialized with default format selection at `:468`, and the sound is attached to that engine at `:480`.
+- WPR's largest MiMITA-code audio sample was `ma_linear_resampler_interpolate_frame_f32`, estimated at about 0.38% of whole-machine CPU in that capture. Resampling/mixing is part of ordinary sound playback and is not evidence that 3D reverb/occlusion was active. Multiple active voices and source/device sample-rate conversion are possible contributors; active voice count and actual source/output rates were not captured alongside the trace.
+
+### Lower-overhead measurement plan
+- Establish an unprofiled 30-second baseline with process CPU-time deltas (`GetProcessTimes`/PowerShell `Get-Process .CPU`) and host logical CPU count. This produces process and whole-machine CPU without stacks and negligible sampling work, but cannot name functions.
+- For function ranking, use WPR stack sampling at a lower frequency and short duration. Microsoft documents `wpr -setprofint 100000` as a 10 ms profile interval (versus the common 1 ms interval), then `wpr -resetprofint` restores defaults. The interval setting is system-wide while active; run only for the capture and reset it immediately afterward. Measure process/host CPU just before, during, and after to quantify remaining profiler overhead.
+- If exact per-function CPU milliseconds are still needed, add opt-in, bounded per-thread CPU-time sampling only around ranked functions, with a sampling gate and measured instrumentation overhead. Do not put a system call on every hot invocation until its cost has been measured.
+- For audio specifically, pair a lower-rate stack trace with active voice count, device/engine output rate, decoder source rates, and time in the audio callback. Compare matched scenes in `legacy` and `spatial`; do not infer 3D cost from resampler function names.
+
+### Inference and unknowns
+- The current evidence points to ordinary mixing/resampling, not the legacy-mode attenuation calculations or the optional 3D filter/reverb chain, as the source of the named miniaudio functions. It does not explain all client CPU; the individual function estimate is modest relative to total process CPU.
+- We still need a capture-period audio mode/voice-rate record and an overhead comparison before concluding how much of the observed CPU belongs to audio versus the WPR sampler or other client work.
+
+## 10 ms WPR capture results (2026-11-23)
+
+### Direct observations
+- ETL `.dev/perf-captures/mimita-cpu-10ms.etl`, 386,924,544 bytes (369 MiB), UTC trace interval `2026-11-23T07:02:51.327Z`–`07:03:27.760Z` (36.433 s), 12 logical CPUs, zero lost buffers/events. xperf emitted one invalid classic-event warning during analysis. The ETL period is longer than the user's 15-second sleep, so use the ETL's actual interval for all rates.
+- The user's `wpr -setprofint 100000` reported 10.0000 ms. xperf confirms the profile frequency zone changed from 1,000 to 10,000 (10x lower reported sampling frequency compared with the earlier trace). `Sampled Profile` event count fell from 205,737 to 22,316; events per second fell from about 6,495 to 612 (10.6x). Sampled Profile stack records fell from 69,927 to 9,697; per-second rate fell about 8.3x. `wpr -resetprofint` succeeded; a subsequent `wpr -profint` reports the default 1 ms interval.
+- The `CPU` profile still captured many other stack events. `Thread: CSwitch` event count rose from 460,896 to 624,533, and associated stack count from 298,922 to 397,816. The new ETL is larger than the earlier 336 MiB trace; normalized size is about 10.1 MiB/s versus 10.6 MiB/s. Thus the lower interval substantially reduced periodic profile samples but did not reduce the verbose trace's overall data/stack burden.
+- `wpr -profiledetails CPU` confirms verbose mode records system stacks for `CSwitch`, `ReadyThread`, and `SampledProfile`. `wpr -profiledetails CPU.light` retains CPU sampling and context-switch keywords but lists no System Stacks. This is the next lower-overhead option for function-leaf ranking: it preserves sampled instruction addresses but not caller stacks.
+- Same process IDs in both captures: client PID 3600 and server PID 8804. New xperf module weights: client 18.72% whole-machine capacity, server 10.39%, combined 29.11%; earlier trace was 19.30% + 10.66% = 29.96%. New Idle sample usage was 49.46% (about 50.54% sampled host busy), versus earlier 46.44% (about 53.56% busy). These are separate, non-matched windows; they do not prove WPR lowered MiMITA CPU. Top other sampled processes included `pythonw.exe` PID 16864 at 5.42% and `MsMpEng.exe` PID 6696 at 3.34%. Dev-loop status checked after the capture showed game-build idle; the ETL does not establish the exact build phase for every sample.
+- Runtime identity is the still-running run `20261123_055730_01`, build ID `2026-11-22T21:32:48.195707Z:e24aaf16cbfb97461c3d51e25f7f1424c56865155889c6be816a7d9d`, PIDs above. The exact in-game mode and actor count were not available in the journal for this 36-second window; do not reuse earlier 67-NPC capture state as if it were measured here.
+- Artifacts: `.dev/perf-captures/mimita-cpu-10ms-stats.txt`, `.dev/perf-captures/mimita-cpu-10ms-frequency.txt`, `.dev/perf-captures/mimita-cpu-10ms-profile.txt`, `.dev/perf-captures/mimita-cpu-10ms-detail.txt`, `.dev/perf-captures/mimita-cpu-10ms-client-symbols.html`, `.dev/perf-captures/mimita-cpu-10ms-server-symbols.html`.
+
+### Inference and next proof
+- The lower profile interval worked for `SampledProfile`, but `CPU.Verbose` continued collecting large context-switch/ready-thread stack streams. That explains why the ETL remained very large and shows the lower interval alone is insufficient to remove most capture overhead.
+- Next, use `wpr -start CPU.light -filemode` with the same 10 ms interval for a short matched run, then compare process-only CPU before/during/after. CPU.Light provides sampled instruction addresses for leaf-function attribution without verbose caller stacks. If a call path is needed, collect a brief targeted verbose trace only after the light capture identifies the hot leaf. Keep process CPU-time snapshots as the low-overhead baseline and restore the default interval with `wpr -resetprofint` after every capture.
+- Exact mode, NPC count, and frame/tick workload for the new interval remain unknown. A valid before/after claim requires those runtime journal facts to match.
+
+## Review (evidence)
+
+### 2026-11-23T07:28:43.204Z — cpulight-function-map
+
+Reviewer: cpulight-function-map
+
+OBSERVED CPU capture evidence (UTC 2026-11-23 07:15:55.042 to 07:16:05.614; duration 10.5714 s; 12 logical CPUs; WPR CPU.light sample period 10 ms; 0 lost buffers/events): ETL .dev/perf-captures/mimita-cpu-light-10ms.etl (90,177,536 bytes). xperf reports client PID 3600 and server PID 8804, both mimita.exe and both loading game-g546.dll, run 20261123_055730_01, EXE/build identity 2026-11-22T21:32:48.195707Z:e24aaf16cbfb97461c3d51e25f7f1424c56865155889c6be816a7d9d, game generation 546. From sampled weights normalized against 12 cores x 10.5714 s: client 19.94% whole-machine CPU (2.39 core-equivalents), server 12.02% (1.44 core-equivalents), combined 31.96% (3.84 core-equivalents). game-g546.dll samples are client 4.88% host and server 3.02%, 7.90% combined; that is about 24.5%/25.1% of each MiMITA process's sampled CPU. ntoskrnl.exe samples while scheduled in the MiMITA process context: client 7.96% + server 4.82% = 12.78% host; FLTMGR.SYS totals 1.80%, Ntfs.sys 1.28%, nvoglv64.dll 1.17% client. Other sampled processes include pythonw.exe PID 16864 at 5.99% host, MsMpEng.exe PID 6696 at 3.48%, pythonw.exe PID 23824 at 1.39%, Taskmgr.exe PID 23012 at 0.87%, and WPR PIDs 3568/3192 at 0.25%/0.15%. These are sampled instruction/module attributions, not proof of caller or exact source ownership.
+
+LIMIT: xperf profile -detail groups by process/module when symbols are unavailable; -symbols output identifies game-g546.dll only as Unknown for both PIDs. CPU.light has no System Stacks according to WPR CPU.light profile details, and this report contains no MiMITA function or source-line attribution. Therefore no honest exact function/line percentages can be reported from these generated reports yet. Exact in-window mode/NPC state also was not tied to these ETL timestamps in the process journals; a later dev-loop status showed map dust2cyberiav4, mode jugger_horde, npcs=1, but that is not capture-time proof. Latest status after capture showed build idle; whether a build overlapped the exact ETL window is unknown.
+
+NEXT DISCRIMINATING CHECK: obtain sampled instruction-pointer rows (e.g. WPA CPU Usage (Sampled) table from this ETL) and symbolize them against the immutable generation-546 game DLL's debug information; verify whether that DLL retains usable DWARF/line tables and use a compatible symbolizer. If CPU.light cannot expose IP rows, use a bounded CPU verbose stack capture with lower sampling interval and ensure app symbols are resolvable. Then rank leaf and inclusive functions separately, report CPU ms / per-process / whole-host shares, and match the runtime journal window. Do not change hot code based on module-only evidence.
+
+Artifacts: .dev/perf-captures/mimita-cpu-light-10ms.etl, mimita-cpu-light-10ms-stats.txt, mimita-cpu-light-10ms-frequency.txt, mimita-cpu-light-10ms-profile.txt, mimita-cpu-light-10ms-profile-symbols.txt, mimita-cpu-light-10ms-detail.txt; run journals logs/2026-11-23/20261123_055730_01/client-01/events.jsonl and server-01/events.jsonl. Source inspection/matched run conditions and function-level attribution remain pending. No source edits/builds or process restarts were made.

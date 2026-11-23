@@ -36,3 +36,38 @@ Evidence: {"build_outcome": "failed", "build_total_seconds": 494.796, "fallback_
 Over-budget reviewer wake dispatched ~29m20s late for wait game-dll-build:2026-11-22T18:05:34.493Z (issue-d668de6bfc5e). wake-fe718d06a423 queued 18:06:35.961Z; codex claimed/launched 18:06:37.632Z/18:06:37.819Z then exited; wake.retry to opencode 18:25:25.086Z; opencode claimed/launched 18:35:56.541Z/18:35:56.591Z. Same codex-adapter-failure class as this issue.
 
 Evidence: {"delay_seconds": 1760.63, "issue": "issue-d668de6bfc5e", "opencode_launched_utc": "2026-11-22T18:35:56.591Z", "queued_utc": "2026-11-22T18:06:35.961Z", "wake": "wake-fe718d06a423"}
+
+## Agent suggestion
+
+### 2026-11-23T06:54:42.067Z — issue-review-sweeper
+
+Process-improvement proposal (from review of issue-e84cfa28c7f7): assert wake delivery, not only wake queueing. Evidence: wake-22029ea56410 was queued exactly once but delivered a bounded-test prompt, ran a wake test, and exited (status=failed) without appending a review; the hardcoded test prefix was removed later by d89884f6. Measurable target: over the next 5 over-budget reviewer wakes (or 1 controlled manual wake), 5/5 launches have a log/prompt artifact containing the exact "Requested work: Review build/test wait issue <id>" text, each target issue gains a review or occurrence within 15 minutes, and no wait_id has more than one launch. Smallest experiment: queue one manual wake for a scratch issue with the opencode adapter, then assert those three facts from .dev/agent-wake/events.jsonl, the request prompt.txt, the spawned log, and the issue record; repeat for codex. If the requested-work line is missing, fail the wake instead of marking it launched. This extends the existing acceptance (one wake.queued/launched) with delivered-content and review-append checks.
+
+## Agent suggestion
+
+### 2026-11-23T07:25:00.479Z — issue-review-sweeper
+
+Process-improvement proposal from issue-review-sweeper (wake-bd9412956e26), grounded in issue-6bc05eadfb7f and the sibling finding on issue-e84cfa28c7f7.
+
+EVIDENCE
+- 2026-11-20T14:59:20.617Z wake-363c44b7c8d6 was queued exactly once for over-budget game-dll wait issue-6bc05eadfb7f (elapsed 60.364s; the pinned build game-dll-20261120T145818136704Z-502a3e really ran 1716.948s and succeeded). codex claimed/launched 14:59:21.4/21.5Z, wake.retry to opencode 15:27:57.8Z, opencode launched 15:41:42.7Z, then wake.failed "adapter process exited" at 16:03:49.9Z (attempts=2). No issue_reviews row was written; the issue stayed state=new for 64.3h until the automated 2026-11-23T07:17Z sweep.
+- The delivered prompt.txt contained the correct "Requested work: Review build/test wait issue issue-6bc05eadfb7f", but the transcript contained 0 mentions of the issue and ended with "Bounded test activation acknowledged ... No code"; codex logged model-manager decode errors. Same failure appeared on issue-e84cfa28c7f7 (wake-22029ea56410, wake.failed 16:03:49.677Z).
+- Scale: 130 distinct "Wait over budget: game-dll-build" issues exist (16 new, 113 in_review, 1 assigned) created 2026-11-20T08:32Z..2026-11-22T23:53Z; 182/333 recorded game-dll builds exceeded 60s (median 76.3s), so reviewer-wake reliability is load-bearing, not a corner case.
+
+PROPOSAL (measurable)
+Make reviewer-wake delivery outcome-checked rather than fire-and-forget: after launch, require within a bounded window (proposed 15 min) either an issue_reviews row for the issue or one wake.escalated event plus one issue occurrence; never leave a reviewer wake at status=failed with no surfaced escalation. Also separate the bounded-test prompt template from the production reviewer template so an automatic reviewer wake can never be constructed with "This is a bounded test activation" / --task "wake test".
+Target: move from the observed baseline (0 reviews for 2 of 2 sampled over-budget waits, 64.3h silent for issue-6bc05eadfb7f) to >=90% of over-budget waits yielding an issue_reviews row or wake.escalated within 15 min, with exactly one wake.launched per wait_id and 0 duplicate launches.
+
+SMALLEST EXPERIMENT
+Queue one manual reviewer wake against a scratch issue using current agent-wake.py and assert: (a) delivered prompt contains the exact "Requested work" text, (b) exactly one wake.launched, (c) an issue_reviews row appears within 15 min OR a wake.escalated event is written. Repeat 3 times for a baseline rate before changing code. No source edit is proposed here; the owner decides.
+
+## Agent suggestion
+
+### 2026-11-23T07:27:11.179Z — issue-review-sweeper
+
+Correction from issue-review-sweeper (folding the 07:25 proposal into the existing proposal above; do not implement it twice).
+
+- The earlier proposal already covers the delivered-content assertion, the 15-minute review-or-escalation bound, and the one-launch check. Treat mine as superseded by it.
+- Net-new evidence only: the same failure predates this issue's recorded occurrences. wake-363c44b7c8d6 for issue-6bc05eadfb7f (2026-11-20T14:59:20Z) was queued once, retried codex->opencode, and failed "adapter process exited" at 16:03:49Z without appending a review; its prompt.txt began "This is a bounded test activation" and its transcript ended at "Bounded test activation acknowledged ... No code". So the baseline is at least 3 distinct waits (issue-e84cfa28c7f7, issue-6bc05eadfb7f, plus this issue's 4 later occurrences), not a single event.
+- Correction to my 07:25 text: the bounded-test prefix was already removed by d89884f6 (2026-11-21), so prompt assembly is no longer the first suspect for new wakes; the open question is adapter-exit handling and the missing escalation/review-append check. `_prompt` still instructs `begin --task "wake test"` (devscripts/agent-wake.py:288), which is cosmetic but should be reworded so a production reviewer does not think it is a test.
+- Revised smallest experiment stays the same but focuses on (b): one manual reviewer wake to a scratch issue, assert exactly one wake.launched and either an issue_reviews row or a wake.escalated within 15 min; repeat 3 times. No source edit proposed by the reviewer.

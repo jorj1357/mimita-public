@@ -32,12 +32,154 @@ published `build/game/current.json` or `ready.json`.
 Isolated test runs pin one EXE artifact and one game-DLL generation or explicit
 DLL path. They own separate processes, ports, command queues, manifests, and
 `events.jsonl` journals and do not replace the shared runtime. A pinned run may
-start while another agent's build is pending. The normal automatic build path
-remains unchanged.
+start while another agent's build is pending. Mode 3 batch triggering is the
+default: source saves accumulate into a pending batch and only an explicit root
+dev-loop build request starts compilation. Set `MIMITA_BUILD_TRIGGER_MODE=auto`
+before daemon startup to deliberately use the Mode 1 automatic-on-save fallback.
 
 The detailed Mode 2 procedure below is retained as historical/reference
 documentation and is superseded by this policy. Resume it only after the user
 changes the project policy and the CLI guard is deliberately revised.
+
+## Mode 3 — batched coordinated builds (active default)
+
+**Status: active default since 2026-11-23, with manual readiness confirmation.**
+The root dev-loop records saved compiler inputs in a pending batch and does not
+start compilation on save. The root coordinator confirms that active
+compiler-input owners are ready, then seals the batch with
+`python devscripts/dev-loop.py --request batch-build`. An explicit
+`--request build` or `--request game-dll` also seals a pending batch. The current
+dev-loop does not enforce per-agent ready flags or readiness timeouts; that is
+follow-up coordination work, not a guarantee of this initial switch. Mode 2
+lanes remain retired.
+
+### What we want
+
+Mode 3 treats compilation as an expensive, deliberate, batched event instead of
+an automatic side effect of saving a file.
+
+- **Save does not build.** Saving a watched compiler input records a new source
+  generation and marks the published artifact stale, but does not start a build
+  on its own.
+- **The root coordinator seals one build window.** Before issuing the explicit
+  batch request, the coordinator confirms that compiler-input owners have
+  finished editing and are ready. The request records the exact source
+  generation, paths, target classes, and requester. The software does not yet
+  collect readiness flags from each owner.
+- **The build gets the whole machine, briefly.** Because it is short and
+  bounded, the coordinated build may use all logical processors at high
+  priority. The machine may feel slow for the duration; that is accepted while
+  it is a short, rare burst and not a permanent state.
+- **Build, then test, then repeat.** After the build publishes and activates a
+  generation, each agent tests its own change in its own pinned runtime and
+  captures `events.jsonl` proof. Failed or incomplete changes go back for edits
+  and the next agreed build; proven changes are done.
+- **Live DLL reload stays.** Mode 3 keeps same-process DLL reload and
+  pinned test runtimes; it changes when a build is requested, not the DLL
+  activation mechanism.
+
+### Why
+
+The hypothesis behind Mode 3 is a positive feedback loop:
+
+```text
+save -> automatic build -> overlapping builds + live game processes
+      -> resource pressure -> slower compile/link -> longer builds
+      -> more saves overlap -> more pressure ... (300-500 s builds)
+```
+
+Batching removes the overlap: one build at a time, no continuous compile/load
+pressure, and no build competing with the tests it is supposed to enable.
+
+### What success looks like
+
+- No sustained multi-hour saturation. Whole-machine CPU and RAM are near idle
+  between builds instead of pinned near 98-99%.
+- Build pressure is a short, bounded burst that ends; a brief whole-PC slowdown
+  during the burst is acceptable if it is quick and rare.
+- Edit-to-visible latency meets the issue target (~10 s or less under measured
+  Juggernaut pressure), and the build itself is not slowed by unrelated
+  builds or by the game.
+
+### Flow
+
+1. **Edit.** Agents edit disjoint files. Saves update the source generation and
+   pending batch status only; no native build is queued.
+2. **Ready and seal.** Compiler-input owners coordinate readiness. The root
+   coordinator runs `python devscripts/dev-loop.py --request batch-build`, which
+   records and seals the current generation. Saves after sealing join the next
+   pending batch.
+3. **Build.** The root dev-loop runs one bounded build wave for that generation
+   and target set, retaining the last-good artifact on failure.
+4. **Drain.** The sealed batch completes and its owned compiler/linker
+   processes exit before proof runs start.
+5. **Test.** Each agent launches or reloads its own runtime pinned to the new
+   generation, exercises the behavior, and captures that run's `events.jsonl`.
+6. **Repeat.** Unproven edits return to step 1; proven agents exit. The root
+   coordinator seals the next ready batch.
+
+### Invariants
+
+- The root dev-loop remains the only builder. One EXE build at a time; agents
+  never invoke a compiler, `build.py`, a module worker, or a second loop.
+- Caching, stable module identity across generations, and the MinGW DLL fallback
+  are unchanged.
+- A failed build leaves the last-good DLL/generation active.
+- Testing uses pinned artifacts and generations; a journal from another artifact
+  cannot prove a change.
+- No agent is blocked indefinitely on another agent's longer test. Agents may
+  test the previous generation, review, or take a disjoint task, and the build
+  order/queue is visible and adjustable on the coordination board.
+
+### Proof and measurement
+
+Mode 3's performance objective is only accepted if it measurably beats the
+Mode 1 baseline with matched workloads:
+
+- Per-attempt stage timings from `.dev/build-timings/` (request, scan, snapshot,
+  compile, link, publish, activate).
+- Whole-machine CPU and RAM sampled before, during, and between build windows.
+  Success means negligible between-build pressure plus short bounded bursts,
+  not hours at saturation.
+- Active build/process count per window (target: one build).
+- Edit-to-visible latency under measured Juggernaut load.
+- A recorded Mode 1 baseline vs Mode 3 comparison with exact run/build IDs and
+  journal paths, with source, build, runtime, and human review reported
+  separately.
+
+### Acceptance
+
+- A save alone does not start a build.
+- A coordinated window produces exactly one build for the newest generation.
+- Between-build resource pressure stays below an agreed documented threshold.
+- Each agent can test its own change in its own runtime and produce journal
+  proof.
+- The measured comparison against the Mode 1 baseline shows the intended
+  improvement (or the mode is rejected or revised).
+- Last-good fallback and existing authority/proof contracts are preserved.
+
+### Remaining coordination work
+
+- Replace the current root-owner readiness confirmation with per-agent ready
+  flags tied to active compiler-input participants, and display saved-but-not-
+  ready owners in the dashboard.
+- What quiescence/debounce window precedes a batch build?
+- How is build ordering handled when one agent's test is much longer than the
+  others?
+- Does a max wait or human override force a build when someone is stuck?
+- What numeric thresholds define "negligible" between-build pressure?
+- Does batch mode also apply to a lone human editing, or only to concurrent
+  multi-agent sessions?
+
+### Relationship to other documents
+
+- [`dev-loop.md`](dev-loop.md) §5 currently defines save-triggered builds; Mode 3
+  would revise that trigger and the associated guard.
+- [`agent-build-queue.md`](agent-build-queue.md) already defines build requests,
+  coalescing, rotating ownership, and resource-aware concurrency; Mode 3 layers
+  the batched build window and the save-does-not-build trigger on top of it.
+- [`build-time-observability.md`](build-time-observability.md) supplies the stage
+  timing and resource evidence used to prove the comparison.
 
 ## Live build and journal coordination
 
@@ -76,7 +218,7 @@ coordinator repository. The focused containment checks live in
 ## Historical Mode 2 design — not current instructions
 
 The remaining sections document the former lane workflow only. The current
-Mode 1 policy above controls: agents share the root checkout and only its
+Mode 3 policy above controls: agents share the root checkout and only its
 dev-loop may build or run. Do not use the lane commands below unless the user
 explicitly resumes lane work.
 
