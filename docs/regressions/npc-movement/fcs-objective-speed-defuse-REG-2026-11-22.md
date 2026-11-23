@@ -236,3 +236,137 @@ velocity magnitude for instantaneous speed and life distance divided by life
 time for stable average speed; correct or remove the displacement-over-short-
 interval field before using it as evidence. The capture continued after the
 592.1 s checkpoint; this record reports that bounded checkpoint only.
+
+## Phase 0 unit calibration and metric counters (2026-11-23)
+
+The human's stated intention is **one world unit equals one metre** so gameplay
+can reuse real-life physics. The current engine evidence disagrees with that
+intention: the default capsule is 3.6 world units tall for a 1.8 m human, and a
+10x10 authored block crosses in one second at the configured 20 unit/s ground
+speed. Both observations imply **two world units per metre (0.5 m per world
+unit)** under the current convention. This is recorded as the provisional metric
+scale, not a decision to change the engine convention. The new
+`npc.movement-metric` record keeps raw world-unit values and emits calibrated
+metres using `meters_per_world_unit: 0.5`; if the live player probe later
+disproves the scale, only the scale constant and derived fields change and the
+raw data is preserved.
+
+Source changes in this phase (game DLL, build note `f125a35d5099`):
+
+- `src/npc/npc.cpp`, `src/npc/npc.h`, `src/network/server-npcs.cpp`: add
+  per-life dash, air-dash, down-dash, jump, bhop, freeze, airborne, air-movement,
+  max-planar-speed, and final-pose wall-contact counters to the existing
+  `npc.movement-metric` event. Existing speed fields now report both raw
+  world-units/second and calibrated m/s; the instantaneous-speed field now uses
+  velocity plus external impulse instead of displacement over a short interval.
+- `devscripts/quality/npc-match-report.py`: read-only journal analyzer for
+  per-NPC/per-team movement, dash/jump/air/wall rates, NPC-vs-NPC kills, TTK,
+  kill intervals, round objective timing, and diagnostics. It honours the
+  `meters_per_world_unit` recorded in each event, so older 1.0-scale journals
+  remain analysable.
+
+Diagnostic baseline from the live FCS server journal
+`logs/2026-11-23/20261123_144429/server-01/events.jsonl` (older DLL, legacy 1.0
+scale, so calibrated metres are half these values under the new scale):
+
+- 19 NPCs, 100,777 one-second movement samples, 5,705 s journal time.
+- Team CT 9 actors: life-weighted 22.23 units/s; team T 10 actors: 21.37
+  units/s. Per-actor max planar speed 40.9–121.6 units/s.
+- 37,148 `npc.stuck-episode`, 17,393 `npc.movement-progress-failed`, 3,719
+  `npc.nav-plan-failed`, 2,197 `npc.area-escape` events. Per-actor stuck
+  episodes were about 20–24 per minute.
+- Dash/jump/bhop/air/wall counters were absent in that DLL and `npc.dash` was
+  not retained at the active category level, so those baseline rates cannot be
+  read from this journal. This is exactly what the new counters fix.
+- NPC-vs-NPC: 308 authoritative damage kills and 313 reward kills; TTK samples
+  308, mean 5.04 s, median 0.83 s, p90 11.35 s; median kill interval 5.58 s;
+  mean 5.60 NPC-vs-NPC kills per round with kills.
+- Objective: plant latency from round go ranged from 17.1 s to 89.4 s and
+  worsened in later rounds; several rounds had 1–2 plant interruptions. Some
+  rounds did record `objective.defuse-start` and completions, but many planted
+  bombs still exploded. CT defuse is therefore sometimes attempted on this
+  generation but is not reliably completed.
+
+The live dev-loop was source-stale during this baseline (`source_changed`,
+`published_stale`, `active_source=None`), so this is a diagnostic baseline, not
+proof for current source. Next required evidence is one pinned FCS run on the
+new generation that reports the new counters, calibrated metres, wall-contact
+time, and a CT defuse start and completion.
+
+### Pinned generation-564 instrumented baseline (2026-11-23)
+
+Run `20261123_164421` is an isolated `networking-validation` test run on launch
+mode 45, map `dust2cyberiav4`, game DLL generation 564 SHA-256
+`8cc5344e219a96b00e3a7b5cc75cf45284a2a7b24457cb748cda2e4bbdc15e4d` (EXE
+`97b78d2ae01ed2dd665e39c9f5ac97ebf4acef801ee3597c4ecb0f7a584f7a8d`). Server
+journal: `logs/2026-11-23/20261123_164421/server-01/events.jsonl`.
+
+The new counters are live in this journal. Movement is reported in raw
+world-units and calibrated metres at `meters_per_world_unit: 0.5`. Over 489 s
+of journal time and the first six rounds:
+
+- Team CT: 9 NPCs, 3,962 life-seconds, life-weighted **11.83 m/s** average,
+  dash 17.52/min, down-dash 9.15/min, bhop 2.03/min, air 24.8%, near-wall
+  avoidance 11.6%, blocked motion 1.1%, stuck 21.90/min.
+- Team T: 10 NPCs, 4,400 life-seconds, **10.15 m/s** average, dash 10.85/min,
+  down-dash 6.22/min, bhop 1.30/min, air 17.0%, near-wall avoidance 9.5%,
+  blocked motion 2.6%, stuck 15.46/min.
+- Per-actor average speed ranged roughly 10.7–12.6 m/s for CT and 7.1–12.5 m/s
+  for T. Per-actor max planar speed ranged 40–71 m/s (dash/knockback bursts).
+- Exact final-pose wall-contact seconds stayed 0 because the arcade capsule path
+  does not populate final-pose contacts; `near_wall_avoid_seconds` and
+  `blocked_motion_seconds` are the current wall proxy and are now measured.
+- NPC-vs-NPC: 26 authoritative damage kills, 22 reward kills, 88 NPC deaths;
+  TTK mean 2.40 s, median 0.81 s, p90 2.15 s; mean 4.33 kills per round with
+  kills.
+- Objective: T planted in rounds 1–5. CT defuse starts occurred in rounds 3, 4,
+  and 5 (latency 12.8 s, 17.8 s, 11.8 s after plant) but no `objective.defused`
+  completed; rounds 1–5 ended in detonation (`winner_team=1`, reason 2), and
+  round 6 was still active. This is the exact Phase 1 defect: CTs reach the
+  defuse sometimes but do not sustain it to completion.
+- `npc.stuck-episode` 2,580 and `npc.movement-progress-failed` 1,742 in 489 s.
+  CT stuck rate is about 40% higher than T.
+
+This is the current-source baseline for the next tuning pass. It proves the
+measurement instrument, not improved behavior. The stop request for this run
+returned `status=stopped`, failures=[] and stopped only PIDs 27196/18764; the
+shared dev-loop processes were left untouched.
+
+### Generation-567 CT NPC defuse proof (2026-11-23)
+
+Run `20261123_172947` pins game DLL generation 567 SHA-256
+`3ce3673f656373f1c5b1c8b5206cb40434143bdd09336c91021f828ef95e092b` (EXE
+`97b78d2ae01ed2dd665e39c9f5ac97ebf4acef801ee3597c4ecb0f7a584f7a8d`), launch
+mode 45, map `dust2cyberiav4`. Server journal:
+`logs/2026-11-23/20261123_172947/server-01/events.jsonl`.
+
+The run recorded four T plants and four CT wins. Every recorded
+`objective.defuse-start` in this window used `operator_kind: npc`. The first
+three completed at t=69.83, 110.95, and 175.16 s; the fourth completed at
+t=239.54 s. `objective.defused` therefore now appears in the live journal for
+the first time in this regression record, and the assigned operators were NPC
+IDs 100005, 100007, and 100001.
+
+Implementation evidence in this generation:
+
+- `npc.defuse-assigned` now records `actor_kind`, stable/nearest NPC and human
+  candidates, and the reason. It prefers a living NPC over a nearer human and
+  keeps a stable NPC while defuse progress is active.
+- The designated CT NPC locks `DefuseObjective` while planted, and a carrier
+  inside a site locks `PlantObjective`. Both hold position during the
+  interaction; hazard avoidance still overrides.
+- Movement metrics for this run: CT 12.31 m/s average, dash 15.56/min,
+  down-dash 6.66/min, bhop 2.46/min, air 22.8%, near-wall avoidance 12.4%,
+  blocked motion 1.2%, stuck 19.72/min. T: 12.15 m/s, dash 12.57/min,
+  down-dash 7.95/min, bhop 1.54/min, air 21.1%, near-wall avoidance 8.3%,
+  blocked motion 3.0%, stuck 20.02/min.
+- NPC-vs-NPC: 15 reward kills, 10 authoritative damage kills, TTK mean 2.06 s,
+  median 0.94 s, mean 3.33 kills per completed round.
+
+Remaining defects exposed by the same run: a single defuse can still restart
+several times (multiple `objective.defuse-start` records before one
+`objective.defused`), so operator/range churn is reduced but not eliminated.
+Plant/defuse latency and wall/stuck rates remain Phase 2/3 targets. This proof
+covers CT NPC defuse completion only; it is not proof that the elite difficulty
+or movement-tech targets are met. The isolated run was stopped by its own
+`--stop-test-run` request with failures=[]; PIDs 31844/31072 only.

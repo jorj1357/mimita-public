@@ -178,6 +178,29 @@ identity, scores, results, Bomb Tag state, killfeed, and leaderboard state. A
 new server session has a new generation, so packets from a stopped server
 cannot revive its countdown or presentation state.
 
+## Live late join
+
+A human may join a match after its roster boundary. The shared runtime, not a
+mode-specific branch, owns the repair:
+
+- It assigns the valid playing team with the fewest humans (lower configured
+  team index on a tie) and applies that team's role, avatar, loadout, and spawn
+  group. If the connection's initial placement used the neutral fallback, one
+  authoritative respawn applies the team spawn; no manual action is required.
+- It adds the joiner to the replicated participant roster so NPC hostility,
+  friendly fire, HUD, scoreboard, and friendly/enemy outlines resolve
+  immediately.
+- If the chosen team is at its configured capacity, exactly one mode-owned
+  roster NPC on that team is replaced without moving or healing the surviving
+  NPCs. If every team is full of humans and no roster NPC can be replaced, the
+  joiner remains unassigned; this preserves the Duel two-human limit.
+- FFA, Melee, and other teamless modes keep the joiner teamless.
+
+Team identity must be authoritative before targeting or presentation is
+evaluated. An `opposite_team` NPC policy treats an unknown team as non-hostile,
+and the outline path skips an actor when either the local or actor team is
+unknown.
+
 ## Generic match timeout outcomes
 
 `time_limit_outcome` optionally selects the result when the active time limit

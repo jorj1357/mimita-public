@@ -8,8 +8,10 @@ import json
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
+from devscripts.dev_loop.build_resource_sampler import BuildResourceSampler
 from dev_loop.source_identity import source_identity
 from devscripts.build_authority import write_authority
 from devscripts.path_containment import (
@@ -96,10 +98,14 @@ def published_source_identity(root: Path, loop) -> tuple[dict, int] | None:
     return dict(source), source_generation
 
 
-def run_build(loop, requested_generation: int, request_ids: list[str], mode: str,
-              *, root: Path, make_artifact_id, publish_build, find_ccache,
-              creationflags: int, hidden_startupinfo) -> None:
-    started = time.monotonic()
+def _run_build_attempt(loop, requested_generation: int, request_ids: list[str],
+                       mode: str, *, root: Path, make_artifact_id,
+                       publish_build, find_ccache, creationflags: int,
+                       hidden_startupinfo,
+                       resource_sampler: BuildResourceSampler | None = None,
+                       attempt_id: str = "",
+                       attempt_started: float | None = None) -> None:
+    started = attempt_started if attempt_started is not None else time.monotonic()
     with loop.lock:
         source_generation_at_start = int(loop.generation)
     identity_phase_started = time.monotonic()
@@ -279,7 +285,8 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
                 artifact_publish_started = time.monotonic()
                 destination = publish_build(artifact_id, folder_name,
                                            requested_generation, mode,
-                                           source_at_start, source_at_publish)
+                                           source_at_start, source_at_publish,
+                                           request_ids)
                 artifact_publish_seconds = (
                     time.monotonic() - artifact_publish_started)
             loop._record_build_progress({
@@ -329,6 +336,7 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
         pass
 
     runtime_event_seconds = time.monotonic() - event_started
+    resource_summary = resource_sampler.stop() if resource_sampler else None
     total_worker_seconds = time.monotonic() - started
     setup_seconds = max(0.0, build_script_started - setup_started)
     accounted_seconds = sum((
@@ -353,6 +361,8 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
         "source_generation_start": source_generation_at_start,
         "source_generation_end": source_generation_at_completion,
         "source_changed_during_build": source_changed_during_build,
+        "build_attempt_id": attempt_id,
+        "resource_sampling": resource_summary,
     }
 
     loop.build_completions.put({
@@ -385,3 +395,50 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
         },
         "output_tail": [line.rstrip()[-240:] for line in output[-10:]],
     })
+
+
+def run_build(loop, requested_generation: int, request_ids: list[str], mode: str,
+              *, root: Path, make_artifact_id, publish_build, find_ccache,
+              creationflags: int, hidden_startupinfo) -> None:
+    """Run one EXE build with the same resource sidecar used for game DLLs."""
+    root = Path(root)
+    attempt_id = (f"exe-build-{time.strftime('%Y%m%dT%H%M%S')}-"
+                  f"{uuid.uuid4().hex[:8]}")
+    attempt_started = time.monotonic()
+    sampler = BuildResourceSampler(
+        root, attempt_id, progress_path=root / "build" / "progress.json")
+    try:
+        sampler.start()
+    except Exception as error:  # best-effort telemetry must not block the build
+        sampler._errors.append(
+            f"sampler start failed: {type(error).__name__}: {error}"[:500])
+        sampler._status = "unavailable"
+    try:
+        loop._record_build_progress({
+            "phase": "setup", "build_attempt_id": attempt_id,
+            "message": "starting EXE build with resource sampling",
+        })
+        _run_build_attempt(
+            loop, requested_generation, request_ids, mode, root=root,
+            make_artifact_id=make_artifact_id, publish_build=publish_build,
+            find_ccache=find_ccache, creationflags=creationflags,
+            hidden_startupinfo=hidden_startupinfo,
+            resource_sampler=sampler, attempt_id=attempt_id,
+            attempt_started=attempt_started)
+    finally:
+        summary = sampler.stop()
+        # A normal attempt carries the summary in its completion record. This
+        # state update also exposes it if orchestration raised before enqueue.
+        try:
+            progress = read_progress(root)
+            phase = str(progress.get("phase") or "setup")
+            loop._record_build_progress({
+                **progress,
+                "phase": phase,
+                "build_attempt_id": attempt_id,
+                "resource_sampling": summary,
+                "message": progress.get("message") or
+                           "EXE build resource sampling complete",
+            })
+        except Exception:
+            pass

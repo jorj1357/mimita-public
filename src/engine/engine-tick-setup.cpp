@@ -37,6 +37,7 @@
 #include "config/spawn-velocity-config.h"
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
+#include "gamemode/gamemode-runtime-resolver.h"
 #include "gamemode/match-roles.h"
 #include "network/community-match-client.h"
 #include "combat/actor-preset-weapons.h"
@@ -188,7 +189,12 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
                 }
             }
             { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Gamemode");
-              GamemodeRegistry::instance().pollReload(); }
+              if (GamemodeRegistry::instance().pollReload()) {
+                  auto& match = MimitaNet::CommunityMatchClient::instance();
+                  if (match.active())
+                      GamemodeRuntimeResolver::applyClient(
+                          GamemodeRegistry::instance().get(match.mode()));
+              } }
             { MIMITA_PERF_SCOPE("Setup::ConfigPolling::MatchRoles");
               if (MatchRoleRegistry::instance().pollReload()) {
                   MimitaNet::CommunityMatchClient::instance().refreshActorPreset();

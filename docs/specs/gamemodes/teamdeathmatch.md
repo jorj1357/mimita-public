@@ -51,6 +51,29 @@ Death ragdolls are shown by default through the global ragdoll-death setting.
 A gamemode may explicitly set `ragdoll_enabled: false` to suppress them; TDM
 explicitly enables them so its mode override cannot turn off the default.
 
+## Live late join
+
+A human who joins while the TDM match is in COUNTDOWN, GO, or ACTIVE is
+assigned before the first team spawn is applied. If the connection's initial
+placement used the neutral fallback, one authoritative respawn applies the team
+spawn; no manual action is required. The joiner receives:
+
+- the playing team with the fewest humans (lower team index on a tie);
+- that team's role, avatar, loadout, and `red_spawn`/`blue_spawn` group;
+- a participant roster entry so team hostility, HUD, scoreboard, and
+  friendly/enemy outlines resolve immediately.
+
+If the chosen team is at its configured capacity, exactly one roster NPC on
+that team is replaced. Surviving NPCs are not teleported or healed. When every
+team is full of humans and no roster NPC can be replaced, the joiner remains
+unassigned; this preserves the two-human limit in Duel. FFA and teamless modes
+are unchanged.
+
+The authoritative team must exist before NPC targeting, friendly-fire, or
+client outline identity is evaluated. With `opposite_team` targeting, an actor
+whose team is `-1` is not hostile, and an outline whose local or actor team is
+unknown is not drawn.
+
 ## Runtime ownership
 
 `GamemodeRegistry` loads and polls `config/gamemodes/tdm.json`. The shared

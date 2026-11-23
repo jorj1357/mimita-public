@@ -2691,11 +2691,203 @@ glm::vec3 gamemodeSpawnPointForActor(
     return spawn;
 }
 
+// ── Live team-join identity ─────────────────────────────────────────────
+// A human may join while a team match is already beyond its roster boundary.
+// These helpers are the single live-join path: they select a balanced team,
+// write the shared match identity before the first spawn is resolved, and
+// request one roster-NPC replacement instead of leaving the actor teamless.
+bool isLiveTeamPhase(const ServerGamemodeState& d)
+{
+    return d.phase == DUEL_PHASE_COUNTDOWN || d.phase == DUEL_PHASE_GO ||
+           d.phase == DUEL_PHASE_ACTIVE;
+}
+
+bool modeUsesLiveTeamIdentity(const ServerGamemodeState& d, const Gamemode& gm)
+{
+    if (d.matchMode == "funcounterstrike" || d.victoryCondition == "rounds")
+        return true;
+    if (gm.npcSpawnPolicy == "team_roster" && gm.teams.size() >= 2)
+        return true;
+    if (gm.winCondition == "last_team_standing" && gm.teams.size() >= 2)
+        return true;
+    // A mode that already distributed both fixed playing teams is a team
+    // match even if it does not use one of the named policies above.
+    bool seen[2] = {false, false};
+    for (const auto& entry : d.matchTeams) {
+        if (entry.second < 0 || entry.second > 1) continue;
+        if (d.matchActors.find(entry.first) == d.matchActors.end()) continue;
+        seen[entry.second] = true;
+    }
+    return seen[0] && seen[1];
+}
+
+// Fewest humans first, then the lowest team index. Capacity is honored when
+// every candidate team is already full of humans and no roster NPC remains to
+// replace (for example a completed one-versus-one Duel).
+bool chooseLiveJoinTeam(const ServerGamemodeState& d, const Gamemode& gm,
+                        uint32_t actorId, int& outTeam)
+{
+    std::vector<int> candidates;
+    const size_t teamCount = std::min<size_t>(2, gm.teams.size());
+    const bool restrictToPlayerTeams = std::any_of(
+        gm.teams.begin(), gm.teams.begin() + teamCount,
+        [](const GamemodeTeam& team) { return team.players; });
+    for (size_t t = 0; t < teamCount; ++t) {
+        const GamemodeTeam& team = gm.teams[t];
+        if (team.id == "spec" || team.role == "spectator") continue;
+        if (restrictToPlayerTeams && !team.players) continue;
+        candidates.push_back((int)t);
+    }
+    if (candidates.empty()) {
+        // Legacy team data may name teams without a configured team array.
+        for (const auto& entry : d.matchTeams) {
+            if (entry.second != 0 && entry.second != 1) continue;
+            if (std::find(candidates.begin(), candidates.end(), entry.second) ==
+                candidates.end())
+                candidates.push_back(entry.second);
+        }
+        std::sort(candidates.begin(), candidates.end());
+    }
+    if (candidates.empty()) return false;
+
+    int humans[2] = {0, 0};
+    for (const auto& entry : d.matchTeams) {
+        if (entry.first == actorId) continue;
+        if (entry.second < 0 || entry.second > 1) continue;
+        if (std::find(candidates.begin(), candidates.end(), entry.second) ==
+            candidates.end())
+            continue;
+        const auto actorIt = d.matchActors.find(entry.first);
+        if (actorIt != d.matchActors.end() &&
+            actorIt->second.controller == ActorController::Human)
+            ++humans[entry.second];
+    }
+
+    int best = -1;
+    for (int team : candidates) {
+        if (best < 0 || humans[team] < humans[best]) best = team;
+    }
+    if (best < 0) return false;
+
+    bool allFull = true;
+    for (int team : candidates) {
+        const int capacity = (team >= 0 && team < (int)gm.teams.size())
+            ? gm.teams[(size_t)team].capacity : 0;
+        if (capacity <= 0 || humans[team] < capacity) {
+            allFull = false;
+            break;
+        }
+    }
+    if (allFull && d.teamRosterNpcIds.empty()) return false;
+
+    outTeam = best;
+    return true;
+}
+
+void applyLiveJoinIdentity(ServerGamemodeState& d, const Gamemode& gm,
+                           uint32_t actorId, int team, const char* reason,
+                           std::unordered_map<uint32_t, ServerPlayer>* players,
+                           bool emitEvent = true)
+{
+    ActorMatchDescriptor& desc = d.matchActors[actorId];
+    desc.controller = ActorController::Human;
+    desc.state = ActorState::Alive;
+    desc.teamId = team;
+    const std::string roleId = (team >= 0 && team < (int)gm.teams.size())
+        ? gm.teams[(size_t)team].role : std::string();
+    const MatchRoleDefinition* role = roleId.empty()
+        ? nullptr : MatchRoleRegistry::instance().get(roleId);
+    if (role) {
+        desc.roleId = role->id;
+        desc.movementProfileId = role->movementPreset;
+        desc.weaponProfileId = role->weaponSet;
+    }
+    d.matchTeams[actorId] = team;
+    const bool hadRosterEntry =
+        std::find(d.participants.begin(), d.participants.end(), actorId) !=
+        d.participants.end();
+    if (!hadRosterEntry)
+        d.participants.push_back(actorId);
+    d.ffaKills.try_emplace(actorId, 0);
+    d.ffaDeaths.try_emplace(actorId, 0);
+
+    if (players) {
+        auto playerIt = players->find(actorId);
+        if (playerIt != players->end()) {
+            playerIt->second.matchTeam = team;
+            d.participantNames[actorId] = playerIt->second.name;
+            if (role && role->avatarForced && !role->avatarName.empty() &&
+                playerIt->second.avatarName != role->avatarName) {
+                const std::string previous = playerIt->second.avatarName;
+                playerIt->second.avatarName = role->avatarName;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "match.actor.avatar-selected", std::to_string(actorId),
+                    "server selected the avatar forced by the late-join team role",
+                    d.currentServerTick,
+                    {{"actor_id", actorId}, {"mode", d.matchMode}, {"team", team},
+                     {"role", roleId}, {"previous_avatar", previous},
+                     {"selected_avatar", playerIt->second.avatarName},
+                     {"reason", reason}});
+            }
+            // The joiner's first life may already be active before the match
+            // identity existed. Re-run the shared authoritative spawn once so
+            // the team spawn group, role health/avatar, and mode loadout apply.
+            // Later calls are idempotent because the roster entry now exists.
+            if (!hadRosterEntry &&
+                playerIt->second.spawnState == ServerPlayer::Active) {
+                static const std::unordered_map<uint32_t, ServerNpc> noNpcs;
+                const glm::vec3 spawn = gamemodeSpawnPointForActor(
+                    d, actorId, *players, noNpcs, "late-join-spawn");
+                playerIt->second.duelSpawnPos = spawn;
+                playerIt->second.hasDuelSpawnPos = true;
+                playerIt->second.respawnSeconds = 0.0f;
+                if (!playerIt->second.dead) {
+                    const glm::vec3 impulse = SpawnVelocityConfig::instance().enabled()
+                        ? SpawnVelocityConfig::instance().computeSpawnImpulse(
+                              playerIt->second.yaw)
+                        : glm::vec3(0.0f);
+                    beginAuthoritativeTransform(playerIt->second, spawn, impulse,
+                                                playerIt->second.yaw,
+                                                "late-join-spawn");
+                    playerIt->second.justRespawned = true;
+                }
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "match.actor.late-join-spawn", std::to_string(actorId),
+                    "late joiner placed at the assigned team spawn",
+                    d.currentServerTick,
+                    nlohmann::json{{"actor_id", actorId}, {"team", team},
+                                   {"mode", d.matchMode}, {"phase", (int)d.phase},
+                                   {"position", {spawn.x, spawn.y, spawn.z}},
+                                   {"reason", reason}});
+            }
+        }
+    }
+    if (gm.npcSpawnPolicy == "team_roster")
+        d.teamRosterJoinDirty = true;
+    d.stateBroadcastPending = true;
+
+    if (emitEvent) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "match.actor.late-join-assigned", std::to_string(actorId),
+            "live team mode assigned authoritative team and role to the joining actor",
+            d.currentServerTick,
+            nlohmann::json{{"actor_id", actorId}, {"controller", "human"},
+                           {"team", team}, {"role", roleId},
+                           {"selected_avatar", role ? role->avatarName : std::string()},
+                           {"mode", d.matchMode}, {"phase", (int)d.phase},
+                           {"reason", reason},
+                           {"participants", d.participants.size()}});
+    }
+}
+
 bool serverGamemodeSpawnPointForNewActor(std::uint32_t actorId,
                                          glm::vec3* outPosition)
 {
     if (!outPosition) return false;
-    const ServerGamemodeState& d = serverGamemodeState();
+    ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return false;
     if (!d.spawnsAssigned) {
         ::StructuredLogger::instance().writeEvent(
@@ -2707,6 +2899,25 @@ bool serverGamemodeSpawnPointForNewActor(std::uint32_t actorId,
                            {"mode", d.matchMode}, {"map", d.mapId},
                            {"reason", "join"}, {"fallback", "generic-world-picker"}});
         return false;
+    }
+
+    // A human joining a live team match receives its authoritative team before
+    // the first spawn is resolved. Without this the neutral anchor, the
+    // unknown-team hostility gate, and the outline identity all treat the
+    // joiner as teamless for the rest of the round.
+    {
+        const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+        if (isLiveTeamPhase(d) && modeUsesLiveTeamIdentity(d, gm)) {
+            const auto existingTeamIt = d.matchTeams.find(actorId);
+            const int existingTeam = existingTeamIt != d.matchTeams.end()
+                ? existingTeamIt->second : -1;
+            int team = -1;
+            if (existingTeam < 0 &&
+                chooseLiveJoinTeam(d, gm, actorId, team)) {
+                applyLiveJoinIdentity(d, gm, actorId, team, "live_join_spawn",
+                                      nullptr, /*emitEvent=*/false);
+            }
+        }
     }
 
     static const std::unordered_map<std::uint32_t, ServerPlayer> noPlayers;
@@ -3315,13 +3526,41 @@ void assignMissingRoundModePlayers(
     ServerGamemodeState& d,
     std::unordered_map<uint32_t, ServerPlayer>& players)
 {
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
     // Fun Counter Strike drives the shared round lifecycle from its authored
     // victory.type config while victory_condition is intentionally empty.
-    // Keep the late-join identity repair attached to the actual mode owner as
-    // well as generic modes that explicitly declare victory_condition=rounds.
-    if (d.matchMode != "funcounterstrike" && d.victoryCondition != "rounds")
+    // Round modes keep their own late-join role repair below.
+    const bool roundMode = d.matchMode == "funcounterstrike" ||
+                           d.victoryCondition == "rounds";
+    if (!roundMode) {
+        // Live team modes (TDM and any mode that already distributed both
+        // teams) must never leave an active joiner teamless for the round.
+        if (!isLiveTeamPhase(d) || !modeUsesLiveTeamIdentity(d, gm)) return;
+        for (auto& entry : players) {
+            ServerPlayer& player = entry.second;
+            if (player.spawnState != ServerPlayer::Active) continue;
+            const uint32_t id = entry.first;
+            auto teamIt = d.matchTeams.find(id);
+            const int existingTeam = teamIt != d.matchTeams.end()
+                ? teamIt->second : -1;
+            const bool validTeam = existingTeam >= 0 &&
+                (gm.teams.size() < 2 || isValidPlayingTeam(d, existingTeam));
+            const auto actorIt = d.matchActors.find(id);
+            const bool inRoster = std::find(d.participants.begin(),
+                d.participants.end(), id) != d.participants.end();
+            const std::string expectedRole = validTeam
+                ? roundTeamRoleId(gm, existingTeam) : std::string();
+            const bool validIdentity = validTeam && inRoster &&
+                actorIt != d.matchActors.end() &&
+                (expectedRole.empty() || !actorIt->second.roleId.empty()) &&
+                player.matchTeam == existingTeam;
+            if (validIdentity) continue;
+            int team = validTeam ? existingTeam : -1;
+            if (team < 0 && !chooseLiveJoinTeam(d, gm, id, team)) continue;
+            applyLiveJoinIdentity(d, gm, id, team, "live_late_join", &players);
+        }
         return;
-    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    }
     if (gm.teams.size() < 2) return;
     for (auto& entry : players) {
         ServerPlayer& player = entry.second;
@@ -5094,7 +5333,8 @@ static void reconcileTeamRosterNpc(ServerGamemodeState& d,
                                    std::unordered_map<uint32_t, ServerPlayer>& players,
                                    std::unordered_map<uint32_t, ServerNpc>& npcs,
                                    NpcSystem& npcSystem,
-                                   std::unordered_set<uint32_t>& npcIdsAlive)
+                                   std::unordered_set<uint32_t>& npcIdsAlive,
+                                   bool repositionSpawns = true)
 {
     const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
     if (gm.npcSpawnPolicy != "team_roster") {
@@ -5138,7 +5378,13 @@ static void reconcileTeamRosterNpc(ServerGamemodeState& d,
         [](const GamemodeTeam& team) { return team.players; });
     for (auto& entry : players) {
         ServerPlayer& player = entry.second;
-        if (player.spawnState != ServerPlayer::Active) continue;
+        // A late joiner may be re-spawned onto its team spawn in the same tick
+        // that its identity is assigned. Count that authoritative slot while
+        // the spawn acknowledgement is in flight so the roster NPC replacement
+        // is not skipped and the team never exceeds its configured capacity.
+        if (player.spawnState != ServerPlayer::Active &&
+            player.spawnState != ServerPlayer::AwaitingSpawnAck)
+            continue;
         int team = player.matchTeam;
         if (team < 0 || team >= (int)teamCount ||
             (restrictHumanTeams && !gm.teams[(size_t)team].players) ||
@@ -5187,6 +5433,16 @@ static void reconcileTeamRosterNpc(ServerGamemodeState& d,
             d.ffaDeaths.erase(id);
             npcSystem.destroySelected({id});
             serverClearActorPreset(id);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "gamemode.team-roster-npc.replaced", std::to_string(id),
+                "roster NPC removed to preserve configured team capacity",
+                d.currentServerTick,
+                nlohmann::json{{"actor", id}, {"team", team}, {"mode", d.matchMode},
+                               {"team_capacity", capacity},
+                               {"human_count", humanCounts[team]},
+                               {"reason", "capacity_reconcile"}},
+                __FILE__, __LINE__, __FUNCTION__);
             --have;
         }
         int rosterNpcHealth = 3500;
@@ -5215,6 +5471,7 @@ static void reconcileTeamRosterNpc(ServerGamemodeState& d,
             ++nextId;
             ++have;
         }
+        if (!repositionSpawns) continue;
         for (uint32_t id : d.teamRosterNpcIds) {
             auto it = npcs.find(id);
             if (it != npcs.end() && it->second.matchTeam == (int)team) {
@@ -7535,39 +7792,73 @@ void serverTeamBrainTick(ServerGamemodeState& d,
     d.teamBrainA.updateAssignments(living, d.objectiveRounds);
     d.teamBrainB.updateAssignments(living, d.objectiveRounds);
 
-    // One CT is the designated defuser after a plant; the rest cover. The
-    // existing TeamAssignment::Defuse label was previously never assigned.
+    // One CT is the designated defuser after a plant; the rest cover. Prefer a
+    // living NPC so an autonomous CT roster never waits on a human who is
+    // fighting, unaware, or already out of the site. A human can still start or
+    // continue a defuse because the human candidate pass is not gated by this
+    // designation.
     if (d.objective.state == ObjectiveState::Planted) {
-        // Keep one designated defuser stable instead of changing the nearest
-        // actor every tick while the CTs move around the bomb.
         const uint32_t stable = d.teamBrainA.state().reportedDefuserId;
         bool stableAlive = false;
+        bool stableIsNpc = false;
         float stableDist = 1.0e30f;
-        auto scan = [&](uint32_t id, const glm::vec3& pos, bool dead) {
+        uint32_t nearestNpc = 0;
+        uint32_t nearestHuman = 0;
+        float nearestNpcDist = 1.0e30f;
+        float nearestHumanDist = 1.0e30f;
+        auto consider = [&](uint32_t id, const glm::vec3& pos, bool dead,
+                            bool isNpc) {
             if (dead || objectiveActorTeam(d, id) != 0) return;
+            const float dist = glm::length(pos - d.objective.position);
             if (id == stable) {
                 stableAlive = true;
-                stableDist = glm::length(pos - d.objective.position);
+                stableIsNpc = isNpc;
+                stableDist = dist;
+            }
+            if (isNpc) {
+                if (dist < nearestNpcDist) {
+                    nearestNpcDist = dist;
+                    nearestNpc = id;
+                }
+            } else if (dist < nearestHumanDist) {
+                nearestHumanDist = dist;
+                nearestHuman = id;
             }
         };
-        for (const auto& kv : players) scan(kv.first, kv.second.pos, kv.second.dead);
-        for (const auto& kv : npcs) scan(kv.first, kv.second.pos, kv.second.health <= 0);
+        for (const auto& kv : players)
+            consider(kv.first, kv.second.pos, kv.second.dead, false);
+        for (const auto& kv : npcs)
+            consider(kv.first, kv.second.pos, kv.second.health <= 0, true);
 
-        uint32_t defuser = stableAlive ? stable : 0;
-        float bestDist = stableDist;
-        if (!stableAlive) {
-            bestDist = 1.0e30f;
-            auto pickNearest = [&](uint32_t id, const glm::vec3& pos, bool dead) {
-                if (dead || objectiveActorTeam(d, id) != 0) return;
-                const float dist = glm::length(pos - d.objective.position);
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    defuser = id;
-                }
-            };
-            for (const auto& kv : players) pickNearest(kv.first, kv.second.pos, kv.second.dead);
-            for (const auto& kv : npcs) pickNearest(kv.first, kv.second.pos, kv.second.health <= 0);
+        uint32_t defuser = 0;
+        float bestDist = 1.0e30f;
+        const char* reason = "nearest_ct_to_planted_bomb";
+        // Once a defuse is actually progressing, never swap the designated NPC
+        // for a merely closer teammate. Operator changes reset hold progress.
+        const bool defuseInProgress = d.objective.defuserActorId != 0 &&
+            d.objective.defuseTicksElapsed > 0;
+        const bool keepStableNpc = stableAlive && stableIsNpc &&
+            (defuseInProgress || nearestNpc == 0 || nearestNpc == stable ||
+             stableDist <= nearestNpcDist + 5.0f);
+        if (keepStableNpc) {
+            defuser = stable;
+            bestDist = stableDist;
+            reason = "stable_npc_defuser";
+        } else if (nearestNpc != 0) {
+            defuser = nearestNpc;
+            bestDist = nearestNpcDist;
+            reason = (stableAlive && !stableIsNpc)
+                ? "prefer_npc_over_human" : "nearest_npc_defuser";
+        } else if (stableAlive) {
+            defuser = stable;
+            bestDist = stableDist;
+            reason = "stable_human_defuser";
+        } else if (nearestHuman != 0) {
+            defuser = nearestHuman;
+            bestDist = nearestHumanDist;
+            reason = "nearest_human_defuser";
         }
+
         if (defuser != 0 &&
             d.teamBrainA.state().reportedDefuserId != defuser) {
             d.teamBrainA.state().reportedDefuserId = defuser;
@@ -7575,12 +7866,26 @@ void serverTeamBrainTick(ServerGamemodeState& d,
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::NpcMovement, StructuredLevel::Important,
                 "npc.defuse-assigned", std::to_string(defuser),
-                "nearest_ct_to_planted_bomb", tick,
-                nlohmann::json{{"actor", defuser},
-                               {"bomb", {d.objective.position.x,
-                                         d.objective.position.y,
-                                         d.objective.position.z}},
-                               {"distance_m", bestDist}});
+                reason, tick,
+                nlohmann::json{
+                    {"actor", defuser},
+                    {"actor_kind",
+                     npcs.find(defuser) != npcs.end() ? "npc" : "player"},
+                    {"bomb", {d.objective.position.x,
+                              d.objective.position.y,
+                              d.objective.position.z}},
+                    {"distance_m", bestDist},
+                    {"stable_actor", stable},
+                    {"stable_alive", stableAlive},
+                    {"stable_is_npc", stableIsNpc},
+                    {"stable_distance_m",
+                     stableAlive ? stableDist : -1.0f},
+                    {"nearest_npc", nearestNpc},
+                    {"nearest_npc_distance_m",
+                     nearestNpc != 0 ? nearestNpcDist : -1.0f},
+                    {"nearest_human", nearestHuman},
+                    {"nearest_human_distance_m",
+                     nearestHuman != 0 ? nearestHumanDist : -1.0f}});
         } else if (defuser == 0) {
             d.teamBrainA.state().reportedDefuserId = 0;
         }
@@ -8510,6 +8815,18 @@ void serverGamemodeTick(SOCKET sock,
     setServerCommunityMode(d.communityMode);
     if (!d.enabled) return;
     d.currentServerTick = tick;
+    // A live team join needs the roster NPC replacement in the same fixed tick
+    // that completes the joiner's identity. Reuse the roster owner but skip its
+    // spawn repositioning so surviving NPCs are never teleported mid-match.
+    if (d.teamRosterJoinDirty) {
+        const Gamemode& joinGm = GamemodeRegistry::instance().get(d.matchMode);
+        if (joinGm.npcSpawnPolicy == "team_roster") {
+            assignMissingRoundModePlayers(d, players);
+            reconcileTeamRosterNpc(d, players, npcs, npcSystem, npcIdsAlive,
+                                   /*repositionSpawns=*/false);
+        }
+        d.teamRosterJoinDirty = false;
+    }
     serverDrainAuthoredGeometryRebuild(sock, d, players, world, npcWorld,
                                        tick, totalPacketsOut);
     for (auto it = d.actorPresetOverridesByActorId.begin();

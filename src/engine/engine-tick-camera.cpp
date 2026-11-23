@@ -78,7 +78,7 @@ const RocketLauncherState& replayRocketState() { return gReplayRocketState; }
 static void syncPlayerYawFromCamera(Player& player, const Camera& camera)
 {
     if (player.dead) return;
-    if (CamConfig::instance().data().orientationMode == "head_world") {
+    if (CamConfig::instance().effectiveData().orientationMode == "head_world") {
         player.yaw = camera.yaw;
         return;
     }
@@ -329,7 +329,7 @@ void engineTickCamera(Engine& engine, float dt)
     if (InputCommandSystem::instance().isKeyboardEnabled())
         applyDebugMovement(player, engine.window(), camera, dt);
 
-    const auto& camCfg = CamConfig::instance().data();
+    const auto camCfg = CamConfig::instance().effectiveData();
     if (MimitaNet::CommunityMatchClient::instance().forceFirstPerson())
         camera.thirdPerson = false;
     camera.decayPunch(dt);
@@ -1054,7 +1054,7 @@ void engineTickCamera(Engine& engine, float dt)
     } else if (replayPlaybackActive) {
         // Non-freecam replay: camera already handled above (controller + keyframes)
     } else if (gDuelManager.phase() == DuelPhase::MatchEnd) {
-        auto& camCfg = CamConfig::instance().data();
+        const auto camCfg = CamConfig::instance().effectiveData();
         camera.fov = camCfg.fov;
         camera.follow(gDuelManager.winnerCameraTarget(), camCfg.offset, camCfg.positionStiffness);
         camera.smoothCollision(gDuelManager.winnerCameraTarget(), world, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled, camCfg.collisionPushEnabled, camCfg.collisionPushback);
@@ -1066,7 +1066,7 @@ void engineTickCamera(Engine& engine, float dt)
 
         if (camera.thirdPerson) {
             // Keep the player's existing third-person view while ragdolled.
-            auto& camCfg = CamConfig::instance().data();
+            const auto camCfg = CamConfig::instance().effectiveData();
             camera.fov = camCfg.fov;
             camera.follow(player.pos, camCfg.offset, camCfg.positionStiffness);
             camera.smoothCollision(player.pos, world, dt, camCfg.positionStiffness,
@@ -1083,10 +1083,10 @@ void engineTickCamera(Engine& engine, float dt)
         glm::vec3 seatForward(0.0f, 1.0f, 0.0f);
         if (VehicleSystem::instance().localSeatWorld(seatPosition, seatForward)) {
             if (!camera.thirdPerson) {
-                camera.fov = CamConfig::instance().data().fov;
+                camera.fov = CamConfig::instance().effectiveData().fov;
                 camera.pos = seatPosition + glm::vec3(0.0f, 0.0f, 0.55f);
             } else {
-                auto& camCfg = CamConfig::instance().data();
+                const auto camCfg = CamConfig::instance().effectiveData();
                 camera.fov = camCfg.fov;
                 const glm::vec3 target = VehicleSystem::instance().localVehiclePosition();
                 camera.follow(target, camCfg.offset, camCfg.positionStiffness);
@@ -1098,13 +1098,13 @@ void engineTickCamera(Engine& engine, float dt)
         }
     } else if (!camera.thirdPerson) {
         // First-person camera at eye height
-        camera.fov = CamConfig::instance().data().fov;
+        camera.fov = CamConfig::instance().effectiveData().fov;
         float eyeHeight = PLAYER_HEIGHT * 0.52f;
         camera.pos = player.pos + glm::vec3(0.0f, 0.0f, eyeHeight);
         // Apply punch for weapon recoil
         camera.pos += camera.front * glm::vec3(0.0f, 0.0f, 0.0f); // no offset
     } else {
-        auto& camCfg = CamConfig::instance().data();
+        const auto camCfg = CamConfig::instance().effectiveData();
         camera.fov = camCfg.fov;
         camera.follow(player.pos, camCfg.offset, camCfg.positionStiffness);
         camera.smoothCollision(player.pos, world, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled, camCfg.collisionPushEnabled, camCfg.collisionPushback);
@@ -1112,7 +1112,7 @@ void engineTickCamera(Engine& engine, float dt)
 
     // In head-world mode mouse look remains the target, while the rendered
     // camera uses the world-space orientation of the physical head.
-    if (CamConfig::instance().data().orientationMode == "head_world" &&
+    if (CamConfig::instance().effectiveData().orientationMode == "head_world" &&
         !player.dead && !player.voidDeathTriggered &&
         (RagdollModeSystem::instance().isActive() ||
          RagdollModeSystem::instance().aimActive())) {
@@ -1128,13 +1128,31 @@ void engineTickCamera(Engine& engine, float dt)
             localForward = axes->second.frontAxis;
             localUp = axes->second.upAxis;
         }
-        camera.front = glm::normalize(headRotation * localForward);
-        camera.up = glm::normalize(headRotation * localUp);
-        camera.right = glm::normalize(glm::cross(camera.front, camera.up));
-        if (glm::length(camera.right) > 1e-4f)
-            camera.up = glm::normalize(glm::cross(camera.right, camera.front));
-        if (!camera.thirdPerson && !RagdollModeSystem::instance().isActive())
-            camera.pos = glm::vec3(headTransform[3]);
+        const glm::vec3 headFront = glm::normalize(headRotation * localForward);
+        glm::vec3 headUp = glm::normalize(headRotation * localUp);
+        const glm::vec3 headRight = glm::normalize(glm::cross(headFront, headUp));
+        if (glm::length(headRight) > 1e-4f)
+            headUp = glm::normalize(glm::cross(headRight, headFront));
+        const auto& bodycam = CamConfig::instance().bodycamOverride();
+        if (!camera.thirdPerson && !RagdollModeSystem::instance().isActive()) {
+            glm::vec3 eyePosition = glm::vec3(headTransform[3]);
+            if (bodycam) eyePosition += headRotation * bodycam->eyeOffsetMeters;
+            if (bodycam) {
+                camera.applyBodycamPose(eyePosition, headFront, headUp, player.pos,
+                    world, dt, bodycam->positionResponseSeconds,
+                    bodycam->rotationResponseSeconds, bodycam->wallCollision,
+                    bodycam->wallProbeRadiusMeters);
+            } else {
+                camera.pos = eyePosition;
+                camera.front = headFront;
+                camera.up = headUp;
+                camera.right = headRight;
+            }
+        } else {
+            camera.front = headFront;
+            camera.up = headUp;
+            camera.right = headRight;
+        }
     }
 
     // RMB FOV zoom is presentation-only. A gamemode may own a mode-level
@@ -1187,7 +1205,7 @@ void engineTickCamera(Engine& engine, float dt)
         }
         if (player.usesMeleeAuthoredPose() || ragdollSuppressAimFov) held = false;
         aimFovBlend = updateAimFovBlend(aimFovBlend, held, dt, duration);
-        const float fovBase = CamConfig::instance().data().fov;
+        const float fovBase = CamConfig::instance().effectiveData().fov;
         camera.fov = applyAimFov(fovBase, multiplier, aimFovEase(easing, aimFovBlend));
 
         static bool aimFovRagdollSuppressLogged = false;

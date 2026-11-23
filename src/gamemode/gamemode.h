@@ -173,10 +173,28 @@ struct GamemodeTrailSettings {
     glm::vec3 color{255.0f, 80.0f, 40.0f};
 };
 
+// Optional body-mounted camera profile. Values are presentation-only and are
+// resolved by the shared camera owner; null fields inherit global settings.
+struct GamemodeBodycam {
+    bool configured = false;
+    bool enabled = false;
+    std::string orientationMode = "head_world";
+    glm::vec3 eyeOffsetMeters{0.0f};
+    float positionResponseSeconds = 0.12f;
+    float rotationResponseSeconds = 0.10f;
+    float cameraSwayScale = 1.0f;
+    float chromaticAberration = 0.12f;
+    float vignette = 0.18f;
+    float lensDistortion = 0.0f;
+    bool wallCollision = true;
+    float wallProbeRadiusMeters = 0.12f;
+};
+
 // Mode-level presentation policy. Most missing keys mean "no policy";
 // player_outlines is opt-in during community matches. Actor-preset
 // presentation refines other settings where both exist.
 struct GamemodePresentation {
+    GamemodeBodycam bodycam;
     bool hasGoldRewardPopup = false;
     bool goldRewardPopup = true;
     bool hasDamageNumbers = false;       bool damageNumbers = true;
@@ -452,7 +470,7 @@ public:
     static GamemodeRegistry& instance();
 
     void loadDirectory(const std::string& dir);
-    void pollReload();
+    bool pollReload();
 
     // Strict validation against config/gamemodes/masterlist/gamemode-masterlist.json.
     // The registry loads the masterlist with the mode directory. Returns true and

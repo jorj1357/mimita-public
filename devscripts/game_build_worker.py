@@ -68,6 +68,23 @@ IDENTITY_SOURCE_PATHS = set(FOLDED_MODULE_SYMBOLS) | IDENTITY_ONLY_SOURCES
 # the PCH while keeping the opt-out isolated to this source and cache key.
 PCH_EXCLUDED_SOURCES = {
     "src/npc/npc-world-query.cpp",
+    # PCH-off A/B on 2026-11-23: each of these 15 sources compiled faster
+    # without the shared PCH; retain these source-specific cache-key variants.
+    "src/gui/ui-system.cpp",
+    "src/gui/ui-system-buttons.cpp",
+    "src/gui/ui-text-input.cpp",
+    "src/worldgen/infinite-worldgen-module.cpp",
+    "src/render/world-rendering-module.cpp",
+    "src/npc/npc-perception-module.cpp",
+    "src/map/map-geometry-module.cpp",
+    "src/physics/movement/actor-contact-policy-module.cpp",
+    "src/world/chunk-collision-module.cpp",
+    "src/navigation/navigation-policy-module.cpp",
+    "src/gui/ui-tooltip.cpp",
+    "src/mapeditor/map-editor-module.cpp",
+    "src/network/network-policy-module.cpp",
+    "src/render/actor-rendering-module.cpp",
+    "src/npc/npc-behavior-module.cpp",
 }
 
 INCLUDE_DIRS = [
@@ -551,7 +568,9 @@ class Progress:
     def scan_snapshot(self, *, scanned: int, skipped: int, stale: int,
                       completed: int, scan_seconds: float,
                       dependency_check_ms: float, parse_ms: float,
-                      stat_ms: float, unique_dependencies: int) -> None:
+                      stat_ms: float, unique_dependencies: int,
+                      scan_mode: str = "dependency_index",
+                      cache_marker_reused_count: int = 0) -> None:
         with self.lock:
             self.data.update({
                 "scan_scanned": scanned,
@@ -563,6 +582,8 @@ class Progress:
                 "scan_parse_ms": round(parse_ms, 3),
                 "scan_stat_ms": round(stat_ms, 3),
                 "scan_unique_dependencies": unique_dependencies,
+                "scan_mode": scan_mode,
+                "cache_marker_reused_count": cache_marker_reused_count,
             })
             self._append_locked(
                 f"[SCAN] {scanned}/{self.data['total']} "
@@ -574,6 +595,8 @@ class Progress:
                 "dependency_check_ms": round(dependency_check_ms, 3),
                 "parse_ms": round(parse_ms, 3), "stat_ms": round(stat_ms, 3),
                 "unique_dependencies": unique_dependencies,
+                "scan_mode": scan_mode,
+                "cache_marker_reused_count": cache_marker_reused_count,
                 "build_attempt_id": self.data.get("build_attempt_id"),
                 "revision": self.data.get("revision"),
             })
@@ -763,6 +786,38 @@ def object_key(item: dict) -> str:
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
 
 
+def source_only_changed_paths(change_report: dict | None) -> set[str] | None:
+    """Return changed source paths only when the manifest proves no fan-out.
+
+    Any added/removed/renamed input, header change, ownership change, malformed
+    report, or non-C++ path must use the full dependency scan.
+    """
+    if not isinstance(change_report, dict):
+        return None
+    list_fields = (
+        "added", "removed", "renamed", "changed", "added_headers",
+        "removed_headers", "changed_headers", "changed_owners",
+    )
+    if any(not isinstance(change_report.get(key), list) for key in list_fields):
+        return None
+    if any(change_report[key] for key in list_fields if key != "changed"):
+        return None
+    if not change_report.get("old_revision") or not change_report.get("new_revision"):
+        return None
+    paths: set[str] = set()
+    for value in change_report["changed"]:
+        if not isinstance(value, str):
+            return None
+        path = value.replace("\\", "/")
+        if (not path or path.startswith("/")
+                or any(part == ".." for part in path.split("/"))
+                or not path.lower().endswith(".cpp")
+                or path in paths):
+            return None
+        paths.add(path)
+    return paths or None
+
+
 def source_uses_pch(path: str, enabled: bool) -> bool:
     normalized_path = str(path).replace("\\", "/")
     return enabled and normalized_path not in PCH_EXCLUDED_SOURCES
@@ -834,10 +889,12 @@ def identity_matches(path: Path) -> bool:
 def marker_objects(object_dir: Path) -> dict[str, tuple[int, int]] | None:
     try:
         with os.scandir(object_dir) as entries:
-            return {
-                entry.name: (entry.stat().st_size, entry.stat().st_mtime_ns)
-                for entry in entries if entry.name.endswith(".o")
-            }
+            found = {}
+            for entry in entries:
+                if entry.name.endswith(".o"):
+                    stat = entry.stat()
+                    found[entry.name] = (stat.st_size, stat.st_mtime_ns)
+            return found
     except OSError:
         return None
 
@@ -904,6 +961,62 @@ def cache_marker_valid(marker: dict, object_dir: Path, objects: list[Path],
         except OSError:
             return False
     return True
+
+
+def source_only_cache_marker_valid(
+        change_report: dict | None, current_revision: str,
+        changed_paths: set[str], fresh_changed_paths: set[str],
+        object_paths_by_source: dict[str, Path], object_dir: Path,
+        marker: dict, published: dict, object_cache_rel: str,
+        flags_hash: str, link_identity: str, compiler_stamp: str,
+        use_pch: bool) -> bool:
+    """Reuse a complete published marker for a strictly source-only delta.
+
+    The changed objects are compiled/validated separately. The old marker must
+    prove every unchanged object still belongs to the last published generation.
+    """
+    reported = source_only_changed_paths(change_report)
+    normalized_changed = {str(path).replace("\\", "/") for path in changed_paths}
+    normalized_fresh = {str(path).replace("\\", "/")
+                        for path in fresh_changed_paths}
+    normalized_objects = {
+        str(path).replace("\\", "/"): Path(obj)
+        for path, obj in object_paths_by_source.items()
+    }
+    if (reported is None or reported != normalized_changed
+            or normalized_fresh != normalized_changed
+            or not normalized_changed.issubset(normalized_objects)):
+        return False
+    if (str(change_report.get("old_revision") or "")
+            != str(published.get("revision") or "")
+            or str(change_report.get("new_revision") or "") != current_revision
+            or str(published.get("status") or "") != "ok"
+            or str(published.get("object_cache") or "") != object_cache_rel):
+        return False
+    expected = marker.get("objects") if isinstance(marker, dict) else None
+    if not isinstance(expected, dict) or len(expected) != len(normalized_objects):
+        return False
+    current_names = [path.name for path in normalized_objects.values()]
+    if len(set(current_names)) != len(current_names):
+        return False
+    expected_names = set(expected)
+    changed_names = {
+        obj.name for path, obj in normalized_objects.items()
+        if path in normalized_changed
+    }
+    unchanged_names = {
+        obj.name for path, obj in normalized_objects.items()
+        if path not in normalized_changed
+    }
+    if (not unchanged_names.issubset(expected_names)
+            or changed_names.intersection(expected_names)
+            or len(expected_names - unchanged_names) != len(normalized_changed)):
+        return False
+    prior_objects = [object_dir / name for name in expected_names]
+    return cache_marker_valid(
+        marker, object_dir, prior_objects, published,
+        str(published.get("revision") or ""), flags_hash, link_identity,
+        compiler_stamp, use_pch)
 
 
 def write_cache_marker(object_dir: Path, *, revision: str, generation: int,
@@ -2147,7 +2260,79 @@ def build(args: argparse.Namespace) -> int:
         scan_stat_ms = scan["stat_ms"]
         scan_unique_dependencies = scan["unique_dependencies"]
     else:
-        scan = scan_entries(entries, handled=preflight_handled, quiet=False)
+        scan = None
+        source_only_paths = source_only_changed_paths(change_report)
+        current_changed_paths = {
+            normalized(item["path"]) for item, _obj, _dep in changed_entries
+        }
+        object_paths_by_source = {
+            normalized(item["path"]): obj for item, obj, _dep in entries
+        }
+        source_only_scan_started = time.perf_counter()
+        if (source_only_paths == current_changed_paths
+                and not args.force and not args.sources_file
+                and not identity_header_changed
+                and len(object_paths_by_source) == len(entries)):
+            fresh_changed_paths = set(preflight_handled)
+            for item, obj, dep in changed_entries:
+                source_path = normalized(item["path"])
+                if (source_path not in fresh_changed_paths
+                        and not dep_is_stale(
+                            obj, dep,
+                            use_pch=source_uses_pch(
+                                item["path"], args.pch))):
+                    fresh_changed_paths.add(source_path)
+            marker_path = object_dir / "complete.json"
+            try:
+                marker = read_json(marker_path)
+            except (OSError, json.JSONDecodeError):
+                marker = {}
+            marker_phase_started = progress.subphase_start(
+                "scan.source_only_cache_marker",
+                cache_candidates=len(entries),
+                changed_source_count=len(current_changed_paths))
+            marker_valid = source_only_cache_marker_valid(
+                change_report, revision, current_changed_paths,
+                fresh_changed_paths, object_paths_by_source, object_dir,
+                marker, published, object_cache_rel, flags_hash,
+                link_identity, compiler_stamp, args.pch)
+            marker_validation_ms = progress.subphase_end(
+                "scan.source_only_cache_marker", marker_phase_started,
+                outcome="reused" if marker_valid else "fallback_full_scan")
+            if marker_valid:
+                progress.set_phase(
+                    "object_cache_scan", cache_candidates=len(entries),
+                    scan_mode="source_only_complete_marker")
+                base_completed = int(progress.data.get("completed") or 0)
+                base_skipped = int(progress.data.get("skipped") or 0)
+                skipped = len(entries) - len(preflight_handled)
+                scan_seconds = time.perf_counter() - source_only_scan_started
+                external_dependencies = marker.get(
+                    "external_dependencies") or []
+                if not isinstance(external_dependencies, list):
+                    external_dependencies = []
+                progress.scan_snapshot(
+                    scanned=len(entries), skipped=base_skipped + skipped,
+                    stale=0, completed=base_completed + skipped,
+                    scan_seconds=scan_seconds,
+                    dependency_check_ms=0.0, parse_ms=0.0,
+                    stat_ms=marker_validation_ms,
+                    unique_dependencies=len(external_dependencies),
+                    scan_mode="source_only_complete_marker",
+                    cache_marker_reused_count=skipped)
+                scan = {
+                    "stale": [], "rows": [],
+                    "scanned": len(entries), "skipped": skipped,
+                    "scan_seconds": scan_seconds,
+                    "dependency_check_ms": 0.0, "parse_ms": 0.0,
+                    "stat_ms": marker_validation_ms,
+                    "unique_dependencies": len(external_dependencies),
+                    "header_fanout": {},
+                    "external_dependencies": external_dependencies,
+                }
+        if scan is None:
+            scan = scan_entries(entries, handled=preflight_handled,
+                                quiet=False)
         stale = scan["stale"]
         dependency_scan_seconds = scan["scan_seconds"]
         dependency_check_ms = scan["dependency_check_ms"]

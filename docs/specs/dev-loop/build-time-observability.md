@@ -654,6 +654,16 @@ making p95 claims. Add multi-client/resource-pressure trials only when the
 available-memory guard says the test can run safely. Report all failed,
 superseded, and timed-out attempts, not only successful fast samples.
 
+The root whole-game DLL attempt wrapper starts and stops this sampler for every
+attempt, including failed and no-op attempts. Its append-only resource JSONL and
+summary live beside the attempt timing record and are linked from the attempt
+summary. Telemetry failures never fail a build; they produce an explicit
+`unavailable` or `partial` status with a reason. The shared coordination
+`brain_check` surfaces an active attempt with no sidecar and completed attempts
+with missing or partial telemetry as stable `build_resource_gaps`. Agents
+record each new gap once in the relevant issue and coordinate the next check;
+they must not infer that pressure caused a slow stage without aligned samples.
+
 The comparison reports p50/p95 and sample counts for oldest edit to batch
 seal, seal to worker, preflight/scan, each changed and skipped compile unit,
 link, publish, activation, and activation to decisive owner-level runtime

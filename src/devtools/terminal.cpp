@@ -579,9 +579,15 @@ void Terminal::addLog(const std::string& text) {
 void Terminal::addHistory(const std::string& input) {
     if (input.empty())
         return;
-    if (!mHistory.empty() && mHistory.back() == input)
+    std::string historyEntry = input;
+    std::istringstream historyParser(trimCommandText(input));
+    std::string historyCommand;
+    historyParser >> historyCommand;
+    if (historyCommand == "adminadmin")
+        historyEntry = "adminadmin <redacted>";
+    if (!mHistory.empty() && mHistory.back() == historyEntry)
         return;
-    mHistory.push_back(input);
+    mHistory.push_back(std::move(historyEntry));
     if ((int)mHistory.size() > MAX_HISTORY)
         mHistory.erase(mHistory.begin());
     mHistoryIndex = -1;
@@ -821,6 +827,10 @@ void Terminal::executeInternal(const std::string& input, int aliasDepth) {
                 const bool recordCommandEvidence = !mCurrentRequestId.empty();
                 if (recordCommandEvidence)
                 {
+                    const std::vector<std::string> safeArgs =
+                        cmdName == "adminadmin"
+                            ? std::vector<std::string>{"<redacted>"}
+                            : args;
                     StructuredLogger::instance().writeEvent(
                         StructuredCategory::General,
                         StructuredLevel::Important,
@@ -830,7 +840,7 @@ void Terminal::executeInternal(const std::string& input, int aliasDepth) {
                         static_cast<uint32_t>(commandTicks.clientTick),
                         {{"request_id", mCurrentRequestId},
                          {"command", cmdName},
-                         {"arguments", args},
+                         {"arguments", safeArgs},
                          {"client_tick", commandTicks.clientTick}},
                         __FILE__, __LINE__, __func__);
                 }

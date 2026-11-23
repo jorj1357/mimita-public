@@ -317,33 +317,32 @@
       "travel_target_reached_meters": 4.0
     },
     {
-      // Fun Counter Strike objective rush keeps shared objective behavior but
-      // opts out of group focus/swarm; the team already commits to one site.
-      // Counter Strike typical keeps rage2.
+      // Fun Counter Strike elite objective rush. The human selected "start at
+      // maximum difficulty and tune down": true elite aim/turn, a 200 ms
+      // acquisition reaction, and a 3-tick (50 ms) accepted-shot floor are the
+      // hard edge. Keep memory-only information so CTs still split and report
+      // before they know where the Terrorists are going.
       "id": "fun_cs_rush",
       "skill_tier": "elite",
       "objective_rush": true,
-      // Fun Counter Strike players aim through the physical arm, which is
-      // deliberately less accurate than a camera-locked crosshair. NPCs must
-      // share that handicap so they stay difficult but cannot empty a revolver
-      // into the player at near-zero latency.
-      // 200 ms at 60 Hz is 12 ticks; use the same floor for acquisition and
-      // between accepted shots. The tier still supplies elite decisions,
-      // pursuit, and weapon cycling.
       "reaction_delay": 0.2,
-      "aim_error_deg": 5.0,
-      "turn_speed_deg_per_sec": 720.0,
-      "fire_interval_ticks": 12,
+      "aim_error_deg": 0.06,
+      "turn_speed_deg_per_sec": 1800.0,
+      "fire_interval_ticks": 3,
       "dash_cooldown_ticks": 3,
-      // Spread the team around the objective/defuser instead of stacking.
+      // Spread the team around the objective/defuser instead of stacking, and
+      // let the squad converge on a shared report as a unit.
       "formation_slots": 6,
       "formation_radius_m": 5.0,
       "separation_m": 1.5,
-      // Frequently use optional dashes on long, safe runs; gaps still force
-      // traversal independently of this chance.
-      "dash_chance": 0.35,
-      "focus_enabled": false,
-      "swarm": false,
+      "dash_chance": 0.85,
+      "focus_enabled": true,
+      "swarm": true,
+      "approach_style": "sectors",
+      "approach_directions": 4,
+      "approach_reassign_ticks": 300,
+      "approach_distance_meters": 6.0,
+      "slot_stickiness": 0.8,
       "information_mode": "memory",
       "pursuit_mode": "persistent",
       "continue_through_cover": true,

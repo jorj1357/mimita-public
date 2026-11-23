@@ -376,14 +376,14 @@ void GamemodeRegistry::loadDirectory(const std::string& dir)
     Debug::warn(Debug::Category::Duel, "[GAMEMODE] Loaded %zu gamemode(s) from %s\n", modes_.size(), dir.c_str());
 }
 
-void GamemodeRegistry::pollReload()
+bool GamemodeRegistry::pollReload()
 {
     // The registry lives in the hot-reloaded game module. A DLL swap can reset
     // its static state while the host keeps calling pollReload(); restore the
     // authoritative directory before the first post-reload team/mode lookup.
     if (directory_.empty())
         loadDirectory("config/gamemodes");
-    if (directory_.empty()) return;
+    if (directory_.empty()) return false;
 
     bool changed = false;
     const std::filesystem::path masterPath =
@@ -412,6 +412,7 @@ void GamemodeRegistry::pollReload()
 
     if (changed)
         Debug::warn(Debug::Category::Duel, "[GAMEMODE] Reload complete\n");
+    return changed;
 }
 
 bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
@@ -686,6 +687,44 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         // behavior; the actor preset refines these where both exist. ──
         if (root.contains("presentation") && root["presentation"].is_object()) {
             const auto& p = root["presentation"];
+            if (p.contains("bodycam") && p["bodycam"].is_object()) {
+                const auto& bodycam = p["bodycam"];
+                auto& out = next.presentation.bodycam;
+                out.configured = bodycam.value("enabled", false);
+                out.enabled = bodycam.value("enabled", false);
+                out.orientationMode = bodycam.value("orientation_mode", out.orientationMode);
+                if (out.orientationMode != "head_world" && out.orientationMode != "mouse")
+                    out.orientationMode = "head_world";
+                if (bodycam.contains("head_eye_offset_m") &&
+                    bodycam["head_eye_offset_m"].is_array() &&
+                    bodycam["head_eye_offset_m"].size() == 3) {
+                    out.eyeOffsetMeters = glm::vec3(
+                        bodycam["head_eye_offset_m"][0].get<float>(),
+                        bodycam["head_eye_offset_m"][1].get<float>(),
+                        bodycam["head_eye_offset_m"][2].get<float>());
+                }
+                out.positionResponseSeconds = std::clamp(
+                    bodycam.value("position_response_seconds", out.positionResponseSeconds), 0.01f, 2.0f);
+                out.rotationResponseSeconds = std::clamp(
+                    bodycam.value("rotation_response_seconds", out.rotationResponseSeconds), 0.01f, 2.0f);
+                out.cameraSwayScale = std::clamp(
+                    bodycam.value("camera_sway_scale", out.cameraSwayScale), 0.0f, 5.0f);
+                if (bodycam.contains("lens") && bodycam["lens"].is_object()) {
+                    const auto& lens = bodycam["lens"];
+                    out.chromaticAberration = std::clamp(
+                        lens.value("chromatic_aberration", out.chromaticAberration), 0.0f, 0.8f);
+                    out.vignette = std::clamp(
+                        lens.value("vignette", out.vignette), 0.0f, 0.8f);
+                    out.lensDistortion = std::clamp(
+                        lens.value("distortion", out.lensDistortion), -0.5f, 0.5f);
+                }
+                if (bodycam.contains("wall_collision") && bodycam["wall_collision"].is_object()) {
+                    const auto& wall = bodycam["wall_collision"];
+                    out.wallCollision = wall.value("enabled", out.wallCollision);
+                    out.wallProbeRadiusMeters = std::clamp(
+                        wall.value("probe_radius_m", out.wallProbeRadiusMeters), 0.02f, 0.5f);
+                }
+            }
             auto readFlag = [&p](const char* key, bool& has, bool& value) {
                 if (p.contains(key) && p[key].is_boolean()) {
                     has = true;

@@ -43,6 +43,7 @@ namespace r = mimita::game::render;
 #include "perf/perf-spike.h"
 #include "perf/perf-frame.h"
 #include "perf/perf-gpu.h"
+#include "perf/npc-cpu-probe.h"
 #include "video/frame-pacer.h"
 #include "replay/replay-editor.h"
 #include "replay/replay-export.h"
@@ -107,6 +108,8 @@ void engineTickSimulate(Engine& engine, EngineFrameState& state)
     bool& worldPassRan = state.worldPassRan;
     { MIMITA_PERF_PROGRESS("EngineTick::Simulate");
       MIMITA_PERF_SCOPE("EngineTick::Simulate");
+      [[maybe_unused]] PerfNpcCpuProbe cpuProbe(
+          PerfCpuProbeSite::EngineSimulate, __FILE__, __LINE__, __FUNCTION__);
 
     // The pre-frame game tasks are measured separately; an EngineTick scope
     // would end after Perf::endFrame() and therefore be recorded one frame late.
@@ -214,7 +217,10 @@ void engineTickSimulate(Engine& engine, EngineFrameState& state)
         { MIMITA_PERF_PROGRESS("Replay");
           MIMITA_PERF_SCOPE("Replay"); engineTickReplay(engine, dt); } HEARTBEAT("after replay");
         { MIMITA_PERF_PROGRESS("Networking");
-          MIMITA_PERF_SCOPE("Networking"); engineTickNet(engine, dt); } HEARTBEAT("after net");
+          MIMITA_PERF_SCOPE("Networking");
+          [[maybe_unused]] PerfNpcCpuProbe cpuProbe(
+              PerfCpuProbeSite::Networking, __FILE__, __LINE__, __FUNCTION__);
+          engineTickNet(engine, dt); } HEARTBEAT("after net");
         if (GAME_STATE == GAME_PLAYING) {
             { MIMITA_PERF_PROGRESS("Camera");
               MIMITA_PERF_SCOPE("Camera"); engineTickCamera(engine, dt); } HEARTBEAT("after camera");
@@ -232,6 +238,8 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
     const auto tFrameStart = state.frameStart;
     { MIMITA_PERF_PROGRESS("EngineTick::Render");
       MIMITA_PERF_SCOPE("EngineTick::Render");
+      [[maybe_unused]] PerfNpcCpuProbe cpuProbe(
+          PerfCpuProbeSite::EngineRender, __FILE__, __LINE__, __FUNCTION__);
     const bool replayExportForceRender =
         (getReplayExportJob().state == ReplayExportJob::Capturing ||
          getReplayExportJob().state == ReplayExportJob::Encoding) && WORLD_LOADED;

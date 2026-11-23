@@ -61,6 +61,19 @@ public:
 
     void setHitFlinchOverride(bool enabled) { mHitFlinchOverride = enabled; }
     void clearHitFlinchOverride() { mHitFlinchOverride.reset(); }
+    struct ModeBodycamOverride {
+        std::string orientationMode = "head_world";
+        glm::vec3 eyeOffsetMeters{0.0f};
+        float positionResponseSeconds = 0.12f;
+        float rotationResponseSeconds = 0.10f;
+        float swayScale = 1.0f;
+        bool wallCollision = true;
+        float wallProbeRadiusMeters = 0.12f;
+    };
+    void setBodycamOverride(const ModeBodycamOverride& value) { mBodycamOverride = value; }
+    void clearBodycamOverride() { mBodycamOverride.reset(); }
+    CameraConfigData effectiveData() const;
+    const std::optional<ModeBodycamOverride>& bodycamOverride() const { return mBodycamOverride; }
     bool hitFlinchEnabled() const {
         return mHitFlinchOverride.has_value()
             ? *mHitFlinchOverride : mData.hitFlinchEnabled;
@@ -77,4 +90,5 @@ private:
     std::filesystem::file_time_type mLastWrite{};
     bool mWatchLogged = false;
     std::optional<bool> mHitFlinchOverride;
+    std::optional<ModeBodycamOverride> mBodycamOverride;
 };

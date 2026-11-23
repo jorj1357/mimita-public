@@ -48,6 +48,11 @@ from build_toolchain import compiler as resolve_compiler
 from build_toolchain import glfw_lib as resolve_glfw_lib
 from jsonc import load as load_jsonc
 from devscripts.module_ownership import module_source_paths, read_catalog
+from devscripts.dev_loop.batch_targets import (
+    can_share_source_generation_baseline,
+    filter_reverted_batch_paths,
+    restore_pending_batch,
+)
 from devscripts.source_manifest import OwnerResolver
 from devscripts.path_containment import (
     repository_temp_dir,
@@ -1221,7 +1226,8 @@ def activate_stable_launch(stage_dir: Path) -> Path:
 
 def publish_build(artifact_id: str, folder_name: str, source_generation: int,
                   mode: str, source_at_start: dict | None = None,
-                  source_at_publish: dict | None = None) -> Path:
+                  source_at_publish: dict | None = None,
+                  request_ids: list[str] | None = None) -> Path:
     source_exe = ROOT / "mimita.exe"
     if not source_exe.is_file():
         raise RuntimeError("build succeeded but mimita.exe was not produced")
@@ -1262,6 +1268,7 @@ def publish_build(artifact_id: str, folder_name: str, source_generation: int,
             "source_at_build_start": source_at_start or {},
             "source_at_publish": source_at_publish or {},
             "source_changed_during_build": (source_at_start or {}) != (source_at_publish or {}),
+            "request_ids": list(request_ids or []),
         }
         if not published_identity.get("valid"):
             raise RuntimeError(
@@ -1350,6 +1357,16 @@ class DevLoop:
         self.batch_started_utc: str | None = None
         self.active_batch: dict | None = None
         self.last_batch_result: dict = {}
+        try:
+            persisted_batch = restore_pending_batch(read_json(STATE_PATH))
+        except (OSError, ValueError, TypeError):
+            persisted_batch = None
+        if persisted_batch is not None:
+            self.batch_pending = True
+            self.batch_generation = persisted_batch["generation"]
+            self.batch_targets = persisted_batch["targets"]
+            self.batch_changed_paths = persisted_batch["changed_paths"]
+            self.batch_started_utc = persisted_batch["started_utc"]
         self.processes: list[subprocess.Popen] = []
         # Durable independent-server record, mirroring the GUI external-server
         # contract. This is intentionally NOT part of self.processes (which is
@@ -2794,6 +2811,9 @@ class DevLoop:
                           requested_by: str = "") -> tuple[bool, str]:
         """Seal saved inputs and queue one explicit Mode 3 build wave."""
         request_id = request_id or f"batch-{uuid.uuid4().hex[:12]}"
+        net_delta_ms = 0.0
+        reverted_paths: list[str] = []
+        net_noop: dict | None = None
         with self.lock:
             if self.active_batch:
                 return False, (
@@ -2802,25 +2822,109 @@ class DevLoop:
             if not self.batch_pending or not self.batch_targets:
                 return False, "there are no saved compiler inputs waiting in the batch"
             generation = self.batch_generation
-            targets = set(self.batch_targets)
-            paths = list(self.batch_changed_paths.values())
-            self.active_batch = {
-                "request_id": request_id,
-                "requested_by": str(requested_by or "unknown"),
-                "generation": generation,
-                "targets": targets,
-                "completed": set(),
-                "failed": False,
-                "paths": paths,
-            }
-            self.batch_pending = False
-            self.batch_targets.clear()
-            self.batch_changed_paths.clear()
-            self.batch_started_utc = None
-            self.last_batch_result = {
-                "request_id": request_id, "status": "building",
-                "generation": generation, "targets": sorted(targets),
-            }
+            original_targets = set(self.batch_targets)
+            original_paths = list(self.batch_changed_paths.values())
+            paths = original_paths
+            if original_paths:
+                baseline_manifests: dict[str, Path] = {}
+                if self.latest_build_folder:
+                    exe_manifest = (BUILD_ROOT / self.latest_build_folder /
+                                    "source-manifest.json")
+                    if exe_manifest.is_file():
+                        baseline_manifests["cold"] = exe_manifest
+                try:
+                    game_current = json.loads(
+                        (ROOT / "build" / "game" / "current.json").read_text(
+                            encoding="utf-8"))
+                    game_attempt = json.loads(
+                        (ROOT / "build" / "game" / "last-attempt.json").read_text(
+                            encoding="utf-8"))
+                    source_root = str(game_current.get("source_root") or "")
+                    if source_root:
+                        source_path = Path(source_root)
+                        if not source_path.is_absolute():
+                            source_path = ROOT / source_path
+                        game_manifest = source_path.parent / "source-manifest.json"
+                        if game_manifest.is_file():
+                            baseline_manifests["game"] = game_manifest
+                            exe_identity = self.latest_build_identity() or {}
+                            if can_share_source_generation_baseline(
+                                    exe_identity.get("source_generation"),
+                                    game_attempt.get("source_generation"),
+                                    game_current.get("revision"),
+                                    game_attempt.get("revision"),
+                                    exe_identity.get("request_ids"),
+                                    game_attempt.get("request_ids")):
+                                # Same-batch request IDs prove provenance across
+                                # daemon restarts; old artifacts without IDs fail open.
+                                baseline_manifests["cold"] = game_manifest
+                except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                    pass  # Missing/stale baseline manifests fail open.
+
+                net_delta_started = time.monotonic()
+                paths, reverted_paths = filter_reverted_batch_paths(
+                    ROOT, original_paths, baseline_manifests)
+                net_delta_ms = round(
+                    (time.monotonic() - net_delta_started) * 1000.0, 3)
+                targets = {
+                    str(row.get("target")) for row in paths
+                    if isinstance(row, dict) and row.get("target") in {"cold", "game"}
+                }
+                # Malformed or incomplete batch records must preserve their
+                # original target set instead of silently dropping work.
+                if paths and not targets:
+                    paths = original_paths
+                    targets = original_targets
+                    reverted_paths = []
+                if not paths and reverted_paths:
+                    self.batch_pending = False
+                    self.batch_targets.clear()
+                    self.batch_changed_paths.clear()
+                    self.batch_started_utc = None
+                    net_noop = {
+                        "request_id": request_id,
+                        "generation": generation,
+                        "status": "no_net_source_changes",
+                        "original_targets": sorted(original_targets),
+                        "reverted_paths": list(reverted_paths),
+                        "net_delta_ms": net_delta_ms,
+                    }
+                    self.last_batch_result = dict(net_noop)
+                    self.last_message = (
+                        f"Mode 3 generation {generation} has no content changes "
+                        "relative to the published artifacts; build skipped"
+                    )
+            else:
+                # A target with no path record is unexpected; fail open.
+                targets = original_targets
+
+            if net_noop is None:
+                targets = targets or original_targets
+                paths = paths or original_paths
+                self.active_batch = {
+                    "request_id": request_id,
+                    "requested_by": str(requested_by or "unknown"),
+                    "generation": generation,
+                    "targets": targets,
+                    "completed": set(),
+                    "failed": False,
+                    "paths": paths,
+                }
+                self.batch_pending = False
+                self.batch_targets.clear()
+                self.batch_changed_paths.clear()
+                self.batch_started_utc = None
+                self.last_batch_result = {
+                    "request_id": request_id, "status": "building",
+                    "generation": generation, "targets": sorted(targets),
+                }
+
+        if net_noop is not None:
+            self.record_runtime_event(
+                "dev-loop.batch.no_net_changes", net_noop,
+                "reverted saved inputs match their published target snapshots")
+            self.save_state("batch_no_net_source_changes")
+            return True, self.last_message
 
         cold_request = f"{request_id}:mode3:cold"
         game_request = f"{request_id}:mode3:game"
@@ -2860,7 +2964,9 @@ class DevLoop:
             {"request_id": request_id,
              "requested_by": str(requested_by or "unknown"),
              "generation": generation,
-             "targets": sorted(targets), "changed_paths": paths},
+             "targets": sorted(targets), "changed_paths": paths,
+             "reverted_paths": list(reverted_paths),
+             "net_delta_ms": net_delta_ms},
             "explicit root-dev-loop Mode 3 batch request",
         )
         self.save_state("batch_build_queued")
@@ -3608,7 +3714,23 @@ class DevLoop:
                 self.record_control_event(request, "completed", "client stopped")
                 self.save_state("client_stopped")
             elif action == "command":
-                self.queue_agent_command(request)
+                runtime_id = str(request.get("runtime_id", "") or "").strip()
+                if runtime_id:
+                    try:
+                        result = self.runtime_manager.queue_command(
+                            runtime_id, str(request.get("command", "")))
+                    except (OSError, RuntimeError, ValueError) as error:
+                        self.last_message = f"runtime command rejected: {error}"
+                        request["results"] = []
+                        self.record_control_event(request, "rejected", self.last_message)
+                        self.save_state("runtime_command_rejected")
+                    else:
+                        request["results"] = [result]
+                        self.last_message = f"queued command to runtime {runtime_id} client"
+                        self.record_control_event(request, "accepted", self.last_message)
+                        self.save_state("runtime_command_queued")
+                else:
+                    self.queue_agent_command(request)
             elif action == "scenario-file":
                 self.queue_agent_scenario(request)
             elif action == "stop-server":
@@ -8310,6 +8432,8 @@ def run_control_client(args: argparse.Namespace) -> int:
         request["requested_by"] = "cli"
     if args.command:
         request["command"] = args.command
+        if getattr(args, "runtime", ""):
+            request["runtime_id"] = args.runtime
         if getattr(args, "client", ""):
             request["client_id"] = args.client
     if action == "start-client":
@@ -8350,6 +8474,34 @@ def run_control_client(args: argparse.Namespace) -> int:
             print(f"[DEV CONTROL] error={response['error']}", file=sys.stderr)
 
     if action == "command" and response.get("accepted"):
+        runtime_id = str(request.get("runtime_id") or "")
+        if runtime_id:
+            deadline = time.time() + float(args.command_timeout)
+            result_row = None
+            while time.time() < deadline:
+                latest = send_control_request(
+                    port, token, {"token": token, "action": "status"}, timeout=3.0)
+                control = ((latest or {}).get("state") or {}).get("last_control") or {}
+                if control.get("request_id") == request.get("request_id"):
+                    results = control.get("results") or []
+                    if results:
+                        result_row = results[0]
+                    if control.get("status") == "rejected":
+                        print(f"[DEV CONTROL] runtime command rejected: {control.get('message', '')}", file=sys.stderr)
+                        return 1
+                    if result_row:
+                        break
+                time.sleep(0.2)
+            if not result_row:
+                print("[DEV CONTROL] runtime command was not queued before timeout", file=sys.stderr)
+                return 1
+            events_path = str(result_row.get("client_journal_path") or "")
+            result = wait_for_command_result(
+                [events_path], str(result_row.get("request_id") or ""),
+                timeout=max(0.1, deadline-time.time()))
+            print(f"[DEV CONTROL] runtime={runtime_id} command=\"{args.command}\" delivered={result['delivered']} completed={result['completed']} event={result['event'] or '-'}")
+            print(f"[DEV CONTROL] events={_terminal_file_link(events_path)}")
+            return 0 if result["completed"] else 1
         requested_client = str(request.get("client_id", "") or "")
         chosen = None
         for inst in (current.get("instances") or []):

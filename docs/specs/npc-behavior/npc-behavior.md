@@ -969,3 +969,64 @@ The reported missed-attack symptom remains unreproduced; see the Payload combat
 regression record for the required live target-correlated capture. Live
 validation is currently blocked by the 19-NPC navigator stall recorded in the
 server-tick budget regression.
+
+## 15. Difficulty policy and elite default (2026-11-23)
+
+The goal is to start NPCs at the maximum legal difficulty and tune downward,
+not to start easy and hope to raise it. A lower difficulty is an explicit
+choice through a lower `skill_tier` or profile override. Maximum legal
+difficulty means elite aim, turn rate, target selection, squad coordination,
+objective priority, and movement-technique use. It never means force-hits, extra
+ammunition, hidden health, firing through blocked line of sight, or bypassed
+movement, collision, weapon, or interaction rules.
+
+Fun Counter Strike uses `fun_cs_rush` as its default elite profile:
+
+- `aim_error_deg: 0.06`, `turn_speed_deg_per_sec: 1800`,
+  `reaction_delay: 0.2`, `fire_interval_ticks: 3` (50 ms accepted-shot floor).
+- `focus_enabled: true`, `swarm: true`, `approach_style: "sectors"`, with
+  formation slots and separation for a squad that converges as a unit.
+- `information_mode: "memory"`. Elite FCS CTs must still split, scan, and share
+  legitimate sightings; they do not receive through-wall radar.
+- `dash_chance: 0.85`, with down-dash, freeze, bhop, air movement, and gap
+  traversal using the shared movement inputs. Rocket jumping and knockback
+  movement use the same self-impulse path and a health floor.
+
+`fun_cs_rush_easy` remains the one-setting accessibility alternative. It keeps
+the objective behavior with a lower skill tier, larger aim error, a longer shot
+interval, and reduced optional technique use.
+
+### Plant and defuse priority
+
+A Terrorist carrying the bomb and standing inside a valid site locks
+`PlantObjective`; the designated CT locks `DefuseObjective` after a plant. Both
+hold position for the interaction. A real hazard may interrupt. Other living
+team members cover the operator. A human may still start or finish a defuse; the
+NPC designation must never block a human, and an NPC preference must never make
+the team wait on a human who is fighting or unaware.
+
+### Measurement contract and unit scale
+
+The human's stated intention is **one world unit equals one metre**, so gameplay
+can reuse real-life physics. The current engine evidence indicates a 2:1
+convention instead: the default 3.6-unit capsule represents a 1.8 m human, and a
+20-unit authored block crosses in one second at the configured 20 unit/s speed.
+The metric instrument reports both raw world units and calibrated metres using a
+provisional **0.5 m per world unit** scale. This is a measurement convention, not
+a decision to change the engine scale. Correct it only with a measured player
+probe; retain raw values so calibration changes do not discard evidence.
+
+Required per-NPC and per-team measurements, reported per round and per match:
+
+- travel speed: average, median, p90, max; purposeful travel separated from
+  intentional holds;
+- dash, air-dash, down-dash, jump, bhop, freeze, and air-time counts/ratios;
+- wall contact or near-wall avoidance time, blocked-motion time, and stuck
+  episodes per NPC-minute;
+- NPC-vs-NPC kills, time to kill, kill intervals, and kills per round;
+- plant/defuse attempt start, interruption, reassignment, and completion;
+- objective travel progress and net displacement. A single aggregate count is
+  not sufficient evidence for a behavior change.
+
+The worst legal case is the starting point; tune difficulty down only after the
+numeric baseline and a live journal show the behavior is understood.

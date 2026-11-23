@@ -26,6 +26,7 @@
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
 #include "perf/perf.h"
+#include "perf/npc-cpu-probe.h"
 #include "config/player-settings.h"
 #include "perf/perf.h"
 #include "physics/movement/physics-collision.h"
@@ -176,6 +177,8 @@ void doCollisions(
 )
 {
     Perf::ScopedTimer _colTimer("Collision");
+    [[maybe_unused]] PerfNpcCpuProbe cpuProbe(
+        PerfCpuProbeSite::CollisionDispatch, __FILE__, __LINE__, __FUNCTION__);
     const glm::vec3 frameStart = p.pos;
     recoverInvalidPlayerCollisionState(p, frameStart, "start");
 

@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "scope": "dev_loop_localhost",
+  "password": "",
+  "future_auth_note": "Replace this local-only developer credential with an authenticated developer identity/claim. Prefer a verifiable identity or signed capability that does not require a centralized account database; do not make this local unlock available to public servers."
+}

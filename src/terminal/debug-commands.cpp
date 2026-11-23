@@ -36,6 +36,7 @@
 #include "gamemode/gamemode.h"
 #include "entities/player.h"
 #include "npc/npc.h"
+#include "perf/npc-cpu-probe.h"
 #include <glm/glm.hpp>
 #include <cstdlib>
 
@@ -579,6 +580,79 @@ void registerDebugCommands()
             }
         });
     };
+    Terminal::instance().registerCommand({
+        "adminadmin", "Unlock developer admin commands on a localhost dev-loop server",
+        "adminadmin <password>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() != 1) {
+                Terminal::instance().addLog("Usage: adminadmin <password>");
+                return;
+            }
+            auto* context = ::mimita::game::mpContextPtr();
+            if (!context || !context->active) {
+                Terminal::instance().addLog(
+                    "[ADMIN] Connect to a localhost dev-loop server first");
+                return;
+            }
+            MimitaNet::mpSendServerCommand(*context, "adminadmin " + args[0]);
+            Terminal::instance().addLog(
+                "[ADMIN] Developer unlock request sent; password is not logged");
+        },
+        "2026-11-23", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "perf_callsite_cpu", "Bounded sampled CPU attribution for client/server hot paths",
+        "perf_callsite_cpu <on [seconds]|off>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty() || (args[0] != "on" && args[0] != "off") ||
+                (args[0] == "off" && args.size() != 1) || args.size() > 2) {
+                Terminal::instance().addLog(
+                    "[PERF] Usage: perf_callsite_cpu <on [seconds]|off>");
+                return;
+            }
+            uint32_t seconds = 15;
+            if (args[0] == "on" && args.size() > 1) {
+                try {
+                    size_t parsedCharacters = 0;
+                    const unsigned long parsed = std::stoul(args[1], &parsedCharacters);
+                    if (parsedCharacters != args[1].size() || parsed == 0)
+                        throw std::invalid_argument("invalid duration");
+                    seconds = static_cast<uint32_t>(std::min(parsed, 30UL));
+                } catch (...) {
+                    Terminal::instance().addLog(
+                        "[PERF] Duration must be an integer from 1 to 30 seconds");
+                    return;
+                }
+            }
+
+            const std::string command = args[0] == "on"
+                ? "npc_cpu_probe on " + std::to_string(seconds)
+                : "npc_cpu_probe off";
+            const bool connected = ::mimita::game::mpContextPtr() &&
+                ::mimita::game::mpContextPtr()->active;
+            if (!connected && !MimitaNet::isServerHost()) {
+                Terminal::instance().addLog(
+                    "[PERF] NPC CPU probe requires a server connection");
+                return;
+            }
+            if (args[0] == "on")
+                perfStartNpcCpuProbe(seconds);
+            else
+                perfStopNpcCpuProbe();
+            if (connected) {
+                MimitaNet::mpSendServerCommand(
+                    *::mimita::game::mpContextPtr(), command);
+                Terminal::instance().addLog(args[0] == "on"
+                    ? "[PERF] Local probe enabled; server request sent (max 30s)"
+                    : "[PERF] Local probe stopped; server stop request sent");
+                return;
+            }
+            Terminal::instance().addLog(args[0] == "on"
+                ? "[PERF] Local process probe enabled (max 30s)"
+                : "[PERF] Local process probe stopped");
+        },
+        "2026-11-23", CommandCategory::Debug
+    });
     registerDebugToggle("debug_ticks", DebugConfig::DEBUG_TICKS);
     registerDebugToggle("debug_input", DebugConfig::DEBUG_INPUT);
     registerDebugToggle("debug_collision", DebugConfig::COLLISION_VERBOSE);

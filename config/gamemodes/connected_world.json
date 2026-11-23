@@ -99,6 +99,7 @@
     "fatal_window": true
   },
   "presentation": {
+    "bodycam": null,
     "gold_reward_popup": null,
     "damage_numbers": null,
     "hit_effects": null,

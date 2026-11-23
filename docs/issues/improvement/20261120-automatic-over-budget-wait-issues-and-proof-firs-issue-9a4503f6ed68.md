@@ -178,3 +178,128 @@ Proposal: aggregate over-budget waits by (kind, stage) inside a rolling window i
 Measurable target: at most 1 new game-dll-build wait issue per UTC day while preserving every occurrence's wait_id/build_attempt_id in occurrences; and 0 wait issues whose reviewer wake entered failed with no recorded review after 60 minutes. Baseline for the comparison is the current 129 issues over ~3 days.
 
 Smallest experiment: in build_friction.record_wait_incident, look up an existing open issue for the same kind+stage created within 24h and append an occurrence (store.issue_occurrence) instead of issue_add; keep wait_id as the occurrence key. Then count same-titled issues created in the following 24h and compare with the 129/3-day baseline. This changes the per-occurrence policy in this issue's acceptance, so it needs a human decision before implementation.
+
+## Agent suggestion
+
+### 2026-11-23T08:06:43.162Z — issue-review-sweeper
+
+Process proposal (issue-review-sweeper, 2026-11-23T08:0xZ), evidence from the bounded review of issue-dd54a79216ad. Prior review id 217 (2026-11-22) documented per-attempt duplication as a fact; this adds a measurable target and smallest experiment. No source edited, no fix claimed.
+
+EVIDENCE
+- The store now holds 152 open 'Wait over budget*' build-friction issues: 133 in_review, 18 new, 1 assigned; 130 identically titled 'Wait over budget: game-dll-build at game_build'; 150 unowned. Created 29 on 11-20, 27 on 11-21, 96 on 11-22; newest 2026-11-22T23:53:23Z.
+- devscripts/build_friction.py:131-148,164-169 dedupes only by exact wait_id, so every new attempt mints a fresh issue plus reviewer wake. This is the risk named in issue-dd54a79216ad.
+
+PROPOSAL
+- Group by signature f'{kind}:{stage}'. In record_wait_incident: (a) keep the exact-wait_id check first; (b) else reuse the most recent open build-friction issue with the same signature within a 24h window and append the occurrence instead of issue_add; (c) queue at most one reviewer wake per signature-window. One-time coalesce the existing 152 open issues into per-signature umbrellas while preserving every occurrence.
+
+MEASURABLE TARGET
+- New open wait issues for one signature <=1 per 24h (overall creation was up to 96/day).
+- Total open 'Wait over budget*' issues reduced from 152 to <=10 by one-time coalescing.
+- Zero duplicate-title issues for the same signature within 24h.
+- No wait occurrence lost: occurrence count preserved and readable.
+
+SMALLEST EXPERIMENT
+- In a scratch CoordStore (no live build), call record_wait_incident twice with two distinct wait_ids, same kind/stage, 1 minute apart. Baseline (current code): issue count grows by 2. Expected (grouped): issue count grows by exactly 1, occurrence count = 2, wake_reviewer invoked once. No live build required.
+
+DECISION / RISK
+- Moving from per-wait to per-signature changes this issue's stated acceptance ('one issue per wait occurrence'), so an owner/human decision is required before implementation. Grouping is the smallest change that removes the noise without discarding occurrences. Suggested owner: wake-proof-wait.
+
+## Agent suggestion
+
+### 2026-11-23T11:19:16.026Z — issue-review-sweeper
+
+Process proposal from independent review of issue-7d013b4a6c77 (review id 256, 2026-11-23T11:18Z). Read-only; no source edit, build, or fix claimed.
+
+EVIDENCE (observed)
+- This exe-build wait (kind=exe-build, stage=setup, generation 23, 2026-11-20T17:04:44.830Z) had exactly one reviewer wake queued (wake-f82615c46512 at 17:05:46.144Z) but produced no review: codex launch 17:05:46.8 exited, retry 17:18:37.328Z, opencode launch 18:28:29.6Z, wake.failed 19:05:56.570Z "adapter process exited" (.dev/agent-wake/events.jsonl:282,285-286,294,304-305,312; requests/wake-f82615c46512.json status=failed, attempts=2).
+- The issue then had zero reviews for ~3d18h until the general scheduler swept it (coord event seq10205 at 2026-11-23T11:11:25Z).
+- Its dev-loop journal is not retained (logs/11-20-2026 empty), so the issue's proof_expectation cannot be met for that occurrence.
+
+PROPOSAL (extends, not duplicates, the 2026-11-22T23:07:39Z missing-review-task proposal on this issue; adds exe-build scope and a concrete experiment)
+- At sync/wait, run a read-only query: build-friction issues with via_agent=dev-loop-wait, no issue_reviews row, older than 60 min, whose linked wake request status=failed; then append a "missing review" task or queue one bounded review wake per issue, deduped per issue per 24h. Cover every wait kind (exe-build, game-dll-build, queues), not only game-dll-build.
+
+MEASURABLE TARGET
+- 0 build-friction wait issues with a failed reviewer wake and no review after 60 min (this occurrence is baseline 1, gap 3d18h).
+- At most 1 extra review wake per issue per 24h.
+
+SMALLEST EXPERIMENT
+- Implement only the read-only query and run it once against .dev/agent-coord. It must flag issue-7d013b4a6c77 (wake-f82615c46512 failed, 0 reviews) and must not flag any issue that already has a review. Record the flagged ids and elapsed time; only then add the deduped missing-review task. No gameplay, build, or proof-state change.
+
+## Agent suggestion
+
+### 2026-11-23T11:53:35.578Z — issue-review-sweeper
+
+PROCESS PROPOSAL (issue-review-sweeper, 2026-11-23, derived from the bounded review of issue-25b14f436a3e). Evidence: 152 open Wait-over-budget build-friction issues remain (134 in_review, 17 new), 130 for game-dll-build at game_build; one reviewer wake (wake-f12675d71a59) took about 24 min to fall back after an adapter exit and was finally recorded wake.failed despite already producing a review. Measurable target: within 24h of the change, (a) new build-friction issues for repeated (kind=game-dll-build, stage=game_build) waits drop from about 130 over about 2 days to <=1 open issue per (kind, stage, normalized-reason) signature, and (b) game-dll-build reviewer-wake queue-to-launch p95 stays <=5 min with no wake.failed record once the adapter has written the review. Smallest experiment: in build_friction.record_wait_incident, compute a signature key from kind + stage + normalized reason (strip timestamps, paths, revision hashes, and JSON fragments) and, when an open issue with that signature exists, append an occurrence with the new wait_id instead of calling issue_add; keep the existing per-wait_id dedupe. Do not auto-close or merge the existing 152 issues; a human decides. Compare, from .dev/agent-wake/events.jsonl and the issue store, the count of new wait issues and the queue-to-launch gap for the 24h before vs after.
+
+## Agent suggestion
+
+### 2026-11-23T13:28:26.311Z — issue-review-sweeper
+
+Process-review proposal from the 2026-11-23 issue-review-sweeper bucket sweep (wake-3093c566f04f), evidence-grounded, read-only.
+
+EVIDENCE (observed this sweep, 2026-11-23T13:2xZ): the coordinator holds 130 open issues titled "Wait over budget: game-dll-build at game_build" (115 in_review, 14 new, 1 assigned), 152 open "Wait over budget:*" issues, and 165 build-friction issues total. Per-wait_id minting is explicit by design in devscripts/build_friction.py:143-148 ("a new wait gets another issue even when its stage and reason are identical") and record_wait_incident (164-180). The prior independent review already measured 127 of these at 2026-11-22T22:28Z, so the count grew by 3 in ~15h. This issue's acceptance already requires "a second scan does not duplicate the issue", but that holds only per wait_id, not across repeated occurrences of the same stage/signature.
+
+PROPOSAL: Group over-budget wait issues by a stable signature (kind + stage; optionally a normalized reason class) instead of by wait_id. On each over-budget occurrence, append an occurrence row to the one open signature issue (store.issue_occurrence) and keep that occurrence's wait_id plus the true in-flight attempt identity (generation + build_attempt_id) in its evidence; mint a new issue only when no open issue exists for the signature. Keep exactly one reviewer wake per occurrence (current behavior already satisfies that).
+
+MEASURABLE TARGET: across the next 5 over-budget game_build occurrences, net-new duplicate-title "Wait over budget: game-dll-build at game_build" issues = 0, while each occurrence adds exactly 1 occurrence row and queues exactly 1 reviewer wake, and each occurrence row carries the true in-flight generation/build_attempt_id rather than the previous EXE build. Secondary: mark the existing 130 duplicates as duplicate/merged (state or resolution note) without deleting any evidence.
+
+SMALLEST EXPERIMENT: extend devscripts/quality/test_build_friction.py with one unit case that feeds two synthetic waits with distinct wait_ids but identical kind/stage and asserts: one issue created, two occurrence rows, two reviewer wakes. Then confirm with one real over-budget wait (force a >60s game-DLL build or lower the budget only in a scratch dev-loop) that the grouped issue's occurrence count increments and no new duplicate-title issue appears.
+
+RISK / GUARD: grouping can bury a fresh distinct cause under a stale issue. Keep reason and attempt id per occurrence, group only (kind, stage) unless the reason class is provably stable, and never drop the per-occurrence wait_id.
+
+## Agent suggestion
+
+### 2026-11-23T14:30:56.936Z — issue-review-sweeper
+
+Duplicate derived-failure issues from one failed build (development-process proposal, sweep issue-review-sweep-408; evidence: review id 262 on issue-b91438ac2972).
+
+Observed: attempt game-dll-20261120T163826804025Z-9b84b5 produced two near-identical build-friction issues, issue-b91438ac2972 (created 2026-11-20T17:24:14Z, depends on issue-b0ba8698acd7) and issue-b7216286bdcc (created 2026-11-20T17:23:44Z), with identical human_quote and the same revision/changed_paths. record_wait_incident in devscripts/build_friction.py:143 dedupes by wait_id, but derived compile-failure findings have no dedupe key, so separate reviewer sessions each called issue_add for the same failure. Both remain open, and this sweep reviewed the duplicate at 2026-11-23T14:30Z after the sibling was already reviewed at 13:59Z (review id 261), duplicating reviewer effort.
+
+Measurable target: 0 pairs of open build-friction issues sharing (build_attempt_id, first compile-error file:line:message) per 10 failed builds (currently 1 known pair from one attempt), and at most 1 independent review per failure signature.
+
+Smallest experiment (read-only intake dedupe): before issue_add for a derived build failure, search open/recent build-friction issues for the same build_attempt_id and first error signature; if found, append an occurrence/evidence link and surface the existing issue id to the reviewer prompt instead of creating a second issue. Validate against this attempt's two records without creating a new issue. No source, policy, or closure change by this reviewer; human retains the decision.
+
+## Agent suggestion
+
+### 2026-11-23T15:03:17.506Z — issue-review-sweeper
+
+Proposal (issue-review-sweeper, from bounded review of issue-bb273ac1386c): consolidate repeated wait signatures instead of filing one issue per wait_id.
+
+Evidence: 130 identical `Wait over budget: game-dll-build at game_build` issues and 326 `build-wait-reviewer` wake artifacts; 182/350 recorded DLL builds exceed the fixed 60s budget, and the last >60s build (2026-11-22T23:56, 267.2s) produced a duplicate rather than an occurrence. `build_friction.record_wait_incident` keys on the timestamp-bearing wait_id, so the append-occurrence branch is unreachable and the docstring makes duplication intentional.
+
+Measurable target: for one (kind, stage) signature, keep at most 1 open canonical issue; repeat waits append an occurrence/capped counter instead of a new issue. Reviewer wakes per signature per 24h <= 1 unless the wait has a new failure-reason class. Baseline: 130 open duplicates and up to 98 reviewer wakes/day for one signature.
+
+Smallest experiment: keep wait_id/timestamps in evidence but key dedup on (kind, stage, failure-reason-class); a second identical wait appends an occurrence and does not call `wake_reviewer`. Validate in `devscripts/quality/test_build_friction.py` by calling `record_wait_incident` twice with distinct wait_ids and asserting one issue + one wake; then drive one real >60s build and confirm one issue, not two.
+
+Cross-links: issue-bb273ac1386c (prior and current review), issue-6e08d89b55e3 (reason field), issue-84c584957e65 (late wakes).
+
+## Agent suggestion
+
+### 2026-11-23T16:25:42.840Z — build-wait-reviewer
+
+Fresh pair confirming the open identity defect (the next check requested in this issue's 2026-11-22 review): wait game-dll-build:2026-11-23T15:24:55.624Z (issue-266c2a856cfc) recorded evidence generation=null and build_id=2026-11-23T13:26:39.822193Z, while the in-flight journal attempt was dev-loop.game-build.started build_attempt_id game-dll-20261123T152455729876Z-62f5f6, generation=561, source_generation=10, started_utc 15:24:55.730Z, success total_seconds=107.935. The wait was 60.82s into a healthy 6-file build (slowest compile npc.cpp 50.792s), so this is a flat-budget/identity issue, not a stalled loop. Also reproduced: same-run per-attempt duplicates issue-8a2e0ac7236b and issue-ec790f30f5ad, and a garbled evidence.reason (truncated compiler progress JSON). Wake dispatch delay for this occurrence is recorded on issue-84c584957e65.
+
+## Occurrence
+
+### 2026-11-23T16:39:39.118Z — build-wait-reviewer
+
+Wait game-dll-build:2026-11-23T16:00:36.698Z (issue-ec790f30f5ad) confirms the stale-identity defect with a fresh pair, answering the NEXT DISCRIMINATING CHECK in review 217. Wait evidence records generation=561 and build_id=2026-11-23T13:26:39.822193Z (previous published build), while the in-flight attempt was generation 563 / game-dll-20261123T160037032706Z-485a05 (status ok, total 69.123s, compile 36.524s, link 21.293s, 2 TUs compiled, 641 skipped). The flagged build was healthy and finished 0.15s past the flat 60s budget at a normal worst-case single-file cost, so the flat budget also fired on a non-stall.
+
+Evidence: {"actual_generation": 563, "build_attempt_id": "game-dll-20261123T160037032706Z-485a05", "build_outcome": "success", "compile_seconds": 36.524, "identity_root": "dev-loop.py:3259 vs dev-loop.py:3879", "issue": "issue-ec790f30f5ad", "journal": "logs/2026-11-23/20261123_144429/dev-loop/events.jsonl", "link_seconds": 21.293, "total_seconds": 69.123, "wait_build_id": "2026-11-23T13:26:39.822193Z", "wait_generation": 561, "wait_id": "game-dll-build:2026-11-23T16:00:36.698Z"}
+
+## Agent suggestion
+
+### 2026-11-23T17:29:11.083Z — build-wait-reviewer
+
+DEFECT F (evidence from review of issue-991c632f1ca0, occ wait_id game-dll-build:2026-11-23T16:27:01.355Z):
+dev-loop.wait.issue-failed masks a successful record and suppresses the required wait events. In check_wait_budget (dev-loop.py:3887-3912): record_wait_incident() succeeds and wait_id is added to reported_wait_ids (3891), then wake_reviewer() (3895) raises because its inline subprocess.run([... agent-wake.py run --once], timeout=30) in build_friction.py:244-246 exceeds 30s. The except at 3908 then logs issue-failed and skips dev-loop.wait.reviewer-wake (3897-3902) and dev-loop.wait.over_budget (3903-3907).
+Direct evidence: logs/2026-11-23/20261123_144429/dev-loop/events.jsonl line 264 is the only event for that wait_id (dev-loop.wait.issue-failed 16:28:34.966Z, error 'timed out after 30 seconds'); there is no over_budget/reviewer-wake event for it, yet issue-991c632f1ca0 (created 16:28:02.149Z) and wake-56368e82bb5b (queued 16:28:04.703Z, .dev/agent-wake/events.jsonl:2234) both exist. The build itself succeeded (generation 564, 724.396s, npc.h fanout).
+Suggested safe fix (needs human approval): emit dev-loop.wait.over_budget immediately after a successful record_wait_incident and before the best-effort inline launch; make the inline 'run --once' fire-and-forget (short/swallowed timeout) so launch latency cannot retract a successful record; reserve issue-failed for genuine record failures. This belongs to the automatic over-budget wait machinery owned here, so reporting as a suggestion rather than a new issue.
+
+## Occurrence
+
+### 2026-11-23T17:34:25.048Z — build-wait-reviewer
+
+Fresh identity pair and flat-budget recurrence for wait game-dll-build:2026-11-23T16:54:31.578Z (issue-3d02ab0de320): evidence records build_id 2026-11-23T13:26:39.822193Z and generation 564 (previous published), while the in-flight journal attempt was dev-loop.game-build.started build_attempt_id game-dll-20261123T165431661826Z-6c221c, generation 565, source_generation 16, started 16:54:31.803Z. It succeeded at 90.92s total (compile 76.122s, link 6.27s, 29 compiled / 614 skipped), so the 60s wait fired during a healthy compile (queue_wait_ms up to ~55.6s with 10 jobs), not a stall. Same-signature duplicates today: issue-991c632f1ca0 (16:28Z) and issue-8fdc520a07c5 (17:10Z). Reason-field contamination is recorded on issue-6e08d89b55e3 and the wake dispatch delay on issue-84c584957e65. Line numbers drifted: identity is now dev-loop.py:3878-3879, reason at dev-loop.py:3112/3142/3874.
+
+Evidence: {"actual_generation": 565, "build_attempt_id": "game-dll-20261123T165431661826Z-6c221c", "build_outcome": "success", "compile_seconds": 76.122, "compiled": 29, "identity_root": "dev-loop.py:3878-3879 (latest_build / game_build_generation) vs completion at dev-loop.py:3259", "issue": "issue-3d02ab0de320", "journal": "logs/2026-11-23/20261123_144429/dev-loop/events.jsonl", "link_seconds": 6.27, "skipped": 614, "source_generation": 16, "summary": ".dev/build-timings/game-dll-20261123T165431661826Z-6c221c.json", "total_seconds": 90.92, "wait_build_id": "2026-11-23T13:26:39.822193Z", "wait_generation": 564, "wait_id": "game-dll-build:2026-11-23T16:54:31.578Z"}

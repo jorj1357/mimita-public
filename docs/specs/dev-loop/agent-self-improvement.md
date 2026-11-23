@@ -75,6 +75,27 @@ metric, risk, and smallest experiment. If not, do not invent a generic issue;
 record that no actionable improvement was found in the work summary. This
 check is bounded and must not interrupt the user's requested task.
 
+### Goal-linked evidence-gap loop
+
+At every wake or task activation, compare the issue's acceptance criteria with
+the evidence that is actually present. The coordination `brain_check` may
+surface deterministic gaps such as a build attempt with no resource sidecar in
+`build_resource_gaps`; treat these as shared work context, not as proof of a
+cause. Missing counters, run identity, process roles, stage boundaries, or
+behavior proof must remain explicitly `unknown` until collected.
+
+For each new stable `gap_key`, the first agent that takes action checks the
+linked issue for an existing entry, appends one observed/inferred/unknown
+finding with artifact paths and the next discriminating check, and sends an
+issue-linked message to the relevant active owner(s) to review alternatives.
+Agents should agree on whether the missing evidence matters to the active goal,
+then claim and implement a safe, in-scope collection method when it does. If it
+is not the current priority or ownership is unclear, leave the gap visible with
+an owner or next routing step. Human review retains issue priority, build
+authority, behavior-proof acceptance, and closure. Do not repeat the same gap
+on every sync, infer resource causation from unsynchronized samples, or close a
+behavior issue from build success alone.
+
 The general issue-review scheduler performs a deeper rotating review every
 five completed work sessions or after 30 minutes when another agent activation
 occurs. It cold-reads one stale/unproven open issue, asks an independent agent

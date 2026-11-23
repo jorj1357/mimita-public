@@ -231,3 +231,25 @@ Sixth reproduction, 2026-11-21T13:5xZ bounded activation wake-9baf2f346227 (agen
 ### 2026-11-21T14:10:27.945Z — root
 
 Mitigation landed in devscripts/agent-wake.py: _prompt now starts with a self-sufficient line (wake id | agent | issue or detected ctx id | first-3-line task summary | prompt file path), so a first-line-only delivery is directly actionable and no longer claims a 'bounded test activation'. Full Wake request/First run/Proof-first/Requested work sections are unchanged. Regression: devscripts/quality/test_agent_wake.py. Remaining proof: one real opencode wake must show the delivered first user part equals the prompt file; that launch was not performed in this bounded activation, so change is mitigation + unit proof only, not root-cause proof.
+
+## Agent suggestion
+
+### 2026-11-23T10:40:41.641Z — issue-review-sweeper
+
+Development-process proposal from independent review wake-44eff7843590 (measurable, smallest experiment).
+
+Observation: this activation again received only the first line of the wake prompt in the first user message, ending with a "| full prompt follows; if missing read .dev/agent-wake/logs/...prompt.txt" pointer. To learn the assigned issue and Requested work the agent had to open that file. This is the same truncation defect tracked here, so it is a repeated avoidable extra step on every sweep activation rather than a new root cause.
+
+Measurable target: 100% of launched opencode sessions have their first user message equal (after trailing-whitespace normalization) to the prompt-file bytes including the "Requested work" section, and zero .dev/agent-wake file reads are needed to restate the issue and requested work. Current activation: 0/1.
+
+Smallest experiment: queue one synthetic wake whose prompt has three newline-separated lines, capture the launched session's first user message, and byte-compare it to the prompt file. If newline truncation comes from argv/shell interpolation, pass the prompt body through stdin or a single JSON message write and re-run the same comparison. No source edit was made by this reviewer.
+
+## Agent suggestion
+
+### 2026-11-23T13:03:00.306Z — issue-review-sweeper
+
+Fresh recurrence 2026-11-23, wake-2540a9bffc1b (agent issue-review-sweeper, adapter opencode). The first user text that reached this session was a header line ("MiMITA agent-wake wake-2540a9bffc1b | agent issue-review-sweeper | issue issue-b0ba8698acd7 | task: Complete one bounded independent review of issue-b0ba8698acd7. Start with issue brief/readiness, proof status, linked artifacts, and the latest relevant jour...") plus the pointer "full prompt follows; if missing read ...prompt.txt". The Requested work body was truncated after ~1 sentence ("latest relevant jour..."); I had to read .dev/agent-wake/logs/2026-11-23T12-47-38.679Z-issue-review-sweeper.prompt.txt to recover the full task. So the current two-line header mitigation only partially helps: wake id, agent, and issue id now arrive, but the multi-section prompt still does not. This is a new reproduction after ~2 days (prior reproductions were 2026-11-21, on opencode).
+
+Proposal (measurable target): over the next 5 consecutive fresh opencode wakes, the first user message must contain every section that exists in the on-disk prompt file (Wake request, Issue, First run, Requested work), byte-equal after whitespace normalization, and the woken agent must be able to restate its assigned issue id without reading .dev/agent-wake. Record pass/fail per wake; target 5/5.
+
+Smallest experiment: enqueue one wake whose prompt has 3 short sections and an explicit issue id; capture the child session's first user message from the existing adapter log; normalize whitespace; diff it against the .prompt.txt file; repeat 5 times. Reuse the existing wake queue and adapter log (no new harness). If fewer than 5/5 pass, keep this issue open.

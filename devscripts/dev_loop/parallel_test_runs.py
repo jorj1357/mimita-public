@@ -389,10 +389,11 @@ def _server_args(exe: Path, profile: dict, mode: dict, map_name: str,
     return args
 
 
-def _append_queue(queue_path: Path, request_id: str, command: str) -> None:
+def append_command_queue(queue_path: Path, request_id: str, command: str,
+                         scenario_id: str = "parallel_agent_test") -> None:
     record = {
         "request_id": request_id, "command": command,
-        "scenario_id": "parallel_agent_test", "step_id": request_id,
+        "scenario_id": scenario_id, "step_id": request_id,
         "step_index": 0, "step_count": 1,
         "not_before_ms": int(time.time() * 1000),
     }
@@ -906,7 +907,7 @@ def queue_parallel_command(run_id: str, client_id: str, command: str) -> dict:
     if not queue_path.resolve().is_relative_to(DEV_ROOT.resolve()):
         raise RuntimeError("test command queue path escaped .dev")
     request_id = f"parallel-{uuid.uuid4().hex[:16]}"
-    _append_queue(queue_path, request_id, command)
+    append_command_queue(queue_path, request_id, command)
     _append_event(layout, "dev-loop.command.request",
                   {"request_id": request_id, "client_id": client_id,
                    "client_pid": row.get("pid"), "command": command,

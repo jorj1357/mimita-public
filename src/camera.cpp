@@ -42,7 +42,7 @@ void Camera::updateMouse(double xpos, double ypos) {
     // The regular mouse camera keeps its established pitch clamp. Head-world
     // mode needs an unbounded pitch wish so quaternion head aiming can pass
     // through vertical without snapping at the Euler pole.
-    if (CamConfig::instance().data().orientationMode != "head_world") {
+    if (CamConfig::instance().effectiveData().orientationMode != "head_world") {
         pitch = glm::clamp(pitch, -89.9f, 89.9f);
     }
 
@@ -60,7 +60,7 @@ void Camera::follow(const glm::vec3& target, const glm::vec3& offset, float stif
 
 void Camera::updateVectors() {
     float effectivePitch = pitch + punchPitch + weaponRecoilPitch;
-    if (CamConfig::instance().data().orientationMode != "head_world")
+    if (CamConfig::instance().effectiveData().orientationMode != "head_world")
         effectivePitch = glm::clamp(effectivePitch, -89.9f, 89.9f);
     float effectiveYaw = yaw + punchYaw + weaponRecoilYaw;
 
@@ -229,5 +229,62 @@ void Camera::smoothCollision(
         float smoothSpeed = hit ? 12.0f : 7.0f;
         mPrevCollisionPos = glm::mix(mPrevCollisionPos, targetPos, std::min(1.0f, smoothSpeed * dt));
         pos = mPrevCollisionPos;
+    }
+}
+
+void Camera::applyBodycamPose(const glm::vec3& targetPosition,
+                              const glm::vec3& targetFront,
+                              const glm::vec3& targetUp,
+                              const glm::vec3& collisionOrigin,
+                              const World& world, float dt,
+                              float positionResponseSeconds,
+                              float rotationResponseSeconds,
+                              bool wallCollision, float probeRadiusMeters)
+{
+    const float posAlpha = 1.0f - std::exp(-std::max(0.0f, dt) /
+        std::clamp(positionResponseSeconds, 0.01f, 2.0f));
+    const float rotAlpha = 1.0f - std::exp(-std::max(0.0f, dt) /
+        std::clamp(rotationResponseSeconds, 0.01f, 2.0f));
+    if (!mBodycamPoseInitialized) {
+        pos = targetPosition;
+        front = glm::normalize(targetFront);
+        up = glm::normalize(targetUp);
+        right = glm::normalize(glm::cross(front, up));
+        glm::mat4 basis(1.0f);
+        basis[0] = glm::vec4(right, 0.0f);
+        basis[1] = glm::vec4(front, 0.0f);
+        basis[2] = glm::vec4(up, 0.0f);
+        mBodycamRotation = glm::quat_cast(basis);
+        mBodycamPoseInitialized = true;
+    } else {
+        pos = glm::mix(pos, targetPosition, posAlpha);
+        glm::vec3 currentRight = glm::normalize(glm::cross(front, up));
+        glm::vec3 targetRight = glm::normalize(glm::cross(targetFront, targetUp));
+        glm::mat4 currentBasis(1.0f), targetBasis(1.0f);
+        currentBasis[0] = glm::vec4(currentRight, 0.0f);
+        currentBasis[1] = glm::vec4(glm::normalize(front), 0.0f);
+        currentBasis[2] = glm::vec4(glm::normalize(up), 0.0f);
+        targetBasis[0] = glm::vec4(targetRight, 0.0f);
+        targetBasis[1] = glm::vec4(glm::normalize(targetFront), 0.0f);
+        targetBasis[2] = glm::vec4(glm::normalize(targetUp), 0.0f);
+        mBodycamRotation = glm::slerp(glm::quat_cast(currentBasis),
+            glm::quat_cast(targetBasis), rotAlpha);
+        right = glm::normalize(mBodycamRotation * glm::vec3(1, 0, 0));
+        front = glm::normalize(mBodycamRotation * glm::vec3(0, 1, 0));
+        up = glm::normalize(mBodycamRotation * glm::vec3(0, 0, 1));
+    }
+
+    if (wallCollision) {
+        glm::vec3 ray = pos - collisionOrigin;
+        const float distance = glm::length(ray);
+        if (distance > 0.001f) {
+            ray /= distance;
+            float hitDistance = distance;
+            if (rayTraverseGridCells(world, collisionOrigin, ray, distance,
+                                     hitDistance, nullptr) && hitDistance < distance) {
+                pos = collisionOrigin + ray * std::max(0.02f,
+                    hitDistance - std::clamp(probeRadiusMeters, 0.02f, 0.5f));
+            }
+        }
     }
 }

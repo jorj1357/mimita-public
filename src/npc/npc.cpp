@@ -28,6 +28,7 @@
 #include "debug/structured-log.h"
 #include "hot-reload/module-host.h"
 #include "perf/perf.h"
+#include "perf/npc-cpu-probe.h"
 #include "physics/config.h"
 #include "physics/physics-mini.h"
 #include "physics/movement/actor-final-pose.h"
@@ -56,6 +57,14 @@ static thread_local std::uint32_t gNpcAnimationBudgetTick =
 static thread_local std::uint32_t gNpcAnimationStridePhase = 0;
 static thread_local double gNpcAnimationBudgetUsedMs = 0.0;
 static thread_local bool gNpcPresentationBudgetEnabled = false;
+
+// Provisional movement-metric calibration. MiMITA's default capsule is 3.6
+// world units tall for a 1.8 m human, and the user-observed 10x10 authored
+// block crosses in one second at the configured 20 unit/s ground speed. Both
+// imply two world units per metre. Raw world-unit values stay in the emitted
+// record so the scale can be corrected without losing the underlying data.
+constexpr float kNpcMetersPerWorldUnit = 0.5f;
+constexpr float kNpcLocalDwellRadiusMeters = 10.0f;
 
 void npcBeginSimulationTick(std::uint32_t tick)
 {
@@ -633,6 +642,27 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt,
             UtilityGoalKind::MoveToObjective, npc.utilityContext);
         npc.utility.currentAction = actionForGoal(
             UtilityGoalKind::MoveToObjective, npc.utilityContext);
+        npc.utility.goalTimer = 0.0f;
+    }
+    // Objective interaction lock. A carrier already inside a site and the
+    // designated CT defuser must not let a visible enemy or another utility
+    // score divert them before the interaction completes. Hazard avoidance
+    // still wins. This is plant/defuse priority, not a new combat path.
+    UtilityGoalKind lockedObjectiveGoal = UtilityGoalKind::None;
+    if (!npc.utilityContext.hazardActive) {
+        if (npc.body.matchTeam == 1 && npc.utilityContext.canPlant)
+            lockedObjectiveGoal = UtilityGoalKind::PlantObjective;
+        else if (npc.body.matchTeam == 0 && npc.utilityContext.planted &&
+                 npc.utilityContext.isDefuserId)
+            lockedObjectiveGoal = UtilityGoalKind::DefuseObjective;
+    }
+    if (lockedObjectiveGoal != UtilityGoalKind::None &&
+        npc.utility.currentGoal != lockedObjectiveGoal) {
+        npc.utility.currentGoal = lockedObjectiveGoal;
+        npc.utility.currentScore = scoreUtilityGoal(
+            lockedObjectiveGoal, npc.utilityContext);
+        npc.utility.currentAction = actionForGoal(
+            lockedObjectiveGoal, npc.utilityContext);
         npc.utility.goalTimer = 0.0f;
     }
     const UtilityActionKind utilityAction = actionForGoal(
@@ -1545,6 +1575,8 @@ void NpcSystem::setProjectileHazards(const std::vector<AreaEffect>& effects)
 void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                              const NpcMovementContext& context, float dt)
 {
+    [[maybe_unused]] PerfNpcCpuProbe cpuProbe(
+        PerfCpuProbeSite::NpcUpdate, __FILE__, __LINE__, __FUNCTION__);
     if (npc.body.dead || npc.body.currentHp <= 0 || !context.valid()) {
         RagdollModeSystem::instance().clearNpcAim(npc.id);
         npc.body.updateModelWorldTransforms();
@@ -3346,6 +3378,44 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     if (jump && policy && !npcPolicyAllowsJump(*policy, jumpReason))
         jump = false;
 
+    // Elite objective-travel bhop. Hold the shared jump input for a short
+    // window so the movement preset's auto-bhop chains on a clear, unblocked
+    // route with no visible target. This is a legal shared input, not an
+    // NPC-only jump rule. Any target, hazard, stuck episode, failed route, or
+    // local correction ends the hold immediately.
+    if (npc.eliteBhopTicks > 0) {
+        const bool bhopInterrupted =
+            npc.sensors.hasTarget || npc.utilityContext.hazardActive ||
+            npc.movementStuckEpisodeActive || npc.navigator.areaEscapeActive ||
+            npc.navigator.localCorrectionActive || npc.navigator.backtrackActive ||
+            !npc.staggeredNavResult.valid || !npc.staggeredNavResult.hasPath ||
+            npc.staggeredNavResult.blocked ||
+            (policy && !npcPolicyAllowsJump(*policy, NpcJumpReason::Navigation));
+        if (bhopInterrupted) {
+            npc.eliteBhopTicks = 0;
+        } else {
+            --npc.eliteBhopTicks;
+            jump = true;
+            jumpReason = NpcJumpReason::Navigation;
+        }
+    } else if (npc.behavior.active && npc.behavior.skillTier == "elite" &&
+               npc.behavior.objectiveRush && !npc.sensors.hasTarget &&
+               !npc.utilityContext.hazardActive && npc.sensors.touchFloor &&
+               npc.jumpCooldown <= 0.0f && npc.staggeredNavResult.valid &&
+               npc.staggeredNavResult.hasPath &&
+               !npc.staggeredNavResult.blocked &&
+               !npc.movementStuckEpisodeActive &&
+               !npc.navigator.areaEscapeActive &&
+               !npc.navigator.localCorrectionActive &&
+               !npc.navigator.backtrackActive &&
+               (!policy || npcPolicyAllowsJump(*policy, NpcJumpReason::Navigation)) &&
+               random01(npc.rngState) < 0.03f) {
+        npc.eliteBhopTicks = 45 + static_cast<int>(
+            random01(npc.rngState) * 75.0f);
+        jump = true;
+        jumpReason = NpcJumpReason::Navigation;
+    }
+
     // Bound recovery hopping (live-tunable). Without this an actor pinned
     // against geometry jumped nearly every tick.
     if (jump)
@@ -3459,6 +3529,22 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
           !npc.staggeredNavResult.hasPath));
     if (objectiveRecoveryOwnsDash)
         dash = false;
+
+    // Plant/defuse is a stationary interaction. The server owns progress; the
+    // actor must not chase, strafe, or dash out of the site while the objective
+    // lock is active. A real hazard still releases the hold above.
+    const bool objectiveInteractionHold =
+        !npc.utilityContext.hazardActive &&
+        (npc.utilityContext.canPlant ||
+         (npc.utilityContext.planted && npc.utilityContext.isDefuserId &&
+          npc.utilityContext.atObjective));
+    if (objectiveInteractionHold) {
+        moveDir = glm::vec3(0.0f);
+        jump = false;
+        dash = false;
+        wantDownDash = false;
+        freeze = false;
+    }
 
     InputState input;
     if (npc.replayControlled && npc.replayUseRecordedIntent && npc.hasReplayInput)
@@ -3682,9 +3768,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         npc.lastFrictionDelta = input.movementPressed ? 0.0f : planarSpeedAfter - planarSpeedBefore;
         npc.lastFinalSpeed = glm::length(npc.body.vel + npc.body.externalImpulse);
 
-        // One bounded, per-life FCS measurement per second. Displacement is
-        // authoritative world-space motion; the user-defined scale is exactly
-        // one world unit per metre, so these derived speeds are m/s.
+        // One bounded, per-life FCS measurement per second. Raw world-space
+        // distances/speeds are retained; calibrated metres use the provisional
+        // shared scale documented next to kNpcMetersPerWorldUnit.
         if (npc.behaviorProfileId == "fun_cs_rush" ||
             npc.behaviorProfileId == "fun_cs_rush_easy") {
             const glm::vec3 measuredPos = npc.body.pos;
@@ -3696,22 +3782,34 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             }
             const glm::vec3 measuredDelta =
                 measuredPos - npc.movementMetricsPreviousPos;
-            const float planarDistanceM =
+            const float planarDistanceUnits =
                 glm::length(glm::vec2(measuredDelta.x, measuredDelta.y));
-            const float distanceM = glm::length(measuredDelta);
-            const float localDistanceM = glm::length(
+            const float distanceUnits = glm::length(measuredDelta);
+            const float localDwellRadiusUnits =
+                kNpcLocalDwellRadiusMeters / kNpcMetersPerWorldUnit;
+            const float localDistanceUnits = glm::length(
                 glm::vec2(measuredPos.x - npc.movementMetricsLocalAnchor.x,
                           measuredPos.y - npc.movementMetricsLocalAnchor.y));
+            const bool airborne = !npc.sensors.touchFloor;
+            const float planarSpeedUnits = glm::length(glm::vec2(
+                npc.body.vel.x + npc.body.externalImpulse.x,
+                npc.body.vel.y + npc.body.externalImpulse.y));
+
             npc.movementMetricsLifeSeconds += safeDt;
-            npc.movementMetricsDistanceM += distanceM;
-            npc.movementMetricsPlanarDistanceM += planarDistanceM;
+            npc.movementMetricsDistanceM += distanceUnits;
+            npc.movementMetricsPlanarDistanceM += planarDistanceUnits;
             npc.movementMetricsSampleSeconds += safeDt;
+            if (airborne) {
+                npc.movementMetricsAirSeconds += safeDt;
+                if (input.movementPressed)
+                    npc.movementMetricsAirMoveSeconds += safeDt;
+            }
             if (input.movementPressed) {
                 npc.movementMetricsIntentSeconds += safeDt;
-                if (planarDistanceM < 0.02f)
+                if (planarDistanceUnits < 0.02f)
                     npc.movementMetricsBlockedMotionSeconds += safeDt;
             }
-            if (localDistanceM <= 10.0f) {
+            if (localDistanceUnits <= localDwellRadiusUnits) {
                 npc.movementMetricsLocalDwellSeconds += safeDt;
                 npc.movementMetricsMaxLocalDwellSeconds = std::max(
                     npc.movementMetricsMaxLocalDwellSeconds,
@@ -3720,13 +3818,35 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 npc.movementMetricsLocalAnchor = measuredPos;
                 npc.movementMetricsLocalDwellSeconds = 0.0f;
             }
-            if (!poseResult.contacts.empty())
+            if (!poseResult.contacts.empty()) {
                 ++npc.movementMetricsPoseContactSamples;
+                ++npc.movementMetricsWallContactSamples;
+                npc.movementMetricsWallContactSeconds += safeDt;
+            }
             if (glm::length(npc.lastWallAvoidDir) > 0.01f)
             {
                 ++npc.movementMetricsWallAvoidSamples;
                 npc.movementMetricsWallAvoidSeconds += safeDt;
             }
+            if (npc.body.dash.didDash) {
+                ++npc.movementMetricsDashCount;
+                if (airborne) ++npc.movementMetricsAirDashCount;
+            }
+            if (npc.body.dash.didDownDash)
+                ++npc.movementMetricsDownDashCount;
+            if (npc.body.freeze.didFreeze)
+                ++npc.movementMetricsFreezeCount;
+            const bool jumpTopped =
+                jump && !npc.movementMetricsJumpHeldLast;
+            if (jumpTopped)
+                ++npc.movementMetricsJumpCount;
+            if (jump && npc.sensors.touchFloor &&
+                npc.movementMetricsWasAirborne)
+                ++npc.movementMetricsBhopCount;
+            npc.movementMetricsJumpHeldLast = jump;
+            npc.movementMetricsWasAirborne = airborne;
+            npc.movementMetricsMaxPlanarSpeedUnits = std::max(
+                npc.movementMetricsMaxPlanarSpeedUnits, planarSpeedUnits);
             npc.movementMetricsPreviousPos = measuredPos;
 
             if (npc.movementMetricsSampleSeconds >= 1.0f) {
@@ -3734,32 +3854,65 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     measuredPos - npc.movementMetricsLifeStartPos;
                 const float lifeSeconds = std::max(
                     npc.movementMetricsLifeSeconds, 0.0001f);
+                const float perMinuteScale = 60.0f / lifeSeconds;
                 const bool probableWallBlock = input.movementPressed &&
-                    planarDistanceM < 0.02f &&
+                    planarDistanceUnits < 0.02f &&
                     glm::length(npc.lastWallAvoidDir) > 0.01f;
                 nlohmann::json fields{
                     {"actor", npc.id},
                     {"team", npc.body.matchTeam},
                     {"profile", npc.behaviorProfileId},
-                    {"meters_per_world_unit", 1.0f},
+                    {"meters_per_world_unit", kNpcMetersPerWorldUnit},
+                    {"unit_scale_source",
+                     "capsule_3.6_world_units_equals_1.8_m_and_20_unit_block_in_1s"},
                     {"measurement_scope", "current_life"},
                     {"life_elapsed_seconds", npc.movementMetricsLifeSeconds},
-                    {"life_planar_distance_m",
+                    {"life_planar_distance_units",
                      npc.movementMetricsPlanarDistanceM},
-                    {"life_distance_3d_m", npc.movementMetricsDistanceM},
-                    {"life_average_speed_3d_mps",
+                    {"life_planar_distance_m",
+                     npc.movementMetricsPlanarDistanceM *
+                         kNpcMetersPerWorldUnit},
+                    {"life_distance_3d_units", npc.movementMetricsDistanceM},
+                    {"life_distance_3d_m",
+                     npc.movementMetricsDistanceM *
+                         kNpcMetersPerWorldUnit},
+                    {"life_average_speed_3d_units_per_second",
                      npc.movementMetricsDistanceM / lifeSeconds},
-                    {"life_average_planar_speed_mps",
+                    {"life_average_speed_3d_mps",
+                     npc.movementMetricsDistanceM / lifeSeconds *
+                         kNpcMetersPerWorldUnit},
+                    {"life_average_planar_speed_units_per_second",
                      npc.movementMetricsPlanarDistanceM / lifeSeconds},
-                    {"current_planar_speed_mps", planarDistanceM / safeDt},
-                    {"velocity_planar_mps", glm::length(glm::vec2(
-                        npc.body.vel.x + npc.body.externalImpulse.x,
-                        npc.body.vel.y + npc.body.externalImpulse.y))},
-                    {"life_net_displacement_m", glm::length(netDisplacement)},
-                    {"life_net_planar_displacement_m",
+                    {"life_average_planar_speed_mps",
+                     npc.movementMetricsPlanarDistanceM / lifeSeconds *
+                         kNpcMetersPerWorldUnit},
+                    {"current_planar_speed_units_per_second",
+                     planarSpeedUnits},
+                    {"current_planar_speed_mps",
+                     planarSpeedUnits * kNpcMetersPerWorldUnit},
+                    {"current_planar_speed_source", "velocity_external_impulse"},
+                    {"velocity_planar_units_per_second", planarSpeedUnits},
+                    {"velocity_planar_mps",
+                     planarSpeedUnits * kNpcMetersPerWorldUnit},
+                    {"max_planar_speed_units_per_second",
+                     npc.movementMetricsMaxPlanarSpeedUnits},
+                    {"max_planar_speed_mps",
+                     npc.movementMetricsMaxPlanarSpeedUnits *
+                         kNpcMetersPerWorldUnit},
+                    {"life_net_displacement_units",
+                     glm::length(netDisplacement)},
+                    {"life_net_displacement_m",
+                     glm::length(netDisplacement) *
+                         kNpcMetersPerWorldUnit},
+                    {"life_net_planar_displacement_units",
                      glm::length(glm::vec2(netDisplacement.x,
                                            netDisplacement.y))},
-                    {"local_radius_m", 10.0f},
+                    {"life_net_planar_displacement_m",
+                     glm::length(glm::vec2(netDisplacement.x,
+                                           netDisplacement.y)) *
+                         kNpcMetersPerWorldUnit},
+                    {"local_radius_units", localDwellRadiusUnits},
+                    {"local_radius_m", kNpcLocalDwellRadiusMeters},
                     {"local_dwell_seconds",
                      npc.movementMetricsLocalDwellSeconds},
                     {"max_local_dwell_seconds",
@@ -3780,15 +3933,57 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                     {"probable_wall_block_this_tick", probableWallBlock},
                     {"pose_penetration_contact_samples",
                      npc.movementMetricsPoseContactSamples},
+                    {"wall_contact_seconds",
+                     npc.movementMetricsWallContactSeconds},
+                    {"wall_contact_samples",
+                     npc.movementMetricsWallContactSamples},
+                    {"wall_contact_ratio_of_life",
+                     npc.movementMetricsWallContactSeconds / lifeSeconds},
+                    {"wall_contact_seconds_per_minute",
+                     npc.movementMetricsWallContactSeconds * perMinuteScale},
                     {"wall_avoid_samples",
                      npc.movementMetricsWallAvoidSamples},
                     {"near_wall_avoid_seconds",
                      npc.movementMetricsWallAvoidSeconds},
+                    {"wall_contact_measure", "final_pose_contact_samples"},
                     {"exact_wall_contact_count_available", false},
+                    {"air_seconds", npc.movementMetricsAirSeconds},
+                    {"air_seconds_ratio_of_life",
+                     npc.movementMetricsAirSeconds / lifeSeconds},
+                    {"air_movement_seconds",
+                     npc.movementMetricsAirMoveSeconds},
+                    {"air_movement_ratio_of_air",
+                     npc.movementMetricsAirSeconds > 0.0f
+                         ? npc.movementMetricsAirMoveSeconds /
+                               npc.movementMetricsAirSeconds
+                         : 0.0f},
+                    {"jump_count", npc.movementMetricsJumpCount},
+                    {"jump_count_per_minute",
+                     npc.movementMetricsJumpCount * perMinuteScale},
+                    {"bhop_count", npc.movementMetricsBhopCount},
+                    {"bhop_count_per_minute",
+                     npc.movementMetricsBhopCount * perMinuteScale},
+                    {"dash_count", npc.movementMetricsDashCount},
+                    {"dash_count_per_minute",
+                     npc.movementMetricsDashCount * perMinuteScale},
+                    {"air_dash_count", npc.movementMetricsAirDashCount},
+                    {"down_dash_count", npc.movementMetricsDownDashCount},
+                    {"down_dash_count_per_minute",
+                     npc.movementMetricsDownDashCount * perMinuteScale},
+                    {"freeze_count", npc.movementMetricsFreezeCount},
+                    {"freeze_count_per_minute",
+                     npc.movementMetricsFreezeCount * perMinuteScale},
                     {"objective_known", npc.utilityContext.objectiveKnown},
+                    {"objective_distance_units",
+                     npc.utilityContext.objectiveKnown
+                         ? glm::length(npc.utilityContext.objectivePos -
+                                       measuredPos)
+                         : -1.0f},
                     {"objective_distance_m",
                      npc.utilityContext.objectiveKnown
-                         ? glm::length(npc.utilityContext.objectivePos - measuredPos)
+                         ? glm::length(npc.utilityContext.objectivePos -
+                                       measuredPos) *
+                               kNpcMetersPerWorldUnit
                          : -1.0f}};
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::NpcMovement,

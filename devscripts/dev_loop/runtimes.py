@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
 
@@ -95,6 +96,27 @@ class RuntimeManager:
         state["server_alive"] = process_alive(int(state.get("pid", 0)))
         state["client_alive"] = process_alive(int(state.get("client_pid", 0) or 0))
         return state
+
+    def queue_command(self, runtime_id: str, command: str) -> dict:
+        command = str(command or "").strip()
+        if not command:
+            raise RuntimeError("command is empty")
+        state = _read_json(self._state_path(runtime_id))
+        if not state:
+            raise RuntimeError(f"unknown runtime {runtime_id!r}")
+        client_pid = int(state.get("client_pid", 0) or 0)
+        if not process_alive(client_pid):
+            raise RuntimeError(f"runtime {runtime_id!r} client is not alive")
+        run_dir = Path(str(state.get("run_dir") or "")).resolve()
+        queue_path = Path(str(state.get("command_queue") or "")).resolve()
+        if not run_dir.is_dir() or not queue_path.is_relative_to(run_dir):
+            raise RuntimeError("runtime command queue path escaped its run directory")
+        request_id = f"runtime-{uuid.uuid4().hex[:16]}"
+        from dev_loop.parallel_test_runs import append_command_queue
+        append_command_queue(queue_path, request_id, command, "runtime_command")
+        return {"request_id": request_id, "client_pid": client_pid,
+                "client_journal_path": str(state.get("client_journal") or ""),
+                "queue_path": str(queue_path), "runtime_id": runtime_id}
 
     def _build_server_args(self, exe: Path, profile: dict, launch_mode: dict,
                            map_name: str, room_file: Path) -> list[str]:
@@ -194,6 +216,7 @@ class RuntimeManager:
 
         client_pid = None
         client_journal = None
+        command_queue = run_dir / "dev-loop" / "agent-command-client-01.jsonl"
         port = None
         if with_client:
             port = self._wait_for_port(journal, ready_timeout)
@@ -206,6 +229,7 @@ class RuntimeManager:
                     "--room-code-file", str(room_file), "--map", map_name,
                     "--name", str(profile.get("client_name", "NPC Dev")),
                     "--unlock-cursor",
+                    "--agent-command-file", str(command_queue),
                 ]
                 client_args.extend(str(v) for v in launch_mode.get("client_args", []))
                 client_env = {
@@ -228,6 +252,7 @@ class RuntimeManager:
             "run_dir": str(run_dir),
             "journal": str(journal),
             "client_journal": str(client_journal) if client_journal else "",
+            "command_queue": str(command_queue) if client_pid else "",
             "room_file": str(room_file),
             "args": args,
         }

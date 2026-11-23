@@ -77,7 +77,7 @@ def create_parser() -> argparse.ArgumentParser:
                         help="force one melee weapon and enable the melee validation path")
     parser.add_argument("--ai-health", type=int, default=999999,
                         help="self-only health override for the AI player (0 disables)")
-    parser.add_argument("--runtime", default="", help="runtime id for runtime actions")
+    parser.add_argument("--runtime", default="", help="runtime id for runtime actions or --command targeting")
     parser.add_argument("--runtime-launch-mode", default="",
                         help="launch mode for --request start-runtime")
     parser.add_argument("--runtime-profile", default="npc-navigation")

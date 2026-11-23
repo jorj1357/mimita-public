@@ -28,6 +28,7 @@
 #include "gamemode/gamemode.h"
 #include "npc/npc-difficulty-config.h"
 #include "npc/npc.h"
+#include "perf/npc-cpu-probe.h"
 #include "combat/weapon-registry.h"
 #include "network/network-weapons.h"
 #include "physics/movement/movement-step.h"
@@ -44,7 +45,57 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <sstream>
 #include <filesystem>
+#include <fstream>
+#include <nlohmann/json.hpp>
+
+namespace {
+bool devLoopbackSuperadminEnabled(SOCKET sock)
+{
+    const char* processRole = std::getenv("MIMITA_PROCESS_ROLE");
+    const char* runMetadata = std::getenv("MIMITA_RUN_METADATA");
+    if (!processRole || std::string(processRole) != "server" ||
+        !runMetadata || !*runMetadata)
+        return false;
+    sockaddr_in localAddress{};
+    int addressLength = sizeof(localAddress);
+    if (getsockname(sock, reinterpret_cast<sockaddr*>(&localAddress),
+                    &addressLength) == SOCKET_ERROR ||
+        localAddress.sin_family != AF_INET ||
+        ntohl(localAddress.sin_addr.s_addr) != INADDR_LOOPBACK)
+        return false;
+    try
+    {
+        std::ifstream input("config/dev-superadmin.local.json");
+        if (!input) return false;
+        const auto config = nlohmann::json::parse(input);
+        return config.is_object() && config.value("enabled", false) &&
+            config.value("scope", std::string()) == "dev_loop_localhost" &&
+            !config.value("password", std::string()).empty();
+    }
+    catch (...) { return false; }
+}
+
+bool devLoopbackSuperadminPasswordMatches(SOCKET sock,
+                                         const std::string& supplied)
+{
+    if (!devLoopbackSuperadminEnabled(sock)) return false;
+    try
+    {
+        std::ifstream input("config/dev-superadmin.local.json");
+        const auto config = nlohmann::json::parse(input);
+        const std::string expected = config.value("password", std::string());
+        return !expected.empty() && supplied == expected;
+    }
+    catch (...) { return false; }
+}
+
+bool isDevSuperadminCommand(const std::string& command)
+{
+    return command == "adminadmin" || command.rfind("adminadmin ", 0) == 0;
+}
+}
 
 // Global chat rate limiter instance
 static ChatRateLimiter gChatRateLimiter;
@@ -412,6 +463,7 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
 
     cmd->commandText[239] = '\0';
     const std::string commandStr(cmd->commandText);
+    const bool isSuperadminCommand = isDevSuperadminCommand(commandStr);
 
     // Acknowledge the sender so the host gets terminal feedback.
     const auto ack = [&](bool accepted, const char* status) {
@@ -431,7 +483,7 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
             "player:" + std::to_string(it->second.id),
             "server accepted or rejected a host command",
             tick,
-            {{"command", commandStr},
+            {{"command", isSuperadminCommand ? "adminadmin <redacted>" : commandStr},
              {"accepted", accepted},
              {"status", status},
              {"player_id", it->second.id},
@@ -441,6 +493,27 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
              {"active_mode", serverGamemodeState().matchMode}},
             __FILE__, __LINE__, __func__);
     };
+
+    if (isSuperadminCommand)
+    {
+        std::istringstream input(commandStr);
+        std::string commandName, suppliedPassword, extra;
+        input >> commandName >> suppliedPassword;
+        const bool noExtraArgument = !(input >> extra);
+        if (commandName == "adminadmin" && noExtraArgument &&
+            devLoopbackSuperadminPasswordMatches(sock, suppliedPassword))
+        {
+            it->second.adminCommandsGranted = true;
+            it->second.adminCommandsEnabled = true;
+            it->second.adminCommandsInitialized = true;
+            ack(true, "developer admin enabled for this connection session");
+        }
+        else
+        {
+            ack(false, "wrong password");
+        }
+        return;
+    }
 
     // Session admin access. Self-toggle is available to the host or to a
     // player holding a live host grant; grant/revoke themselves are host-only.
@@ -797,7 +870,55 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
 
     printf("%s [SERVER COMMAND] playerId=%u name=\"%s\" cmd=\"%s\"\n",
            serverTimestamp(), it->second.id, it->second.name.c_str(),
-           commandStr.c_str());
+           isSuperadminCommand ? "adminadmin <redacted>" : commandStr.c_str());
+
+    if (commandStr == "npc_cpu_probe" ||
+        commandStr.rfind("npc_cpu_probe ", 0) == 0)
+    {
+        std::istringstream input(commandStr);
+        std::string commandName, action, durationText, extra;
+        input >> commandName >> action;
+        bool valid = commandName == "npc_cpu_probe" &&
+            (action == "on" || action == "off");
+        uint32_t durationSeconds = 15;
+        if (action == "on" && input >> durationText)
+        {
+            try
+            {
+                size_t parsedCharacters = 0;
+                if (durationText.empty() || durationText[0] == '-')
+                    throw std::invalid_argument("negative duration");
+                const unsigned long parsed = std::stoul(durationText,
+                                                        &parsedCharacters);
+                if (parsedCharacters != durationText.size() || parsed == 0)
+                    throw std::invalid_argument("invalid duration");
+                durationSeconds = static_cast<uint32_t>(std::min(parsed, 30UL));
+            }
+            catch (...)
+            {
+                valid = false;
+            }
+        }
+        if (input >> extra || (action == "off" && !durationText.empty()))
+            valid = false;
+        if (!valid)
+        {
+            ack(false, "rejected: usage npc_cpu_probe <on [1..30]|off>");
+            return;
+        }
+        if (action == "on")
+        {
+            perfStartNpcCpuProbe(durationSeconds);
+            ack(true, ("applied: npc_cpu_probe on " +
+                       std::to_string(durationSeconds) + "s (auto-stop)").c_str());
+        }
+        else
+        {
+            perfStopNpcCpuProbe();
+            ack(true, "applied: npc_cpu_probe off");
+        }
+        return;
+    }
 
     constexpr const char* scenarioRecordStart = "scenario_server_record_start ";
     constexpr const char* scenarioRecordStop = "scenario_server_record_stop";

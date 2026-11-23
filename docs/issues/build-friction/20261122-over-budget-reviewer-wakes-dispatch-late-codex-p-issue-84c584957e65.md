@@ -71,3 +71,51 @@ Correction from issue-review-sweeper (folding the 07:25 proposal into the existi
 - Net-new evidence only: the same failure predates this issue's recorded occurrences. wake-363c44b7c8d6 for issue-6bc05eadfb7f (2026-11-20T14:59:20Z) was queued once, retried codex->opencode, and failed "adapter process exited" at 16:03:49Z without appending a review; its prompt.txt began "This is a bounded test activation" and its transcript ended at "Bounded test activation acknowledged ... No code". So the baseline is at least 3 distinct waits (issue-e84cfa28c7f7, issue-6bc05eadfb7f, plus this issue's 4 later occurrences), not a single event.
 - Correction to my 07:25 text: the bounded-test prefix was already removed by d89884f6 (2026-11-21), so prompt assembly is no longer the first suspect for new wakes; the open question is adapter-exit handling and the missing escalation/review-append check. `_prompt` still instructs `begin --task "wake test"` (devscripts/agent-wake.py:288), which is cosmetic but should be reworded so a production reviewer does not think it is a test.
 - Revised smallest experiment stays the same but focuses on (b): one manual reviewer wake to a scratch issue, assert exactly one wake.launched and either an issue_reviews row or a wake.escalated within 15 min; repeat 3 times. No source edit proposed by the reviewer.
+
+## Agent suggestion
+
+### 2026-11-23T09:50:40.358Z — issue-review-sweeper
+
+Supporting evidence for the existing 2026-11-23T07:25 outcome-checked-delivery proposal on this issue (not a new proposal; no duplicate suggested).
+
+An earlier over-budget wait reproduces the same failure class. issue-dff7e8c0f758 (wait exe-build:19:2026-11-20T16:02:46.964Z, stage setup, 60.833s vs 60.0s). Exactly one wake, wake-ca89658c9f56, was queued (created 2026-11-20T16:03:49.179Z, attempts=2, fallbacks=[], status=failed, error='adapter process exited', updated 16:39:30.762Z). Its log (.dev/agent-wake/logs/2026-11-20T16-03-49.179Z-build-wait-reviewer.log) ends ~16:39:15Z and its only issue-scoped reply targets issue-61b5edc937d9; the dff7 review was appended later at 16:48:57.903Z and is not attributable to the wake from any surviving artifact. The dev-loop.wait.over_budget event is also unreadable because logs/2026-11-20 was pruned (owned by issue-79e68f63fb01).
+
+Why it matters to the existing proposal: this is an additional distinct wait (earlier than the 14:59Z wait-363c44b7c8d6 already cited) where the wake was queued exactly once but produced 0 attributable reviews, even though the adapter session did run. It strengthens the proposed 15-minute review-or-wake.escalated bound and the need for a per-wake review-correlation field.
+
+Measurable target (unchanged from existing proposal): 5/5 consecutive over-budget reviewer wakes have exactly one wake.launched per wait_id and either an issue_reviews row or a wake.escalated event within 15 minutes, with a recorded wake-to-review link. Baseline now includes this dff7 occurrence.
+
+Smallest experiment (unchanged): queue one manual reviewer wake to a scratch issue, then assert from .dev/agent-wake/events.jsonl, the request prompt.txt, the spawned log, and the issue record that (a) exactly one wake.launched occurred, (b) the target gains an issue_reviews row or wake.escalated within 15 minutes, and (c) the review carries the wake id. Repeat 3 times for a baseline before changing code.
+
+## Agent suggestion
+
+### 2026-11-23T15:55:52.383Z — issue-review-sweeper
+
+Incremental proposal from the issue-3dad54c7224d review (issue-review-sweeper, wake-2cd479fc071e, 2026-11-23). Evidence: the single queued wake wake-8627cef525a5 used codex first; codex failed `model_not_found` (gpt-6-luna unsupported), retried to opencode ~3m24s later, opencode appended review id 16 at 2026-11-20T17:52:15Z (~49m53s after wake.queued), and the request was then marked wake.failed "adapter process exited" at 18:28:29Z despite that review existing. The same codex-primary choice is live again on wake-6f2f936370f3 (queued 2026-11-23T15:25:57Z), whose codex log already shows the same model_not_found.
+
+Measurable target: over the next 10 over-budget wakes, (a) queued-to-review latency <=5 min for all 10, and (b) 0 requests with status=failed that have an issue_reviews row created after launched_utc.
+
+Smallest experiment: (1) in build_friction.wake_reviewer, prefer the adapter whose most recent wake appended work (or simply prefer opencode while the codex model check fails), and (2) in agent-wake.run_once/reconcile_launched, capture the adapter process exit code and treat "work landed" (issue_reviews/messages by MIMITA_AGENT_ID after launched_utc) plus exit code 0 as completed instead of failed. Run 24h and count wake.failed-after-review and queue-to-review latency. Preserves this issue's acceptance ("one wake.queued ... no duplicate launches") and issue-9a4503f6ed68's per-occurrence idempotency.
+
+## Occurrence
+
+### 2026-11-23T16:23:59.983Z — build-wait-reviewer
+
+Over-budget wait game-dll-build:2026-11-23T15:24:55.624Z (issue-266c2a856cfc) reproduces late reviewer dispatch: wake-6f2f936370f3 queued 15:25:57.335Z; codex primary claimed/launched 15:25:57.912Z/15:25:58.000Z then exited; wake.retry switched to opencode 15:58:40.915Z ("previous adapter process exited"); opencode claimed/launched 16:01:38.666Z/16:01:38.737Z. Total dispatch delay 2141.402s (~35m41s), far beyond the proposed <=5 min bound. The underlying build game-dll-20261123T152455729876Z-62f5f6 was real and succeeded at 107.935s, so this is not a stalled build.
+
+Evidence: {"build_attempt_id": "game-dll-20261123T152455729876Z-62f5f6", "build_outcome": "success", "build_total_seconds": 107.935, "fallback_adapter": "opencode", "fallback_claimed_utc": "2026-11-23T16:01:38.666Z", "fallback_launched_utc": "2026-11-23T16:01:38.737Z", "issue": "issue-266c2a856cfc", "journal": ".dev/agent-wake/events.jsonl", "primary_adapter": "codex", "primary_claimed_utc": "2026-11-23T15:25:57.912Z", "primary_launched_utc": "2026-11-23T15:25:58.000Z", "retry_reason": "previous adapter process exited; trying fallback", "total_dispatch_delay_seconds": 2141.402, "wait_id": "game-dll-build:2026-11-23T15:24:55.624Z", "wake": "wake-6f2f936370f3", "wake_queued_utc": "2026-11-23T15:25:57.335Z", "wake_retry_utc": "2026-11-23T15:58:40.915Z"}
+
+## Occurrence
+
+### 2026-11-23T16:39:39.134Z — build-wait-reviewer
+
+Over-budget wait game-dll-build:2026-11-23T16:00:36.698Z (issue-ec790f30f5ad) reproduces late reviewer dispatch: wake-bc86ede93b34 queued 2026-11-23T16:01:37.511Z; codex primary claimed/launched 16:01:38.798/16:01:38.826Z then exited; wake.retry to opencode 16:18:27.553Z (stale launched request recovered by scheduler); opencode claimed/launched 16:18:29.845/16:18:29.871Z. Total dispatch delay 1073.173s (~17m53s) after the wait and 1012.360s after queue, far beyond the proposed <=5 min bound. The underlying build game-dll-20261123T160037032706Z-485a05 was real and succeeded at 69.123s, so this is not a stalled build.
+
+Evidence: {"build_attempt_id": "game-dll-20261123T160037032706Z-485a05", "build_outcome": "success", "build_total_seconds": 69.123, "fallback_adapter": "opencode", "fallback_launched_utc": "2026-11-23T16:18:29.871Z", "issue": "issue-ec790f30f5ad", "primary_adapter": "codex", "primary_launched_utc": "2026-11-23T16:01:38.826Z", "total_dispatch_delay_seconds": 1073.173, "wait_id": "game-dll-build:2026-11-23T16:00:36.698Z", "wake": "wake-bc86ede93b34", "wake_queued_utc": "2026-11-23T16:01:37.511Z", "wake_retry_utc": "2026-11-23T16:18:27.553Z"}
+
+## Occurrence
+
+### 2026-11-23T17:33:28.122Z — build-wait-reviewer
+
+Over-budget wait game-dll-build:2026-11-23T16:54:31.578Z (issue-3d02ab0de320) reproduced late reviewer dispatch: wake-7c08ac9af12c queued 16:55:32.987Z; codex primary claimed/launched 16:55:39.720Z/16:55:39.770Z; wake.retry 'stale launched request recovered by scheduler' 17:00:35.582Z; opencode claimed/launched 17:12:02.986Z/17:12:03.012Z, about 16m30s after queue. Same misattribution: dev-loop.wait.reviewer-wake at 16:55:39.869Z is stamped wait_id game-dll-build:2026-11-23T16:54:31.578Z / issue-3d02ab0de320 but embeds wake-9724b287e9d8 (mode3-latency-goal). Build attempt game-dll-20261123T165431661826Z-6c221c compiled normally and published generation 565 at 90.92s, so this is not a stalled build.
+
+Evidence: {"build_attempt_id": "game-dll-20261123T165431661826Z-6c221c", "build_total_seconds": 90.92, "fallback_adapter": "opencode", "fallback_launched_utc": "2026-11-23T17:12:03.012Z", "issue": "issue-3d02ab0de320", "journal": ".dev/agent-wake/events.jsonl", "misattribution": "dev-loop.wait.reviewer-wake at 2026-11-23T16:55:39.869Z embeds wake-9724b287e9d8 (mode3-latency-goal)", "primary_adapter": "codex", "primary_launched_utc": "2026-11-23T16:55:39.770Z", "total_dispatch_delay_seconds": 990.025, "wait_id": "game-dll-build:2026-11-23T16:54:31.578Z", "wake": "wake-7c08ac9af12c", "wake_queued_utc": "2026-11-23T16:55:32.987Z", "wake_retry_utc": "2026-11-23T17:00:35.582Z"}

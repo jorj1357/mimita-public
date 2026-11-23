@@ -655,6 +655,38 @@
       "type": "object",
       "required": false,
       "fields": {
+        "bodycam": {
+          "type": "object",
+          "required": false,
+          "default": null,
+          "nullable": true,
+          "description": "Mode-owned live camera tuning overlay. Null inherits the shared camera config.",
+          "fields": {
+            "enabled": { "type": "boolean", "required": false, "default": false },
+            "orientation_mode": { "type": "string", "required": false, "default": "head_world" },
+            "head_eye_offset_m": { "type": "array", "required": false, "default": [0.0, 0.0, 0.0] },
+            "position_response_seconds": { "type": "number", "required": false, "default": 0.12, "min": 0.01, "max": 2.0 },
+            "rotation_response_seconds": { "type": "number", "required": false, "default": 0.1, "min": 0.01, "max": 2.0 },
+            "camera_sway_scale": { "type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 5.0 },
+            "lens": {
+              "type": "object",
+              "required": false,
+              "fields": {
+                "chromatic_aberration": { "type": "number", "required": false, "default": 0.12, "min": 0.0, "max": 0.8 },
+                "vignette": { "type": "number", "required": false, "default": 0.18, "min": 0.0, "max": 0.8 },
+                "distortion": { "type": "number", "required": false, "default": 0.0, "min": -0.5, "max": 0.5 }
+              }
+            },
+            "wall_collision": {
+              "type": "object",
+              "required": false,
+              "fields": {
+                "enabled": { "type": "boolean", "required": false, "default": true },
+                "probe_radius_m": { "type": "number", "required": false, "default": 0.12, "min": 0.02, "max": 0.5 }
+              }
+            }
+          }
+        },
         "gold_reward_popup": {
           "type": "boolean",
           "required": false,

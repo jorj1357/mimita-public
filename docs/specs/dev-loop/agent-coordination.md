@@ -120,6 +120,15 @@ and matching runtimes. It does not dump unbounded logs.
 next feature task: missing issue fields, tasks without proof, and stale proof.
 It is read-only; the agent chooses whether to claim the issue after reviewing it.
 
+Every `brain_check` also returns bounded `build_resource_gaps` derived from the
+active game-DLL progress and newest attempt summaries. The stable `gap_key`
+identifies a missing or partial capture so agents can record it once, route it
+to the relevant build/resource issue, and coordinate the next discriminating
+measurement. This is a gap signal, not a causal diagnosis or an issue priority
+decision. A completed resource sample can still list unavailable fields such
+as journal-aligned workload or a matched pre-build baseline; agents must keep
+those unknowns visible instead of treating `captured` as complete proof.
+
 The wake adapter starts a bounded activation for an idle agent; it does not
 create a human or grant build authority. A woken agent must inspect its issue
 brief and proof state before acting. It may investigate, repair context, and

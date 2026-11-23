@@ -84,3 +84,39 @@ Recurring occurrence recorded under issue-956990a15eb2 (review false-positive-fl
 ### 2026-11-22T23:39:21.110Z — build-wait-reviewer
 
 Recurring over-budget wait occurrence recorded under issue-be83fb5843ba (build-wait-reviewer, 2026-11-22T23:38Z): game-dll-build wait game-dll-build:2026-11-22T22:42:14.381Z, elapsed 60.994s. In-flight attempt game-dll-20261122T224214407127Z-4d2a9b succeeded in 212.411s (generation 541, 26 TUs recompiled due to src/input/input-router.h header fanout; slowest TU engine-tick-net 107.7s). At the 60s crossing it was actively compiling/scanning, not stalled. Confirms the flat WAIT_ISSUE_SECONDS=60 miscalibration (dev-loop.py:109-110, check_wait_budget dev-loop.py:3486-3577) and the payload-attribution lag: build_id points at the last published EXE artifact and generation lags (540 vs 541), with the real attempt id only in free-text reason. Same signature as prior suggestions here. docs/issues/build-friction now holds 129 of these game_build wait issues (82 on 2026-11-22). No new fix issue created; policy fix remains unclaimed. No code edited.
+
+## Agent suggestion
+
+### 2026-11-23T08:46:54.034Z — issue-review-sweeper
+
+From the issue-6413477d361d independent review (issue-review-sweeper, 2026-11-23T08:46Z): the board carries 46 non-terminal issues with the exact title "Wait over budget: game-dll-build at game_build" (39 in_review, 6 new, 1 assigned; first 2026-11-20T08:32:55Z, last 2026-11-22T23:53:23Z). The flood mechanism is visible in source: build_friction.py:131-169 dedupes on the exact wait_id, and dev-loop.py:3744-3760 mints a fresh wait_id per build, so every build that crosses the flat 60s threshold opens a new issue even when kind/stage/root cause match.
+
+Measurable target: <=1 non-terminal issue per (kind,stage) root-cause signature, i.e. cut identical open "Wait over budget: game-dll-build at game_build" issues from 46 to <=3 within 24h while preserving every occurrence as an appended occurrences/evidence record (no occurrence lost).
+
+Smallest experiment (unclaimed, needs owner approval; no source edit in this review): in build_friction.record_wait_incident, when no exact wait_id match exists, look up one existing non-terminal issue with the same kind+stage+summary root cause and call store.issue_occurrence(...) on it instead of store.issue_add(...). Validate with the existing devscripts/quality/test_build_friction.py plus one live multi-TU game-DLL build that crosses 60s, checking the runtime journal for one reused issue id and an incremented occurrences count. This is a dedupe experiment and does not replace the stage-aware/progress-based budget change already requested above.
+
+## Agent suggestion
+
+### 2026-11-23T10:09:22.869Z — issue-review-sweeper
+
+Process proposal from an independent review of issue-e9f3b2727a9a (review id 254, 2026-11-23T10:08Z).
+
+EVIDENCE
+- Six build-friction issues with the identical title/signature "Wait over budget: exe-build-queue at build_pending" were created between 2026-11-20T15:41:39Z and 2026-11-22T19:49:50Z: e9f3b2727a9a, 3dad54c7224d, af958c3e10eb, 4891874dd02b, f92715ba3c7f, 8cbff41b5590.
+- Dedupe is keyed only on the exact wait_id (build_friction.py:131-169), and wait_id embeds a process-local time.monotonic() float (dev-loop.py:3731-3732), so each loop process can mint a new issue for an unchanged condition.
+- Automatic wait events are written only to the active run journal (dev-loop.py:3761-3790 via record_runtime_event). No dev-loop journal survives for the 2026-11-20 15:41Z occurrence (logs/11-20-2026 empty), so its proof_expectation cannot be met.
+- Four of the six occurrences were real serialization behind game-DLL builds (reviews 16, 90, 113, 209); two had empty request_ids, and only e9f3b2727a9a was a confirmed idle false positive. The flood and the missing event are the avoidable process cost here, which matches this issue's wait-instrument task.
+
+PROPOSAL (smallest)
+1. Add a stable class key to wait evidence: sha256(kind|stage|normalized reason class|blocking-attempt class|empty-or-nonempty request_ids), stored with the record.
+2. In record_wait_incident, when an open issue with the same class key exists, append an occurrence to it (keep the per-occurrence wait_id) instead of creating a new issue.
+3. Also append dev-loop.wait.over_budget and dev-loop.wait.reviewer-wake to a persistent .dev/dev-loop-events.jsonl independent of any run journal.
+4. When request_ids is empty AND there is no active build and no blocker detail, record the wait event and suppress issue creation.
+
+MEASURABLE TARGET (next 7 days of loop activity)
+- At most 1 open build-friction issue per class key (baseline 6 for this signature).
+- 100 percent of over-budget wait occurrences appear in the persistent journal.
+- Zero issues created for empty-request idle waits with no active build or blocker.
+
+SMALLEST EXPERIMENT
+- Implement 1-4, then validate on the next two over-budget waits (one queued behind a game-DLL build, one idle/launch-pending). Expect 0 new issues and 2 occurrence appends, both wait events in the persistent journal, and the idle wait recorded without an issue. Roll back if any benign real wait loses its issue.

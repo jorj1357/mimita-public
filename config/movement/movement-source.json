@@ -72,8 +72,9 @@
     // 0 = no air speed gain.
     // 1 = normal implementation gain.
     // 2 = current MiMITA fast preset.
-    // "air_speed_gain_multiplier": 2.0,
-    "air_speed_gain_multiplier": 1.0,
+    "air_speed_gain_multiplier": 2.0,
+    // "air_speed_gain_multiplier": 1.0,
+    // "air_speed_gain_multiplier": 0.5,
 
     //  the experimental MiMITA directional/input blend.
     //  9 5 2026 its not working super good its supposed t
@@ -221,9 +222,11 @@
     // ground friction.
     //
     // Matches the fast Source preset.
-    // "dash_grace_seconds": 1.0,
+    "dash_grace_seconds": 1.0,
+    // "dash_grace_seconds": 0.01,
+    // "dash_grace_seconds": 0.2,
     // "dash_grace_seconds": 99.0,
-    "dash_grace_seconds": 0.1,
+    // "dash_grace_seconds": 0.1,
 
     // Ground-friction multiplier during dash grace.
     //

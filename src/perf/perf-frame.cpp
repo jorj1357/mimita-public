@@ -1,4 +1,5 @@
 #include "perf/perf-frame.h"
+#include "perf/npc-cpu-probe.h"
 #include "perf/perf-spike.h"
 #include "perf/perf.h"
 #include "perf/perf-gpu.h"
@@ -82,6 +83,28 @@ std::atomic<uint32_t> gResourceWatchdogMainThreadId{0};
 std::atomic<uint32_t> gLastCompletedFrameNumber{0};
 std::atomic<uint64_t> gLastCompletedFrameNanoseconds{0};
 mimita::game::HostWorker gResourceWatchdogThread;
+
+constexpr uint64_t kNpcCpuProbeSampleRate = 64;
+constexpr size_t kNpcCpuProbeSiteCount =
+    static_cast<size_t>(PerfCpuProbeSite::Count);
+struct CpuProbeBucket {
+    std::atomic<uint64_t> sequence{0};
+    std::atomic<uint64_t> calls{0};
+    std::atomic<uint64_t> samples{0};
+    std::atomic<uint64_t> sampledCycles{0};
+    std::atomic<const char*> sourceFile{nullptr};
+    std::atomic<const char*> function{nullptr};
+    std::atomic<int> sourceLine{0};
+};
+std::atomic<bool> gNpcCpuProbeEnabled{false};
+std::array<CpuProbeBucket, kNpcCpuProbeSiteCount> gNpcCpuProbeBuckets{};
+std::atomic<uint64_t> gNpcCpuProbeStartNs{0};
+std::atomic<uint64_t> gNpcCpuProbeDeadlineNs{0};
+std::atomic<uint64_t> gNpcCpuProbeNextReportNs{0};
+std::atomic<uint64_t> gNpcCpuProbeLastProcessCycles{0};
+std::atomic<uint64_t> gNpcCpuProbeLastProcessCpu100ns{0};
+std::atomic<bool> gNpcCpuProbeProcessBaselineAvailable{false};
+std::atomic_flag gNpcCpuProbeReportLock = ATOMIC_FLAG_INIT;
 
 uint64_t steadyNowNanoseconds()
 {
@@ -206,6 +229,145 @@ uint64_t currentThreadCpu100ns(bool& available)
     userTime.LowPart = user.dwLowDateTime;
     userTime.HighPart = user.dwHighDateTime;
     return kernelTime.QuadPart + userTime.QuadPart;
+}
+
+void emitNpcCpuProbeWindow(bool finalWindow)
+{
+    if (gNpcCpuProbeReportLock.test_and_set(std::memory_order_acquire))
+        return;
+
+    const uint64_t nowNs = steadyNowNanoseconds();
+    const uint64_t startNs = gNpcCpuProbeStartNs.exchange(
+        nowNs, std::memory_order_relaxed);
+    ULONGLONG processCyclesNow = 0;
+    const bool processCyclesAvailable = QueryProcessCycleTime(
+        GetCurrentProcess(), &processCyclesNow) != 0;
+    FILETIME creation{}, exit{}, kernel{}, user{};
+    const bool processTimesAvailable = GetProcessTimes(
+        GetCurrentProcess(), &creation, &exit, &kernel, &user) != 0;
+    ULARGE_INTEGER processCpu100nsNow{};
+    if (processTimesAvailable) {
+        ULARGE_INTEGER kernelTime{}, userTime{};
+        kernelTime.LowPart = kernel.dwLowDateTime;
+        kernelTime.HighPart = kernel.dwHighDateTime;
+        userTime.LowPart = user.dwLowDateTime;
+        userTime.HighPart = user.dwHighDateTime;
+        processCpu100nsNow.QuadPart = kernelTime.QuadPart + userTime.QuadPart;
+    }
+    const bool processBaselineAvailable = gNpcCpuProbeProcessBaselineAvailable.exchange(
+        processCyclesAvailable && processTimesAvailable,
+        std::memory_order_relaxed);
+    const uint64_t processCyclesBefore = gNpcCpuProbeLastProcessCycles.exchange(
+        processCyclesAvailable ? processCyclesNow : 0, std::memory_order_relaxed);
+    const uint64_t processCycleDelta = processCyclesAvailable &&
+        processBaselineAvailable &&
+        processCyclesNow >= processCyclesBefore
+        ? processCyclesNow - processCyclesBefore : 0;
+    const uint64_t processCpuBefore = gNpcCpuProbeLastProcessCpu100ns.exchange(
+        processTimesAvailable ? processCpu100nsNow.QuadPart : 0,
+        std::memory_order_relaxed);
+    const uint64_t processCpuDelta100ns =
+        processTimesAvailable && processBaselineAvailable &&
+        processCpu100nsNow.QuadPart >= processCpuBefore
+        ? processCpu100nsNow.QuadPart - processCpuBefore : 0;
+    const double processCpuMs = static_cast<double>(processCpuDelta100ns) / 10000.0;
+    const uint64_t windowMs = nowNs >= startNs
+        ? (nowNs - startNs) / 1000000ULL : 0;
+    SYSTEM_INFO systemInfo{};
+    GetSystemInfo(&systemInfo);
+    const uint32_t logicalCpuCount = std::max<uint32_t>(
+        1, static_cast<uint32_t>(systemInfo.dwNumberOfProcessors));
+    nlohmann::json sites = nlohmann::json::array();
+    uint64_t allCalls = 0;
+    uint64_t allSamples = 0;
+    for (size_t i = 0; i < kNpcCpuProbeSiteCount; ++i) {
+        CpuProbeBucket& bucket = gNpcCpuProbeBuckets[i];
+        const uint64_t calls = bucket.calls.exchange(0, std::memory_order_relaxed);
+        const uint64_t samples = bucket.samples.exchange(0, std::memory_order_relaxed);
+        const uint64_t sampledCycles = bucket.sampledCycles.exchange(
+            0, std::memory_order_relaxed);
+        allCalls += calls;
+        allSamples += samples;
+        if (calls == 0 && samples == 0)
+            continue;
+        const uint64_t estimatedCycles = sampledCycles * kNpcCpuProbeSampleRate;
+        const double cycleShare = processCycleDelta > 0
+            ? 100.0 * static_cast<double>(estimatedCycles) /
+                static_cast<double>(processCycleDelta)
+            : 0.0;
+        const double estimatedCpuMs = processCpuMs * cycleShare / 100.0;
+        sites.push_back({
+            {"source_file", bucket.sourceFile.load(std::memory_order_relaxed)
+                ? bucket.sourceFile.load(std::memory_order_relaxed) : ""},
+            {"source_line", bucket.sourceLine.load(std::memory_order_relaxed)},
+            {"function", bucket.function.load(std::memory_order_relaxed)
+                ? bucket.function.load(std::memory_order_relaxed) : ""},
+            {"call_count", calls}, {"sample_count", samples},
+            {"sample_rate", kNpcCpuProbeSampleRate},
+            {"sampled_cycle_count", sampledCycles},
+            {"estimated_process_cpu_cycle_share_percent", cycleShare},
+            {"estimated_process_cpu_ms", estimatedCpuMs},
+            {"estimated_one_logical_cpu_percent", windowMs > 0
+                ? estimatedCpuMs * 100.0 / static_cast<double>(windowMs) : 0.0},
+            {"estimated_whole_host_cpu_percent", windowMs > 0
+                ? estimatedCpuMs * 100.0 /
+                    (static_cast<double>(windowMs) * logicalCpuCount) : 0.0}
+        });
+    }
+
+    if (allCalls > 0 || allSamples > 0) {
+        try {
+            StructuredLogger::instance().tryWriteEvent(
+                StructuredCategory::Performance, StructuredLevel::Important,
+                "performance.cpu-callsite-window", "performance.cpu-probe",
+                finalWindow ? "bounded sampled CPU attribution window ended" :
+                              "bounded sampled CPU attribution window",
+                0,
+                nlohmann::json{
+                    {"window_ms", windowMs}, {"call_count", allCalls},
+                    {"sample_count", allSamples},
+                    {"sample_rate", kNpcCpuProbeSampleRate},
+                    {"process_cycle_delta", processCycleDelta},
+                    {"process_cpu_ms", processCpuMs},
+                    {"process_cpu_ms_available", processTimesAvailable &&
+                        processBaselineAvailable},
+                    {"logical_cpu_count", logicalCpuCount},
+                    {"process_cpu_percent_of_one_logical_cpu", windowMs > 0
+                        ? processCpuMs * 100.0 / static_cast<double>(windowMs) : 0.0},
+                    {"process_cpu_percent_of_whole_host", windowMs > 0
+                        ? processCpuMs * 100.0 /
+                            (static_cast<double>(windowMs) * logicalCpuCount) : 0.0},
+                    {"sites", sites},
+                    {"process_cycle_counter_available",
+                        processCyclesAvailable && processBaselineAvailable},
+                    {"estimation_method",
+                        "per-site sampled thread cycles scaled by 64 for share of process cycles; share multiplied by same-window GetProcessTimes CPU milliseconds"},
+                    {"site_percentages_are_estimates", true},
+                    {"site_scopes_may_overlap", true},
+                    {"final_window", finalWindow},
+                    {"cycle_counts_are_not_elapsed_time", true},
+                    {"callsites_may_run_on_multiple_threads", true}},
+                __FILE__, __LINE__, __FUNCTION__);
+        } catch (...) {
+            // Diagnostics must never interrupt the NPC update path.
+        }
+    }
+    gNpcCpuProbeReportLock.clear(std::memory_order_release);
+}
+
+void maybeReportNpcCpuProbeWindow()
+{
+    const uint64_t nowNs = steadyNowNanoseconds();
+    if (nowNs >= gNpcCpuProbeDeadlineNs.load(std::memory_order_relaxed)) {
+        if (gNpcCpuProbeEnabled.exchange(false, std::memory_order_relaxed))
+            emitNpcCpuProbeWindow(true);
+        return;
+    }
+
+    uint64_t nextReportNs = gNpcCpuProbeNextReportNs.load(std::memory_order_relaxed);
+    if (nowNs >= nextReportNs && gNpcCpuProbeNextReportNs.compare_exchange_strong(
+            nextReportNs, nowNs + 1000000000ULL, std::memory_order_relaxed))
+        emitNpcCpuProbeWindow(false);
 }
 
 void resetResourceWindow()
@@ -645,6 +807,114 @@ int gFrameHistoryCount = 0;
 void perfStartResourceWatchdog(uint32_t mainThreadId)
 {
     startResourceWatchdog(mainThreadId);
+}
+
+void perfStartNpcCpuProbe(uint32_t durationSeconds)
+{
+    // A listen host starts both its local process probe and the server command.
+    // Treat the second request in that same process as idempotent.
+    if (gNpcCpuProbeEnabled.load(std::memory_order_acquire))
+        return;
+    durationSeconds = std::clamp(durationSeconds, 1U, 30U);
+    const uint64_t nowNs = steadyNowNanoseconds();
+    ULONGLONG processCycles = 0;
+    const bool hasProcessCycles = QueryProcessCycleTime(
+        GetCurrentProcess(), &processCycles) != 0;
+    for (CpuProbeBucket& bucket : gNpcCpuProbeBuckets) {
+        bucket.sequence.store(0, std::memory_order_relaxed);
+        bucket.calls.store(0, std::memory_order_relaxed);
+        bucket.samples.store(0, std::memory_order_relaxed);
+        bucket.sampledCycles.store(0, std::memory_order_relaxed);
+    }
+    gNpcCpuProbeStartNs.store(nowNs, std::memory_order_relaxed);
+    gNpcCpuProbeDeadlineNs.store(nowNs +
+        static_cast<uint64_t>(durationSeconds) * 1000000000ULL,
+        std::memory_order_relaxed);
+    gNpcCpuProbeNextReportNs.store(nowNs + 1000000000ULL,
+                                   std::memory_order_relaxed);
+    gNpcCpuProbeLastProcessCycles.store(hasProcessCycles ? processCycles : 0,
+                                        std::memory_order_relaxed);
+    FILETIME creation{}, exit{}, kernel{}, user{};
+    const bool hasProcessTimes = GetProcessTimes(
+        GetCurrentProcess(), &creation, &exit, &kernel, &user) != 0;
+    ULARGE_INTEGER processCpu100ns{};
+    if (hasProcessTimes) {
+        ULARGE_INTEGER kernelTime{}, userTime{};
+        kernelTime.LowPart = kernel.dwLowDateTime;
+        kernelTime.HighPart = kernel.dwHighDateTime;
+        userTime.LowPart = user.dwLowDateTime;
+        userTime.HighPart = user.dwHighDateTime;
+        processCpu100ns.QuadPart = kernelTime.QuadPart + userTime.QuadPart;
+    }
+    gNpcCpuProbeLastProcessCpu100ns.store(
+        hasProcessTimes ? processCpu100ns.QuadPart : 0,
+        std::memory_order_relaxed);
+    gNpcCpuProbeProcessBaselineAvailable.store(hasProcessCycles,
+                                                std::memory_order_relaxed);
+    if (!hasProcessTimes)
+        gNpcCpuProbeProcessBaselineAvailable.store(false,
+                                                   std::memory_order_relaxed);
+    gNpcCpuProbeEnabled.store(true, std::memory_order_release);
+}
+
+void perfStopNpcCpuProbe()
+{
+    if (gNpcCpuProbeEnabled.exchange(false, std::memory_order_acq_rel))
+        emitNpcCpuProbeWindow(true);
+}
+
+PerfNpcCpuProbe::PerfNpcCpuProbe(PerfCpuProbeSite site, const char* sourceFile,
+                                 int sourceLine, const char* functionName) noexcept
+    : site_(site), sourceFile_(sourceFile), functionName_(functionName),
+      sourceLine_(sourceLine)
+{
+    if (!gNpcCpuProbeEnabled.load(std::memory_order_relaxed))
+        return;
+    const size_t index = static_cast<size_t>(site_);
+    if (index >= kNpcCpuProbeSiteCount)
+        return;
+    const uint64_t nowNs = steadyNowNanoseconds();
+    if (nowNs >= gNpcCpuProbeDeadlineNs.load(std::memory_order_relaxed)) {
+        maybeReportNpcCpuProbeWindow();
+        return;
+    }
+
+    CpuProbeBucket& bucket = gNpcCpuProbeBuckets[index];
+    const char* emptySource = nullptr;
+    if (bucket.sourceFile.compare_exchange_strong(
+            emptySource, sourceFile_, std::memory_order_relaxed)) {
+        bucket.function.store(functionName_, std::memory_order_relaxed);
+        bucket.sourceLine.store(sourceLine_, std::memory_order_relaxed);
+    }
+    bucket.calls.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t sequence = bucket.sequence.fetch_add(
+        1, std::memory_order_relaxed) + 1;
+    if (sequence % kNpcCpuProbeSampleRate != 0)
+        return;
+
+    ULONGLONG cycles = 0;
+    if (!QueryThreadCycleTime(GetCurrentThread(), &cycles))
+        return;
+    startCycles_ = cycles;
+    sampled_ = true;
+}
+
+PerfNpcCpuProbe::~PerfNpcCpuProbe() noexcept
+{
+    if (!sampled_)
+        return;
+    ULONGLONG endCycles = 0;
+    if (QueryThreadCycleTime(GetCurrentThread(), &endCycles) &&
+        endCycles >= startCycles_) {
+        const size_t index = static_cast<size_t>(site_);
+        if (index < kNpcCpuProbeSiteCount) {
+            CpuProbeBucket& bucket = gNpcCpuProbeBuckets[index];
+            bucket.sampledCycles.fetch_add(endCycles - startCycles_,
+                                           std::memory_order_relaxed);
+            bucket.samples.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    maybeReportNpcCpuProbeWindow();
 }
 
 void perfStopResourceWatchdog()

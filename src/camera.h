@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/mat4x4.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 struct World;
 
@@ -55,6 +56,14 @@ double lastMouseInputTime = -1.0;
     void updateMouse(double xpos, double ypos);
     void follow(const glm::vec3& target, const glm::vec3& offset, float stiffness);
     void smoothCollision(const glm::vec3& playerPos, const World& world, float dt, float stiffness, bool stiffnessEnabled, bool collisionEnabled, bool collisionPushEnabled = true, float collisionPushback = 0.3f);
+    void applyBodycamPose(const glm::vec3& targetPosition,
+                          const glm::vec3& targetFront,
+                          const glm::vec3& targetUp,
+                          const glm::vec3& collisionOrigin,
+                          const World& world, float dt,
+                          float positionResponseSeconds,
+                          float rotationResponseSeconds,
+                          bool wallCollision, float probeRadiusMeters);
     glm::mat4 getView() const;
     glm::mat4 getProj(float width, float height) const;
 
@@ -62,4 +71,6 @@ private:
     glm::vec3 mPrevCollisionPos{0.0f};
     glm::vec3 mDesiredPos{0.0f};
     bool mFirstFrame = true;
+    glm::quat mBodycamRotation{1.0f, 0.0f, 0.0f, 0.0f};
+    bool mBodycamPoseInitialized = false;
 };

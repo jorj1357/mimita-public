@@ -2526,6 +2526,18 @@ generic replication
 
 ## Weapon document map
 
+- **Bloodtest projectile firearms:** shared ballistic and networking contract
+  in [`projectile-firearms.md`](projectile/projectile-firearms.md), with
+  individual specs for [AK-47](projectile/ak47.md),
+  [M4A1](projectile/m4a1.md), [FAMAS](projectile/famas.md),
+  [Desert Eagle](projectile/desert-eagle.md),
+  [Judgment](projectile/judgement.md), [Glock 17](projectile/glock-17.md),
+  [sawed-off double-barrel](projectile/sawed-off-double-barrel.md),
+  [AA-12](projectile/aa12.md), and [Uzi](projectile/uzi.md).
+- **Momentum-driven two-handed melee:** shared contract in
+  [`momentum-two-handed.md`](melee/momentum-two-handed.md), with the proposed
+  [bat](melee/bat.md) weapon contract.
+
 - **Godball:** this file, §8 above. It is explicitly a sphere that passes
   through world geometry while sweeping and damaging overlapping player bodies.
 - **SwordSword:** this file, §9 above, plus

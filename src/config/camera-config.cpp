@@ -34,6 +34,17 @@ CamConfig& CamConfig::instance()
     return config;
 }
 
+CameraConfigData CamConfig::effectiveData() const
+{
+    CameraConfigData out = mData;
+    if (!mBodycamOverride) return out;
+    const ModeBodycamOverride& mode = *mBodycamOverride;
+    out.orientationMode = mode.orientationMode;
+    out.collisionEnabled = mode.wallCollision;
+    out.cameraSwayAmount *= mode.swayScale;
+    return out;
+}
+
 bool CamConfig::load(const std::string& path)
 {
     if (mPath != path) {

@@ -400,6 +400,10 @@ bool PostFX::isActive() const
     if (mData.gamma != 2.2f) return true;
     if (mData.hueShift != 0.0f) return true;
     if (mData.colorTemperature != 0.0f) return true;
+    if (mBodycamLensOverride &&
+        (mBodycamLensOverride->vignette != 0.0f ||
+         mBodycamLensOverride->chromaticAberration != 0.0f ||
+         mBodycamLensOverride->distortion != 0.0f)) return true;
     if (mData.vignette != 0.0f) return true;
     if (mData.filmGrain != 0.0f) return true;
     if (mData.chromaticAberration != 0.0f) return true;
@@ -509,6 +513,11 @@ void PostFX::render()
         data.gamma = mData.gamma;
         data.hueShift = mData.hueShift;
         data.colorTemperature = mData.colorTemperature;
+    }
+    if (mBodycamLensOverride) {
+        data.chromaticAberration = mBodycamLensOverride->chromaticAberration;
+        data.vignette = mBodycamLensOverride->vignette;
+        data.lensDistortion = mBodycamLensOverride->distortion;
     }
     setUniforms(mBypass ? PostFXData{} : data, "");
 

@@ -331,6 +331,9 @@ struct ServerGamemodeState
     bool npcWaves = false;
     bool persistentNpcSpawns = false;
     std::vector<uint32_t> teamRosterNpcIds; // mode-owned fillers for configured team capacities
+    // Set when a human joins a live team-roster match; the next fixed tick
+    // repairs the actor identity and reconciles one replaced roster NPC.
+    bool teamRosterJoinDirty = false;
     uint32_t waveNumber = 0;
     int waveStartCount = 1;
     int waveIncrement = 1;

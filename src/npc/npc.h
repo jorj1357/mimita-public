@@ -108,6 +108,9 @@ public:
     uint32_t lastNavGoalActor = 0;
     // Diagnostics edge state for movement events (change-edge, never per tick).
     int lastJumpReason = 0;              // NpcJumpReason as int; 0 = None
+    // Remaining fixed ticks of an elite objective-travel bhop hold. The held
+    // shared jump input lets the movement preset's auto-bhop chain.
+    int eliteBhopTicks = 0;
     glm::vec3 lastWallAvoidDir{0.0f};    // last adjusted wall-avoid direction
     bool wasStuck = false;               // previous isStuck result
     float movementDecisionTimer = 0.0f;  // once-per-second snapshot cadence
@@ -121,8 +124,9 @@ public:
     uint32_t movementStuckRecoveryCount = 0;
     uint32_t movementStuckJumpCount = 0;
     glm::vec3 movementStuckEpisodeStartPos{0.0f};
-    // Bounded per-life movement measurement. Values use the engine/world
-    // scale requested for this game: one world unit equals one metre.
+    // Bounded per-life movement measurement. Raw distances are stored in
+    // world units; the emitted metric also reports calibrated metres using the
+    // shared provisional scale (see kNpcMetersPerWorldUnit in npc.cpp).
     bool movementMetricsInitialized = false;
     glm::vec3 movementMetricsLifeStartPos{0.0f};
     glm::vec3 movementMetricsPreviousPos{0.0f};
@@ -135,9 +139,22 @@ public:
     float movementMetricsIntentSeconds = 0.0f;
     float movementMetricsBlockedMotionSeconds = 0.0f;
     float movementMetricsWallAvoidSeconds = 0.0f;
+    float movementMetricsWallContactSeconds = 0.0f;
+    float movementMetricsAirSeconds = 0.0f;
+    float movementMetricsAirMoveSeconds = 0.0f;
+    float movementMetricsMaxPlanarSpeedUnits = 0.0f;
     float movementMetricsSampleSeconds = 0.0f;
     uint32_t movementMetricsPoseContactSamples = 0;
     uint32_t movementMetricsWallAvoidSamples = 0;
+    uint32_t movementMetricsWallContactSamples = 0;
+    uint32_t movementMetricsJumpCount = 0;
+    uint32_t movementMetricsBhopCount = 0;
+    uint32_t movementMetricsDashCount = 0;
+    uint32_t movementMetricsAirDashCount = 0;
+    uint32_t movementMetricsDownDashCount = 0;
+    uint32_t movementMetricsFreezeCount = 0;
+    bool movementMetricsJumpHeldLast = false;
+    bool movementMetricsWasAirborne = false;
     ActorFinalPoseState finalPose;
     uint64_t finalPoseLastPenetrationLogTick = 0;
     uint64_t finalPoseLastPushoutLogTick = 0;

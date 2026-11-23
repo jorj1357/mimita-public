@@ -1196,6 +1196,179 @@ class CoordStore:
             "scheduled_issue_review": scheduled_review,
         }
 
+    def _build_resource_sampling_gaps(self) -> list[dict]:
+        """Surface missing per-attempt telemetry through every agent brain check."""
+        timing_root = ROOT / ".dev" / "build-timings"
+        progress_path = ROOT / "build" / "game" / "progress.json"
+        progress = {}
+        try:
+            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            pass
+
+        candidates: list[tuple[str, dict, str]] = []
+        active_id = str(progress.get("build_attempt_id") or "")
+        progress_status = str(progress.get("status") or "").lower()
+        is_active = progress_status in {"running", "preparing", "building"}
+        if active_id and is_active:
+            sidecar = timing_root / f"{active_id}.resource.jsonl"
+            latest_event = ""
+            if sidecar.exists():
+                try:
+                    with sidecar.open("rb") as source:
+                        source.seek(max(0, sidecar.stat().st_size - 8192))
+                        tail = source.read().decode("utf-8", errors="replace")
+                    for line in reversed(tail.splitlines()):
+                        try:
+                            latest_event = str(json.loads(line).get("event") or "")
+                            if latest_event:
+                                break
+                        except json.JSONDecodeError:
+                            continue
+                except OSError:
+                    latest_event = "sidecar_read_failed"
+            if not sidecar.exists() or latest_event in {
+                    "resource.capture_unavailable", "sidecar_read_failed"}:
+                candidates.append((active_id, {
+                    "status": "missing" if not sidecar.exists() else "unavailable",
+                    "phase": progress.get("phase"),
+                    "elapsed_seconds": progress.get("elapsed_s"),
+                    "reason": ("no resource sidecar for active attempt"
+                               if not sidecar.exists() else latest_event),
+                }, "active"))
+
+        # Cold EXE builds are owned by the root dev-loop state machine rather
+        # than the game-DLL worker progress file. Reuse their attempt marker.
+        try:
+            dev_state = json.loads(
+                (ROOT / ".dev" / "state.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            dev_state = {}
+        exe_progress = dev_state.get("active_build_progress")
+        exe_progress = exe_progress if isinstance(exe_progress, dict) else {}
+        exe_attempt_id = str(exe_progress.get("build_attempt_id") or "")
+        exe_phase = str(exe_progress.get("phase") or "").lower()
+        if (exe_attempt_id and exe_phase not in {"completed", "failed", "cancelled"}
+                and exe_attempt_id != active_id):
+            sidecar = timing_root / f"{exe_attempt_id}.resource.jsonl"
+            latest_event = ""
+            if sidecar.exists():
+                try:
+                    with sidecar.open("rb") as source:
+                        source.seek(max(0, sidecar.stat().st_size - 8192))
+                        tail = source.read().decode("utf-8", errors="replace")
+                    for line in reversed(tail.splitlines()):
+                        try:
+                            latest_event = str(json.loads(line).get("event") or "")
+                            if latest_event:
+                                break
+                        except json.JSONDecodeError:
+                            continue
+                except OSError:
+                    latest_event = "sidecar_read_failed"
+            if not sidecar.exists() or latest_event in {
+                    "resource.capture_unavailable", "sidecar_read_failed"}:
+                candidates.append((exe_attempt_id, {
+                    "status": "missing" if not sidecar.exists() else "unavailable",
+                    "phase": exe_phase,
+                    "reason": ("no resource sidecar for active EXE attempt"
+                               if not sidecar.exists() else latest_event),
+                }, "active"))
+
+        try:
+            summaries = sorted(
+                timing_root.glob("game-dll-*.json"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True)[:20]
+        except OSError:
+            summaries = []
+        for path in summaries:
+            if path.name.endswith((".resource.json", ".context.json")):
+                continue
+            try:
+                summary = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            attempt_id = str(summary.get("build_attempt_id") or "")
+            if not attempt_id or (is_active and attempt_id == active_id):
+                continue
+            if not summary.get("completed_utc"):
+                continue
+            capture = summary.get("resource_sampling")
+            missing_fields = (capture.get("unavailable_fields", [])
+                              if isinstance(capture, dict) else [])
+            if (isinstance(capture, dict)
+                    and capture.get("status") == "captured"
+                    and not missing_fields):
+                continue
+            candidates.append((attempt_id, {
+                "status": (capture.get("status") if isinstance(capture, dict)
+                           else "missing"),
+                "completed_utc": summary.get("completed_utc"),
+                "total_seconds": summary.get("total_seconds"),
+                "summary_path": str(path.relative_to(ROOT)),
+                "reason": ("resource_sampling field is absent"
+                           if not isinstance(capture, dict)
+                           else "; ".join(
+                               list(capture.get("errors", [])[:3])
+                               + [f"unavailable: {field}"
+                                  for field in missing_fields[:5]])),
+            }, "completed"))
+            if len(candidates) >= 3:
+                break
+
+        try:
+            cold_summaries = sorted(
+                timing_root.glob("exe-build-*.resource.json"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True)[:5]
+        except OSError:
+            cold_summaries = []
+        for path in cold_summaries:
+            try:
+                capture = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            attempt_id = path.name.removesuffix(".resource.json")
+            missing_fields = capture.get("unavailable_fields", [])
+            if (capture.get("status") == "captured" and not missing_fields):
+                continue
+            candidates.append((attempt_id, {
+                "status": capture.get("status", "missing"),
+                "completed_utc": capture.get("completed_utc"),
+                "duration_seconds": capture.get("duration_seconds"),
+                "summary_path": str(path.relative_to(ROOT)),
+                "reason": "; ".join(
+                    list(capture.get("errors", [])[:3])
+                    + [f"unavailable: {field}"
+                       for field in missing_fields[:5]]),
+            }, "completed"))
+            if len(candidates) >= 3:
+                break
+
+        gaps = []
+        seen: set[str] = set()
+        for attempt_id, details, state in candidates:
+            key = f"build-resource-sampling:{attempt_id}"
+            if key in seen:
+                continue
+            seen.add(key)
+            gaps.append({
+                "gap_key": key,
+                "kind": "missing_build_resource_measurement",
+                "build_attempt_id": attempt_id,
+                "state": state,
+                "details": details,
+                "next_step": (
+                    "Append this gap once to the relevant build/CPU issue, share "
+                    "the gap_key with the responsible agent, and implement a "
+                    "safe telemetry fix when it is in scope. Do not infer that "
+                    "host pressure caused the build without aligned samples."),
+            })
+            if len(gaps) >= 3:
+                break
+        return gaps
+
     def brain_check(self, agent: str) -> dict:
         """Return a bounded issue snapshot after every agent message send."""
         self.require_agent(agent)
@@ -1230,6 +1403,7 @@ class CoordStore:
                 "next_step": work.get("next_step"),
             } if next_issue else None),
             "claimable_issues": claimable,
+            "build_resource_gaps": self._build_resource_sampling_gaps(),
             "instructions": (
                 "Claim work only when taking responsibility with `next --claim`. "
                 "A message that names one existing issue is linked automatically; "

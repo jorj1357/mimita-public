@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include "render/shader-program.h"
@@ -61,6 +62,15 @@ public:
     // Load/save config
     void loadConfig(const std::string& path);
     void applyConfig(const PostFXData& data);
+    struct ModeBodycamLensOverride {
+        float chromaticAberration = 0.0f;
+        float vignette = 0.0f;
+        float distortion = 0.0f;
+    };
+    void setBodycamLensOverride(const ModeBodycamLensOverride& value) {
+        mBodycamLensOverride = value;
+    }
+    void clearBodycamLensOverride() { mBodycamLensOverride.reset(); }
     // Camera-owned lens distortion supports values well above 100.
     void setCameraLensDistortion(float amount, float curve, float zoom,
                                  int edgeMode, float edgeRadius,
@@ -129,6 +139,7 @@ public:
 private:
 
     PostFXData mData;
+    std::optional<ModeBodycamLensOverride> mBodycamLensOverride;
     PostFXData mTarget; // for presets with animation
 
     std::string mConfigPath;

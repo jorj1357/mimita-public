@@ -112,3 +112,50 @@ SMALLEST EXPERIMENT
 
 OWNER NOTE
 - Source paths in scope: devscripts/prune-builds.py, devscripts/dev_loop/game_build.py. Keep claims separate from runtime proof.
+
+## Agent discussion and suggestions
+
+### 2026-11-23T10:30:13.272Z — resource-efficiency-goal
+
+Message: `msg-df588369d072` (evidence)
+
+Subject: Run journal growth and logger counters mismatch
+
+Cross-task note: issue-3f776ce60511 now records the fresh run’s 681.2 MiB/979 s of JSONL output and the zero logger counters in client PERFORMANCE_FRAME despite the growing journal. It overlaps the 17.6 s DLL build but is not attributed to the build. The CPU issue has the same run identity and CPU samples. No logger code/config changes were made; please keep any logger-owner work separate from your build source files.
+
+## Agent suggestion
+
+### 2026-11-23T10:31:10.257Z — resource-efficiency-goal
+
+DIRECT JOURNAL OUTPUT / STORAGE OBSERVATION: fresh run `20261123_101135` started 2026-11-23 10:11:36.018Z; at last journal update 10:27:55.210Z (979.2s later), nine JSONL journal files across its dev-loop/server/client directories totaled 714,294,786 bytes (681.2 MiB), about 41.74 MiB/min or 0.70 MiB/s of appended structured-log output. Server/client segments rotate near 100 MB. This volume spans the verified Juggernaut Horde workload (67 NPCs, one player) and includes the 17.612 s generation555 build at 10:22:00.810–10:22:18.428Z; do not attribute the whole rate to compilation. If sustained and if this run is counted in the existing 7,000,000,000-byte tree quota, this single run would reach that scale in roughly 160 min; this is a linear projection, not a quota-exhaustion observation, and other runs share the tree. The bytes are journal output, not a direct hardware disk-write counter; buffering/write-through behavior is separate. Artifacts: `logs/2026-11-23/20261123_101135/` and build timing `.dev/build-timings/game-dll-20261123T102200810724Z-dcef23.json`. INSTRUMENTATION MISMATCH: five recent client `PERFORMANCE_FRAME` rows at 10:26:37.530–10:26:41.553Z show `logger_events_total`, `logger_bytes_total`, `logger_events_delta`, `logger_bytes_delta`, and `logger_flushes_delta` all zero, while the client and run journal files are actively growing and large sealed 100 MB segments exist. `src/perf/perf.cpp:1486-1496` reads `StructuredLogger::ioStats(false)`; `src/debug/structured-log.cpp:1793-1801,1855-1859` increments output counters after writes, and lines960-973 expose them. The discrepancy is direct; a duplicate/mismatched logger instance, counter lifecycle issue, or other path is only a hypothesis. Do not trust the `PERFORMANCE_FRAME` logger counters for resource attribution until resolved. Cross-link CPU issue-ed3ac775283d, which records paired CPU/memory data and the same run identity. No logger code/config was changed.
+
+## Agent suggestion
+
+### 2026-11-23T12:38:48.091Z — issue-review-sweeper
+
+PROCESS PROPOSAL (issue-review-sweeper, 2026-11-23, derived from the bounded review of issue-9a9807fa0128). Read-only; no source edit, build, or fix claimed.
+
+EVIDENCE
+- issue-9a9807fa0128 (auto wait issue created 2026-11-20T17:18:34Z) declares proof_expectation "Dev-loop wait event plus the issue record and reviewer wake record", but that run's journal is unrecoverable: logs/2026-11-20 is absent and logs/11-20-2026 is empty, while logs/11-22-2026, logs/11-23-2026, logs/2026-11-22 and logs/2026-11-23 retain content.
+- Cause is this issue's own bounded retention: devscripts/dev_loop/game_build.py:896 _prune_logs(root, keep_days=3) deletes date folders older than the 3 newest (called at game_build.py:1303 and :1311). Any wait issue older than 3 date folders loses the journal half of its proof expectation even while the issue is still open.
+- The retained artifacts that survive pruning are .dev/build-timings, .dev/agent-wake/events.jsonl, and .dev/agent-coord; only logs/<date>/<run>/dev-loop/events.jsonl is pruned. For issue-9a9807fa0128 the real timeout outcome is still provable from .dev/build-timings/game-dll-20261120T171733871137Z-338310.jsonl, but the declared proof_expectation points at the missing journal.
+
+PROPOSAL
+- Couple retention to open evidence needs. Before _prune_logs removes a date folder, skip (or defer) any date still referenced by a non-closed issue's proof evidence; and for auto wait issues, either persist the wait/reviewer-wake event into a retained store (.dev/agent-coord or .dev/build-timings) or narrow proof_expectation to the retained artifacts.
+- Measurable target: 0 non-closed build-friction wait issues whose proof_expectation references an unavailable dev-loop journal; baseline is >=1 (issue-9a9807fa0128, whose entire 2026-11-20 date folder is empty). Second target: over one prune cycle, retention never deletes a date folder referenced by an open issue.
+- Smallest experiment: a read-only script that, for each non-closed wait issue, maps evidence.started_utc to logs/<date>/<run>/dev-loop/events.jsonl and reports present/missing; run it once against the current store (.dev/agent-coord) and record the missing count and the inaccessible journal paths. Do not change pruning yet; only measure, then decide between proving from .dev/build-timings/.dev/agent-wake or adding a pre-prune referenced-date guard.
+
+DECISION / RISK
+- Changing prune to honor referenced dates touches the storage/retention policy this issue owns, so it needs owner/human approval. An unbounded guard could defeat retention, so bound it (for example skip only dates referenced by open issues and log bytes retained per skip).
+
+## Agent suggestion
+
+### 2026-11-23T14:17:31.981Z — resource-efficiency-goal
+
+Cross-linked resource evidence from 2026-11-23T14:10:44.323Z–14:11:45.454Z (61.131 s), active mode confirmed as jugger_horde, 67 NPC/1 player, 12 logical CPUs, no build overlap: server process wrote 34,953,146 bytes in 926,975 write operations; client wrote 26,518,327 bytes in 4,290,513 write operations. Same interval journals contain server 40,300 JSONL records /32,372,759 bytes (30.87 MiB) and client 11,169 /14,015,680 bytes (13.37 MiB), so the log volume is material and likely explains some disk writes. However total process writes exceed journal bytes, and this does not prove logging is the CPU driver. Host disk write delta was 68.87 MB, available RAM 6.353 GiB mean. Keep as direct measurements plus a labeled inference; no logging change made. See CPU issue issue-ed3ac775283d and artifacts .dev/perf-captures/mode3-resource-crossdomain-20261123T141044Z.{csv,json}, -threads.json, -gpu-pmon.txt; journals logs/2026-11-23/20261123_135745_mode3-latency-run. Next: correlate logger write path/buffering and event severity, then matched A/B with same 67-NPC workload.
+
+## Agent suggestion
+
+### 2026-11-23T14:34:14.820Z — resource-efficiency-goal
+
+Config A/B confirms a large journal/write-volume lever on the server only. Same PIDs24692/23980, active Juggernaut Horde 67 NPC/1 player, 12 logical CPUs. A baseline14:26:22.856–14:26:46.906Z server wrote10.55MB; B config suppression14:27:40.788–14:28:05.112Z server wrote0.92MB (-91%), while server journal IMPORTANT rows fell12,486 to319 (-97.4%). Client config hot-reload did not suppress target AVATAR/NETWORK/RENDERING events; client process wrote7.37MB in A and8.29MB in B. Pair write bytes fell17.92MB to9.21MB (-49%) due primarily to the server change. Restore C14:32:08.659–14:32:32.795Z returned original config SHA256 2161a60e71309ce0b0e34c58b478e87a7e62f8ef0b557d5e2e2838a4ef0e5152 byte-for-byte; server rows16,503 and writes14.38MB, client rows4,773/writes10.30MB. Direct measurement supports category-level suppression reducing server log I/O; it does not establish a CPU benefit, and client reload asymmetry plus changing host load confound pair-level claims. No persistent config change or source edit was kept. Artifacts .dev/perf-captures/mode3-logger-ab-{A-baseline,B-reduced-categories,C-restored}.csv, original config backup; journal logs/2026-11-23/20261123_135745_mode3-latency-run. CPU issue issue-ed3ac775283d cross-link.

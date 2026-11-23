@@ -372,21 +372,32 @@ Counter-Terrorist NPCs:
 Fun Counter Strike NPC rush:
 
 - NPCs use known navigation routes directly instead of searching or wandering.
-- The default `fun_cs_rush` profile keeps objective rush enabled at elite
-  difficulty. To use the easier alternative, change the single
-  `npc_behavior_profile` setting in `config/gamemodes/funcounterstrike.json`
-  from `fun_cs_rush` to `fun_cs_rush_easy`; change it back to restore elite.
-  The easy profile keeps objective rush enabled with 25-degree aim error, a
-  120-tick minimum gap between shots, and a 0.1 chance for optional
-  objective-route dashes. Dashes required to traverse a gap or large step remain
-  available to preserve valid navigation. The shared dash ability still decides
-  whether a request can be accepted. The profiles share objective and formation
-  behavior; their optional combat and movement technique use may differ.
-- NPCs may combine jump/bunny-hop and air-strafe movement to reduce travel time.
-  Elite profiles may also use the NPC behavior spec's context-aware dash,
-  down-dash, slope-contact chain, and anticipatory wall-avoidance rules. Easier
-  profiles may reduce optional technique use while retaining movement needed
-  for legal navigation.
+- The default `fun_cs_rush` profile keeps objective rush enabled at maximum
+  legal elite difficulty: `aim_error_deg: 0.06`, `turn_speed_deg_per_sec: 1800`,
+  `reaction_delay: 0.2`, `fire_interval_ticks: 3` (50 ms accepted-shot floor),
+  `dash_chance: 0.85`, squad focus/swarm, target-relative approach sectors, and
+  `information_mode: memory`. This is the hard starting point; tune difficulty
+  down only through an explicit lower profile. Force-hits, extra ammunition,
+  hidden health, and firing through blocked line of sight remain forbidden.
+- To use the easier alternative, change the single `npc_behavior_profile`
+  setting in `config/gamemodes/funcounterstrike.json` from `fun_cs_rush` to
+  `fun_cs_rush_easy`; change it back to restore elite. The easy profile keeps
+  objective rush enabled with 25-degree aim error, a 120-tick minimum gap
+  between shots, and a 0.12 optional route-dash chance. Dashes required to
+  traverse a gap or large step remain available to preserve valid navigation.
+- NPCs combine jump/bunny-hop, air-strafe, dash, down-dash, and freeze movement
+  to reduce travel time and survive fights. Elite objective travel holds the
+  shared jump input on a clear, unblocked route so the movement preset's
+  auto-bhop chains; a visible target, hazard, stuck episode, failed route, or
+  local correction ends the hold. Easier profiles reduce optional technique use
+  while retaining movement needed for legal navigation.
+- A Terrorist carrier inside a valid site locks `PlantObjective` and holds
+  position. After a plant, the designated CT locks `DefuseObjective` and holds
+  position. The designation prefers a living NPC and stays stable while defuse
+  progress is active, but never blocks a human from starting or finishing a
+  defuse. Hazard avoidance may interrupt. Other living team members cover the
+  operator. Multiple defuse-start restarts for one bomb are a defect, not the
+  desired behavior.
 - Rush behavior is a Fun Counter Strike behavior-profile choice, not a change to
   human Counter Strike movement.
 - All timing is expressed and logged in fixed ticks; display seconds are derived.

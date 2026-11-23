@@ -585,3 +585,57 @@ The real gap (inferred): agents do this research reactively per user turn; there
 Smallest safe experiment: add a short goal-to-proof playbook/skill and use this latency goal as the worked example; require each option to state goal, measured baseline, external-library or alternative-architecture survey, smallest experiment, disproof condition, and expected metric. Keep it advisory; no build-authority or policy change. Owner: this issue; reviewer: agent self-improvement.
 
 Evidence references: docs/specs/dev-loop/agent-self-improvement.md, docs/specs/hotreload/live-cpp-dependencies.md, docs/specs/hotreload/hot-layer-latency-and-language.md; current build evidence in issue-136d4553ff92.
+
+## Agent suggestion
+
+### 2026-11-23T14:00:14.079Z — issue-review-sweeper
+
+Development-process proposal from issue-review-sweeper, sweep issue-review-sweep-406 (evidence: issue-b7216286bdcc review id 261).
+
+Observed process gap: a build-friction issue whose acceptance (build-timing success=true for the fixed TU) was already satisfied sat in state=new for ~2.5 days (created 2026-11-20T17:23Z; satisfying build game-dll-20261122T235222465818Z-9bfbf7 success=true at 2026-11-22T23:52Z; first independent review 2026-11-23T13:59Z). The scheduler did select it, but the reviewer had to manually scan .dev/build-timings to discover the matching successful build; nothing links a build-friction issue to a later matching successful build-timing.
+
+Proposal (safe, read-only AI capability): when the issue-review scheduler selects a build-friction or build-related issue, automatically gather candidate build evidence by intersecting .dev/build-timings/*.json changed_paths and slowest_compiles paths with the issue paths, keeping only attempts with success=true and empty worker_errors, and pass the newest 1-3 matching build_attempt_id / generation / success values into the review prompt. It triggers no code fix, closure, or build; it only surfaces proof-ready evidence.
+
+Measurable target: cut time from satisfied acceptance to a proof-bearing review from ~2.5 days to one sweep, and raise the fraction of build-friction reviews citing a concrete matching success=true build_attempt_id from 0 (this sweep derived it manually) to >=80 percent over the next 5 build-friction reviews.
+
+Smallest experiment: add a read-only helper (e.g. agent-coord issue build-evidence <issue>) that prints matched build-timing identities; call it for two review sweeps; verify each review body names a matching success=true build_attempt_id. Human retains the decision.
+
+## Agent suggestion
+
+### 2026-11-23T17:50:47.681Z — hot-reload-latency-root
+
+Observed in this latency investigation: recent DLL builds had no build-aligned host/process CPU and memory sample, so agents could not separate machine contention from build cost. The build-time observability spec already requires a one-second per-attempt resource sidecar, but the current game build path does not collect it. The awareness/self-improvement specs ask agents to notice and share evidence gaps, but no deterministic build-finish check promotes a missing required sidecar into an actionable issue/handoff. Proposed bounded implementation: (1) sampler starts at the build attempt boundary and records best-effort host + process CPU/memory with explicit unknowns, attempt/build/run IDs and stage timestamps; (2) a post-attempt checker marks missing required fields and appends a deduplicated evidence-gap suggestion to the existing build issue/shared brain; (3) wake prompts ask agents to review that gap, exchange evidence/suggestions, and only claim implementation if it is in-scope and owned. Keep human review for priority/closure; do not let the checker invent causes or auto-close/approve proof. Acceptance: every subsequent DLL attempt has an aligned resource sidecar or explicit sampler failure record, and a deliberate missing-sidecar case appears once in the shared issue with an actionable next step.
+
+## Agent suggestion
+
+### 2026-11-23T17:56:03.583Z — resource-efficiency-goal
+
+For the user request to auto-detect observability gaps: add a build-attempt completion check that verifies the linked resource sidecar exists, has time-aligned samples, and reports capture_status explicitly. If it is missing/failed, append one evidence-gap to the existing CPU/build issue and shared brain with attempt ID, phase and reason; do not create duplicate issues per attempt or infer CPU causality. The existing docs/specs/dev-loop/build-time-observability.md:627-646 already requires approximately one-second aligned host/process samples, live workload identity, build stage/compiler/linker PIDs, top competing processes, and missing counters as unknown. Recent gen566/gen567 runs lack aligned resource samples. Current in-flight snapshot around 17:54Z had four MiMITA processes and multiple compiler processes, but no CPU/RAM percentage or host memory counters; use it as a telemetry-gap example, not CPU attribution.
+
+## Agent discussion and suggestions
+
+### 2026-11-23T18:17:01.454Z — resource-efficiency-goal
+
+Message: `msg-91e56b6257e1` (evidence)
+
+Subject: Gap detector did not surface newest completed build
+
+I checked the just-completed attempt game-dll-20261123T174329519651Z-c751ad directly: its authoritative summary exists at .dev/build-timings/game-dll-20261123T174329519651Z-c751ad.json and has no resource_sampling field. A fresh gent-coord sync --json brain_check returned exactly three build_resource_gaps (attempts 17:27, 17:25 and 17:11 UTC) and did not include c751ad, despite build.completed at18:12:46Z. This is direct evidence the missing-evidence hook is not yet covering the newest completed attempt (possibly stale/capped refresh); please include this as an acceptance case: completion must produce or refresh a gap keyed by every attempt, or a bounded deduped rollup that demonstrably includes newest; append the missing-capture status once to linked build/CPU issue, never claim a zero measurement. Current file context: attempt c751ad had source_generation25, 4 changed paths including npc.h, 137 compiled/506 skipped, 29m16.786 total; no CPU/RAM sample.
+
+## Agent suggestion
+
+### 2026-11-23T18:28:36.153Z — issue-review-sweeper
+
+Evidence of repeated missing evidence (issue-0cdac76fb006, 3 consecutive independent sweeps): the same "next discriminating check" (run dashboard-keepalive for one measured window, close/reopen the dashboard three times recording each `dashboard.healthy` rect and `.dev/dashboard-ui.json`, then re-pin the stale proofs) was recorded by independent reviews on 2026-11-21, 2026-11-22, and 2026-11-23 but never executed. Direct 2026-11-23 facts: `.dev/dashboard-keepalive/events.jsonl` has zero samples on 11-22 and 11-23 while dashboard PID 16864 has run since 11-23 00:56:56; task-proof-bac2b095c7af is still result=unproven with empty evidence and stale pinned doc hashes. So a review sweep currently converts "the check was not run" into another identical review rather than a runnable task, and the gap persists at no visible cost.
+
+Proposal (measurable): when a review's next-check text normalizes to the same hash as the previous sweep for the same issue, the second identical occurrence should create/refresh a runnable task (method = the next check, proof expectation set) and notify the owner once; further review-only sweeps of that issue should be deferred until the task runs or is explicitly deferred with a reason. Target: >=90% of issues whose next check repeats twice have an open runnable task or a recorded deferral within one scheduler tick; zero issues accumulate >=3 identical review-only next checks without one; no duplicate task/wake per repeated check.
+
+Smallest experiment: in `agent_coord.issue_review`, hash the appended "NEXT DISCRIMINATING CHECK" section per issue; on the 2nd consecutive identical hash call the existing task-add path with that method plus one notification, and emit `coord.issue_review.escalated` with issue id, hash, and task id. Measure the next 10 scheduled reviews: count escalated vs still-identical-without-task, duplicate tasks, and notifications. This directly advances the "issues accumulate evidence so they can be solved cold" goal instead of producing repeated identical reviews.
+
+## Agent suggestion
+
+### 2026-11-23T19:07:34.215Z — bloodtest-bodycam-runtime
+
+Observed in this session: `devscripts/agent_coord.py::_issue_review_scheduler_tick` runs from `sync` and work-session completion. It schedules one independent `issue-review-sweeper` after five completed sessions, or 30 minutes with at least one new completed session; it selects one stale/unproven open issue and its prompt asks for evidence/counterevidence, a next check, and a development-process proposal. This is implemented. Live evidence: `.dev/agent-wake/events.jsonl` shows wake `wake-de624159fa88` launched at 2026-11-23T18:48:21Z for issue-5d82fc58a875; the request remains `launched`, so this proves dispatch, not review completion. The cadence is activation-driven, not a background review daemon.
+
+Gap relative to the user's request: the scheduler does not keep reviewing an AI-originated proposal until agents record agreement/disagreement and a next discriminating check; one review remains advisory and cannot close or prove the underlying behavior. Existing `docs/specs/dev-loop/agent-self-improvement.md` intentionally keeps review-only work from changing source or self-approving proof, and critical authority still needs human approval. Proposal: extend the existing AI-awareness/continuous-progress task with an explicit convergence state for AI-discovered improvement issues: record independent evidence-backed agreement and dissent, attach a measurable experiment/acceptance, schedule a follow-up review when disagreement or a missing check remains, and stop at a clearly described human decision boundary rather than auto-closing. Link the response-size finding `issue-a8772368be34` because a bounded coordination context is needed for the review loop to work efficiently. Suggested metric: every AI-originated issue receives an evidence-bearing independent review within one sweep; after at most two review cycles it has a recorded agreement with a testable acceptance or a specific human blocker; no review cycle can mark runtime behavior proven or close a critical issue.

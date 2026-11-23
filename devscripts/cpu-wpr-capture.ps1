@@ -469,6 +469,8 @@ function Invoke-BoundedCapture {
     $stopOutput = @()
     $stopExitCode = $null
     $failure = $null
+    $profileIntervalResetExitCode = $null
+    $profileIntervalResetOutput = @()
 
     try {
         if (-not (Test-Path -LiteralPath $script:XperfPath -PathType Leaf)) {
@@ -483,7 +485,7 @@ function Invoke-BoundedCapture {
             throw ("Capture refused because NT Kernel Logger is already active or xperf logger state is unknown: {0}" -f ($activeLoggerNames -join ', '))
         }
         $quotedTracePath = '"{0}"' -f $tracePath
-        $xperfArguments = '-on PROC_THREAD+LOADER+PROFILE -stackwalk Profile -BufferSize 64 -MinBuffers 64 -MaxBuffers 128 -MaxFile 512 -FileMode Circular -f {0}' -f $quotedTracePath
+        $xperfArguments = '-on PROC_THREAD+LOADER+PROFILE -setProfInt Timer 100000 -stackwalk Profile -BufferSize 64 -MinBuffers 64 -MaxBuffers 128 -MaxFile 512 -FileMode Circular -f {0}' -f $quotedTracePath
         $xperfStart = Invoke-WprCommand -ToolName xperf -Arguments $xperfArguments -TimeoutSeconds 120
         $startOutput = $xperfStart.output
         if ($xperfStart.exit_code -ne 0) {
@@ -509,6 +511,15 @@ function Invoke-BoundedCapture {
             $started = $false
         }
     }
+    finally {
+        $profileReset = Invoke-WprCommand -Arguments '-resetprofint' -TimeoutSeconds 30
+        $profileIntervalResetExitCode = $profileReset.exit_code
+        $profileIntervalResetOutput = $profileReset.output
+        if ($profileIntervalResetExitCode -ne 0) {
+            $resetFailure = "Failed to restore the default CPU profile interval (exit $profileIntervalResetExitCode): $profileIntervalResetOutput"
+            $failure = if ($failure) { "$failure; $resetFailure" } else { $resetFailure }
+        }
+    }
 
     $traceInfo = Get-Item -LiteralPath $tracePath -ErrorAction SilentlyContinue
     $record = @{
@@ -517,6 +528,9 @@ function Invoke-BoundedCapture {
         profile = if ($usingXperf) { 'CPU sampled stacks, bounded xperf circular file mode' } else { 'CPU.verbose file mode' }
         trace_tool = $traceTool
         capture_seconds = $script:CaptureSeconds
+        profile_interval = 'Timer 100000 (10 ms)'
+        profile_interval_reset_exit_code = $profileIntervalResetExitCode
+        profile_interval_reset_output = $profileIntervalResetOutput
         started_utc = $startUtc.ToString('o')
         finalized_utc = [DateTime]::UtcNow.ToString('o')
         trace_path = $tracePath

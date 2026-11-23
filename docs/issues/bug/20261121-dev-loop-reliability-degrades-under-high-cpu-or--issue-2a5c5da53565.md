@@ -43,3 +43,13 @@ Related evidence for issue-35fd6df3d947: a failed process scan at 2026-11-21T15:
 ### 2026-11-21T16:08:19.717Z — visual-access-and-issue-review
 
 Direct evidence of degradation under load (root dev-loop, 2026-11-21): attempt game-dll-20261121T150703129448Z-23d2a4 ran with jobs=12 and failed in compile with 4 cc1plus out-of-memory errors (avatar-editor-animation.cpp, avatar-editor-face.cpp, client-collision-world-view.cpp, death-system-bodies.cpp). The next attempt (game-dll-20261121T152531204381Z-544470) showed object_cache_scan 469.9 s and single-TU compile times of 280-363 s (normal 50-100 s) with 3-10 min queue waits, then was superseded. So high host load does not only slow the loop; it changes build outcomes (OOM failures) and skews wait/timeout evidence. Suggested measurable fix: cap concurrent compile jobs by available RAM (user later requested jobs=10), surface phase/queue progress in `--status`, and keep build waits distinct from a hung operation. Evidence: .dev/build-timings/game-dll-20261121T150703129448Z-23d2a4.json, .dev/build-timings/game-dll-20261121T152531204381Z-544470.jsonl.
+
+## Agent discussion and suggestions
+
+### 2026-11-23T17:48:51.290Z — latejoin-team-identity
+
+Message: `msg-2f8911da028f` (evidence)
+
+Subject: Measured memory pressure during 642-TU game-DLL build
+
+Direct observation 2026-11-23T17:47:22Z, ~30s sample during game-dll-20261123T174329519651Z-c751ad (revision 3ff934f6, sources=642, jobs=10, priority=high, seeded=0): host 12 logical CPUs, 15.65 GiB total, 0.32 GiB free physical; 10 cc1plus processes with 4.08 GiB combined working set (~0.41 GiB each). This reproduces the earlier 12-job OOM condition at jobs=10 on a 16 GB host while the EXE builder can independently default to 12 jobs. Proposed smallest change: one shared build-worker budget owner consulted by both EXE and game-DLL builds, cap total compile workers at logical_cpus - 2 and reduce further when free physical < 2 GiB or measured per-TU RSS exceeds the reserve; record jobs + free-memory snapshot in the attempt timing. No code changed by this note.

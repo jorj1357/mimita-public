@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from devscripts.build_scheduler import acquire as acquire_build_slot
+from devscripts.dev_loop.build_resource_sampler import BuildResourceSampler
 from devscripts.source_manifest import build_manifest, diff_manifests, validate
 
 
@@ -1899,9 +1900,17 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
 
     started_utc = _utc_now()
     started = time.monotonic()
+    resource_sampler = BuildResourceSampler(root, attempt_id)
     try:
-        return _run_game_build(root, request_ids, mode, source_generation,
-                               on_output, attempt_id, build_metadata)
+        resource_sampler.start()
+    except Exception as error:  # resource telemetry is best-effort
+        resource_sampler._errors.append(
+            f"sampler start failed: {type(error).__name__}: {error}"[:500])
+        resource_sampler._status = "unavailable"
+    result = None
+    try:
+        result = _run_game_build(root, request_ids, mode, source_generation,
+                                 on_output, attempt_id, build_metadata)
     except Exception as error:  # noqa: BLE001 - convert to a durable failed attempt
         completed_utc = _utc_now()
         elapsed = round(time.monotonic() - started, 3)
@@ -1943,7 +1952,7 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                 _write_json(progress_path, progress)
         except OSError:
             pass
-        return {
+        result = {
             "success": False, "error": message,
             "failed_phase": "harness_exception", "no_op": False,
             "errors": [message],
@@ -1955,3 +1964,50 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
             "timing_jsonl": str(timing_path.relative_to(root)),
             "summary_json": str(summary_path.relative_to(root)),
         }
+    finally:
+        try:
+            resource_summary = resource_sampler.stop()
+            timing_path = root / ".dev" / "build-timings" / f"{attempt_id}.jsonl"
+            summary_path = root / ".dev" / "build-timings" / f"{attempt_id}.json"
+            progress_path = root / "build" / "game" / "progress.json"
+            try:
+                _append_timing(timing_path, {
+                    "event": "build.resource_sampling.completed",
+                    "time_utc": _utc_now(),
+                    "build_attempt_id": attempt_id,
+                    **resource_summary,
+                })
+            except OSError:
+                pass
+            attempt_summary = _read_json(summary_path)
+            if attempt_summary.get("build_attempt_id") == attempt_id:
+                attempt_summary["started_utc"] = started_utc
+                attempt_summary["completed_utc"] = _utc_now()
+                attempt_summary["total_seconds"] = round(
+                    time.monotonic() - started, 3)
+                attempt_summary["resource_sampling"] = resource_summary
+                try:
+                    _write_json(summary_path, attempt_summary)
+                except OSError:
+                    pass
+            progress = _read_json(progress_path)
+            if progress.get("build_attempt_id") == attempt_id:
+                progress["resource_sampling"] = resource_summary
+                try:
+                    _write_json(progress_path, progress)
+                except OSError:
+                    pass
+            if isinstance(result, dict):
+                result["resource_sampling"] = resource_summary
+                result["total_seconds"] = float(
+                    attempt_summary.get("total_seconds")
+                    or round(time.monotonic() - started, 3))
+        except Exception:
+            # Telemetry errors are explicit in the sampler sidecar when possible;
+            # they must never replace the actual build outcome.
+            pass
+    return result if isinstance(result, dict) else {
+        "success": False, "error": "build attempt returned no result",
+        "failed_phase": "harness_exception", "build_attempt_id": attempt_id,
+        "source_generation": source_generation,
+    }

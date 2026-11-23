@@ -75,6 +75,27 @@
     "fatal_window": true
   },
   "presentation": {
+    "bodycam": {
+      "enabled": true,
+      "orientation_mode": "head_world",
+      "head_eye_offset_m": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "position_response_seconds": 0.12,
+      "rotation_response_seconds": 0.1,
+      "camera_sway_scale": 1.0,
+      "lens": {
+        "chromatic_aberration": 0.12,
+        "vignette": 0.18,
+        "distortion": 0.0
+      },
+      "wall_collision": {
+        "enabled": true,
+        "probe_radius_m": 0.12
+      }
+    },
     "gold_reward_popup": null,
     "damage_numbers": null,
     "hit_effects": null,
@@ -180,8 +201,8 @@
       1.0
     ]
   },
-  "camera_fov": 0.0,
-  "force_first_person": false,
+  "camera_fov": 70.0,
+  "force_first_person": true,
   "hide_healthbars": false,
   "ragdoll_enabled": true,
   "death_presentation": "auto",

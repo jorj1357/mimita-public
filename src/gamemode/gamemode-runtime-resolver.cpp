@@ -7,6 +7,7 @@
 #include "config/impact-decals-config.h"
 #include "config/player-visuals-config.h"
 #include "config/camera-config.h"
+#include "render/post-fx.h"
 #include "entities/aimbody-config.h"
 #include "combat/actor-preset-weapons.h"
 #include "gui/hud/healthbar-config.h"
@@ -117,6 +118,33 @@ void applyPresentationPolicy(const Gamemode& mode)
             p.bloodClientFeedback);
     else
         ImpactDecalsConfig::instance().clearRuntimeClientFeedbackOverride();
+
+    if (p.bodycam.configured && p.bodycam.enabled) {
+        CamConfig::ModeBodycamOverride bodycam;
+        bodycam.orientationMode = p.bodycam.orientationMode;
+        bodycam.eyeOffsetMeters = p.bodycam.eyeOffsetMeters;
+        bodycam.positionResponseSeconds = p.bodycam.positionResponseSeconds;
+        bodycam.rotationResponseSeconds = p.bodycam.rotationResponseSeconds;
+        bodycam.swayScale = p.bodycam.cameraSwayScale;
+        bodycam.wallCollision = p.bodycam.wallCollision;
+        bodycam.wallProbeRadiusMeters = p.bodycam.wallProbeRadiusMeters;
+        CamConfig::instance().setBodycamOverride(bodycam);
+        PostFX::ModeBodycamLensOverride lens;
+        lens.chromaticAberration = p.bodycam.chromaticAberration;
+        lens.vignette = p.bodycam.vignette;
+        lens.distortion = p.bodycam.lensDistortion;
+        PostFX::instance().setBodycamLensOverride(lens);
+        Debug::warn(Debug::Category::Duel,
+            "[BODYCAM] mode=%s orientation=%s pos_response=%.3f rot_response=%.3f sway=%.3f wall_collision=%d wall_radius=%.3f lens_ca=%.3f vignette=%.3f distortion=%.3f\n",
+            mode.id.c_str(), p.bodycam.orientationMode.c_str(),
+            p.bodycam.positionResponseSeconds, p.bodycam.rotationResponseSeconds,
+            p.bodycam.cameraSwayScale, p.bodycam.wallCollision ? 1 : 0,
+            p.bodycam.wallProbeRadiusMeters, p.bodycam.chromaticAberration,
+            p.bodycam.vignette, p.bodycam.lensDistortion);
+    } else {
+        CamConfig::instance().clearBodycamOverride();
+        PostFX::instance().clearBodycamLensOverride();
+    }
 }
 
 void applyAimPolicy(const Gamemode& mode)
@@ -177,6 +205,8 @@ void GamemodeRuntimeResolver::clearClient()
     visuals.clearTeammateTrailOverride();
 
     CamConfig::instance().clearHitFlinchOverride();
+    CamConfig::instance().clearBodycamOverride();
+    PostFX::instance().clearBodycamLensOverride();
     ActorPresetWeapons::clearModePresentationOverride();
     KillfeedManager::instance().clearModeEnabledOverride();
     ImpactDecalsConfig::instance().clearRuntimeClientFeedbackOverride();

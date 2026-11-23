@@ -71,6 +71,7 @@ tools/fonts/*.ttf
 # ── Config / env ─────────────────────────────────────────────────────────────
 .env
 .env.local
+config/dev-superadmin.local.json
 
 # ── Generated data ───────────────────────────────────────────────────────────
 website/public/articles.generated.json
