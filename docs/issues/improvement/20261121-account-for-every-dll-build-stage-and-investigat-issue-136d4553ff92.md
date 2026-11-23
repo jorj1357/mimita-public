@@ -1709,3 +1709,75 @@ Phased plan, cheapest first:
 - Phase 2 (structural, the actual 10s unlock): stop paying a full 483MB relink for gameplay edits. Either (a) split `server-gamemode.cpp` (543KB) and other monster TUs, or (b) restore a root-dev-loop-owned coarse behavior module so only that module links, keeping the current MinGW whole-game DLL as fallback. This is the only path that removes the ~8s good-condition link floor and gets a meaningful edit under 10s.
 
 Acceptance can be measured with existing signals: save timestamp -> first build worker output -> changed-TU compile -> link -> publish -> explicit activated event -> a behavior-owned event in the same server PID. Today the activation step has no event, which is why edit-to-live is not provable.
+
+## Agent suggestion
+
+### 2026-11-23T05:53:37.508Z — build-wait-reviewer
+
+build-wait-reviewer response to ctx-e77816097d57 (hot-reload discouragement). Measured state: latest one-file edit attempt G546 = 267s total; changed-TU compile 151s (server-gamemode.cpp), whole-game link 60s (642 inputs, ~483MB objects), regenerated identity-wrapper compile 39s, object scan 1.6s (already fixed); some attempts add 137-148s manifest_snapshot under load. So the bottleneck is NOT 'C++ cannot hot reload' and NOT cr.h/blink. Option ladder: (1) days, no architecture change - batch builds at an agreed compile wave instead of save=compile (user's queue idea), dedupe auto+explicit requests for same revision, do not build under 90%+ CPU/RAM, make manifest_snapshot incremental/owned, kill leftover workers; (2) weeks - split the monolith into 8-16 coarse capability DLLs so a gamemode/NPC change links a small DLL, not 642 inputs; (3) months - move behavior/policy (NPC targeting, combat, gamemode rules, UI, network policy) into a hot behavior layer (C#/.NET, AngelScript+JIT, LuaJIT, C++ JIT) per hot-layer-latency-and-language.md. cr.h only improves whole-DLL swap/state transfer; it does not reduce compile/link. blink needs MSVC PDB and a compiler switch (current MinGW g++), not a first move. Unblocking note: maps (config/maps/*.json) and gamemodes (config/gamemodes/*.json) are already data-driven and hot-reloaded, so content work does not require a C++ build at all. Recommended sequence: do (1) now, prove (2) on one module, defer (3) behind the bake-off.
+
+## Agent suggestion
+
+### 2026-11-23T05:53:53.092Z — codex-networking-stall-fix
+
+Hot-reload direction summary (read-only): measured big-TU attempt game-dll-20261122T235222465818Z-9bfbf7 took 267.197s: changed_source_preflight (changed TU compile) 151.161s, identity_provider compile 38.589s, monolith link 59.711s (642-644 inputs, ~483MB), scan 1.604s, publish 0.486s. Scan is solved; heavy-TU compile and full monolith link are the gating stages. LLD has no incremental link, so every generation relinks all objects (8-60s floor). Recommended tiers, ordered by measured impact: (1) operational: suppress duplicate auto builds after an explicit request, batch/queue save-to-build instead of build-on-every-save, prune old snapshots off critical path, reduce CPU/RAM pressure; target is consistent timing, not 1s. (2) build shape: remove generated module-identity wrapper fan-out, split heavy TUs, PCH-off hot leaves, keep link inputs stable; heavy edit 267s -> ~30-60s. (3) coarse modules: 8-16 stable-capability module DLLs so one changed module links a small DLL instead of the 480MB monolith; cr.h is the candidate host/guest seam with versioned C ABI and host-owned state; realistic <10s for native behavior edits; needs separate approval. (4) hot layer: move behavior (NPC/weapons/gamemode policy/UI/network policy) to AngelScript/C#/LuaJIT for the deferred many-file ~1s target; months, bake-off required. blink is not viable on MinGW (needs MSVC-style PDB/clang-cl) and does not avoid compile. Per-file DLLs rejected. Separate concern: maps/gamemodes should be data/DSL-driven so iteration does not require any C++ compile, which unblocks the user goal independent of hot reload.
+
+## Agent discussion and suggestions
+
+### 2026-11-23T05:54:43.274Z — codex-networking-stall-fix
+
+Message: `msg-f80ece0186ea` (evidence)
+
+Subject: Git history: reset/EXE method vs current live DLL, and whether to keep DLL reload
+
+Read-only git archaeology for ctx-abca4d34dd82. No build/source change.
+
+METHOD SPECTRUM (from git):
+1) Pre-hot-reload 'reset build' = build.py: ccache + PCH, compile only changed TUs in parallel, link mimita.exe, relaunch. build.py at afad20a documents '-g1 ... makes the 500MB+ exe link in about a second instead of several'. 505 cpp files at afad20a vs 674 now.
+2) Hot reload v1 = standalone config/modules/modules.json catalog with 8 coarse modules (actor-rendering, world-rendering, infinite-worldgen, chunk-collision, network-policy, navigation-policy, npc-perception, npc-behavior), each 1-2 sources, small per-module DLLs swapped live.
+3) Player-core migration (commit 7efe9c17) removed that catalog and folded modules into one whole-game DLL; ModuleHost::loadLocalModules reads exports from the active game DLL and poll() no-ops.
+
+CURRENT FLOORS (existing evidence): whole-game DLL = 642 objects / ~483MB link; gen540 38.8s (preworker 6.2 + TU 20.1 + identity 1.5 + scan 1.8 + link 8.2 + publish 0.4); gen546 under 2 MiMITA = 267s (TU 151.2 + link 59.7). Old fast 5s was a small incremental build on a smaller idle tree, not proof that 'no DLL' is faster.
+
+VERDICT: keep live DLL reload. Build-exe-and-relaunch today pays the same compile+full link and additionally loses live state/connected clients, so it is equal-or-worse on latency. The real regression is monolithic scope (huge TU + 642-input link), not DLL-vs-EXE. Fastest credible path is restoring one coarse module (npc-behavior already has exports/events) built by the root dev-loop as a small DLL, whole-game DLL as fallback; plus low-pressure builds, -O0 debug, and a game.generation.activated event. Keep EXE build only as a simpler fallback mode, not as a latency win.
+
+## Agent discussion and suggestions
+
+### 2026-11-23T05:55:17.379Z — build-wait-reviewer
+
+Message: `msg-2ca9700650de` (evidence)
+
+Subject: Git history: old reset EXE auto-restart vs current live DLL reload
+
+Answer to ctx-abca4d34dd82 (git history: old reset build method vs current live DLL reload). Read-only git/docs/results review; no code, build, compiler, or process changed.
+
+OLD RESET METHOD (git evidence)
+- Commit 29edfe2c (2026-09-26) added devscripts/dev-loop.py (410 lines). Its build path is: python build.py build-only -> publish mimita.exe to .dev/builds/NNNN -> restart_latest() -> launch_latest(), which Popen-launches a fresh server+client. It has an --auto-restart toggle and stop_processes() terminates the pair (terminate, then kill after 3s) before relaunch. The commit message itself: better hot reload its quick i dont even care its nto while exe runs its fine -- i.e. fast incremental build WITH a process reset was accepted.
+- So the old loop still compiled only changed TUs (ccache + the ~121MB PCH) and then linked mimita.exe; it never did same-process activation. 3a89b2de (2026-10-18) later updated the loop.
+- Live same-process reload is a separate, older line (18ec8f80/4acaead8/e95e530a hot rle; 4e82e338 mid-2026) and became the primary loop via devscripts/game_build_worker.py + --request game-dll: publish a game-DLL generation and let ModuleHost swap it into the live server PID (gen546 active in server PID 29536, 67 NPCs, 0 hotness violations).
+
+WHAT ACTUALLY DIFFERS
+- Shared by both: the changed-TU compile AND a link. Old target = mimita.exe; current target = the ~483MB / 642-object game DLL.
+- Different: current = ~0.4-0.5s publish + same-PID activation, keeps connected clients and live state. Old = terminate + relaunch + reconnect + lose the live scenario.
+
+THE REMEMBERED ~5s CONSISTENTLY
+- Stored evidence: the ~5.9-6.2s attempts are warm no-op DLL builds (compiled=0, skipped=642, link=0). Fastest successful changed-source DLL attempt across 335 summaries is 19.86s; no stored changed-source attempt is <=10s. So ~5s = warm no-op or small warm TU with no live load, not an arbitrary edited file.
+
+VERDICT: keep pursuing the live DLL reload; do not revert to reset as the default.
+- Reverting does not remove either real floor: heavy changed-TU compile (22-151s measured) and the monolithic link (~8s quiet, ~60s loaded). It only trades live activation for restart+reconnect+state loss, and removes just the ~0.5-1s publish/activate seam.
+- Keep the incremental EXE/reset loop as the documented fallback for edits that cannot be hot-applied safely (object layout, globals, ABI) -- that is where it is genuinely good.
+- The route to <=10s is NOT the reset method: either coarse modules (small DLL link) or the deferred hot behavior layer (docs/specs/hotreload/hot-layer-latency-and-language.md). Live reload is also the feature the user actually wants (edit .cpp with other clients connected, no reset).
+
+Refs: 29edfe2c, 3a89b2de, 4e82e338 (git); .dev/build-timings/*.json; docs/specs/hotreload/hot-layer-latency-and-language.md; prior answers to ctx-c1a0c3306a13 at 2026-11-23T00:12:04Z and 00:12:36Z.
+
+## Agent suggestion
+
+### 2026-11-23T05:55:24.639Z — cpp-latency-pressure-focus
+
+Build-wave proposal from user ctx-740583582d02. Direct source evidence: devscripts/dev-loop.py::record_source_change increments the source generation and immediately queues auto-{generation} via queue_game_dll_request; there is no agent-ready/cohort-seal barrier before starting compilation. Existing coordination is useful but incomplete for this workflow: integration requests coalesce by revision and the root dev-loop owns the build, while agent-coord tasks/issues track ownership and dependencies separately. Preserve one root builder, but consider an explicit shared build wave: edits mark a revision pending; agents mark compiler inputs ready; an integrator seals a coherent source snapshot once all participating edit owners are ready (with manual user force/retry and a visible timeout/failure path); exactly one integration build runs; publish immutable generation; then each proof task gets its own pinned test runtime/journal. Agents whose behavior proof passes leave the next wave; only failed/unproven tasks return as source changes. Run tests independently under runtime resource limits so a 30-minute soak can continue in background and does not block shorter proofs. Before next wave, verify owned compiler children are terminal and record host/process CPU+RAM; do not kill unrelated processes. Do not use real-time priority by default: one slow TU is not parallelized by more jobs, and high RAM pressure may page/thrash; measure per-TU scaling and retain OS/editor/game reserve. This proposal changes shared build authority, so do not implement it until the user explicitly selects the batch-gated policy; meanwhile keep current auto-build path documented.
+
+## Agent suggestion
+
+### 2026-11-23T05:56:17.087Z — cpp-latency-pressure-focus
+
+Correction: the latest user message explicitly states the intended policy as save != compile and specifies one agreed shared build wave, followed by build-process cleanup and pinned tests. Treat that as user-selected direction for implementation planning, rather than waiting for another confirmation. The current automatic-save behavior remains in effect until a concrete reviewable implementation is prepared; next change should update the authority/spec coherently and preserve a manual urgent build path.

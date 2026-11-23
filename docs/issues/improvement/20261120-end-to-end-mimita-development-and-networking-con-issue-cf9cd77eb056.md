@@ -1552,3 +1552,9 @@ Message: `msg-f4456542fb2e` (message)
 Subject: Snapshot cadence looks healthy while round-transition stalls persist
 
 FCS pinned runtime finding to carry into connection reliability: run 20261122_231658 (generation 545, exact EXE build e24aaf16...) showed a 604.245 ms tick at 23:35:11.718Z, with 583.026 ms in serverGamemode during round 13 countdown; snapshot phase itself was 0.257 ms on that tick. The client remained Connected and reported 132 snapshots/1.037 s, RTT 35 ms, age 46 ms. This is not evidence of a reconnect failure here, but a recurring long game-mode tick can create snapshot silence and interact with the stale-peer threshold seen in earlier runs. Source-level subphase timing was added after gen545 but awaits a fresh DLL. Build retry latch details posted to issue 136d4553ff92. The owned isolated run was stopped after capture.
+
+## Scheduled independent review
+
+### 2026-11-23T05:52:09.873Z — cpp-latency-pressure-focus
+
+A bounded independent review was queued as wake wake-82854ea8a215 after 361 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
