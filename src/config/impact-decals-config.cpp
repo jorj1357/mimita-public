@@ -7,6 +7,7 @@
 */
 #include "config/impact-decals-config.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <cmath>
@@ -135,6 +136,86 @@ static void readForce(const json& j, ImpactForceConfig& cfg)
     cfg.maxDistance = readJsonFloat(f, "maxDistance", cfg.maxDistance);
     cfg.minDistance = readJsonFloat(f, "minDistance", cfg.minDistance);
     cfg.minForce = readJsonFloat(f, "minForce", cfg.minForce);
+}
+
+static void readGoreChunk(const json& j, GoreChunkConfig& cfg)
+{
+    cfg.enabled = readJsonBool(j, "enabled", cfg.enabled);
+    cfg.countMin = readJsonInt(j, "countMin", cfg.countMin);
+    cfg.countMax = readJsonInt(j, "countMax", cfg.countMax);
+    cfg.sizeMin = readJsonFloat(j, "sizeMin", cfg.sizeMin);
+    cfg.sizeMax = readJsonFloat(j, "sizeMax", cfg.sizeMax);
+    cfg.speedMin = readJsonFloat(j, "speedMin", cfg.speedMin);
+    cfg.speedMax = readJsonFloat(j, "speedMax", cfg.speedMax);
+    cfg.coneDegreesMin = readJsonFloat(j, "coneDegreesMin", cfg.coneDegreesMin);
+    cfg.coneDegreesMax = readJsonFloat(j, "coneDegreesMax", cfg.coneDegreesMax);
+    cfg.gravity = readJsonFloat(j, "gravity", cfg.gravity);
+    cfg.drag = readJsonFloat(j, "drag", cfg.drag);
+    cfg.lifetimeMin = readJsonFloat(j, "lifetimeMin", cfg.lifetimeMin);
+    cfg.lifetimeMax = readJsonFloat(j, "lifetimeMax", cfg.lifetimeMax);
+    cfg.color = readJsonVec3(j, "color", cfg.color);
+    if (j.contains("texture") && j["texture"].is_string())
+        cfg.texture = j["texture"].get<std::string>();
+    cfg.countMin = std::clamp(cfg.countMin, 0, 64);
+    cfg.countMax = std::clamp(cfg.countMax, cfg.countMin, 64);
+    cfg.sizeMin = std::max(0.001f, cfg.sizeMin);
+    cfg.sizeMax = std::max(cfg.sizeMin, cfg.sizeMax);
+    cfg.speedMin = std::max(0.0f, cfg.speedMin);
+    cfg.speedMax = std::max(cfg.speedMin, cfg.speedMax);
+    cfg.lifetimeMin = std::max(0.01f, cfg.lifetimeMin);
+    cfg.lifetimeMax = std::max(cfg.lifetimeMin, cfg.lifetimeMax);
+}
+
+static void readGore(const json& root, GoreConfig& cfg)
+{
+    if (!root.contains("gore") || !root["gore"].is_object())
+        return;
+    const auto& g = root["gore"];
+    cfg.enabled = readJsonBool(g, "enabled", cfg.enabled);
+    if (g.contains("fleshChunks") && g["fleshChunks"].is_object())
+        readGoreChunk(g["fleshChunks"], cfg.fleshChunks);
+    if (g.contains("boneShards") && g["boneShards"].is_object())
+        readGoreChunk(g["boneShards"], cfg.boneShards);
+    if (g.contains("mist") && g["mist"].is_object()) {
+        const auto& m = g["mist"];
+        cfg.mist.enabled = readJsonBool(m, "enabled", cfg.mist.enabled);
+        cfg.mist.countMin = readJsonInt(m, "countMin", cfg.mist.countMin);
+        cfg.mist.countMax = readJsonInt(m, "countMax", cfg.mist.countMax);
+        cfg.mist.sizeMin = readJsonFloat(m, "sizeMin", cfg.mist.sizeMin);
+        cfg.mist.sizeMax = readJsonFloat(m, "sizeMax", cfg.mist.sizeMax);
+        cfg.mist.endSizeScale = readJsonFloat(m, "endSizeScale", cfg.mist.endSizeScale);
+        cfg.mist.speedMin = readJsonFloat(m, "speedMin", cfg.mist.speedMin);
+        cfg.mist.speedMax = readJsonFloat(m, "speedMax", cfg.mist.speedMax);
+        cfg.mist.coneDegreesMin = readJsonFloat(m, "coneDegreesMin", cfg.mist.coneDegreesMin);
+        cfg.mist.coneDegreesMax = readJsonFloat(m, "coneDegreesMax", cfg.mist.coneDegreesMax);
+        cfg.mist.gravity = readJsonFloat(m, "gravity", cfg.mist.gravity);
+        cfg.mist.drag = readJsonFloat(m, "drag", cfg.mist.drag);
+        cfg.mist.lifetimeMin = readJsonFloat(m, "lifetimeMin", cfg.mist.lifetimeMin);
+        cfg.mist.lifetimeMax = readJsonFloat(m, "lifetimeMax", cfg.mist.lifetimeMax);
+        cfg.mist.alphaMin = readJsonFloat(m, "alphaMin", cfg.mist.alphaMin);
+        cfg.mist.alphaMax = readJsonFloat(m, "alphaMax", cfg.mist.alphaMax);
+        if (m.contains("texture") && m["texture"].is_string())
+            cfg.mist.texture = m["texture"].get<std::string>();
+    }
+    if (g.contains("destroyed") && g["destroyed"].is_object()) {
+        const auto& d = g["destroyed"];
+        cfg.destroyedChunkMultiplier = readJsonFloat(d, "chunkMultiplier", cfg.destroyedChunkMultiplier);
+        cfg.destroyedBoneMultiplier = readJsonFloat(d, "boneMultiplier", cfg.destroyedBoneMultiplier);
+        cfg.destroyedMistMultiplier = readJsonFloat(d, "mistMultiplier", cfg.destroyedMistMultiplier);
+        cfg.destroyedDecalMultiplier = readJsonFloat(d, "decalMultiplier", cfg.destroyedDecalMultiplier);
+        cfg.destroyedForceMultiplier = readJsonFloat(d, "forceMultiplier", cfg.destroyedForceMultiplier);
+    }
+    if (g.contains("exitCone") && g["exitCone"].is_object()) {
+        const auto& e = g["exitCone"];
+        cfg.exitConeEnabled = readJsonBool(e, "enabled", cfg.exitConeEnabled);
+        cfg.headDepthM = readJsonFloat(e, "headDepthM", cfg.headDepthM);
+        cfg.torsoDepthM = readJsonFloat(e, "torsoDepthM", cfg.torsoDepthM);
+        cfg.limbDepthM = readJsonFloat(e, "limbDepthM", cfg.limbDepthM);
+        cfg.headConeDegrees = readJsonFloat(e, "headConeDegrees", cfg.headConeDegrees);
+        cfg.torsoConeDegrees = readJsonFloat(e, "torsoConeDegrees", cfg.torsoConeDegrees);
+        cfg.limbConeDegrees = readJsonFloat(e, "limbConeDegrees", cfg.limbConeDegrees);
+        cfg.exitMistCountScale = readJsonFloat(e, "mistCountScale", cfg.exitMistCountScale);
+    }
 }
 
 static void readGroup(const json& j, ImpactDecalGroupConfig& cfg)
@@ -278,6 +359,7 @@ bool ImpactDecalsConfig::load(const std::string& path)
             readGroup(root["worldCracks"], data.worldCracks);
         if (root.contains("explosionMarks"))
             readGroup(root["explosionMarks"], data.explosionMarks);
+        readGore(root, data.gore);
 
         mData = data;
         if (mRuntimeBloodOverride)

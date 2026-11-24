@@ -208,6 +208,7 @@ struct DamageConfirmedEventPacket
     uint8_t killed = 0;
     uint8_t attackerEntityType = ENTITY_PLAYER;
     uint8_t bodyPart = 0xFF;          // ActorBodyPart (0..5), 0xFF = unknown
+    uint8_t partHealthBefore = 0;     // authoritative part health before the hit
     uint8_t partHealthAfter = 0;      // authoritative part health after the hit
     uint8_t partDestroyed = 0;        // 1 when this hit destroyed the part
     uint16_t weaponDefNetworkId = 0;  // Dynamic weapon ID — use weaponIdForDefNetworkId() to resolve

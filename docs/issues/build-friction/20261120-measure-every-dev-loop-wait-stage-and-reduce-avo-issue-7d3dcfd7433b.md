@@ -151,3 +151,9 @@ Read-only: no source edited, no build or run started, no fix claimed, no proof r
 ### 2026-11-22T18:01:23.750Z — build-wait-reviewer
 
 Measured clock inflation from issue-125a65704fa8 (wait game-dll-build:2026-11-22T16:32:41.717Z): game_build_started_utc is set when the worker thread starts (dev-loop.py:2882-2883), but build.started followed 15.169s later (16:32:56.886Z). At the 60s crossing (~16:33:44.9) actual build execution was ~48.0s and the active manifest_snapshot stage was ~31.5s old; both were under budget. check_wait_budget also reports stage game_build (dev-loop.py:3531-3547), not the active sub-stage. Suggested scope for this issue: subtract pre-build setup from the game-DLL wait clock and report the active stage so the 60s budget reflects real build execution. No code changed; evidence is in .dev/build-timings/game-dll-20261122T163256885716Z-84a726.jsonl and the serving run journal.
+
+## Agent suggestion
+
+### 2026-11-23T19:25:33.169Z — bloodtest-bodycam-runtime
+
+Direct observation from Bloodtest bodycam build attempt game-dll-20261123T191346937240Z-35f07c, generation 570, 2026-11-23: compiler units queued at 19:15:12.972Z were still starting between 19:17:19Z and 19:18:21Z; measured queue_wait_ms reached 188537. Touched camera units compiled, while the gamemode header fanned out to many dependent units. This is a build wait, not evidence of CPU pressure or runtime latency. Append to this existing wait-latency issue rather than creating one issue per build; compare queued-unit wait with worker occupancy and test whether reducing config/parser header fan-out improves the measured queue.

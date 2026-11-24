@@ -61,6 +61,17 @@ struct RagdollModePart {
     bool hasNormalArmAimTarget = false;
 };
 
+// Mode-owned bodycam presentation filters. One filter per quantity so the
+// physical aim body never blends the same target twice.
+struct RagdollPresentationFilter {
+    glm::vec3 headForward{0.0f, 1.0f, 0.0f};
+    glm::vec3 headUp{0.0f, 0.0f, 1.0f};
+    glm::vec3 torsoForward{0.0f, 1.0f, 0.0f};
+    glm::vec3 armForward{0.0f, 1.0f, 0.0f};
+    glm::vec3 weaponForward{0.0f, 1.0f, 0.0f};
+    bool initialized = false;
+};
+
 struct RagdollGrabState {
     bool active = false;
     bool wasActive = false;
@@ -85,6 +96,7 @@ struct RagdollBody {
     int rightArmIndex = -1;
     int leftLegIndex = -1;
     int rightLegIndex = -1;
+    RagdollPresentationFilter presentation;
     RagdollGrabState leftGrab;
     RagdollGrabState rightGrab;
     bool leftArmExtending = false;
@@ -269,7 +281,8 @@ private:
     void stepAimBody(float dt, const World& world, Player& player,
                      RagdollBody& body, const glm::vec3& aimForward,
                      const glm::vec3& aimPosition, bool pointingWanted,
-                     const glm::vec3& aimUp = glm::vec3(0.0f, 0.0f, 1.0f));
+                     const glm::vec3& aimUp = glm::vec3(0.0f, 0.0f, 1.0f),
+                     bool applyPresentationResponse = false);
     void activateArmRagdoll(Player& player, const std::string& weaponId,
                             const ArmRagdollConfig& config);
     void activateArmRagdollBody(Player& player, RagdollBody& body,

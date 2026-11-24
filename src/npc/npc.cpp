@@ -25,6 +25,7 @@
 
 #include "combat/weapon-hit.h"
 #include "debug/debug-log.h"
+#include "debug/config-npc.h"
 #include "debug/structured-log.h"
 #include "hot-reload/module-host.h"
 #include "perf/perf.h"
@@ -3193,7 +3194,25 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             }
         }
 
-        const bool stuckNow = NpcNavigation::isStuck(npc);
+        // A low-speed tick alone is not a wall stuck state. Combat circling,
+        // turning, slope contact, and a single slow tick can all look "stuck"
+        // to the one-tick displacement test. Start an episode only when a
+        // static side-world contact is present; once started, keep the existing
+        // timer/recovery continuity until it clears.
+        bool staticWallContact = false;
+        for (uint8_t ci = 0; ci < npc.body.movementContacts.count; ++ci) {
+            const MovementContact& contact = npc.body.movementContacts.items[ci];
+            if (contact.source != MovementContactSource::StaticWorld)
+                continue;
+            if (std::fabs(contact.normal.z) >= 0.5f)
+                continue;
+            if (glm::length(glm::vec2(contact.normal.x, contact.normal.y)) < 0.1f)
+                continue;
+            staticWallContact = true;
+            break;
+        }
+        const bool stuckNow = NpcNavigation::isStuck(npc) &&
+            (staticWallContact || npc.stateMachine.stuckTimer > 0.0f);
         if (stuckNow)
         {
             if (!npc.wasStuck)
@@ -3328,6 +3347,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                             {"move_input", {npc.lastMoveInput.x, npc.lastMoveInput.y}},
                             {"velocity", {npc.body.vel.x, npc.body.vel.y, npc.body.vel.z}},
                             {"support_actor_key", npc.body.collision.supportActorKey},
+                            {"static_wall_contact", staticWallContact},
                             {"contacts", std::move(contactEvidence)},
                             {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
                             {"stuck_seconds", npc.stateMachine.stuckTimer}},
@@ -3358,6 +3378,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                                                 npc.movementStuckEpisodeStartPos.z}},
                             {"net_displacement", glm::length(delta)},
                             {"wall_avoid_count", npc.movementStuckWallAvoidCount},
+                            {"static_wall_contact", staticWallContact},
                             {"recovery_count", npc.movementStuckRecoveryCount},
                             {"jump_count", npc.movementStuckJumpCount}},
                         __FILE__, __LINE__, __FUNCTION__);
@@ -3530,15 +3551,33 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     if (objectiveRecoveryOwnsDash)
         dash = false;
 
-    // Plant/defuse is a stationary interaction. The server owns progress; the
-    // actor must not chase, strafe, or dash out of the site while the objective
-    // lock is active. A real hazard still releases the hold above.
-    const bool objectiveInteractionHold =
-        !npc.utilityContext.hazardActive &&
-        (npc.utilityContext.canPlant ||
-         (npc.utilityContext.planted && npc.utilityContext.isDefuserId &&
-          npc.utilityContext.atObjective));
-    if (objectiveInteractionHold) {
+    // A designated CT defuser must travel to the bomb, not chase enemies or
+    // oscillate at the interaction boundary. Use the navigator direction while
+    // outside the close stop radius; stop inside it. A real hazard releases
+    // the lock above.
+    const bool defuseTravelLock = npc.utilityContext.planted &&
+        npc.utilityContext.isDefuserId && !npc.utilityContext.hazardActive;
+    if (defuseTravelLock) {
+        const glm::vec3 toBomb =
+            npc.utilityContext.objectivePos - npc.body.pos;
+        const glm::vec2 planar(toBomb.x, toBomb.y);
+        const float planarDistance = glm::length(planar);
+        if (planarDistance > 2.5f) {
+            glm::vec3 approach = glm::vec3(planar / planarDistance, 0.0f);
+            const glm::vec3 navDir(npc.staggeredNavResult.dir.x,
+                                   npc.staggeredNavResult.dir.y, 0.0f);
+            if (npc.staggeredNavResult.valid &&
+                glm::length(navDir) > 0.1f)
+                approach = glm::normalize(navDir);
+            moveDir = approach;
+        } else {
+            moveDir = glm::vec3(0.0f);
+        }
+        jump = false;
+        dash = false;
+        wantDownDash = false;
+        freeze = false;
+    } else if (!npc.utilityContext.hazardActive && npc.utilityContext.canPlant) {
         moveDir = glm::vec3(0.0f);
         jump = false;
         dash = false;

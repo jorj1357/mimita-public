@@ -7835,11 +7835,15 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         const char* reason = "nearest_ct_to_planted_bomb";
         // Once a defuse is actually progressing, never swap the designated NPC
         // for a merely closer teammate. Operator changes reset hold progress.
+        // The server starts the interaction at the configured range, so a
+        // stable defuser already inside that range is also kept.
         const bool defuseInProgress = d.objective.defuserActorId != 0 &&
             d.objective.defuseTicksElapsed > 0;
+        const bool stableInRange = stableAlive && stableIsNpc &&
+            stableDist <= d.objective.interactionRange;
         const bool keepStableNpc = stableAlive && stableIsNpc &&
-            (defuseInProgress || nearestNpc == 0 || nearestNpc == stable ||
-             stableDist <= nearestNpcDist + 5.0f);
+            (defuseInProgress || stableInRange || nearestNpc == 0 ||
+             nearestNpc == stable || stableDist <= nearestNpcDist + 10.0f);
         if (keepStableNpc) {
             defuser = stable;
             bestDist = stableDist;

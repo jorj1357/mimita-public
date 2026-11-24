@@ -370,3 +370,110 @@ Plant/defuse latency and wall/stuck rates remain Phase 2/3 targets. This proof
 covers CT NPC defuse completion only; it is not proof that the elite difficulty
 or movement-tech targets are met. The isolated run was stopped by its own
 `--stop-test-run` request with failures=[]; PIDs 31844/31072 only.
+
+### Generation-571 Phase 2 measurement (2026-11-23)
+
+Run `20261123_205333` pins game DLL generation 571 SHA-256
+`11c1f7b7af6b1df5577246877de9f23efb96deca02850032aeb0d63271271005` (EXE
+`2e24d312603e4135cdd9be0d870a11ce4be98042e253296de6ca16ca189d512b`), launch
+mode 45, map `dust2cyberiav4`. Server journal:
+`logs/2026-11-23/20261123_205333/server-01/events.jsonl`. Client journal:
+`logs/2026-11-23/20261123_205333/client-01/events.jsonl`.
+
+This run validates the new readiness path: the client journal contains
+`network.mode.active` with `phase=2` and `stage=active` (3 events), and the
+runner reported online instead of timing out in intermission.
+
+Generation 571 includes the elite profile, bhop hold, CT defuse repair, and the
+first header split. Over 256.2 s and 3 completed rounds:
+
+- 3 T plants, 3 CT defuses, CT winners 3/3. All sampled `objective.defuse-start`
+  operators were NPCs, but defuse starts still restarted 18 times with 15
+  interruptions before the 3 completions.
+- NPC-vs-NPC: TTK mean **1.08 s**, median **0.45 s**, p90 **3.25 s** (gen564:
+  2.40 / 0.84 / 11.35 s). Mean kills per round **5.00** (gen564 4.33).
+- Team CT: avg **11.92 m/s**, dash **25.43/min**, down-dash **8.45/min**, bhop
+  **3.76/min**, air **26.1%**, near-wall **15.4%**, blocked **3.8%**, stuck
+  **21.42/min**.
+- Team T: avg **11.53 m/s**, dash **22.04/min**, down-dash **7.45/min**, bhop
+  **3.21/min**, air **22.8%**, near-wall **7.9%**, blocked **1.8%**, stuck
+  **18.89/min**.
+- Versus gen564: CT dash 17.52→25.43/min, T 10.85→22.04/min; CT bhop
+  2.03→3.76/min, T 1.30→3.21/min; CT air 24.8→26.1%, T 17.0→22.8%.
+- Not yet met: air% target 30%; CT stuck is flat and T stuck is worse; CT
+  near-wall and blocked motion increased, likely from more bhop movement. These
+  are Phase 3 targets.
+
+Proof task `task-proof-5a4c3efb911a` verifies `objective.defused` on this run.
+The metric proof task remains unverified because the generic proof verifier did
+not match the nested metric field; the issue review carries the measured
+numbers. The isolated run was stopped by its own `--stop-test-run` request with
+failures=[]; PIDs 3124/30004 only.
+
+### Generation-572 Phase 3A/3B intermediate findings (2026-11-23)
+
+Run `20261123_215305` pinned game DLL generation 572 SHA-256
+`2de86cbded18ff9145d34cd95c030bcc69d85674f782616542114cca2931b441`, FCS,
+`dust2cyberiav4`. Server journal:
+`logs/2026-11-23/20261123_215305/server-01/events.jsonl`.
+
+Two source changes were tested together:
+
+1. **Phase 3B wall-stuck gate:** a stuck episode now starts only when a static
+   side-world contact is present, instead of any one-tick low displacement.
+   This reduced `npc.stuck-episode` from 1,372 in the gen571 window to 553 in a
+   comparable early window, but the metric definition changed. Real
+   `npc.stuck-recovery` events remained around 31. Treat the new episode count
+   as a cleaner wall-block signal, not a direct before/after of the old count.
+2. **Phase 3A defuse hold (first attempt):** holding the designated defuser as
+   soon as it entered the 6 m interaction range caused boundary oscillation.
+   This run recorded 41 `objective.defuse-start`, 38 `released`
+   interruptions, and only 2 completions across the sampled rounds. The
+   operators restarted repeatedly at 5.7–5.99 m. This is a regression from
+   gen571's 18 starts / 15 interruptions / 3 completions.
+
+Source was corrected afterward to hold at the closer `atObjective` tolerance
+(about 3 m) instead of the 6 m boundary, keeping the server-side stable-defuser
+guard. A generation-573 build was requested to validate that correction.
+
+Movement metrics from the same gen572 run, after the false stuck episodes were
+suppressed, were much higher than gen571: CT 18.62 m/s, dash 266.97/min, bhop
+15.63/min, air 44.0%, stuck 10.26/min; T 18.25 m/s, dash 255.64/min, bhop
+13.65/min, air 40.2%, stuck 10.20/min. The dash counter increments on actual
+dash starts, so this is likely real movement-tech use, not a per-tick
+double-count. However, the run was under concurrent load and only a partial
+window was sampled; these values are not accepted balance targets. The next
+pinned generation should verify they persist and that wall/blocked time does
+not regress.
+
+Lesson: a plausible "hold earlier" fix can create a worse boundary loop. The
+before/after defuse event chain caught it, and the source was reverted before
+being claimed as a win.
+
+### Generation-573 defuse hysteresis trial (2026-11-23)
+
+Run `20261123_223229` pinned generation 573 and reverted the hold to the closer
+`atObjective` tolerance. It still recorded 19 `objective.defuse-start`, 19
+`released` interruptions, and no completion in the sampled round. The utility
+log showed the designated defender toggling `at_objective` true/false around
+the 3 m threshold while the server's 6 m interaction range remained active.
+The NPC was sliding back and forth across the close tolerance.
+
+Source fix: latch a defuse-hold state when the designated defuser reaches
+`atObjective`, keep it while `canDefuse` remains true, and clear it when the
+defuse state ends or the actor leaves interaction range. The latch is a
+`thread_local` owner-local set in `src/npc/npc.cpp`, deliberately not a new
+`Npc` field, so the fix does not force the 143-source `npc.h` fan-out. Game DLL
+generation 574 was requested to validate the correction. This is a source
+attempt, not a completion claim.
+
+Generation 574 runtime `20261123_232235` still showed churn: one early defuse
+start, then 43 starts / 43 interruptions and an explosion after the plant. The
+latch did not solve it. Final source attempt: a defuse travel lock that moves
+the designated defuser toward the bomb using the navigation direction, stops
+inside 2.5 m, and suppresses jump/dash/down-dash/freeze; a real hazard releases
+it. Build attempt `game-dll-20261123T234301570308Z-6c7a9c` failed in
+`changed_source_preflight` for `src/network/multiplayer-projectiles.cpp`
+(another agent's pending change), so the travel-lock source is not validated.
+The shared build needs its owner to fix that compile failure before the next
+gen575 run.

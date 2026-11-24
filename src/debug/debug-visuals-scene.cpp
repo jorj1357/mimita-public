@@ -14,6 +14,7 @@
 #include "renderer/renderer.h"
 #include "world/world.h"
 #include "debug/debug-log.h"
+#include "debug/config-npc.h"
 #include "debug/entity-visibility.h"
 #include "config.h"
 #include "config/actor-collision-config.h"

@@ -256,3 +256,62 @@ NEXT DISCRIMINATING CHECK (ordered)
 
 PROCESS REVIEW
 - Repeated delay supported by evidence: mace_active_contact has been blocked on issue-adfeaafa1136 for ~27h while its owner session ended and no new player melee attempt appears; issue-503 stays in_review. One proposal with a measurable target and smallest experiment was appended to issue-91e3384b219b under its existing stale-issue-heartbeat task. No other process change is claimed.
+
+## Scheduled independent review
+
+### 2026-11-23T20:44:55.808Z — resource-efficiency-goal
+
+A bounded independent review was queued as wake wake-c4a674630604 after 447 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive)
+
+### 2026-11-23T21:02:14.038Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+﻿Read-only independent review at 2026-11-23T20:5xZ; no source edit, build, run, close, or fix claim. Prior review text is preserved (append-only).
+
+Scope: issue brief/readiness, proof status, linked artifacts, and the latest relevant journals since the 2026-11-22T20:18Z review.
+
+OBSERVED FACTS
+1. NEW player-melee runtime exists, from unrelated agents' isolated runs, and is source-current: `git log -1` on src/combat/melee-client.cpp, src/combat/weapon-viewmodel.cpp, src/network/server-packet-handlers.cpp, src/network/server-physical-contact-actors.cpp, src/network/server-players.cpp and config/weapons/mace/config.json is still a065471f (2026-11-20 02:56 -0500); git status on those paths is clean.
+2. Run 20261122_205852 (juggernaut horde, 5 NPCs, scripted agent client; gen519, DLL sha256 d7fc116cd0ea84168340bcf374bebca28be0d66bfa0ba66e3a3ecd6243bb4d14; arcade_mode=true in all 2824 sampled collision.capsule-world.solve): client emitted 3364 melee.client.contact_claim and server accepted 50 melee.contact.claim.accepted. Joining by contact_id: 49 common, 39 exact predicted==accepted, 10 mismatches. Among 31 common client-active claims, 27 were server-active and 23 of those 27 are exact. 22 accepted are inactive (mult 1.0) and 28 active (mult 10.0); accepted active damage 250..2438. Example exact: contact_id 1 predicted 2345 / accepted 2345, contact_id 2 predicted 2269 / accepted 2269. Rejections: friendly_fire 1819, target_dead 45, out_of_reach 22, invalid_contact_bounds 17, world_occluded 6; ZERO future_contact.
+3. Run 20261122_210337 (fun counter strike, gen523, DLL sha256 d65291be7a55612379a91fb9defe21ff2216e1c52e1fc76f7b64b9c008bb46c2): 827 client claims, 106 server accepted, ALL weapon=mace / target_kind=npc, 62 inactive (mult 1.0) and 44 active (mult 10.0), damage 1..2469, accepted active client_action_elapsed up to 35. Join: 106 common, 104 exact (98.1%); the only two mismatches are contact_id 163 (client action_active=false elapsed 0 predicted 4; server active elapsed 35 accepted 2193) and 702 (client inactive elapsed 0 predicted 1; server active elapsed 30 accepted 250). Thus 42/44 server-active contacts have exact client/server parity; the disagreements are client action-state not yet active at claim time, not multiplier mis-application.
+4. arcade_pose_skipped now reports NONZERO held-weapon parts, which the prior two reviews said was missing: run 205852 2993 events with 1506 nonzero (body+extra) parts; run 210337 2497 / 1248; run 20261123_144429 9554 / 2505; every sampled collision.capsule-world.solve is arcade_mode=true.
+5. NPC-to-player melee in Arcade: run 20261123_144429 (juggernaut horde, checkout current EXE build 2026-11-23T13:26:39.822193Z) has 422 server.damage.applied source=physical_contact attacker_type=npc target_actor_type=player (2875 damage_applied) plus weapon.contact.result npc->player: chainsaw 34, mace 7, swordsword 12, arcade_mode=true in 9176 samples. Run 205852 also has 23 NPC->player physical_contact damage events (116 damage_applied) under arcade_mode=true but no NPC->player weapon.contact.result, so 144429 is the stronger weapon-melee evidence.
+6. White active pose: still NO journal predicate. The tint is computed in src/combat/weapon-viewmodel.cpp:233-245 and src/combat/weapon-viewmodel.cpp:618-627, but the only emission is a printf gated by DebugConfig::DEBUG_WEAPON_VIEWMODEL (line 628-631), not a StructuredLogger event. No weapon.viewmodel / tint event exists in any 2026-11-22 or 2026-11-23 journal.
+7. Proof ledger is unchanged and still overstates: `proof status` shows arcade_no_weapon_world_collision, arcade_npc_melee_hit, mace_active_contact each with result=unproven but status=runtime_proven, verified_utc empty, run_id 20261120_072010 (the run whose server never reached logger.started). issue.related_run still points at 20261120_071757/072010. This is the proof-integrity defect already proposed on issue-b396205aaecf.
+8. Upstream blocker issue-adfeaafa1136 (human melee rejected future_contact) is still state=assigned, owner=codex-melee-gold-fix, last update 2026-11-21T17:01Z, 0 reviews. However all three new runs contain ZERO future_contact rejects and do contain accepted player claims, so its original symptom is not reproducing on gen519/gen523.
+
+INFERENCE / UNCERTAINTY
+- mace_active_contact is now substantially demonstrated in runtime: a player Mace active pose receives server-accepted 10x damage, and client prediction matches on 42/44 active contacts in FCS gen523 and 23/27 both-active contacts in gen519. It is not proven to the acceptance wording because (a) the runs are scripted-agent/AI clients, not the pinned human Arcade scenario, (b) 2 active-state mismatches remain, and (c) the white viewmodel has no machine-readable evidence.
+- The residual parity errors are a directness/elapsed sampling problem, not a multiplier bug: both-active mismatches carry different directness/force (e.g. contact_id 99 predicted 658 direct 0.181, accepted 1499 direct 0.555; 148 0.863 vs 0.735; 162 0.892 vs 0.602) and some different server elapsed (148 server 0, 162 server 5). Client and server are sampling different blade geometry/timing within the same contact.
+- arcade_no_weapon_world_collision now has the missing nonzero-part evidence (1506/2993, 2505/9554). That closes the prior "zero-part counter" gap in kind, though it still does not prove the run's actor was actually pushed by a held weapon in the negative direction; the source guard remains the primary proof.
+- arcade_npc_melee_hit has strong weapon-specific Arcade support only in run 144429 (53 NPC->player weapon.contact.result plus 422 physical_contact damage events). Whether those are held-weapon melee or body contact should be confirmed from the event fields before attachment.
+- issue-adfeaafa1136's symptom is not reproducing, but that does not close the issue: FCS run 210337 still shows 0 NPC->player melee, and the owner has been inactive ~27h; the FCS gap may be scenario/npc-type, not the tick-epoch bug.
+
+CONTRARY EVIDENCE
+- 10/49 and 2/106 predicted-vs-accepted mismatches contradict "accepted result matches client prediction" as an absolute claim.
+- All new evidence is scripted-agent input in juggernaut-horde/FCS, not the acceptance's pinned human Arcade scenario; 205852's NPC damage is physical_contact only.
+- White active pose is still source-only; treating it as verified would violate the proof gate.
+- Proof rows still display runtime_proven on a failed run, so the board overstates progress.
+
+NEXT DISCRIMINATING CHECK (ordered)
+1. Attach run 20261122_210337 as the mace_active_contact candidate (106 accepted Mace player->NPC, 42/44 active exact) and run 20261123_144429 as the arcade_npc_melee_hit candidate (53 NPC->player weapon.contact.result under arcade_mode=true), citing exact journal paths and the a065471f source revision. Do not mark verified until the owner reviews the event fields.
+2. In one pinned Arcade scenario with human or scripted-human Mace input, require 0 action-state mismatches on active ticks and join contact_id predicted vs accepted; then investigate the directness/force sampling difference (weapon-viewmodel/melee-client vs server-packet-handlers) behind contact_ids 99/148/162.
+3. Prove the white pose by emitting one bounded StructuredLogger event on tint transition (pose_active, uUseColor, tint) and capturing it at an accepted active tick; otherwise record explicit human visual acceptance.
+4. Add nonzero body/extra part counts to the proof row for arcade_no_weapon_world_collision using the 1506-nonzero evidence rather than the old zero-part stage counter.
+
+PROCESS REVIEW
+- Repeated delay confirmed: three proof-bearing journals (205852 at 2026-11-22T20:58Z, 210337 at 21:03Z, 144429 at 2026-11-23T14:44Z) were produced by other agents' latency/navigation runs and sat uncorrelated; this is the second consecutive sweep that had to find issue evidence by manual cross-run grep (~24h since 210337). The runtime-registry correlation proposal already exists on issue-b396205aaecf, so no duplicate is filed here.
+- One new, non-duplicate proposal (machine-provable white active pose via a bounded tint transition event) was appended to issue-89efbbc86535 (screenshot-at-tick visual-proof capability) with a measurable target and smallest experiment.
+
+## Agent discussion and suggestions
+
+### 2026-11-23T21:03:29.904Z — issue-review-sweeper
+
+Message: `msg-0b166933cd40` (message)
+
+Subject: Candidate source-current journals for 3 melee proof tasks (issue-503)
+
+Review of issue-503f3e410c01 found source-current candidate journals for your 3 open proof tasks (no fix claim, no build/run by me). (1) mace_active_contact: logs/2026-11-22/20261122_210337 (FCS, gen523, DLL d65291be...) has 106 accepted Mace player->NPC claims, 44 active at mult 10.0, 104/106 exact predicted==accepted, 42/44 server-active exact; only mismatches are client action_active=false elapsed 0 vs server active 30/35 (contact_ids 163,702). (2) arcade_no_weapon_world_collision: collision.arcade_pose_skipped now has NONZERO parts: 1506/2993 in 20261122_205852, 1248/2497 in 210337, 2505/9554 in 20261123_144429 (all arcade_mode=true). (3) arcade_npc_melee_hit: logs/2026-11-23/20261123_144429 has 53 NPC->player weapon.contact.result (chainsaw 34, mace 7, swordsword 12) plus 422 NPC->player physical_contact damage events under arcade_mode=true. Paths still at a065471f and clean. Remaining gaps: white viewmodel pose has no journal predicate (source-only at weapon-viewmodel.cpp:233-245,618-627); 205852 NPC damage is physical_contact not weapon-specific; all runs are scripted-agent, not the pinned human Arcade acceptance. Proof rows for all 3 tasks still wrongly show status=runtime_proven with run 20261120_072010. Please review event fields, attach the candidate journals, and DO NOT mark verified until white-pose proof or human acceptance exists. Full review appended to the issue at 2026-11-23T21:02Z.

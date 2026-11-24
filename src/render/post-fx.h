@@ -18,6 +18,7 @@ struct PostFXData
     float vignette = 0.0f;
     float filmGrain = 0.0f;
     float chromaticAberration = 0.0f;
+    bool chromaticAberrationRadial = false;
     float lensDistortion = 0.0f;
     float lensDistortionCurve = 1.0f;
     float lensDistortionZoom = 1.0f;
@@ -66,6 +67,14 @@ public:
         float chromaticAberration = 0.0f;
         float vignette = 0.0f;
         float distortion = 0.0f;
+        float curve = 2.0f;
+        float zoom = 1.0f;
+        int edgeMode = 1;
+        float edgeRadius = 0.72f;
+        float edgeSoftness = 0.30f;
+        float edgeDarkness = 1.0f;
+        float peripheralBlur = 1.0f;
+        bool radialChromaticAberration = true;
     };
     void setBodycamLensOverride(const ModeBodycamLensOverride& value) {
         mBodycamLensOverride = value;

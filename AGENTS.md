@@ -81,6 +81,17 @@ Read these gates before doing anything else:
    leave follow-up unowned unless accepting it with `next --claim`. Do not
    duplicate the report or post status-only chatter.
 
+   CROSS-AGENT SIGNAL: When a build failure, dirty file, lease, runtime, stale
+   proof, or resource-pressure symptom looks owned by another agent, do not
+   guess or overwrite it. Send one bounded question with the exact evidence
+   before continuing:
+   `python devscripts/agent-signal.py --agent <me> --path <path>
+   --build-id <id> --run-id <id> --question "..."`.
+   The tool matches reported activity, asks the likely owner, and broadcasts to
+   all when no owner is found. Then run `sync`/`inbox`; record the answer or
+   timeout in the issue. Never stop, kill, or edit another agent's work to
+   unblock yourself.
+
    USER CONTEXT IS SHARED: Every user message must enter the brain exactly once
    with its verbatim text and a stable source reference. The OpenCode prompt
    plugin does this automatically; other runtimes must call
@@ -202,6 +213,10 @@ Read these gates before doing anything else:
 
 - Follow the router's complete task flow and read every document it selects.
 - Use the smallest focused review set that covers the task.
+- For behavior, tuning, latency, or tooling changes, state a falsifiable
+  hypothesis and record real before/after numbers with pinned run IDs,
+  generation/SHA, units, sample size, and journal paths. Follow
+  `docs/workflows/measurement-hypothesis-driven-improvement.md`.
 - For bugs, identify the first missing or incorrect step in the input-to-output
   chain and record the exact owner, function, and evidence.
 - Improve or verify an appropriate diagnostic at the feature owner. Keep
@@ -240,6 +255,12 @@ Read these gates before doing anything else:
 ## Code and architecture
 
 - One concept has one owner, one source of truth, and one clear responsibility.
+- Header fan-out: before editing a shared header, run
+  `python devscripts/dependency_graph.py --affected <header>` and follow
+  `docs/architecture/headers/header-hygiene.md`. Record the affected-source
+  count in the build note. Over 50 affected sources needs a short fanout plan;
+  over 100 needs human/root review. Do not add unrelated types to a common
+  header, and never add project headers to `src/pch.h`.
 - Reuse an existing owner before expanding or creating another function,
   state variable, file, packet, or parallel subsystem.
 - Before adding a state variable or source of truth, search for an equivalent.

@@ -508,6 +508,122 @@ def _wait_event(journal: Path, event_name: str, pid: int, timeout: float,
     return None
 
 
+def _scan_server_health(journal: Path, offset: int, state: dict) -> int:
+    """Accumulate server tick progress and stall evidence since the last poll."""
+    try:
+        with journal.open("rb") as stream:
+            stream.seek(offset)
+            while True:
+                line = stream.readline()
+                if not line:
+                    break
+                offset = stream.tell()
+                try:
+                    event = json.loads(line.decode("utf-8", errors="replace"))
+                except json.JSONDecodeError:
+                    continue
+                tick = event.get("tick")
+                if isinstance(tick, int) and tick > state["latest_tick"]:
+                    state["latest_tick"] = tick
+                name = event.get("event")
+                fields = event.get("fields", {})
+                if name == "performance.server-tick-stall":
+                    total = fields.get("total_ms")
+                    if isinstance(total, (int, float)):
+                        state["max_stall_ms"] = max(
+                            state["max_stall_ms"], float(total))
+                elif name == "performance.server-tick-window":
+                    percent = fields.get("over_100ms_percent")
+                    if isinstance(percent, (int, float)):
+                        state["over_100ms_percent"] = max(
+                            state["over_100ms_percent"], float(percent))
+    except OSError:
+        pass
+    return offset
+
+
+def _wait_mode_active(client_journal: Path, server_journal: Path,
+                      client_pid: int, server_pid: int,
+                      process: subprocess.Popen | None = None) -> dict:
+    """Wait for active mode using simulation progress and server health.
+
+    A wall-clock-only wait misclassifies a heavily stalled server as a mode
+    failure. The server can be in intermission for many wall seconds when one
+    tick costs hundreds of milliseconds, so this gate distinguishes
+    ``server_stalled`` from a client that never observed active mode.
+    """
+    timeout = float(os.environ.get(
+        "MIMITA_TEST_MODE_ACTIVE_TIMEOUT_SECONDS", "240"))
+    sim_budget = int(os.environ.get(
+        "MIMITA_TEST_MODE_ACTIVE_SIM_TICKS", "2400"))
+    stall_budget_ms = float(os.environ.get(
+        "MIMITA_TEST_MODE_STALL_MS", "1500"))
+    client_offset = 0
+    server_offset = 0
+    health = {
+        "initial_tick": 0,
+        "latest_tick": 0,
+        "max_stall_ms": 0.0,
+        "over_100ms_percent": 0.0,
+    }
+    started = time.monotonic()
+    while time.monotonic() - started < timeout:
+        try:
+            with client_journal.open("rb") as stream:
+                stream.seek(client_offset)
+                while True:
+                    line = stream.readline()
+                    if not line:
+                        break
+                    client_offset = stream.tell()
+                    try:
+                        event = json.loads(
+                            line.decode("utf-8", errors="replace"))
+                    except json.JSONDecodeError:
+                        continue
+                    if event.get("pid") != client_pid:
+                        continue
+                    name = event.get("event")
+                    fields = event.get("fields", {})
+                    if name == "network.mode.active":
+                        return event
+                    # Compatibility for generations that predate the canonical
+                    # active event.
+                    if (name == "network.mode.start" and
+                            fields.get("stage") == "active"):
+                        return event
+        except OSError:
+            pass
+
+        server_offset = _scan_server_health(
+            server_journal, server_offset, health)
+        if health["initial_tick"] == 0 and health["latest_tick"] > 0:
+            health["initial_tick"] = health["latest_tick"]
+        elapsed = time.monotonic() - started
+        advanced = max(0, health["latest_tick"] - health["initial_tick"])
+        if elapsed > 30.0 and advanced > 0:
+            tick_rate = advanced / elapsed
+            if tick_rate < 15.0 or health["max_stall_ms"] > stall_budget_ms:
+                raise RuntimeError(
+                    "server stalled before active mode: "
+                    f"tick {health['initial_tick']}->{health['latest_tick']} "
+                    f"in {elapsed:.1f}s, "
+                    f"max_tick_stall_ms={health['max_stall_ms']:.1f}, "
+                    f"over_100ms_percent={health['over_100ms_percent']:.1f}")
+        if advanced >= sim_budget:
+            raise RuntimeError(
+                f"client did not observe active mode after {advanced} server "
+                f"ticks (max_tick_stall_ms={health['max_stall_ms']:.1f})")
+        if process is not None and process.poll() is not None:
+            raise RuntimeError("test client exited before active mode")
+        time.sleep(0.2)
+    raise RuntimeError(
+        f"timed out after {timeout:.0f}s waiting for active mode; "
+        f"server tick {health['initial_tick']}->{health['latest_tick']}, "
+        f"max_tick_stall_ms={health['max_stall_ms']:.1f}, "
+        f"over_100ms_percent={health['over_100ms_percent']:.1f}")
+
+
 def _write_instance_record(layout: RunLayout, manifest: dict,
                            instance_id: str, values: dict) -> None:
     rows = manifest.setdefault("instances", [])
@@ -685,10 +801,9 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
         if _wait_event(layout.client_journal, "network.connection-state.changed",
                        client.pid, 45.0, field="to", value="Connected") is None:
             raise RuntimeError(f"test client {client.pid} did not connect to {port}")
-        active = _wait_event(layout.client_journal, "network.mode.start", client.pid,
-                             45.0, field="stage", value="active")
-        if active is None:
-            raise RuntimeError(f"test client {client.pid} did not observe active mode")
+        active = _wait_mode_active(
+            layout.client_journal, layout.server_journal,
+            client.pid, server.pid, client)
         generation = int(game_identity.get("generation") or 0)
         pinned_game = bool(
             (game_identity.get("source_validation") or {}).get(
@@ -838,10 +953,9 @@ def start_second_client(run_id: str, client_name: str = "") -> dict:
         if _wait_event(journal, "network.connection-state.changed",
                        client.pid, 45.0, field="to", value="Connected") is None:
             raise RuntimeError(f"second test client {client.pid} did not connect to {port}")
-        active = _wait_event(journal, "network.mode.start", client.pid,
-                             45.0, field="stage", value="active")
-        if active is None:
-            raise RuntimeError(f"second test client {client.pid} did not observe active mode")
+        active = _wait_mode_active(
+            journal, layout.server_journal, client.pid,
+            int(server.get("pid") or 0), client)
         info.update({"state": "online", "active_mode_tick": active.get("tick")})
         _write_instance_record(layout, manifest, "client-02", info)
         _append_event(layout, "dev-loop.parallel-run.client02-ready",

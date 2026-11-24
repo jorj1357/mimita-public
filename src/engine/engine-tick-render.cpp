@@ -57,6 +57,7 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
 #include "debug/debug-log.h"
+#include "debug/config-npc.h"
 #include "debug/structured-log.h"
 #include "debug/crash-handler.h"
 #include "debug/transform-debug.h"

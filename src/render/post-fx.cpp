@@ -353,6 +353,7 @@ void PostFX::setUniforms(const PostFXData& data, const char* prefix)
     set1f("uVignette", data.vignette);
     set1f("uFilmGrain", data.filmGrain);
     set1f("uChromaticAberration", data.chromaticAberration);
+    set1i("uChromaticAberrationRadial", data.chromaticAberrationRadial ? 1 : 0);
     set1f("uLensDistortion", data.lensDistortion);
     set1f("uLensDistortionCurve", data.lensDistortionCurve);
     set1f("uLensDistortionZoom", data.lensDistortionZoom);
@@ -516,8 +517,16 @@ void PostFX::render()
     }
     if (mBodycamLensOverride) {
         data.chromaticAberration = mBodycamLensOverride->chromaticAberration;
+        data.chromaticAberrationRadial = mBodycamLensOverride->radialChromaticAberration;
         data.vignette = mBodycamLensOverride->vignette;
         data.lensDistortion = mBodycamLensOverride->distortion;
+        data.lensDistortionCurve = mBodycamLensOverride->curve;
+        data.lensDistortionZoom = mBodycamLensOverride->zoom;
+        data.lensDistortionEdgeMode = mBodycamLensOverride->edgeMode;
+        data.lensDistortionEdgeRadius = mBodycamLensOverride->edgeRadius;
+        data.lensDistortionEdgeSoftness = mBodycamLensOverride->edgeSoftness;
+        data.lensDistortionEdgeDarkness = mBodycamLensOverride->edgeDarkness;
+        data.lensDistortionPeripheralBlur = mBodycamLensOverride->peripheralBlur;
     }
     setUniforms(mBypass ? PostFXData{} : data, "");
 

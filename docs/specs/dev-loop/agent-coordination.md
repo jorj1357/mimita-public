@@ -300,6 +300,49 @@ issue/task where known, and broadcast it so agents do not depend on private
 chat context. Delivery to an idle agent occurs at its next activation or
 checkpoint; the coordination brain does not promise to wake an idle agent.
 
+## Cross-agent signal handshake
+
+When an agent encounters evidence that another agent likely owns the work, it
+must synchronize before guessing, overwriting, stopping, killing, or reverting
+anything. This applies to:
+
+- a build or `changed_source_preflight` failure in a file the agent did not edit;
+- a dirty file or active lease with no local explanation;
+- an unrelated isolated test run or pinned runtime still active;
+- a stale proof, generation, journal, or build identity;
+- a conflicting source edit, generated file, or permission error;
+- resource pressure that appears to come from another agent's build/run.
+
+Protocol:
+
+1. Capture exact evidence: file path, build attempt ID, run ID, generation,
+   journal path, event name, and the first observed failure line.
+2. Ask the shared board for likely owners and send one bounded question:
+
+   ```text
+   python devscripts/agent-signal.py --agent <me> \
+     --path src/owned/file.cpp \
+     --build-id <build-attempt-or-build-id> \
+     --run-id <run-id> \
+     --question "Exact symptom. Is this your work? What is the first failing step?"
+   ```
+
+   The helper matches reported activity paths/build/run IDs, asks the likely
+   owners with `agent-coord ask`, and broadcasts a response-required message to
+   `all` when no owner is found. It never edits source or stops a process.
+3. Read `sync`/`inbox`. Record the answer, no-answer timeout, or owner pointer in
+   the affected issue or build-friction record.
+4. Do not stop, kill, edit, or revert the other agent's work to unblock
+   yourself. Continue independent work, switch to a non-conflicting task, or
+   record a wait with a reason and a bounded next check.
+5. The owner replies with the exact file/build/run, whether the change is theirs,
+   the first failing step, and READY/NOT READY. If ownership is unknown, the
+   coordinator keeps the signal visible and asks the human.
+
+The normal trigger is automatic: an agent that sees a cross-agent signal uses
+the helper before taking further action. Repeated identical signals are
+deduplicated by build/run/path context; do not send status-only chatter.
+
 ## Optional intent
 
 Claims are not mandatory.

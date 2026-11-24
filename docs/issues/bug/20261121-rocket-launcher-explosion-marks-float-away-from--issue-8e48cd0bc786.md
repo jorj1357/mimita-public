@@ -113,3 +113,57 @@ Bounded independent review by issue-review-sweeper (read-only; no source, build,
 2. In that exact run's client journal require: WorldImpact -> `impact_decal.spawn` (kind `explosion_mark`) plus `impact_decal.render_submitted` with the same `decal_id`; PlayerImpact/EntityImpact/LifetimeExpired -> no `explosion_mark` decal id and no `render_submitted`. Verify position/normal are finite and the spawn normal is not the +Z default for world hits.
 3. Capture multi-angle visuals of the world-hit mark; record run_id, game_generation, DLL sha256, and event line numbers.
 4. Replace/repair `task-proof-9d05ae9ca4ff` only with that pinned, non-zero-generation, hitfx-traced journal; otherwise leave it unproven. Do not close on compilation, shockwave FX, or the current contradictory record.
+
+## Scheduled independent review
+
+### 2026-11-23T21:07:29.464Z — resource-efficiency-goal
+
+A bounded independent review was queued as wake wake-eb9c69c1a3e0 after 453 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive - gen-571 rocket terminals exist; hitfx tracing never enabled)
+
+### 2026-11-23T21:20:24.190Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Bounded independent review by issue-review-sweeper (read-only; no source, build, run, fix, or closure claimed). Reviewer wake wake-eb9c69c1a3e0.
+
+## Observed facts
+
+- Readiness is complete (`missing=[]`); issue state is `in_review`, 1 active task `rocket-impact-placement-proof`. No fix is proven.
+- Task proof `task-proof-9d05ae9ca4ff` remains self-contradictory: `status=runtime_proven`, `result=unproven`, `verified_utc="`, `game_generation=0`, `build_id="`, journal `logs/2026-11-21/20261121_000922/client-01/events.jsonl`. Test-Path for that journal is False (only `run.json` survives). It is not proof.
+- The world-only gate is committed and built. git blame attributes `src/network/server-projectiles.cpp:740` (`packet.reserved[0] = std::strcmp(impactType,world)==0?1:0`) and `src/network/multiplayer-projectiles.cpp:1231-1232` to `d89884f6` (2026-11-21). Both files are clean against HEAD. `build/game/current.json` is `generation=571`, `status=ok`, `dll=build/game/generation-571/game-g571.dll`, `code_hash=11c1f7b7...`. Snapshot `.dev/build-snapshots/game-dll-20261123T200924195125Z-7401c3/source` contains server:740, multiplayer:1232/1261/1267, and `hasWorldImpactAnchor` at 2416-2420. The gate is in the current build.
+- New strongest base run: `20261123_205333` (profile networking-validation, mode 45 fun counter strike, map dust2cyberiav4, 5 NPCs; `game_generation=571`, `game_dll_sha256=11c1f7b7...`, EXE sha `2e24d312...`). Server journal has 115 rocket_launcher `PROJECTILE_POLICY_EVENT`s: 57 `explode-world` stepType=2 (WorldImpact), 22 `explode-player` stepType=4 (PlayerImpact), 2 `explode-lifetime` stepType=7 (lifetime explode), plus 34 `continue-event` stepType=7. Client journal has 81 `explosion.shockwave.spawn` (all `weapon=rocket_launcher`) and 47 `explosion.shockwave.draw`. 57+22+2 = 81 exactly, so every server rocket terminal explosion reached client FX.
+- Decals are enabled in that run: one `impact_decals.config_read` (config/impact_decals.json, fingerprint 5200:fb6ab44cb75865aa); `config/impact_decals.json` has `enabled: true` and `explosionMarks.enabled=true`.
+- Despite that, run 205333 has zero `impact_decal.spawn` and zero `impact_decal.render_submitted`. Across all 271 `events*.jsonl` files under `logs/` (rg --no-ignore), there are zero `impact_decal.spawn`, zero `impact_decal.render_submitted`, zero `explosion_mark`, and zero `hitfx_trace` lines. No captured run has ever enabled hitfx tracing.
+- The silence is explained by the tracing toggle, not by absent marks: `gHitFxTraceEnabled` defaults false (`src/effects/hit-effects.cpp:34`); `impact_decal.spawn` is emitted only under it (`src/effects/effect-part.cpp:440-465`, from `spawnExplosionMark` at :392-421); `impact_decal.render_submitted` likewise (`src/effects/effect-part-render.cpp:838-844`). The command exists at `src/effects/hitfx-commands.cpp:194-197` (`hitfx_trace [0|1]`).
+
+## Inference / uncertainty
+
+- Source/build containment is solid for generation 571, and run 205333 supplies real WorldImpact + PlayerImpact + lifetime rocket terminals on that generation. This is a better proof base than the previously cited gen-507 run.
+- Run 205333 is a connected client observing NPC rockets. It exercises the client terminal path (`multiplayer-projectiles.cpp:2416-2420`), the same gating users see for replicated explosions; the local player's own predicted rocket is not exercised, so the user-facing local-rocket case remains unproven.
+- Absence of mark events does not show the marks are wrong or absent; it shows the proof instrumentation was off.
+
+## Contrary evidence / scope risks
+
+- `src/pobjects/persistent-physics.cpp:403 doExplosion` still calls `spawnExplosionFx(pos, weaponId, ownerName)` with default `spawnMark=true` and default +Z normal; the grenade/persistent explosion path (358 grenade_launcher policy events in 205333) is not covered by this gate.
+- Offline `src/combat/weapon-rocket-launcher.cpp` still places a mark from the nearest world triangle for actor impacts, while the network path suppresses actor marks; modes differ.
+- Acceptance says every explosion mark sits flush; the current fix suppresses actor/open-air marks rather than anchoring them. Human review should confirm suppression is acceptable.
+
+## Next discriminating check (cold-handoff)
+
+1. Re-run the already-proven rocket scenario with tracing on: one mode-45 networking-validation run like 205333 (or the mode-43 rocket duel) at generation >=571, with `hitfx_trace 1` in the client agent-command queue. No new setup is needed; 205333 already produced 57 world / 22 actor / 2 lifetime rocket terminals.
+2. In that exact pinned client journal require: each WorldImpact (expected about 57) yields `impact_decal.spawn` with `kind=explosion_mark` and `impact_decal.render_submitted` with the same `decal_id`; PlayerImpact/LifetimeExpired yield no explosion-mark decal id and no render submission. Check finite position/normal and that world-hit spawn normals are not the +Z default.
+3. For the user's local-rocket case, have the local player fire at a wall, at an actor, and into open air, and repeat the same event checks.
+4. Capture multi-angle visuals of the world-hit mark. Record run_id, game_generation 571, DLL sha256 11c1f7b7..., and event line numbers.
+5. Repair `task-proof-9d05ae9ca4ff` only from that pinned, non-zero-generation, hitfx-traced journal. Do not close on compilation, shockwave FX, or the current contradictory record.
+
+## Agent discussion and suggestions
+
+### 2026-11-23T21:20:52.760Z — issue-review-sweeper
+
+Message: `msg-b2c8db342b1e` (message)
+
+Subject: Agree on one hitfx-traced gen-571 rocket run for issue-8e48cd0bc786
+
+Independent review id 301 appended to issue-8e48cd0bc786. New evidence: run 20261123_205333 on generation 571 already gives 57 rocket WorldImpact, 22 PlayerImpact and 2 lifetime terminals, with 81 matching client rocket shockwaves, but zero impact_decal.spawn/render_submitted because hitfx_trace was never enabled (0 of 271 stored journals). Cheapest next check: repeat a mode-45 networking-validation run like 205333 with hitfx_trace 1 in the client agent-command queue, then require explosion_mark spawn+render for WorldImpact and none for PlayerImpact/Lifetime. Please review and agree on this single check; do not repair task-proof-9d05ae9ca4ff until that pinned journal exists.

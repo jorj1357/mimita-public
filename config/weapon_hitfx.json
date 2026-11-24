@@ -110,6 +110,21 @@
     "swordsword": {
       "hitForce": { "weaponMultiplier": 1.5, "angleEnabled": false }
     },
+    "bloodtest_ak47": {
+      "hitForce": { "weaponMultiplier": 1.35 },
+      "blood": { "enabled": true, "particleCount": 18, "particleCountForceScale": 120.0, "decalCount": 8, "decalCountForceScale": 0.4 },
+      "debris": { "count": 8 }
+    },
+    "bloodtest_judgement": {
+      "hitForce": { "weaponMultiplier": 1.8 },
+      "blood": { "enabled": true, "particleCount": 26, "particleCountForceScale": 150.0, "decalCount": 12, "decalCountForceScale": 0.5 },
+      "debris": { "count": 10 }
+    },
+    "bloodtest_bat": {
+      "hitForce": { "weaponMultiplier": 2.4, "angleEnabled": false },
+      "blood": { "enabled": true, "particleCount": 22, "particleCountForceScale": 140.0, "decalCount": 10 },
+      "debris": { "count": 12 }
+    },
     "grenade_launcher": {
       "hitForce": { "weaponMultiplier": 2.5, "maxForce": 8.0 },
       "debris": { "count": 18, "speed": 6.0 },

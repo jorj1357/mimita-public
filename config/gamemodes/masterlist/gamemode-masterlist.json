@@ -667,6 +667,10 @@
             "head_eye_offset_m": { "type": "array", "required": false, "default": [0.0, 0.0, 0.0] },
             "position_response_seconds": { "type": "number", "required": false, "default": 0.12, "min": 0.01, "max": 2.0 },
             "rotation_response_seconds": { "type": "number", "required": false, "default": 0.1, "min": 0.01, "max": 2.0 },
+            "head_response_seconds": { "type": "number", "required": false, "default": 0.12, "min": 0.01, "max": 2.0 },
+            "torso_response_seconds": { "type": "number", "required": false, "default": 0.18, "min": 0.01, "max": 2.0 },
+            "arm_response_seconds": { "type": "number", "required": false, "default": 0.14, "min": 0.01, "max": 2.0 },
+            "weapon_stability_seconds": { "type": "number", "required": false, "default": 0.1, "min": 0.01, "max": 2.0 },
             "camera_sway_scale": { "type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 5.0 },
             "lens": {
               "type": "object",
@@ -674,7 +678,15 @@
               "fields": {
                 "chromatic_aberration": { "type": "number", "required": false, "default": 0.12, "min": 0.0, "max": 0.8 },
                 "vignette": { "type": "number", "required": false, "default": 0.18, "min": 0.0, "max": 0.8 },
-                "distortion": { "type": "number", "required": false, "default": 0.0, "min": -0.5, "max": 0.5 }
+                "distortion": { "type": "number", "required": false, "default": 0.0, "min": 0.0, "max": 100.0 },
+                "curve": { "type": "number", "required": false, "default": 2.0, "min": 0.05, "max": 8.0 },
+                "zoom": { "type": "number", "required": false, "default": 1.0, "min": 0.1, "max": 5.0 },
+                "edge_mode": { "type": "string", "required": false, "default": "vignette", "enum": ["black", "vignette", "clamp", "repeat", "circle"] },
+                "edge_radius": { "type": "number", "required": false, "default": 0.72, "min": 0.05, "max": 1.2 },
+                "edge_softness": { "type": "number", "required": false, "default": 0.3, "min": 0.0, "max": 1.0 },
+                "edge_darkness": { "type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 1.0 },
+                "peripheral_blur": { "type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 4.0 },
+                "radial_chromatic_aberration": { "type": "boolean", "required": false, "default": true }
               }
             },
             "wall_collision": {

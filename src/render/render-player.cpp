@@ -27,6 +27,7 @@
 #include "config/player-visuals-config.h"
 #include "render/dynamic-light.h"
 #include "debug/debug-log.h"
+#include "debug/config-npc.h"
 #include "debug/debug-visuals.h"
 #include "debug/structured-log.h"
 #include "perf/perf-spike.h"

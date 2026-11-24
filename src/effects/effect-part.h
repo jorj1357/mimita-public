@@ -147,6 +147,10 @@ public:
                           const std::string& sourceActorId, const std::string& targetActorId,
                           float directness = 1.0f, float hitDistance = -1.0f,
                           float amountScale = 1.0f, float lifetimeScale = 1.0f);
+    void spawnGoreEffect(glm::vec3 hitPoint, glm::vec3 direction, glm::vec3 normal,
+                         float damage, float contactForce,
+                         const std::string& bodyPart, int partHealthAfter,
+                         bool partDestroyed, const std::string& targetActorId);
     void spawnClientBloodFeedback(int damage, float force);
     EffectPart* spawnEntityImpact(glm::vec3 position, glm::vec3 normal,
                                   const std::string& sourceActorId, const std::string& targetActorId,

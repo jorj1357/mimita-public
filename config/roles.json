@@ -28,6 +28,24 @@
       "behavior_profile": "aggressive"
     },
     {
+      "id": "bloodtest_fighter",
+      "display_name": "Bloodtest Fighter",
+      "team": 0,
+      "health": 100,
+      "movement_preset": "slowdm",
+      "starting_weapon": "bloodtest_ak47",
+      "behavior_profile": "elite_squad"
+    },
+    {
+      "id": "bloodtest_npc",
+      "display_name": "Bloodtest NPC",
+      "team": 0,
+      "health": 100,
+      "movement_preset": "slowdm",
+      "starting_weapon": "bloodtest_ak47",
+      "behavior_profile": "beginner"
+    },
+    {
       "id": "elite_fighter",
       "display_name": "Elite Fighter",
       "team": 0,

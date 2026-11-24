@@ -30,6 +30,23 @@ public:
 
     // Per-match overrides owned by GamemodeRuntimeResolver. The authored JSON
     // values remain the base and save() always round-trips them unchanged.
+    struct ModeResponseOverride {
+        float headResponseSeconds = 0.12f;
+        float torsoResponseSeconds = 0.18f;
+        float armResponseSeconds = 0.14f;
+        float weaponStabilitySeconds = 0.10f;
+    };
+    void setBodycamResponseOverride(const ModeResponseOverride& value) {
+        mBodycamResponseOverride = value;
+        mHasBodycamResponseOverride = true;
+    }
+    void clearBodycamResponseOverride() {
+        mHasBodycamResponseOverride = false;
+    }
+    const ModeResponseOverride* bodycamResponseOverride() const {
+        return mHasBodycamResponseOverride ? &mBodycamResponseOverride : nullptr;
+    }
+
     void setEnabledOverride(bool on) { mHasEnabledOverride = true; mEnabledOverride = on; }
     void clearEnabledOverride() { mHasEnabledOverride = false; }
     void setModeOverride(const std::string& mode) {
@@ -118,6 +135,8 @@ private:
     bool mEnabled = true;
     bool mHasEnabledOverride = false;
     bool mEnabledOverride = true;
+    bool mHasBodycamResponseOverride = false;
+    ModeResponseOverride mBodycamResponseOverride;
     std::string mMode = "default";
     std::string mModeOverride;
     bool mHasModeOverride = false;

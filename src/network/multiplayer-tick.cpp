@@ -604,8 +604,32 @@ static void processSnapshotEntities(
         }
         Player& p = *replica;
         p.isNpcActor = entity.entityType == ENTITY_NPC;
-        for (int part = 0; part < 6; ++part)
-            p.body.partHealth[(size_t)part] = entity.partHealth[part];
+        for (int part = 0; part < 6; ++part) {
+            const ActorBodyPart bodyPart = (ActorBodyPart)part;
+            const uint8_t beforeHealth = p.body.partHealth[(size_t)part];
+            const uint8_t afterHealth = entity.partHealth[part];
+            if (beforeHealth == afterHealth)
+                continue;
+            const ActorBodyLayer beforeLayer = p.body.layer(bodyPart);
+            p.body.partHealth[(size_t)part] = afterHealth;
+            const ActorBodyLayer afterLayer = p.body.layer(bodyPart);
+            if (beforeLayer != afterLayer) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "bloodtest.body-layer.changed", std::to_string(entity.networkEntityId),
+                    "replicated body-part layer changed", serverTick,
+                    nlohmann::json{
+                        {"actor_id", entity.networkEntityId},
+                        {"actor_type", entity.entityType == ENTITY_NPC ? "npc" : "player"},
+                        {"part_id", actorBodyPartName(bodyPart)},
+                        {"health_before", beforeHealth},
+                        {"health_after", afterHealth},
+                        {"layer_before", (int)beforeLayer},
+                        {"layer_after", (int)afterLayer},
+                        {"tick", serverTick}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
         bool isNew = !existsBefore;
         EntityInterpolationState& interpolation = *interpolationState;
         const bool npcNewLife = entity.entityType == ENTITY_NPC && existsBefore &&

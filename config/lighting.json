@@ -180,6 +180,38 @@
                 "randomRadiusMin": 0.9,
                 "randomRadiusMax": 1.1
             }
+        },
+        "bloodtest_ak47": {
+            "muzzleFlash": {
+                "enabled": true,
+                "color": [1.0, 0.72, 0.28],
+                "intensity": 120.0,
+                "radius": 8.0,
+                "lifetime": 0.055,
+                "fadeIn": 0.0,
+                "fadeOut": 0.055,
+                "positionOffset": [0.0, 0.0, 0.0],
+                "randomIntensityMin": 0.8,
+                "randomIntensityMax": 1.2,
+                "randomRadiusMin": 0.85,
+                "randomRadiusMax": 1.15
+            }
+        },
+        "bloodtest_judgement": {
+            "muzzleFlash": {
+                "enabled": true,
+                "color": [1.0, 0.7, 0.3],
+                "intensity": 18.0,
+                "radius": 7.0,
+                "lifetime": 0.06,
+                "fadeIn": 0.0,
+                "fadeOut": 0.001,
+                "positionOffset": [0.0, 0.0, 0.0],
+                "randomIntensityMin": 0.85,
+                "randomIntensityMax": 1.15,
+                "randomRadiusMin": 0.85,
+                "randomRadiusMax": 1.1
+            }
         }
 
     }

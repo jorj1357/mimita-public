@@ -892,6 +892,7 @@ struct ServerDamageResult
     int healthBefore = 0;
     int healthAfter = 0;
     ActorBodyPart bodyPart = ActorBodyPart::Unknown;
+    uint8_t partHealthBefore = 0;
     uint8_t partHealthAfter = 0;
     bool partDestroyed = false;
     std::string rejectionReason;

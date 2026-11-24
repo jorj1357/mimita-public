@@ -138,3 +138,25 @@ canonical journal. The normative event contract is
 - Reading order for hotness: pick the exact instance journal, read
   `game.build.candidate` and `game.generation.activated`, then
   `game.hotness.summary`, then the per-path events for the feature under test.
+
+## 2026-11-23 — Mode readiness events
+
+A client-side readiness consumer must not use a wall-clock-only wait for the
+first active phase. A heavily stalled server can spend many wall seconds in
+intermission even though the simulation is still advancing.
+
+- `network.mode.start` remains the transition record. Its `stage` is `active`,
+  `countdown`, `go`, or `phase`; fields include mode, map, phase,
+  previous_phase, duel_id, state_version, server_tick, participant_count, and
+  source.
+- `network.mode.active` is the canonical readiness record. Emit it on the
+  client when the authoritative `DUEL_PHASE_ACTIVE` state is applied, with mode,
+  map, phase, stage `active`, duel_id, state_version, server_tick,
+  participant_count, source `client_packet`, and build_id.
+- Consumers wait for `network.mode.active` using a simulation-time budget and a
+  wall-time cap. If server ticks do not advance within budget, or a tick stall
+  exceeds the configured budget, report `server_stalled` with the tick range,
+  elapsed wall time, maximum tick stall, and over-100 ms percentage. Do not
+  report “did not observe active mode” for a slow server.
+- Older generations that lack `network.mode.active` may be accepted through the
+  `network.mode.start` `stage=active` compatibility path.

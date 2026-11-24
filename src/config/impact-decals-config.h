@@ -125,12 +125,71 @@ struct ImpactDecalGroupConfig {
     ImpactForceConfig force;
 };
 
+struct GoreChunkConfig {
+    bool enabled = true;
+    int countMin = 1;
+    int countMax = 7;
+    float sizeMin = 0.035f;
+    float sizeMax = 0.14f;
+    float speedMin = 2.0f;
+    float speedMax = 9.0f;
+    float coneDegreesMin = 10.0f;
+    float coneDegreesMax = 38.0f;
+    float gravity = 22.0f;
+    float drag = 0.4f;
+    float lifetimeMin = 0.6f;
+    float lifetimeMax = 1.6f;
+    glm::vec3 color{0.62f, 0.035f, 0.035f};
+    std::string texture;
+};
+
+struct GoreMistConfig {
+    bool enabled = true;
+    int countMin = 6;
+    int countMax = 26;
+    float sizeMin = 0.15f;
+    float sizeMax = 0.7f;
+    float endSizeScale = 2.4f;
+    float speedMin = 1.0f;
+    float speedMax = 4.5f;
+    float coneDegreesMin = 18.0f;
+    float coneDegreesMax = 50.0f;
+    float gravity = 2.0f;
+    float drag = 2.0f;
+    float lifetimeMin = 0.28f;
+    float lifetimeMax = 0.75f;
+    float alphaMin = 0.12f;
+    float alphaMax = 0.42f;
+    std::string texture;
+};
+
+struct GoreConfig {
+    bool enabled = true;
+    GoreChunkConfig fleshChunks;
+    GoreChunkConfig boneShards;
+    GoreMistConfig mist;
+    float destroyedChunkMultiplier = 3.0f;
+    float destroyedBoneMultiplier = 2.5f;
+    float destroyedMistMultiplier = 4.0f;
+    float destroyedDecalMultiplier = 2.0f;
+    float destroyedForceMultiplier = 1.5f;
+    bool exitConeEnabled = true;
+    float headDepthM = 0.28f;
+    float torsoDepthM = 0.18f;
+    float limbDepthM = 0.10f;
+    float headConeDegrees = 10.0f;
+    float torsoConeDegrees = 18.0f;
+    float limbConeDegrees = 26.0f;
+    float exitMistCountScale = 1.8f;
+};
+
 struct ImpactDecalsData {
     bool enabled = true;
     ImpactDecalGroupConfig blood;
     ImpactDecalGroupConfig bulletHoles;
     ImpactDecalGroupConfig worldCracks;
     ImpactDecalGroupConfig explosionMarks;
+    GoreConfig gore;
 };
 
 class ImpactDecalsConfig {

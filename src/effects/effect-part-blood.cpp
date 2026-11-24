@@ -11,6 +11,7 @@
 #include "audio/audio.h"
 #include "effects/hit-effects.h"
 #include "config/impact-decals-config.h"
+#include "entities/actor-body.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "config.h"
@@ -434,6 +435,205 @@ void EffectPartSystem::spawnBloodEffect(
 
     spawnBloodSurfaceDecals(hitPoint, forward, tangent, bitangent, damageScale, force,
                             sourceActorId, targetActorId, amountScale, lifetimeScale);
+}
+
+void EffectPartSystem::spawnGoreEffect(glm::vec3 hitPoint, glm::vec3 direction,
+                                       glm::vec3 normal, float damage,
+                                       float contactForce, const std::string& bodyPart,
+                                       int partHealthAfter, bool partDestroyed,
+                                       const std::string& targetActorId)
+{
+    MIMITA_PERF_SCOPE("EffectPart::SpawnGoreEffect");
+    if (!mEffectsEnabled) return;
+    const auto& data = ImpactDecalsConfig::instance().data();
+    const GoreConfig& gore = data.gore;
+    if (!data.enabled || !gore.enabled) return;
+
+    const glm::vec3 forward = glm::length(direction) > 0.001f
+        ? glm::normalize(direction) : glm::vec3(0.0f, 1.0f, 0.0f);
+    const glm::vec3 upHint = glm::length(normal) > 0.001f
+        ? glm::normalize(normal) : glm::vec3(0.0f, 0.0f, 1.0f);
+    const glm::vec3 tangent = glm::normalize(
+        std::fabs(forward.z) < 0.9f
+            ? glm::cross(forward, glm::vec3(0.0f, 0.0f, 1.0f))
+            : glm::cross(forward, upHint));
+    const glm::vec3 bitangent = glm::normalize(glm::cross(forward, tangent));
+
+    const ActorBodyConfig& bodyCfg = ActorBodyConfig::instance();
+    const float maxHealth = (float)std::max(1, bodyCfg.partMaxHealth);
+    ActorBodyLayer layer = ActorBodyLayer::Skin;
+    if (partDestroyed || partHealthAfter == 0)
+        layer = ActorBodyLayer::Destroyed;
+    else if (partHealthAfter > 0 && (float)partHealthAfter <=
+             maxHealth * bodyCfg.boneThreshold)
+        layer = ActorBodyLayer::Bone;
+    else if (partHealthAfter > 0 && (float)partHealthAfter <=
+             maxHealth * bodyCfg.meatThreshold)
+        layer = ActorBodyLayer::Meat;
+
+    const float forceScale = contactForce > 0.0f
+        ? std::clamp(contactForce / 60.0f, 0.0f, 1.0f)
+        : 0.0f;
+    const float force = std::clamp(std::max(
+        damage / 100.0f, forceScale), 0.0f, 1.0f);
+    const float chunkMult = partDestroyed ? gore.destroyedChunkMultiplier : 1.0f;
+    const float boneMult = partDestroyed ? gore.destroyedBoneMultiplier : 1.0f;
+    const float mistMult = partDestroyed ? gore.destroyedMistMultiplier : 1.0f;
+
+    auto randomDirection = [&](float coneDegreesMin, float coneDegreesMax) {
+        const float coneDegrees = glm::mix(coneDegreesMin, coneDegreesMax, force);
+        const float coneRadius = std::tan(glm::radians(coneDegrees));
+        const float angle = (float)(rand() % 6284) / 1000.0f;
+        const float radial = std::sqrt((float)(rand() % 1001) / 1000.0f) * coneRadius;
+        return glm::normalize(forward + tangent * std::cos(angle) * radial +
+                              bitangent * std::sin(angle) * radial);
+    };
+
+    auto spawnChunk = [&](const GoreChunkConfig& cfg, int count, bool bone) {
+        if (!cfg.enabled) return;
+        count = std::clamp(count, 0, 64);
+        for (int i = 0; i < count; ++i) {
+            EffectPart part;
+            const glm::vec3 dir = randomDirection(cfg.coneDegreesMin,
+                                                  cfg.coneDegreesMax);
+            const float speed = glm::mix(cfg.speedMin, cfg.speedMax,
+                (float)(rand() % 1001) / 1000.0f);
+            const float size = glm::mix(cfg.sizeMin, cfg.sizeMax,
+                (float)(rand() % 1001) / 1000.0f) * (0.7f + 0.3f * force);
+            part.position = hitPoint + dir * 0.04f;
+            part.velocity = dir * speed;
+            part.gravity = cfg.gravity;
+            part.drag = cfg.drag;
+            part.affectedByGravity = true;
+            part.maxLifetime = glm::mix(cfg.lifetimeMin, cfg.lifetimeMax,
+                (float)(rand() % 1001) / 1000.0f);
+            part.scale = std::max(0.005f, size);
+            part.endScale = part.scale * 0.75f;
+            part.color = cfg.color;
+            part.alpha = 1.0f;
+            part.billboardText = false;
+            part.sourceActorId = "gore";
+            part.targetActorId = targetActorId;
+            part.rotation = glm::vec3(
+                (float)(rand() % 6284) / 1000.0f,
+                (float)(rand() % 6284) / 1000.0f,
+                (float)(rand() % 6284) / 1000.0f);
+            part.angularVelocity = glm::vec3(
+                (float)(rand() % 1001) / 250.0f,
+                (float)(rand() % 1001) / 250.0f,
+                (float)(rand() % 1001) / 250.0f);
+            if (bone) {
+                part.box = true;
+                part.replayType = "gore_bone";
+            } else {
+                part.texturePath = cfg.texture;
+                part.replayType = cfg.texture.empty() ? "gore_flesh" : "hitfx_particle";
+            }
+            spawn(part);
+        }
+    };
+
+    auto spawnMist = [&](const glm::vec3& origin, float coneMin, float coneMax,
+                         int count, float sizeScale) {
+        if (!gore.mist.enabled) return;
+        count = std::clamp(count, 0, 96);
+        for (int i = 0; i < count; ++i) {
+            EffectPart part;
+            const glm::vec3 dir = randomDirection(coneMin, coneMax);
+            const float speed = glm::mix(gore.mist.speedMin, gore.mist.speedMax,
+                (float)(rand() % 1001) / 1000.0f);
+            const float size = glm::mix(gore.mist.sizeMin, gore.mist.sizeMax,
+                (float)(rand() % 1001) / 1000.0f) * sizeScale;
+            part.position = origin + dir * 0.04f;
+            part.velocity = dir * speed;
+            part.gravity = gore.mist.gravity;
+            part.drag = gore.mist.drag;
+            part.affectedByGravity = true;
+            part.maxLifetime = glm::mix(gore.mist.lifetimeMin,
+                                        gore.mist.lifetimeMax,
+                (float)(rand() % 1001) / 1000.0f);
+            part.scale = std::max(0.01f, size);
+            part.endScale = part.scale * gore.mist.endSizeScale;
+            part.color = glm::vec3(0.55f, 0.01f, 0.015f);
+            part.alpha = glm::mix(gore.mist.alphaMin, gore.mist.alphaMax, force);
+            part.useEndAlpha = true;
+            part.endAlpha = 0.0f;
+            part.billboardText = false;
+            part.texturePath = gore.mist.texture;
+            part.replayType = gore.mist.texture.empty() ? "gore_mist" : "hitfx_particle";
+            part.sourceActorId = "gore";
+            part.targetActorId = targetActorId;
+            spawn(part);
+        }
+    };
+
+    int fleshCount = (int)std::lround(glm::mix(
+        (float)gore.fleshChunks.countMin, (float)gore.fleshChunks.countMax,
+        force) * chunkMult);
+    int boneCount = (int)std::lround(glm::mix(
+        (float)gore.boneShards.countMin, (float)gore.boneShards.countMax,
+        force) * boneMult);
+    if (layer == ActorBodyLayer::Skin) {
+        fleshCount = std::max(0, fleshCount / 2);
+        boneCount = 0;
+    } else if (layer == ActorBodyLayer::Meat) {
+        boneCount = std::max(0, boneCount / 2);
+    } else if (layer == ActorBodyLayer::Bone || layer == ActorBodyLayer::Destroyed) {
+        fleshCount = std::max(1, fleshCount);
+    }
+    if (partDestroyed) {
+        fleshCount = std::max(fleshCount, 6);
+        boneCount = std::max(boneCount, 4);
+    }
+    spawnChunk(gore.fleshChunks, fleshCount, false);
+    spawnChunk(gore.boneShards, boneCount, true);
+    spawnMist(hitPoint, gore.mist.coneDegreesMin, gore.mist.coneDegreesMax,
+              (int)std::lround(glm::mix((float)gore.mist.countMin,
+                                        (float)gore.mist.countMax, force) * mistMult),
+              1.0f);
+
+    if (gore.exitConeEnabled && (partDestroyed || force > 0.55f)) {
+        float depth = gore.limbDepthM;
+        float cone = gore.limbConeDegrees;
+        if (bodyPart == "head") {
+            depth = gore.headDepthM;
+            cone = gore.headConeDegrees;
+        } else if (bodyPart == "torso") {
+            depth = gore.torsoDepthM;
+            cone = gore.torsoConeDegrees;
+        }
+        const glm::vec3 exitPoint = hitPoint + forward * depth;
+        const int exitCount = (int)std::lround(glm::mix(
+            (float)gore.mist.countMin, (float)gore.mist.countMax, force) *
+            gore.exitMistCountScale);
+        spawnMist(exitPoint, cone, cone * 1.6f, exitCount, 1.35f);
+    }
+
+    const int decalCount = (int)std::lround(
+        (float)std::max(1, data.blood.minCount) *
+        (partDestroyed ? gore.destroyedDecalMultiplier : 1.0f));
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Rendering, StructuredLevel::Important,
+        "bloodtest.blood-effect.applied", targetActorId,
+        "gore effect applied from confirmed body hit", 0,
+        nlohmann::json{
+            {"actor_id", targetActorId},
+            {"part_id", bodyPart},
+            {"impact_position", {hitPoint.x, hitPoint.y, hitPoint.z}},
+            {"impact_force", force},
+            {"contact_force", contactForce},
+            {"damage", damage},
+            {"effect_id", "bloodtest_gore"},
+            {"layer_after", (int)layer},
+            {"part_destroyed", partDestroyed},
+            {"flesh_chunks", fleshCount},
+            {"bone_shards", boneCount},
+            {"mist_particles", (int)std::lround(glm::mix(
+                (float)gore.mist.countMin, (float)gore.mist.countMax, force) *
+                mistMult)},
+            {"decal_count", decalCount},
+            {"result", "applied"}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 void EffectPartSystem::spawnClientBloodFeedback(int damage, float force)

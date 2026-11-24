@@ -245,7 +245,7 @@ void applyPendingLook(Camera& camera) {
     camera.yaw -= gPendingLookX * sensitivity;
     // Normalized look uses mouse-down = positive dy. Pitch is positive upward.
     camera.pitch -= gPendingLookY * sensitivity;
-    if (CamConfig::instance().data().orientationMode != "head_world") {
+    if (CamConfig::instance().effectiveData().orientationMode != "head_world") {
         camera.pitch = glm::clamp(camera.pitch, -89.9f, 89.9f);
     }
     camera.updateVectors();

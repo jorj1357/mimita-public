@@ -52,6 +52,29 @@ WeaponTracerConfig readTracerConfig(const nlohmann::json& j,
         c.renderFadeStartDistance = j["renderFadeStartDistance"].get<float>();
     if (j.contains("renderFadeEndDistance") && j["renderFadeEndDistance"].is_number())
         c.renderFadeEndDistance = j["renderFadeEndDistance"].get<float>();
+    if (j.contains("projectile_trail") && j["projectile_trail"].is_object()) {
+        const auto& t = j["projectile_trail"];
+        if (t.contains("enabled") && t["enabled"].is_boolean())
+            c.projectileTrail.enabled = t["enabled"].get<bool>();
+        if (t.contains("style") && t["style"].is_string())
+            c.projectileTrail.style = t["style"].get<std::string>();
+        if (t.contains("start_alpha") && t["start_alpha"].is_number())
+            c.projectileTrail.startAlpha = std::clamp(
+                t["start_alpha"].get<float>(), 0.0f, 1.0f);
+        if (t.contains("end_alpha") && t["end_alpha"].is_number())
+            c.projectileTrail.endAlpha = std::clamp(
+                t["end_alpha"].get<float>(), 0.0f, 1.0f);
+        if (t.contains("color") && t["color"].is_array() && t["color"].size() >= 3)
+            c.projectileTrail.color = glm::vec3(
+                t["color"][0].get<float>(), t["color"][1].get<float>(),
+                t["color"][2].get<float>());
+        if (t.contains("thickness") && t["thickness"].is_number())
+            c.projectileTrail.thickness = std::clamp(
+                t["thickness"].get<float>(), 0.001f, 1.0f);
+        if (t.contains("segments") && t["segments"].is_number_integer())
+            c.projectileTrail.segments = std::clamp(
+                t["segments"].get<int>(), 1, 16);
+    }
     return c;
 }
 } // namespace

@@ -13,6 +13,7 @@
 #include "gui/hud/healthbar-config.h"
 #include "killfeed/killfeed.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 namespace {
 
@@ -129,21 +130,67 @@ void applyPresentationPolicy(const Gamemode& mode)
         bodycam.wallCollision = p.bodycam.wallCollision;
         bodycam.wallProbeRadiusMeters = p.bodycam.wallProbeRadiusMeters;
         CamConfig::instance().setBodycamOverride(bodycam);
+
+        AimBodyConfig::ModeResponseOverride response;
+        response.headResponseSeconds = p.bodycam.headResponseSeconds;
+        response.torsoResponseSeconds = p.bodycam.torsoResponseSeconds;
+        response.armResponseSeconds = p.bodycam.armResponseSeconds;
+        response.weaponStabilitySeconds = p.bodycam.weaponStabilitySeconds;
+        AimBodyConfig::instance().setBodycamResponseOverride(response);
+
         PostFX::ModeBodycamLensOverride lens;
         lens.chromaticAberration = p.bodycam.chromaticAberration;
         lens.vignette = p.bodycam.vignette;
         lens.distortion = p.bodycam.lensDistortion;
+        lens.curve = p.bodycam.lensCurve;
+        lens.zoom = p.bodycam.lensZoom;
+        lens.edgeMode = p.bodycam.lensEdgeMode == "black" ? 0
+            : p.bodycam.lensEdgeMode == "vignette" ? 1
+            : p.bodycam.lensEdgeMode == "clamp" ? 2
+            : p.bodycam.lensEdgeMode == "repeat" ? 3 : 4;
+        lens.edgeRadius = p.bodycam.lensEdgeRadius;
+        lens.edgeSoftness = p.bodycam.lensEdgeSoftness;
+        lens.edgeDarkness = p.bodycam.lensEdgeDarkness;
+        lens.peripheralBlur = p.bodycam.lensPeripheralBlur;
+        lens.radialChromaticAberration = p.bodycam.radialChromaticAberration;
         PostFX::instance().setBodycamLensOverride(lens);
-        Debug::warn(Debug::Category::Duel,
-            "[BODYCAM] mode=%s orientation=%s pos_response=%.3f rot_response=%.3f sway=%.3f wall_collision=%d wall_radius=%.3f lens_ca=%.3f vignette=%.3f distortion=%.3f\n",
-            mode.id.c_str(), p.bodycam.orientationMode.c_str(),
-            p.bodycam.positionResponseSeconds, p.bodycam.rotationResponseSeconds,
-            p.bodycam.cameraSwayScale, p.bodycam.wallCollision ? 1 : 0,
-            p.bodycam.wallProbeRadiusMeters, p.bodycam.chromaticAberration,
-            p.bodycam.vignette, p.bodycam.lensDistortion);
+
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "gamemode.bodycam.applied", mode.id, "bodycam overlay resolved and applied",
+            0,
+            nlohmann::json{
+                {"mode_id", mode.id},
+                {"orientation_mode", p.bodycam.orientationMode},
+                {"effective_fov", mode.cameraFov},
+                {"force_first_person", mode.forceFirstPerson},
+                {"position_response_seconds", p.bodycam.positionResponseSeconds},
+                {"rotation_response_seconds", p.bodycam.rotationResponseSeconds},
+                {"head_response_seconds", p.bodycam.headResponseSeconds},
+                {"torso_response_seconds", p.bodycam.torsoResponseSeconds},
+                {"arm_response_seconds", p.bodycam.armResponseSeconds},
+                {"weapon_stability_seconds", p.bodycam.weaponStabilitySeconds},
+                {"sway_scale", p.bodycam.cameraSwayScale},
+                {"wall_collision", p.bodycam.wallCollision},
+                {"wall_probe_radius_m", p.bodycam.wallProbeRadiusMeters},
+                {"lens", {
+                    {"chromatic_aberration", p.bodycam.chromaticAberration},
+                    {"vignette", p.bodycam.vignette},
+                    {"distortion", p.bodycam.lensDistortion},
+                    {"curve", p.bodycam.lensCurve},
+                    {"zoom", p.bodycam.lensZoom},
+                    {"edge_mode", p.bodycam.lensEdgeMode},
+                    {"radial_chromatic_aberration", p.bodycam.radialChromaticAberration}}}},
+            __FILE__, __LINE__, __FUNCTION__);
     } else {
         CamConfig::instance().clearBodycamOverride();
+        AimBodyConfig::instance().clearBodycamResponseOverride();
         PostFX::instance().clearBodycamLensOverride();
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "gamemode.bodycam.cleared", mode.id, "bodycam overlay cleared; shared defaults restored",
+            0, nlohmann::json{{"mode_id", mode.id}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 }
 
@@ -206,6 +253,7 @@ void GamemodeRuntimeResolver::clearClient()
 
     CamConfig::instance().clearHitFlinchOverride();
     CamConfig::instance().clearBodycamOverride();
+    AimBodyConfig::instance().clearBodycamResponseOverride();
     PostFX::instance().clearBodycamLensOverride();
     ActorPresetWeapons::clearModePresentationOverride();
     KillfeedManager::instance().clearModeEnabledOverride();

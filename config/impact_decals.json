@@ -113,6 +113,78 @@
     "renderFadeStartDistance": 1000.0,
     "renderFadeEndDistance": 1250.0
   },
+  "gore": {
+    "enabled": true,
+    "fleshChunks": {
+      "enabled": true,
+      "countMin": 1,
+      "countMax": 7,
+      "sizeMin": 0.035,
+      "sizeMax": 0.14,
+      "speedMin": 2.0,
+      "speedMax": 9.0,
+      "coneDegreesMin": 10.0,
+      "coneDegreesMax": 38.0,
+      "gravity": 22.0,
+      "drag": 0.4,
+      "lifetimeMin": 0.6,
+      "lifetimeMax": 1.6,
+      "color": [0.62, 0.035, 0.035],
+      "texture": "assets/textureshq/meat1.png"
+    },
+    "boneShards": {
+      "enabled": true,
+      "countMin": 0,
+      "countMax": 4,
+      "sizeMin": 0.02,
+      "sizeMax": 0.085,
+      "speedMin": 3.0,
+      "speedMax": 12.0,
+      "coneDegreesMin": 8.0,
+      "coneDegreesMax": 30.0,
+      "gravity": 24.0,
+      "drag": 0.2,
+      "lifetimeMin": 0.5,
+      "lifetimeMax": 1.3,
+      "color": [0.9, 0.85, 0.7]
+    },
+    "mist": {
+      "enabled": true,
+      "countMin": 6,
+      "countMax": 26,
+      "sizeMin": 0.15,
+      "sizeMax": 0.7,
+      "endSizeScale": 2.4,
+      "speedMin": 1.0,
+      "speedMax": 4.5,
+      "coneDegreesMin": 18.0,
+      "coneDegreesMax": 50.0,
+      "gravity": 2.0,
+      "drag": 2.0,
+      "lifetimeMin": 0.28,
+      "lifetimeMax": 0.75,
+      "alphaMin": 0.12,
+      "alphaMax": 0.42,
+      "texture": "assets/textureshq/sblood3.png"
+    },
+    "destroyed": {
+      "chunkMultiplier": 3.0,
+      "boneMultiplier": 2.5,
+      "mistMultiplier": 4.0,
+      "decalMultiplier": 2.0,
+      "forceMultiplier": 1.5
+    },
+    "exitCone": {
+      "enabled": true,
+      "headDepthM": 0.28,
+      "torsoDepthM": 0.18,
+      "limbDepthM": 0.10,
+      "headConeDegrees": 10.0,
+      "torsoConeDegrees": 18.0,
+      "limbConeDegrees": 26.0,
+      "mistCountScale": 1.8
+    }
+  },
   "bulletHoles": {
     "enabled": true,
     "radius": 0.2,

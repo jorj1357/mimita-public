@@ -931,6 +931,21 @@ void explodeProjectile(SOCKET sock,
                serverTimestamp(), projectile.id, directTargetId, damageValue,
                victimKnockback.x, victimKnockback.y, victimKnockback.z,
                position.x, position.y, position.z);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "server.projectile.contact", std::to_string(projectile.id),
+            "authoritative projectile contacted an actor or world terminal", tick,
+            {{"projectile_id", projectile.id},
+             {"owner_player_id", projectile.ownerPlayerId},
+             {"owner_npc_id", projectile.ownerNpcId},
+             {"weapon", def ? def->id : ""},
+             {"weapon_def_network_id", projectile.weaponDefNetworkId},
+             {"target_id", directTargetId},
+             {"damage", damageValue},
+             {"impact_speed_mps", impactSpeed},
+             {"position", {position.x, position.y, position.z}},
+             {"direction", {shotDir.x, shotDir.y, shotDir.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
         queueReliableGameplayEventToAll(sock, players, &packet, sizeof(packet),
                                         packet.eventId, packet.eventSessionId,
                                         totalPacketsOut);
@@ -1481,6 +1496,22 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
         spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
         spawn.header.tick = tick;
         fillProjectilePose(spawn, projectile);
+        if (pelletCount == 1) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "server.projectile.spawn", std::to_string(projectile.id),
+                "authoritative physical projectile spawned", tick,
+                {{"projectile_id", projectile.id},
+                 {"owner_player_id", projectile.ownerPlayerId},
+                 {"owner_npc_id", projectile.ownerNpcId},
+                 {"weapon", networkWeaponTypeName(projectile.weaponType)},
+                 {"weapon_def_network_id", projectile.weaponDefNetworkId},
+                 {"speed_mps", projectile.velocity.length()},
+                 {"position", {projectile.position.x, projectile.position.y,
+                               projectile.position.z}},
+                 {"gravity_mps2", projectile.gravity}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
         // Pellet volleys are authoritative and are sent to their owner too;
         // single projectiles retain the existing prediction/adoption contract.
         broadcastPacket(sock, players, spawn, totalPacketsOut,

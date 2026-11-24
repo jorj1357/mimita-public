@@ -131,6 +131,10 @@ void HitEffects::onHit(const HitEvent& event)
             event.position, event.direction, (float)event.damage,
             event.attacker, event.victim, directness, event.hitDistance,
             event.bloodAmountScale);
+        EffectPartSystem::instance().spawnGoreEffect(
+            event.position, event.direction, event.normal, (float)event.damage,
+            event.contactForce, event.bodyPart, event.partHealthAfter,
+            event.partDestroyed, event.victim);
     }
 
     // 6. Damage number - only for entity hits (not world geometry)

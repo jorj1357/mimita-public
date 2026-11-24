@@ -81,3 +81,38 @@ CONTRARY EVIDENCE
 
 NEXT DISCRIMINATING CHECK
 - Through the root dev-loop, run Payload/funworld3 Arcade pinned to generation 519 (or any generation whose snapshot matches sweep-slide=6b5fd3ce... / physics-types=f3f5ca67...) with a player. In that exact journal require: game.host.probe.started/hotness generation incl. 519; at least one collision.arcade_entity.sweep with entity_id=<cart id, previously 1>; no capsule/cart penetration across contact; unchanged static-world Arcade contact. Report pinned run_id, generation, DLL hash, and journal path. Keep the issue open and the proof unproven until that journal exists or an explicit exemption is recorded.
+
+## Scheduled independent review
+
+### 2026-11-23T21:32:02.677Z — hot-reload-latency-root
+
+A bounded independent review was queued as wake wake-ba365e6b1b58 after 458 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (unproven)
+
+### 2026-11-23T21:41:38.718Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review 2026-11-23T21:4xZ (issue-review-sweeper), third review of this issue. Scope: brief/readiness, proof status, linked artifacts, latest journals. No source edits, build, restart, or fix claimed.
+
+OBSERVED FACTS
+- Readiness: ready=true, score 8, state=in_review, missing=[]. One open task payload-cart-arcade-contact, owner payload-arcade-collision-fix (still inactive; last activity 2026-11-21T15:55:08Z, ~49h). No linked build/run records.
+- Source identity unchanged and now confirmed in the current published build: sha256(physics-collision-glb-sweep-slide.cpp)=6b5fd3cec1d3deab..., sha256(physics-types.h)=f3f5ca679e7e59c3... Both equal proof task-proof-7d953b610754 source_hashes and appear in every recent build snapshot checked today (e.g. gen-570 candidate game-dll-20261123T191346937240Z-35f07c and gen-571 game-dll-20261123T200924195125Z-7401c3). build/current.json: generation 571, status ok, published 2026-11-23T20:23:13Z. So the fix is compiled into the current published generation (build evidence only).
+- Still zero runtime evidence: rg across all logs found 0 occurrences of collision.arcade_entity.sweep (the proof's required event/field).
+- The most recent post-fix run that loaded generation 571 is logs/2026-11-23/20261123_205333 (game.host.probe.started generation 571, multiple player.spawn events) but its map is dust2cyberiav4 / mode funcounterstrike; cart occurrences=0, arcade_entity occurrences=0. This is the same non-Payload pattern as the prior 20261122_204150 run (still present, still funcounterstrike/dust2), so it cannot validate cart contact.
+- Current live server (dev-loop run 20261123_192224, PID 10164, uptime ~02:10) loaded generation 570 and launch identity map=mimita-duels-map-v3 mode=bloodtest gamemode=bloodtest npcs=0; no cart/arcade_entity events. Per the user 'live game should count' rule it does not count: wrong scenario, and not the newest published generation.
+- Last server journal that actually loaded funworld3 is 2026-11-13 (pre-fix). payload.cart-spawned events exist only in 11-12/11-13 logs. Gameterminal logs on 11-22/11-23 mention Funworld3/Payload only as '[MAP SCAN] discovered' (asset discovery), not a loaded run. The pre-fix journal cited in the first review (logs/2026-11-21/20261121_144350) no longer exists; it has been rotated, so only the proof record remains as its trace.
+- Proof record task-proof-7d953b610754 (DB id 40): status=runtime_proven, result=unproven, build_id='', game_generation=0, run_id='', journal_path='', event=collision.arcade_entity.sweep, field_predicate=entity_id, verified_utc=''. Source hashes match current source. The board still lists it unproven; the status/result mismatch persists across all three reviews.
+- dev-loop --status at review: lifecycle=command_rejected, build=published_stale (latest_source=4, stale=True), run=RUNNING 20261123_192224.
+
+INFERENCE / UNCERTAINTY
+- Compilation and activation of the fix are strongly established (gen 570/571 loads and serves players). Behavior is not proven: no Payload/Arcade run has ever driven a player capsule into the cart in any post-fix generation.
+- This is now a repeated activation/proof gap, not a source gap: the same conclusion holds 49h and generations 519->571 after the prior review. Static reading cannot prove the dynamic box blocks the capsule or that static-world Arcade contact is unchanged.
+- The status=runtime_proven with empty run/generation/journal is most likely a coordinator bookkeeping default (status column not gated on verified evidence), not a success claim; exact semantics remain unconfirmed.
+
+CONTRARY EVIDENCE
+- None supporting success since the previous review: no collision.arcade_entity.sweep and no payload.cart-spawned in any generation >= 428. The NPC fall samples belong to the separate payload NPC-grounding issue and are not evidence here.
+
+NEXT DISCRIMINATING CHECK
+- Through the root dev-loop, launch an isolated Payload Arcade run (map funworld3 or payload1/payload2, whatever the scene actually uses) pinned to generation 571 (or a generation whose snapshot matches sweep-slide=6b5fd3ce... / physics-types=f3f5ca67...), with a player, and drive the root capsule into cart entity id 1. In that exact journal require: game.host.probe.started generation 570/571; >=1 collision.arcade_entity.sweep with entity_id=1 and actor=<player>; no capsule/cart penetration across contact; unchanged static-world Arcade contact. Report pinned run_id, generation, DLL hash, and journal path. Keep the issue open and the proof unproven until that journal exists or an explicit exemption is recorded. A user-owned run can satisfy this only if it is Payload/Arcade on a matching generation.

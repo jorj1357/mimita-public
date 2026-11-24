@@ -207,6 +207,7 @@ server-authoritative hit behavior and does not replace human visual acceptance.
 
 ## Related specifications
 
+- [Bloodtest implementation handoff](bodycam-implementation-handoff.md)
 - [SWAT close-quarters mode](swat.md)
 - [Replay](../replay/replay.md)
 - [Effects](../effects/effects.md)

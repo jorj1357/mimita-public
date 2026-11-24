@@ -100,3 +100,47 @@ NEXT DISCRIMINATING CHECK (pinned)
 
 CONFIDENCE
 - Facts (readiness, proof, hashes, counts, retention): high. Reported bug status: unproven. Candidate-gathering hypothesis: medium-low. Effective generation for the old samples: unverifiable, because the linked journal was deleted.
+
+## Scheduled independent review
+
+### 2026-11-23T22:20:26.442Z — resource-profiler
+
+A bounded independent review was queued as wake wake-bd5be8c47840 after 462 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (unverified)
+
+### 2026-11-23T23:51:14.216Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (issue-review-sweeper, wake-bd5be8c47840, 2026-11-23). Read-only: no source edit, build, run, close, or fix claim. Prior review text is preserved.
+
+OBSERVED FACTS
+- Readiness: ready=true, score 8/8, missing=[], state=in_review; one open task payload-arcade-npc-grounding (owner payload-arcade-collision-fix). Proof 41 latest result=unproven; build_id/run_id/journal_path/verified_utc are empty. Its recorded src/network/server-npcs.cpp hash 2c0d3e... no longer matches the worktree (031beb66...), so the proof record is also stale on inputs. No accepted runtime proof.
+- Current published generation 573: build/game/generation-573/game-g573.dll, code hash a10e5f32402bfdbd0f6572f0121da0a67e4eb1d8db7e6209520f4cd10dcdfdc6, published 2026-11-23T22:23:53.590Z. Working-tree physics-collision-glb-main.cpp sha256 0abedb32... and physics-collision-glb-sweep-slide.cpp 6b5fd3... are identical to the prior review's values; sweep-slide matches proof 41's recorded hash. The candidate collision path is therefore still the one under test.
+- New pinned fresh-NPC run logs/2026-11-23/20261123_223229 (parallel_agent_test; gen 573; exe sha 2e24d312...; server map dust2cyberiav4; --npcs 5; args --mode/--gamemode funcounterstrike; ~10.1 min). run.json build_identity.game_generation=573 and game_dll_sha256=a10e5f32... equal the published gen 573 identity.
+- The 2026-11-21 review's three-way generation disagreement is now explained against the source: src/game/game-module.cpp:310 sets api.generation = 1, and src/network/server.cpp:222-223 writes game.hotness.summary.generation from HostRuntime.activeGeneration(), which reads that field (src/host/host-loader.h:67,182). In run 20261123_223229 hotness reports generation=1 / runtime_revision=2 (api.version=2), while npc.phase-window.module_generation=573. The authoritative signals here are run.json game_generation=573 and module_generation=573, which agree; game.hotness.summary.generation must not be used as an on-disk generation identity.
+- npc.collision-world.summary (t=8.26s): npc_triangles=headless_triangles=5465, removed=0, union=0, solid_ids_aligned=true, unknown_solid_triangles=1534 (dust2cyberiav4).
+- npc.spawn.resolved fires at t~40.14s (101 events; safe_spawn_resolve_ms 0.17-4.25; corrected_m=5.893 for the shown spawns; safe z=2360.33; raw_inside_solid=false, safe_inside_solid=false), so the spawn path executed on fresh NPCs before the fall samples.
+- npc.collision.fall-sample: 2,924 events, t=42.21s to 606.69s, 19 actors; candidate_count=0 in 2,006 (68.6%); world_contact=false in 2,645 (90.5%), true in 279 (9.5%); candidate_count max 35; grounded_this_tick=false in all samples, by construction (the event emits only when !groundedThisFrame && vel.z < -5.0f, rate-limited to 30 ticks per actor: src/physics/movement/physics-collision-glb-main.cpp:615-646).
+- Per-actor final-z ranges stay near the authored floor: z-min spans ~2303.7-2351.2 and z-max ~2367.1-2404.3. The largest first-to-last z change is NPC-100011 -14.95 m, and every large drop recovers (NPC-100011 reaches z-max 2392.3). No actor shows monotonic descent out of the world.
+
+INFERENCE / UNCERTAINTY
+- On the tested map/mode, current gen-573 fresh NPCs are held near the floor and do not fall through the world. The surviving non-contact/zero-candidate samples look like ordinary ledge/step descents plus broadphase misses, not the reported continuous fall.
+- This run does not satisfy the reported reproduction: it is dust2cyberiav4/funcounterstrike, not Payload/funworld3 with payload.json "arcade_collision": true. The payload world mesh is much larger (issue evidence headless_triangles=31270) than dust2cyberiav4's 5465, so the dust2 result does not transfer, and candidate gathering (68.6% zero-candidate samples here) remains the leading unverified hypothesis.
+- The acceptance phrase "world_contact=true and grounded_this_tick=true" cannot be established from npc.collision.fall-sample alone, because the event is emitted only while descending and not grounded. A positive grounded/contact event or position-stability evidence is still required.
+- Proof 41 is stale on the server-npcs.cpp hash; a fresh Payload pass would still need the proof re-recorded against current source hashes.
+
+CONTRARY EVIDENCE
+- Case-insensitive scan of every retained run.json (map/mode fields and run names) under logs/ finds no Payload/funworld3/arcade run. Recent retained fresh-NPC runs are dust2cyberiav4 with juggernaut horde, fun counter strike, or ssbm; the live dev-loop runtime is mimita-duels-map-v3/bloodtest with 0 NPCs.
+- The original gen-420 fixture journal remains pruned; only the copied fields in the issue evidence survive, so the reported failure cannot be re-inspected.
+- Some fall samples have world_contact=true and candidate_count up to 35, so the world query is not uniformly empty.
+
+NEXT DISCRIMINATING CHECK (pinned)
+1. Via the root dev-loop start one isolated run on map funworld3 with gamemode payload (payload.json has "arcade_collision": true) and a small fresh NPC count, pinned to the current published generation (573, or gen 574 once published); record run id, EXE sha256, DLL generation+sha256, journal path.
+2. In that exact journal require: run.json build_identity.game_generation == pinned generation and game_dll_sha256 == published code hash; npc.phase-window.module_generation == pinned generation (do NOT use game.hotness.summary.generation as identity); npc.spawn.resolved after run start; npc.collision-world.summary; and a positive grounded/contact signal.
+3. Fail if any fresh-spawn NPC's final z decreases monotonically below the authored funworld3 floor z with candidate_count=0 and world_contact=false across consecutive samples. Pass only if positions stabilize at the floor and a grounded/contact signal is true with no sustained negative-z series.
+4. If it fails, record the first divergence as gatherGLBTriangles/broadphase coverage for the NPC capsule at physics-collision-glb-main.cpp:615-645, and capture unknown_solid_triangles and solid_bounds for funworld3.
+
+CONFIDENCE
+- Facts (readiness, proof, hashes, counts, retained-run scan, generation-field semantics): high. Gen-573 no-fall-through on dust2cyberiav4: high for that run. Reported Payload/funworld3 bug: still unproven. Candidate-gathering hypothesis: medium-low.

@@ -29,6 +29,7 @@
 #include "config/networking-config.h"
 #include "config/collision-config.h"
 #include "config/spawn-velocity-config.h"
+#include "config/movement-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
@@ -728,6 +729,37 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     // Role movement identity persists for this life; used by the shared kernel.
     player.movementProfileId = profile.movementPreset;
     player.actorPresetId = profile.actorPresetId;
+    {
+        const MovementConfig& movementCfg = MovementJsonConfig::instance().config();
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "bloodtest.collision.profile.applied", std::to_string(player.id),
+            "authoritative living-actor capsule profile applied at spawn",
+            player.movementSimulationTick,
+            {{"actor_id", player.id},
+             {"role_id", profile.roleId},
+             {"profile_id", profile.movementPreset},
+             {"proxy_kind", "capsule"},
+             {"capsule_count", 1},
+             {"capsule_dimensions", {
+                 {"radius_m", player.movementCapsule.radius},
+                 {"height_m", player.movementCapsule.height}}},
+             {"fixed_tick", true}},
+            __FILE__, __LINE__, __FUNCTION__);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "bloodtest.movement.profile.applied", std::to_string(player.id),
+            "authoritative movement profile applied at spawn",
+            player.movementSimulationTick,
+            {{"actor_id", player.id},
+             {"role_id", profile.roleId},
+             {"movement_preset", profile.movementPreset},
+             {"speed_mps", movementCfg.groundSpeed},
+             {"jump_impulse", movementCfg.jumpVerticalSpeed},
+             {"max_health", maxHp},
+             {"fixed_tick", true}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     serverMarkActorPresetApplied(player.id, profile.actorPresetId);
     player.actorCollisionPreviousPos = player.pos;
     player.hasActorCollisionPreviousPos = true;

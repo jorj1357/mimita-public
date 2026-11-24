@@ -397,6 +397,34 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
 
     ctx.lastSeenServerHealth = ctx.localServerHealth;
 
+    // Local body-part layers follow the authoritative snapshot every time, not
+    // only on respawn, so skin/meat/bone and destroyed limbs stay visible.
+    for (int part = 0; part < kActorBodyPartCount; ++part) {
+        const ActorBodyPart bodyPart = (ActorBodyPart)part;
+        const uint8_t beforeHealth = player.body.partHealth[(size_t)part];
+        const uint8_t afterHealth = ctx.localServerPartHealth[part];
+        if (beforeHealth == afterHealth)
+            continue;
+        const ActorBodyLayer beforeLayer = player.body.layer(bodyPart);
+        player.body.partHealth[(size_t)part] = afterHealth;
+        const ActorBodyLayer afterLayer = player.body.layer(bodyPart);
+        if (beforeLayer != afterLayer) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "bloodtest.body-layer.changed", std::to_string(ctx.localPlayerId),
+                "local authoritative body-part layer changed", ctx.latestLocalSnapshotTick,
+                nlohmann::json{
+                    {"actor_id", ctx.localPlayerId},
+                    {"part_id", actorBodyPartName(bodyPart)},
+                    {"health_before", beforeHealth},
+                    {"health_after", afterHealth},
+                    {"layer_before", (int)beforeLayer},
+                    {"layer_after", (int)afterLayer},
+                    {"tick", ctx.latestLocalSnapshotTick}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
+
     // Melee meters are absolute values from the local actor's snapshot. They
     // never accumulate here, so a repeated snapshot cannot add percent twice.
     player.percent = ctx.localServerMeleePercent;

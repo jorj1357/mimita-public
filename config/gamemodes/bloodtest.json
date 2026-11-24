@@ -4,14 +4,17 @@
 {
   "id": "bloodtest",
   "name": "Bloodtest",
-  "description": "Multiplayer close-quarters combat sandbox for testing physical weapons, movement, and destruction.",
-  "team_names": [],
-  "goal_value": 0,
+  "description": "RED vs BLUE physical-projectile gore sandbox. First team to 50 kills wins; a tied match at three minutes is a stalemate.",
+  "team_names": [
+    "RED",
+    "BLUE"
+  ],
+  "goal_value": 50,
   "weapon_set_id": 33,
   "force_weapon_set_for_all_actors": true,
-  "time_limit_seconds": 0,
+  "time_limit_seconds": 180,
   "time_limit_winner_team": "",
-  "time_limit_outcome": "high_score",
+  "time_limit_outcome": "stalemate",
   "respawn_seconds": 0.01,
   "kill_heals": true,
   "friendly_fire": true,
@@ -21,13 +24,53 @@
   "spawn_tracer_seconds": 1.5,
   "allow_rematch": true,
   "spawn_offset_radius": 5.0,
-  "spawn_strategy": "shared",
-  "intermission_seconds": 15,
-  "results_seconds": 8,
+  "spawn_strategy": "team_shared",
+  "intermission_seconds": 3,
+  "results_seconds": 5,
   "maps": [
-    "mimita-duels-map-v3"
+    "mimita-duels-map-v3",
+    "atdm",
+    "funworld",
+    "dust2cyberiav4"
   ],
-  "teams": [],
+  "teams": [
+    {
+      "id": "red",
+      "display_name": "RED",
+      "capacity": 25,
+      "respawn_seconds": null,
+      "kill_heal_percent": null,
+      "role": "bloodtest_fighter",
+      "npc_role": "bloodtest_npc",
+      "spawn_group": "ct_spawn",
+      "spawn_tag_contains": "ct",
+      "spawn_tag_excludes": "",
+      "attackers_per_site": 0,
+      "defenders_per_site": 0,
+      "one_rotator": null,
+      "players": true,
+      "npcs": true,
+      "prefer_humans": true
+    },
+    {
+      "id": "blue",
+      "display_name": "BLUE",
+      "capacity": 25,
+      "respawn_seconds": null,
+      "kill_heal_percent": null,
+      "role": "bloodtest_fighter",
+      "npc_role": "bloodtest_npc",
+      "spawn_group": "t_spawn",
+      "spawn_tag_contains": "t",
+      "spawn_tag_excludes": "",
+      "attackers_per_site": 0,
+      "defenders_per_site": 0,
+      "one_rotator": null,
+      "players": true,
+      "npcs": true,
+      "prefer_humans": true
+    }
+  ],
   "spawn_groups": {},
   "objectives": [],
   "rounds": {
@@ -85,11 +128,23 @@
       ],
       "position_response_seconds": 0.12,
       "rotation_response_seconds": 0.1,
+      "head_response_seconds": 0.12,
+      "torso_response_seconds": 0.18,
+      "arm_response_seconds": 0.14,
+      "weapon_stability_seconds": 0.1,
       "camera_sway_scale": 1.0,
       "lens": {
-        "chromatic_aberration": 0.12,
-        "vignette": 0.18,
-        "distortion": 0.0
+        "chromatic_aberration": 0.22,
+        "vignette": 0.34,
+        "distortion": 18.0,
+        "curve": 2.2,
+        "zoom": 1.55,
+        "edge_mode": "vignette",
+        "edge_radius": 0.0,
+        "edge_softness": 0.55,
+        "edge_darkness": 0.9,
+        "peripheral_blur": 1.4,
+        "radial_chromatic_aberration": true
       },
       "wall_collision": {
         "enabled": true,
@@ -97,23 +152,23 @@
       }
     },
     "gold_reward_popup": null,
-    "damage_numbers": null,
-    "hit_effects": null,
-    "world_impact_effects": null,
-    "world_impact_decals": null,
-    "world_hit_effects": null,
-    "hit_markers": null,
+    "damage_numbers": false,
+    "hit_effects": true,
+    "world_impact_effects": true,
+    "world_impact_decals": true,
+    "world_hit_effects": true,
+    "hit_markers": false,
     "dry_fire_indicator": null,
-    "hit_sounds": null,
-    "hit_flinch": null,
+    "hit_sounds": true,
+    "hit_flinch": true,
     "blood": true,
     "blood_client_feedback": true,
     "killfeed": null,
     "ragdolls": null,
-    "enemy_healthbars": null,
-    "friendly_healthbars": null,
-    "player_outlines": true,
-    "friendly_outlines": true,
+    "enemy_healthbars": false,
+    "friendly_healthbars": false,
+    "player_outlines": false,
+    "friendly_outlines": false,
     "player_wireframes": null,
     "friendly_wireframes": null,
     "enemy_outline_alpha": 1.0,
@@ -176,7 +231,7 @@
     "objective_only_round_wins": false,
     "destructible_body_parts": true,
     "arcade_collision": true,
-    "destructible_world": true,
+    "destructible_world": false,
     "destructible_world_reset": "never"
   },
   "world_streaming": {
@@ -209,17 +264,17 @@
   "blood_enabled": true,
   "roles": {},
   "actor_preset": "",
-  "movement_preset": "bloodtest",
+  "movement_preset": "slowdm",
   "vehicle_profile": "",
   "npc_behavior_profile": "beginner",
   "npc_targeting": {
-    "enabled": false,
+    "enabled": true,
     "mode": "closest",
     "include_players": true,
     "include_npcs": true
   },
   "npc_travel": {
-    "enabled": false,
+    "enabled": true,
     "objective_bias": 1.0,
     "hunt_bias": 0.0,
     "explore_bias": 1.0
@@ -266,17 +321,17 @@
     "per_interval": 1
   },
   "avatar": {
-    "enabled": false,
-    "forced": false,
+    "enabled": true,
+    "forced": true,
     "allow_live_change": true,
     "name": "",
     "allowed": [],
     "denied": [],
-    "group": ""
+    "group": "competitive_no_headless"
   },
   "npc_avatar": {
-    "enabled": false,
-    "group": "",
-    "spawn_policy": "reroll_each_spawn"
+    "enabled": true,
+    "group": "competitive_no_headless",
+    "spawn_policy": "keep_per_npc"
   }
 }

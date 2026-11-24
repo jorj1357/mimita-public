@@ -1,5 +1,6 @@
 #include "devtools/terminal.h"
 #include "debug/debug-log.h"
+#include "debug/config-npc.h"
 #include "devtools/dev-config.h"
 #include "entities/player.h"
 #include "render/render-player.h"
@@ -156,6 +157,7 @@ void registerDebugToggleCommands()
         "debug.reset",
         [](const std::vector<std::string>&) {
             DebugConfig::ResetAll();
+            DebugConfig::ResetNpcDebugFlags();
             Terminal::instance().addLog("[OK] all debug flags reset to defaults");
         }
     });

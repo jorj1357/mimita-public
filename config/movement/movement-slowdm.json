@@ -20,7 +20,19 @@
 * This file is parsed with JSON comments enabled.
 */
 {
-    "name": "heavy",
+    "name": "slowdm",
+
+    // Bloodtest sprint/stamina. Sprint ramps speed smoothly; stamina drains
+    // only while sprinting and moving on the ground and recovers after a delay.
+    "sprint_enabled": true,
+    "sprint_speed_multiplier": 1.55,
+    "sprint_ramp_up_seconds": 0.35,
+    "sprint_ramp_down_seconds": 0.25,
+    "stamina_capacity": 100.0,
+    "stamina_drain_per_second": 18.0,
+    "stamina_recovery_per_second": 12.0,
+    "stamina_recovery_delay_seconds": 0.5,
+    "sprint_exhausted_recover_fraction": 0.25,
 
     // Uses MiMITA's Source/GoldSrc-style movement kernel.
     "movement_mode": "source",

@@ -13,6 +13,7 @@
 #include "network/multiplayer-context.h"
 #include "network/simulation-constants.h"
 #include "config/networking-config.h"
+#include "config/weapon-tracers-config.h"
 #include "network/confirmed-damage-presentation.h"
 #include "audio/audio.h"
 #include "audio/hitmarker-audio.h"
@@ -439,6 +440,8 @@ void spawnProjectileTrail(NetworkProjectile& projectile, float dt)
     const bool grenade = projectile.weaponType == NETWORK_WEAPON_GRENADE_LAUNCHER;
     const bool rifle = projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE;
     const WeaponDefinition* def = projectileDefinition(projectile.weaponDefNetworkId, projectile.weaponType);
+    if (projectileTrailConfigFor(def).enabled)
+        return;
     const bool rifleTrail = rifle && cp(def, "projectileTrailEnabled", 1.0f) > 0.0f;
     if (!rocket && !grenade && !rifleTrail)
         return;
@@ -507,16 +510,46 @@ void spawnProjectileTrail(NetworkProjectile& projectile, float dt)
     }
 }
 
+const WeaponProjectileTrailConfig& projectileTrailConfigFor(const WeaponDefinition* def)
+{
+    const std::string weaponId = def ? def->id : std::string();
+    return WeaponTracersConfig::instance().forWeapon(weaponId).projectileTrail;
+}
+
+void drawProjectileLineTrail(const Camera& camera, const NetworkProjectile& projectile,
+                             const WeaponDefinition* def)
+{
+    const WeaponProjectileTrailConfig& trail = projectileTrailConfigFor(def);
+    if (!trail.enabled || trail.style != "line" || projectile.trailHistory.size() < 2)
+        return;
+    const auto& current = projectile.trailHistory.back().position;
+    const auto& previous = projectile.trailHistory[projectile.trailHistory.size() - 2].position;
+    if (glm::length(current - previous) < 0.0005f)
+        return;
+    const int segments = std::clamp(trail.segments, 1, 16);
+    for (int i = 0; i < segments; ++i) {
+        const float t0 = (float)i / (float)segments;
+        const float t1 = (float)(i + 1) / (float)segments;
+        const glm::vec3 a = glm::mix(current, previous, t0);
+        const glm::vec3 b = glm::mix(current, previous, t1);
+        const float alpha = glm::mix(trail.startAlpha, trail.endAlpha, t0);
+        DebugVis::drawFilledBeam(camera, a, b, trail.thickness,
+                                 glm::vec4(trail.color, std::clamp(alpha, 0.0f, 1.0f)));
+    }
+}
+
 void recordProjectileTrailSample(NetworkProjectile& projectile, float dt)
 {
     const bool rifle = projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE;
-    if (!rifle)
+    const WeaponDefinition* def = projectileDefinition(projectile.weaponDefNetworkId, projectile.weaponType);
+    const WeaponProjectileTrailConfig& lineTrail = projectileTrailConfigFor(def);
+    if (!rifle && !lineTrail.enabled)
         return;
 
-    const WeaponDefinition* def = projectileDefinition(projectile.weaponDefNetworkId, projectile.weaponType);
     const int sampleTicks = std::clamp(
         (int)std::round(cp(def, "projectileTrailHistoryTicks", 10.0f)), 0, 120);
-    if (sampleTicks <= 0 || cp(def, "projectileTrailEnabled", 1.0f) <= 0.0f)
+    if (sampleTicks <= 0 ||
+        (!lineTrail.enabled && cp(def, "projectileTrailEnabled", 1.0f) <= 0.0f))
     {
         projectile.trailHistory.clear();
         projectile.trailSampleAccumulator = 0.0f;
@@ -2743,10 +2776,16 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
                 cp(fadeDef, "projectileLightRadius", 3.0f));
         }
 
-        if (projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE &&
+        const WeaponDefinition* trailDef =
+            projectileDefinition(projectile.weaponDefNetworkId, projectile.weaponType);
+        if (projectileTrailConfigFor(trailDef).enabled)
+        {
+            drawProjectileLineTrail(camera, projectile, trailDef);
+        }
+        else if (projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE &&
             !projectile.trailHistory.empty())
         {
-            const WeaponDefinition* def = projectileDefinition(projectile.weaponDefNetworkId, projectile.weaponType);
+            const WeaponDefinition* def = trailDef;
             const float sizeMultiplier = std::clamp(
                 cp(def, "projectileTrailHistorySizeMultiplier", 0.82f), 0.01f, 2.0f);
             const float darkenMultiplier = std::clamp(

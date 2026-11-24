@@ -188,6 +188,9 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     hit.damage = event.damage;
     hit.bodyPart = event.bodyPart < (uint8_t)ActorBodyPart::Count
         ? actorBodyPartName((ActorBodyPart)event.bodyPart) : "torso";
+    hit.partHealthAfter = event.partHealthAfter;
+    hit.partDestroyed = event.partDestroyed != 0;
+    hit.contactForce = event.contactForce;
     if (event.partDestroyed)
         hit.bloodAmountScale = ActorBodyConfig::instance().destroyedBloodScale;
     hit.attacker = playerNameFor(ctx, event.attackerPlayerId);

@@ -332,3 +332,43 @@ End-to-end proof correction for browser control case in run 20261122_195603: ser
 ### 2026-11-22T20:52:13.790Z — codex-networking-stall-fix
 
 New join symptom cross-post: user's community-browser attempt can show NPC activity while client reports stale snapshots or waiting for server acceptance. Existing pinned run 20261122_204150 did accept client/player 1 (client network.client.join.accepted 20:41:56.828Z) and applied first authoritative snapshot at 20:41:56.830Z; this control does not reproduce rejection. However its later 2.536s Recast mesh setup correlated with a 2.589s server tick and stale-snapshot intervals, so client symptom can arise after successful acceptance. Need capture a failed browser attempt and correlate request/JoinAccept/JoinReject/first snapshot across both journals.
+
+## Scheduled independent review
+
+### 2026-11-23T19:19:16.523Z — resource-efficiency-goal
+
+A bounded independent review was queued as wake wake-567c8df0d262 after 434 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive - recurrent post-welcome client receive failure on build 97b78d2 gen 568; connect timeout truthful; connect-time render stall is a lead, not proven)
+
+### 2026-11-23T19:26:03.667Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Reviewer: issue-review-sweeper (independent, read-only; no source edit, build, runtime mutation, close, or fix claimed).
+
+Scope and readiness: issue readiness ready=true score=8 missing=[] state=in_review with the same 3 open tasks (new-mode-connect-crash-trace, welcome-delivery-trace, welcome-transport-label). `agent-coord proof list --issue issue-55bd775c8026` returns [] again: still no proof record linked to any task, so no completion claim is supported. This is the third independent review; prior reviews 2026-11-21 and 2026-11-22 are preserved above. Inspected the newest 2026-11-23 runs, this issue's doc, and new crash artifacts. No compiler or build was invoked.
+
+Observed facts
+1. Run 20261123_182912 is a direct new reproduction of 'started a mode and never connected'. Build 2026-11-23T13:26:39.822193Z:97b78d2ae01ed2dd665e39c9f5ac97ebf4acef801ee3597c4ecb0f7a584f7a8d, game generation 568, mode fun counter strike, map dust2cyberiav4, server PID 18628, client PID 31580. Client connect.requested/preflight/transport.ready at 18:29:23.737Z, hello.sent ~18:29:23.8Z. Server packet.route then network.server.client-hello-accepted at 18:29:23.930Z (player_id 1), and network.server.client-hello-welcome-send at 18:29:23.93Z with bytes=352, send_succeeded=true, transport=udp, remote_port=53067, next_expected_event=network.client.first-packet.received (server-01/events.jsonl lines 75-78).
+2. The same client journal has zero network.client.first-packet.received, zero network.client.join.accepted, zero network.connection-state.changed, and zero snapshots. Its metrics window at 13.17s reports packets_received_total=0, snapshots_received_total=0. It emitted network.join.map-required-missing at 18:29:23.890Z and again 18:29:29.960Z, then network.reconnect.resource-probe phase=teardown-before (connection_state=Connecting, disconnect_policy=connection-failure, disconnect_elapsed_ms=0) and teardown-after Disconnected at 18:29:29.964Z (client-01/events.jsonl lines 61, 96-99). Dev-loop recorded dev-loop.parallel-run.failed 'test client 31580 did not connect to 51395'.
+3. The teardown timing matches the configured initial-connect budget, not a premature label: config/networkingconfig.json sets connect_timeout_ms=6000 and the client tore down ~6.03s after hello. So the user-visible Disconnected here is a truthful terminal connect timeout, but the underlying connect attempt never received a single server datagram despite a successful welcome send.
+4. Concurrent client main-thread stall: performance.stall-watchdog at 18:29:30.918Z reports frame_heartbeat_age_ms=3279, main_thread_cpu_ms=3953.125, last_completed_frame=1, progress_label=Rendering at src/engine/engine-tick.cpp:253 (client-01 lines 105-107). A ~4s first render frame overlaps the connect window, but it is not proven to overlap the exact datagram arrival.
+5. The boundary is intermittent on the same build: run 20261123_182722 (same build 97b78d2, fun counter strike, dust2cyberiav4) received network.client.first-packet.received at 18:27:29.507Z and Connected in 702ms; run 20261123_172251 received first-packet at 17:22:57.887Z and Connected in 1019ms. On the current build 6ac084a7... run 20261123_191110, both TDM clients received first-packet and Connected (client-01 19:11:31.038Z, client-02 19:12:17.969Z).
+6. Adjacent new crash artifacts are not this issue's client-connect symptom: .dev/crashes/20261123_144429/crash-2026-11-23_11-39-08-27384.txt and -3640.txt are both ACCESS_VIOLATION 0xc0000005 in game-g564.dll (offsets +0x83a446 with GetMimitaNpcPerceptionModuleAPI in the stack, and +0x3df54f with GetMimitaGameServerPolicyV1) during juggernaut horde, with server-loop rates 0.4-4.6 Hz and loopAvg 10-13s. PID 27384 is that run's server-01; PID 3640 is not in that run.json. These are server-side crashes and are not linked to this issue.
+
+Inference and uncertainty
+- The first missing transition is again after server welcome send success and before client network.client.first-packet.received, i.e. the server-to-client UDP delivery or the client's receive poll/dispatch. This reproduces the same signature documented for 20261120_074813/081941/083807; it is a multi-day recurrence, not a new class.
+- The client's connect logic and health timeout ran, then the main thread spent seconds inside the first render frame. A plausible mechanism is that receive polling (src/network/multiplayer-tick.cpp:2897-2942, inside MIMITA_PERF_SCOPE('Network::ReceivePoll')) was delayed/starved by the connect-time render stall until the 6s connect deadline destroyed the socket. This is an inference only: I did not prove the update/render ordering or that welcome bytes were queued pending a poll.
+- packets_received_total=0 is consistent with the missing first-packet event, but the umbrella's own task ice-packet-receive-counter records that this metric may not count ICE-transport packets, so the authoritative signal remains absent first-packet.received, not the counter.
+- No crash artifact exists for client PID 31580; this run is a connect failure, not a process crash. Whether the Nov 20 client 3221225477 crash and this receive failure share a cause remains unknown.
+
+Contrary evidence
+- Multiple same-build and newer-build runs connect normally and fast (182722, 172251, 191110 two-client TDM), so delivery is not universally broken and a global firewall explanation is unlikely.
+- 182722 and 172251 completed first-packet->join->Connected in under 1.1s, and 182912's server logged both inbound hello route and outbound welcome success, so server-side handshake handling was correct in 182912.
+- The 182912 Disconnected is after the configured 6000ms connect timeout, so that run alone does not prove show-Disconnected-while-still-nonterminal; the false-label symptom remains unproven and HUD screenshots are still absent.
+
+Next discriminating check (one, not performed by this reviewer)
+On a controlled reproduction of 20261123_182912 on a pinned root-dev-loop run, capture bounded owner-level evidence for the 6s connect window: client Network::ReceivePoll invocation count/duration per frame, raw recvfrom return count and first datagram timestamp, and client max frame heartbeat age during the window; compare to a same-build successful run such as 182722. If ReceivePoll did not run or ran 0 times while the frame was stalled, the defect is connect-window receive starvation; if it ran and recvfrom returned 0, the defect is datagram delivery/socket binding. Acceptance: exactly one of those two is shown with client+server correlation, and network.client.first-packet.received is the named first missing event.
+
+Process review: this is a repeated evidence-discovery delay. The same welcome-send-success / zero-client-receive boundary was documented on 2026-11-20 and recurred on 2026-11-23, and the dev-loop only reports 'did not connect' with no automatic first-missing-event artifact, forcing manual multi-journal scanning each time. One concrete proposal with a measurable target and smallest experiment is appended to issue-cf9cd77eb056 (end-to-end correlated runtime evidence). No source, build, or runtime was changed by this reviewer.

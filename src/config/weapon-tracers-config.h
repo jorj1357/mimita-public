@@ -15,6 +15,16 @@
 
 #include <glm/glm.hpp>
 
+struct WeaponProjectileTrailConfig {
+    bool enabled = false;
+    std::string style = "line";
+    float startAlpha = 0.5f;
+    float endAlpha = 0.0f;
+    glm::vec3 color{1.0f, 0.82f, 0.05f};
+    float thickness = 0.02f;
+    int segments = 4;
+};
+
 struct WeaponTracerConfig {
     bool enabled = true;
     bool thicknessSet = false; // true when the JSON explicitly set thickness
@@ -29,6 +39,7 @@ struct WeaponTracerConfig {
     float renderDistance = 1250.0f;
     float renderFadeStartDistance = 1000.0f;
     float renderFadeEndDistance = 1250.0f;
+    WeaponProjectileTrailConfig projectileTrail;
 };
 
 class WeaponTracersConfig {

@@ -16,6 +16,7 @@
 #include <algorithm>
 #include "devtools/terminal.h"
 #include "debug/debug-log.h"
+#include "debug/config-npc.h"
 #include "debug/debug-visuals.h"
 #include "debug/validate-assets.h"
 #include "physics/movement/physics-collision.h"

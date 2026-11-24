@@ -421,6 +421,10 @@ struct HitEvent {
     float hitDistance = -1.0f;
     // Scales blood spray/decals for gore events such as a destroyed body part.
     float bloodAmountScale = 1.0f;
+    // Confirmed body-part state for layer-aware gore.
+    int partHealthAfter = -1;
+    bool partDestroyed = false;
+    float contactForce = -1.0f;
     bool spawnDamageNumber = true;
     // Melee: render the accepted percent delta as "+N%" through the same
     // world-space damage-number renderer instead of ordinary health damage.

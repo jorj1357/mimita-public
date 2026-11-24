@@ -32,14 +32,8 @@ namespace DebugConfig
     inline bool DEBUG_TICKS = false;
     inline bool DEBUG_INPUT = false;
     inline bool DEBUG_COMMANDS = false;
-    inline bool DEBUG_NPC = false;
-    inline bool DEBUG_NPC_COMBAT = false;
-    // Focused presentation/lifecycle trace for one NPC identity.
-    inline bool DEBUG_NPC_TRACE = false;
-    inline uint32_t NPC_TRACE_TARGET = 0;
     inline bool DEBUG_RAGDOLL = false;
     inline bool DEBUG_PERSISTENT_PHYSICS = false;
-    inline bool DEBUG_NPC_DEATH = false;
     inline bool DEBUG_BLOOD_RAYS = false;
     inline bool DEBUG_BLOOD_HITS = false;
     inline bool DEBUG_BLOOD_FORCE = false;
@@ -64,7 +58,6 @@ namespace DebugConfig
     inline bool DEBUG_COLLISION_GRID = false;
     inline bool DEBUG_COLLISION_VALIDATE = false;
     inline bool DEBUG_BOMBTAG = false;
-    inline bool DEBUG_NPC_MOVEMENT = false;
     inline bool DEBUG_PERF_MODEL = false;
     inline bool DEBUG_HEAD = false;
     inline bool DEBUG_CULL = false;
@@ -158,9 +151,6 @@ namespace DebugConfig
         DEBUG_TICKS = false;
         DEBUG_INPUT = false;
         DEBUG_COMMANDS = false;
-        DEBUG_NPC = false;
-        DEBUG_NPC_TRACE = false;
-        NPC_TRACE_TARGET = 0;
         DEBUG_BLOOD_RAYS = false;
         DEBUG_BLOOD_HITS = false;
         DEBUG_BLOOD_FORCE = false;
@@ -173,7 +163,6 @@ namespace DebugConfig
         DEBUG_GODBALL_HITSTOP = false;
         DEBUG_SPYKNIFE = false;
         DEBUG_ANIM_ARMS = false;
-        DEBUG_NPC_MOVEMENT = false;
         DEBUG_COLLISION_PLAYER = false;
         DEBUG_COLLISION_LIMB = false;
         DEBUG_COLLISION_BODY_PUSH = false;
@@ -185,7 +174,6 @@ namespace DebugConfig
         DEBUG_NETWORKING = false;
         DEBUG_DUEL = false;
         DEBUG_CHAT = false;
-        DEBUG_NPC_COMBAT = false;
     }
 }
 

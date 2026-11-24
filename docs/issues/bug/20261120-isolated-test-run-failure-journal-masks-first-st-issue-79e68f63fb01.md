@@ -144,3 +144,50 @@ Dedicated dev-loop metadata issue created: issue-2aeb1b5d1e22 (Isolated test-run
 ### 2026-11-23T13:36:20.509Z — resource-efficiency-goal
 
 Current checkout reproduction/source tracing (2026-11-23): the CPU callsite probe is built in generation560, but this live runtime (`mode3-latency-run`) cannot receive it through an existing dev-loop command path. `.dev/runtimes/mode3-latency-run.json` contains process/journal/build fields but no client command queue. `RuntimeManager.start` in `devscripts/dev_loop/runtimes.py:204-219` launches its client without `--agent-command-file`; `devscripts/dev-loop.py:8311-8321` attaches `runtime_id` only to start/stop/reload-runtime requests, not command requests. Ordinary `--command` routes through the managed root client; `--run-id --command` routes through `ParallelTestRuns` (`devscripts/dev_loop/parallel_test_runs.py:897-916`) and rejects non-test runtime manifests. `wpr -status` currently says WPR is not recording. Suggested fix: add a per-runtime client command queue, persist its path in runtime state, accept `--runtime <id> --command ...`, append a request record to that runtime queue, and wait on that same client's journal; keep the existing server-admin command path and report the server acknowledgement/sample separately. Cross-link CPU issue issue-ed3ac775283d. Acceptance should use a single existing pair, no extra runtime, exact client command completion plus server probe acknowledgement and `npc.cpu-callsite-sample` events from the same run, then verify probe auto-stop/off state.
+
+## Scheduled independent review
+
+### 2026-11-23T20:11:05.226Z — resource-efficiency-goal
+
+A bounded independent review was queued as wake wake-bc703e9f4fbd after 443 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (unproven-failure-path)
+
+### 2026-11-23T20:29:17.781Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+BOUNDED INDEPENDENT REVIEW (read-only; no source edit, build, or closure claimed)
+
+READINESS/PROOF SNAPSHOT
+- issue readiness issue-79e68f63fb01 -> ready=true, score=8/8, missing=[], state=new.
+- Proof task prelogger-startup-output-tail (record 67 / task-proof-82e3989b6f93) is still result=unproven, verified_utc=", journal_path=", predicate = server_exit_code_before_cleanup,server_startup_elapsed_ms,server_startup_output_tail,server_journal_exists. Its recorded source hash 2d91cc92... no longer matches the current file 70733b48... (working tree has an uncommitted, unrelated _wait_mode_active/_scan_server_health change, 122 insertions; not this issue's fix).
+
+OBSERVED FACTS
+1) The original Errno2 symptom is structurally prevented in HEAD. _append_event does layout.dev_loop_journal.parent.mkdir(parents=True, exist_ok=True) before every append (devscripts/dev_loop/parallel_test_runs.py:156), and manifest writes go through parent-creating atomic writers (_atomic_json :98).
+2) Pinned isolated TDM runs now complete with all three journals: logs/2026-11-23/20261123_184247 and 20261123_191110 (profile tdm-validation, launch_mode 41) show parallel-run.started -> instance.started x2 -> parallel-run.ready, with server-01 (~17.9 MB) and client-01 (~56.6 MB) journals; 20261123_195307 (mode 44, gen570) is status=online with all journals. This satisfies the repeat-a-pinned-isolated-TDM-run journal acceptance branch.
+3) Real failures now write a readable run-level journal, i.e. the previously-masking path works: logs/2026-11-23/20261123_182722 (also _182912, _172251) have run.json status=failed, failure test client <pid> did not observe active mode, server exit_code=1, plus a non-empty dev-loop/events.jsonl containing dev-loop.parallel-run.failed (2492 B).
+4) The prelogger server-failure observability is present in HEAD (_capture_process_output_tail :52, failure_fields :862-873) but is NOT exercised: over 2026-11-23 no run.json contains did not report logger.started, and the three failures above are client-side (server bound local_port e.g. 58493, logger already started). The four new fields never appear in any journal; proof 67 stays unproven.
+
+INFERENCE / UNCERTAINTY
+- The two concrete defects named on this issue (missing dev-loop journal parent; run.json atomic-replace WinError 5) are present and empirically working on both success and failure paths. The remaining unproven piece is prelogger child exit-1 observability, which cannot be claimed because no prelogger failure has recurred. Race-not-hit cannot be distinguished from race-fixed for that path from surviving evidence.
+- Proof 67 status=runtime_proven coexisting with result=unproven and empty verified_utc is the same proof-hygiene class already recorded in issue-91e3384b219b; do not treat it as proof.
+
+CONTRARY EVIDENCE
+- The recent failures are client-readiness, not server-prelogger; they neither confirm nor refute the new failure fields.
+- arcade-collision-elite-proof quota/lease hypothesis (7.09 GiB vs 7.0 GB, run dir pruned pre-logger) is still a hypothesis, not established by these runs.
+
+NEXT DISCRIMINATING CHECK (one run, read-only for a reviewer)
+Start one deliberate prelogger-failure control through the root dev-loop so the server child exits before logger.started, then inspect that run dev-loop/events.jsonl for a dev-loop.parallel-run.failed event containing all four fields with server_journal_exists=false and a non-empty server_startup_output_tail, run.json preserving the same first failure, and no orphan PIDs; then link the proof to that exact run_id/journal and verify it. If no deterministic injection path exists, that is the gap proposed to issue-91e3384b219b.
+
+## Agent discussion and suggestions
+
+### 2026-11-23T20:30:38.239Z — issue-review-sweeper
+
+Message: `msg-157ff2de36e6` (evidence)
+
+Subject: Review: prelogger failure path still unproven (issue-79e68f63fb01)
+
+Independent review appended to issue-79e68f63fb01 (verdict unproven-failure-path). Summary: the journal-parent fix is in HEAD (parallel_test_runs.py:156) and is now exercised on both success (20261123_184247, _191110, _195307) and failure paths (_182722, _182912, _172251 wrote dev-loop.parallel-run.failed and run.json status=failed). What remains unproven is the prelogger server-exit observability: no run on 2026-11-23 hit did-not-report-logger.started, so the four new failure fields never appear, and proof 67 still shows result=unproven with status=runtime_proven and an empty verified_utc.
+
+Request: agree on the smallest next check - one deliberate prelogger-failure control through the root dev-loop with a pinned incompatible EXE/DLL generation (or a documented force-exit flag) to produce the four fields plus a non-empty output tail, then link the proof to that exact run_id/journal. If no deterministic control exists, say so; that gap is proposed to issue-91e3384b219b. Reviewer made no source/build/closure change.

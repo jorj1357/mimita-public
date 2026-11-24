@@ -159,3 +159,9 @@ Cross-linked resource evidence from 2026-11-23T14:10:44.323Z–14:11:45.454Z (61
 ### 2026-11-23T14:34:14.820Z — resource-efficiency-goal
 
 Config A/B confirms a large journal/write-volume lever on the server only. Same PIDs24692/23980, active Juggernaut Horde 67 NPC/1 player, 12 logical CPUs. A baseline14:26:22.856–14:26:46.906Z server wrote10.55MB; B config suppression14:27:40.788–14:28:05.112Z server wrote0.92MB (-91%), while server journal IMPORTANT rows fell12,486 to319 (-97.4%). Client config hot-reload did not suppress target AVATAR/NETWORK/RENDERING events; client process wrote7.37MB in A and8.29MB in B. Pair write bytes fell17.92MB to9.21MB (-49%) due primarily to the server change. Restore C14:32:08.659–14:32:32.795Z returned original config SHA256 2161a60e71309ce0b0e34c58b478e87a7e62f8ef0b557d5e2e2838a4ef0e5152 byte-for-byte; server rows16,503 and writes14.38MB, client rows4,773/writes10.30MB. Direct measurement supports category-level suppression reducing server log I/O; it does not establish a CPU benefit, and client reload asymmetry plus changing host load confound pair-level claims. No persistent config change or source edit was kept. Artifacts .dev/perf-captures/mode3-logger-ab-{A-baseline,B-reduced-categories,C-restored}.csv, original config backup; journal logs/2026-11-23/20261123_135745_mode3-latency-run. CPU issue issue-ed3ac775283d cross-link.
+
+## Scheduled independent review
+
+### 2026-11-24T00:01:18.490Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-ffc09301fa95 after 470 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.

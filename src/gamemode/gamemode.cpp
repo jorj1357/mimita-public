@@ -707,6 +707,14 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                     bodycam.value("position_response_seconds", out.positionResponseSeconds), 0.01f, 2.0f);
                 out.rotationResponseSeconds = std::clamp(
                     bodycam.value("rotation_response_seconds", out.rotationResponseSeconds), 0.01f, 2.0f);
+                out.headResponseSeconds = std::clamp(
+                    bodycam.value("head_response_seconds", out.headResponseSeconds), 0.01f, 2.0f);
+                out.torsoResponseSeconds = std::clamp(
+                    bodycam.value("torso_response_seconds", out.torsoResponseSeconds), 0.01f, 2.0f);
+                out.armResponseSeconds = std::clamp(
+                    bodycam.value("arm_response_seconds", out.armResponseSeconds), 0.01f, 2.0f);
+                out.weaponStabilitySeconds = std::clamp(
+                    bodycam.value("weapon_stability_seconds", out.weaponStabilitySeconds), 0.01f, 2.0f);
                 out.cameraSwayScale = std::clamp(
                     bodycam.value("camera_sway_scale", out.cameraSwayScale), 0.0f, 5.0f);
                 if (bodycam.contains("lens") && bodycam["lens"].is_object()) {
@@ -716,7 +724,25 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                     out.vignette = std::clamp(
                         lens.value("vignette", out.vignette), 0.0f, 0.8f);
                     out.lensDistortion = std::clamp(
-                        lens.value("distortion", out.lensDistortion), -0.5f, 0.5f);
+                        lens.value("distortion", out.lensDistortion), 0.0f, 100.0f);
+                    out.lensCurve = std::clamp(
+                        lens.value("curve", out.lensCurve), 0.05f, 8.0f);
+                    out.lensZoom = std::clamp(
+                        lens.value("zoom", out.lensZoom), 0.1f, 5.0f);
+                    const std::string edgeMode = lens.value("edge_mode", out.lensEdgeMode);
+                    if (edgeMode == "black" || edgeMode == "vignette" ||
+                        edgeMode == "clamp" || edgeMode == "repeat" || edgeMode == "circle")
+                        out.lensEdgeMode = edgeMode;
+                    out.lensEdgeRadius = std::clamp(
+                        lens.value("edge_radius", out.lensEdgeRadius), 0.05f, 1.2f);
+                    out.lensEdgeSoftness = std::clamp(
+                        lens.value("edge_softness", out.lensEdgeSoftness), 0.0f, 1.0f);
+                    out.lensEdgeDarkness = std::clamp(
+                        lens.value("edge_darkness", out.lensEdgeDarkness), 0.0f, 1.0f);
+                    out.lensPeripheralBlur = std::clamp(
+                        lens.value("peripheral_blur", out.lensPeripheralBlur), 0.0f, 4.0f);
+                    out.radialChromaticAberration = lens.value(
+                        "radial_chromatic_aberration", out.radialChromaticAberration);
                 }
                 if (bodycam.contains("wall_collision") && bodycam["wall_collision"].is_object()) {
                     const auto& wall = bodycam["wall_collision"];

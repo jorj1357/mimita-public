@@ -965,6 +965,8 @@ void RagdollModeSystem::tetherAimRoot(const Player& player, RagdollBody& b, floa
 void RagdollModeSystem::applyAimMotor(RagdollBody& b, const glm::vec3& camForward,
                                       const glm::vec3& camUp, float dt)
 {
+    (void)camForward;
+    (void)camUp;
     const auto& cfg = RagdollModeConfig::instance().data();
 
     auto motor = [&](int idx, float weight) {
@@ -972,10 +974,12 @@ void RagdollModeSystem::applyAimMotor(RagdollBody& b, const glm::vec3& camForwar
         RagdollModePart& part = b.parts[idx];
         RigidBody& body = part.body;
 
-        glm::vec3 fwd = camForward;
+        const bool head = idx == b.headIndex;
+        glm::vec3 fwd = head ? b.presentation.headForward
+                             : b.presentation.torsoForward;
         if (glm::length(fwd) < 1e-5f) return;
-        const glm::vec3 up = idx == b.headIndex
-            ? camUp : glm::vec3(0.0f, 0.0f, 1.0f);
+        const glm::vec3 up = head ? b.presentation.headUp
+                                  : glm::vec3(0.0f, 0.0f, 1.0f);
         glm::quat target = aimLookRotation(fwd, up)
                          * part.aimOffset;
 
@@ -1039,7 +1043,9 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
             1.0f;
     body.linearVelocity += acceleration * dt;
 
-    glm::vec3 targetForward = glm::normalize(camForward);
+    const glm::vec3 weaponForward = glm::length(b.presentation.weaponForward) > 1e-5f
+        ? glm::normalize(b.presentation.weaponForward) : glm::normalize(camForward);
+    glm::vec3 targetForward = weaponForward;
     glm::vec3 targetUp(0.0f, 0.0f, 1.0f);
 
     // The weapon's actual barrel is the authoritative aim axis. Convert its
@@ -1155,11 +1161,13 @@ void RagdollModeSystem::applyLeftArmPointMotor(RagdollBody& b,
     RagdollModePart& part = b.parts[b.leftArmIndex];
     part.hasNormalArmAimTarget = false;
     const float blend = glm::clamp(b.rightArmPointingBlend, 0.0f, 1.0f);
-    if (blend <= 1e-4f || glm::length(camForward) < 1e-5f) return;
+    const glm::vec3 armForward = glm::length(b.presentation.armForward) > 1e-5f
+        ? glm::normalize(b.presentation.armForward) : camForward;
+    if (blend <= 1e-4f || glm::length(armForward) < 1e-5f) return;
 
     const auto& cfg = RagdollModeConfig::instance().data();
     const AimBodyConfig& aimConfig = AimBodyConfig::instance();
-    const glm::vec3 forward = glm::normalize(camForward);
+    const glm::vec3 forward = glm::normalize(armForward);
     glm::vec3 up(0.0f, 0.0f, 1.0f);
     if (glm::length(glm::cross(forward, up)) < 0.05f)
         up = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -1440,7 +1448,7 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
     const bool pointingWanted = aimConfig.rightArmPointingRmb()
                              && rightMouseHeld && b.rightArmIndex >= 0;
     stepAimBody(dt, world, player, b, camForward, camPosition,
-                pointingWanted, camUp);
+                pointingWanted, camUp, true);
 
     if (mAimTransformTracePending) {
         logAimTransformSnapshot(player, b, "post_sync");
@@ -1466,7 +1474,8 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
 void RagdollModeSystem::stepAimBody(float dt, const World& world, Player& player,
                                     RagdollBody& b, const glm::vec3& aimForward,
                                     const glm::vec3& aimPosition,
-                                    bool pointingWanted, const glm::vec3& aimUp)
+                                    bool pointingWanted, const glm::vec3& aimUp,
+                                    bool applyPresentationResponse)
 {
     const float armRecovery = std::max(0.0f, player.weaponRecoilArmRecoveryRate);
     const float armStep = std::max(0.0f, dt) * armRecovery;
@@ -1481,6 +1490,59 @@ void RagdollModeSystem::stepAimBody(float dt, const World& world, Player& player
     const AimBodyConfig& aimConfig = AimBodyConfig::instance();
     const bool hybrid = aimConfig.hybridMode();
     b.activationTime += dt;
+
+    const glm::vec3 rawForward = glm::length(aimForward) > 1e-5f
+        ? glm::normalize(aimForward) : glm::vec3(0.0f, 1.0f, 0.0f);
+    const glm::vec3 rawUp = glm::length(aimUp) > 1e-5f
+        ? glm::normalize(aimUp) : glm::vec3(0.0f, 0.0f, 1.0f);
+    const AimBodyConfig::ModeResponseOverride* response =
+        applyPresentationResponse ? aimConfig.bodycamResponseOverride() : nullptr;
+    if (!response) {
+        b.presentation.headForward = rawForward;
+        b.presentation.headUp = rawUp;
+        b.presentation.torsoForward = rawForward;
+        b.presentation.armForward = rawForward;
+        b.presentation.weaponForward = rawForward;
+        b.presentation.initialized = false;
+    } else {
+        if (!b.presentation.initialized) {
+            b.presentation.headForward = rawForward;
+            b.presentation.headUp = rawUp;
+            b.presentation.torsoForward = rawForward;
+            b.presentation.armForward = rawForward;
+            b.presentation.weaponForward = rawForward;
+            b.presentation.initialized = true;
+        } else {
+            const float safeDt = std::max(0.0f, dt);
+            auto stepForward = [safeDt](glm::vec3& current, const glm::vec3& target,
+                                        float tau) {
+                const float alpha = 1.0f - std::exp(-safeDt /
+                    std::clamp(tau, 0.01f, 2.0f));
+                current = glm::normalize(current + (target - current) * alpha);
+            };
+            stepForward(b.presentation.headForward, rawForward,
+                        response->headResponseSeconds);
+            stepForward(b.presentation.torsoForward, rawForward,
+                        response->torsoResponseSeconds);
+            stepForward(b.presentation.armForward, rawForward,
+                        response->armResponseSeconds);
+            stepForward(b.presentation.weaponForward, rawForward,
+                        response->weaponStabilitySeconds);
+            const float upAlpha = 1.0f - std::exp(-safeDt /
+                std::clamp(response->headResponseSeconds, 0.01f, 2.0f));
+            b.presentation.headUp = glm::normalize(
+                b.presentation.headUp + (rawUp - b.presentation.headUp) * upAlpha);
+            glm::vec3 right = glm::cross(b.presentation.headForward,
+                                         b.presentation.headUp);
+            if (glm::length(right) > 1e-4f) {
+                right = glm::normalize(right);
+                b.presentation.headUp = glm::normalize(
+                    glm::cross(right, b.presentation.headForward));
+            } else {
+                b.presentation.headUp = glm::vec3(0.0f, 0.0f, 1.0f);
+            }
+        }
+    }
 
     // Restore authored ancestors before capturing this tick's procedural pose;
     // the physical writeback owns the final body-part frame below.

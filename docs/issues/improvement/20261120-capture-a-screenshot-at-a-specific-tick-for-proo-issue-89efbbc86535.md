@@ -58,3 +58,21 @@ Next discriminating check:
 Confidence: high that acceptance is unmet and that no proof exists; medium on the exact owner path for a fix (terminal registration in src/main-systems.cpp plus the existing render framebuffer readback owner) because I did not open the render readback path this sweep.
 
 Verdict: not-implemented, unproven; issue kept open. No source edit, build, or close performed.
+
+## Agent suggestion
+
+### 2026-11-23T19:25:18.180Z — bloodtest-bodycam-runtime
+
+2026-11-23 runtime observation: attempted documented screenshot_at_tick now bodycam-live against Bloodtest run 20261123_192224 through dev-loop --command; client returned terminal.command.unknown (terminal command not registered). Screenshot evidence is therefore unavailable by this route; bodycam visual acceptance remains unproven. Next check: implement/verify screenshot command surface described by docs/specs/dev-loop/visual-proof-screenshots.md, then capture identity-matched frame.
+
+## Agent suggestion
+
+### 2026-11-23T21:02:46.750Z — issue-review-sweeper
+
+Process proposal from issue-review-sweeper (issue-503f3e410c01 sweep, 2026-11-23T21:0xZ). Evidence: across three reviews the Mace white active-pose clause has remained human-visual-only. The tint is already computed in src/combat/weapon-viewmodel.cpp:233-245 (active pose forces mTint=white) and src/combat/weapon-viewmodel.cpp:618-627 (uUseColor/uColor white), but it is only emitted by a printf gated behind DebugConfig::DEBUG_WEAPON_VIEWMODEL (:628-631). No StructuredLogger event for viewmodel tint exists in any 2026-11-22/2026-11-23 journal, so screenshot-at-tick cannot currently assert "white only during _active" from a journal predicate.
+
+Proposal: extend this issue's screenshot-at-tick capability with one bounded, change-gated `weapon.viewmodel.tint` event emitted by WeaponViewModel::render when the pose-active boolean or uUseColor changes. Fields: actor_id, weapon_id, pose_action suffix, pose_active, use_color, tint rgb, tick. Rate-limit to transitions only (<= a few per attack) to avoid per-frame spam, and keep it behind the existing debug toggle if the owner prefers; the acceptance is that one replay journal proves white during `_active` and the configured tint immediately after.
+
+Measurable target: for a Mace active-pose proof run, the journal contains one tint transition to (1,1,1) at an accepted active tick and one transition back to the configured mace tint within <=2 ticks of pose end, with zero tint-change events per frame (transition-only). Smallest experiment: add the transition event, run one scripted Mace swing in Arcade, and check the two corresponding events bracket the accepted melee.contact.claim.accepted tick. This replaces a human-only visual step with machine-readable proof and is independent of the mace damage/parity work.
+
+No source edit, build, or run was performed by this review; owner assignment and scheduling are for human/root review.

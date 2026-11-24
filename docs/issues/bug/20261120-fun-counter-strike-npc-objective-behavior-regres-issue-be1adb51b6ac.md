@@ -438,3 +438,19 @@ Verdict: evidence (corroborates the owner's gen567 defuse proof; not completion,
 Reviewer: npc-elite-fcs
 
 Phase 2 elite difficulty/movement source and config are built but not runtime-proven. Game DLL generation 568 sha256 72ddbf4a81f99ba34e1bba4cb2eb403afa3744791b3f4172f5f27b6fb8f276d5 published. Config: fun_cs_rush true elite aim 0.06 deg, turn 1800 deg/s, reaction_delay 0.2, fire_interval_ticks 3, dash_chance 0.85, focus/swarm/sectors enabled, information_mode memory retained; npc-difficulty downDashChance 1.0. Code: elite objective-travel bhop holds the shared jump input on clear unblocked routes and resets per life. Two isolated gen568 test runs failed readiness (client did not observe active mode; client did not connect) under current shared load, so no Phase 2 journal exists yet. Next: pinned gen568 FCS run and compare dash/bhop/air/TTK/kills-per-round/wall/stuck against the gen564/gen567 baseline. No human visual acceptance.
+
+## Review (needs-evidence)
+
+### 2026-11-23T20:26:55.612Z — npc-elite-fcs-2
+
+Reviewer: npc-elite-fcs-2
+
+Readiness and header-latency progress. Source now emits canonical client network.mode.active when DUEL_PHASE_ACTIVE is applied (src/network/community-match-client.cpp) and the isolated-run runner waits on it with a simulation-time budget plus server-health gate (devscripts/dev_loop/parallel_test_runs.py), classifying slow ticks as server_stalled instead of a false mode failure. The reason was reproduced: failed run 20261123_182722 was in DUEL_PHASE_INTERMISSION (phase 4) with server tick stalls up to 4,494 ms, so a 45 s wall wait was wrong. Game-DLL generation 571 built successfully (SHA-256 11c1f7b7af6b1df5577246877de9f23efb96deca02850032aeb0d63271271005, total 829.795 s) and includes the mode.active event plus the first NPC header split: NPC debug flags moved from config.h to src/debug/config-npc.h, reducing an NPC debug-flag edit from 284 affected sources to 6. Phase 2 gen568/gen571 runtime proof is still blocked because another isolated juggernaut horde run (20261123_195307) remained active; no concurrent isolated test was started. Next: run gen571 pinned FCS when the machine is free and compare TTK/kills-per-round/dash/bhop/air/wall/stuck against gen564/gen567.
+
+## Review (runtime_proven)
+
+### 2026-11-23T20:58:57.968Z — npc-elite-fcs-2
+
+Reviewer: npc-elite-fcs-2
+
+Generation 571 Phase 2 measurement. Run 20261123_205333, FCS/dust2cyberiav4, game DLL generation 571 sha256 11c1f7b7af6b1df5577246877de9f23efb96deca02850032aeb0d63271271005, EXE 2e24d312603e4135cdd9be0d870a11ce4be98042e253296de6ca16ca189d512b. Client journal logs/2026-11-23/20261123_205333/client-01/events.jsonl contains network.mode.active phase=2 (3 events); the new readiness path worked. Server journal logs/2026-11-23/20261123_205333/server-01/events.jsonl. 256.2 s, 3 completed rounds, 3/3 T plants defused by CT NPCs; round winners CT 3/3. Metrics versus gen564 baseline: TTK mean 2.40 -> 1.08 s, median 0.84 -> 0.45 s, p90 11.35 -> 3.25 s; kills/round 4.33 -> 5.00; CT dash 17.52 -> 25.43/min, T 10.85 -> 22.04/min; CT bhop 2.03 -> 3.76/min, T 1.30 -> 3.21/min; CT air 24.8 -> 26.1%, T 17.0 -> 22.8%; CT down-dash 9.15 -> 8.45/min, T 6.22 -> 7.45/min. Remaining: air% below 30% target; CT stuck 21.90 -> 21.42/min (flat), T 15.46 -> 18.89/min (worse); CT near-wall avoidance 11.6 -> 15.4%, blocked 1.1 -> 3.8%; T near-wall 9.5 -> 7.9%. Defuse starts still restart 18 times with 15 interruptions before 3 completions. This proves Phase 2 lethality/movement use and readiness, not wall/stuck reduction. Run stopped by its own stop-test-run request, failures=[].

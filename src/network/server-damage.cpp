@@ -195,6 +195,7 @@ static ServerDamageResult applyPlayerDamageLegacy(
     if (bodyPart == ActorBodyPart::Unknown)
         bodyPart = ActorBodyPart::Torso;
     const bool bodyPartsEnabled = destructibleBodyPartsEnabled();
+    result.partHealthBefore = target.body.health(bodyPart);
     const bool partDestroyed = bodyPartsEnabled &&
         target.body.applyDamage(bodyPart, clampedDamage);
     if (bodyPartsEnabled && partDestroyed && target.body.lethalPartDestroyed())
@@ -232,7 +233,9 @@ static ServerDamageResult applyPlayerDamageLegacy(
           {"dead_before", false}, {"dead_after", target.health <= 0},
           {"killed", target.health <= 0}, {"source", damageSourceName(source)},
           {"body_part", actorBodyPartName(result.bodyPart)},
+          {"part_health_before", result.partHealthBefore},
           {"part_health_after", result.partHealthAfter},
+          {"layer_after", (int)target.body.layer(result.bodyPart)},
           {"part_destroyed", result.partDestroyed},
           {"spawn_generation", target.spawnGeneration},
           {"position", {target.pos.x, target.pos.y, target.pos.z}},
@@ -482,6 +485,7 @@ ServerDamageResult applyActorDamage(
         if (part == ActorBodyPart::Unknown)
             part = ActorBodyPart::Torso;
         const bool bodyPartsEnabled = destructibleBodyPartsEnabled();
+        result.partHealthBefore = target.body.health(part);
         const bool partDestroyed = bodyPartsEnabled &&
             target.body.applyDamage(part, appliedDamage);
         if (bodyPartsEnabled && partDestroyed && target.body.lethalPartDestroyed())
@@ -504,7 +508,9 @@ ServerDamageResult applyActorDamage(
              {"health_before", result.healthBefore}, {"health_after", result.healthAfter},
              {"killed", result.killed}, {"source", damageSourceName(request.source)},
              {"body_part", actorBodyPartName(result.bodyPart)},
+             {"part_health_before", result.partHealthBefore},
              {"part_health_after", result.partHealthAfter},
+             {"layer_after", (int)target.body.layer(result.bodyPart)},
              {"part_destroyed", result.partDestroyed},
              {"knockback", {request.knockback.x, request.knockback.y, request.knockback.z}}},
             __FILE__, __LINE__, __FUNCTION__);
@@ -605,6 +611,7 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     event.source = damageConfirmedSource(source);
     event.weapon = weapon;
     event.bodyPart = (uint8_t)result.bodyPart;
+    event.partHealthBefore = result.partHealthBefore;
     event.partHealthAfter = result.partHealthAfter;
     event.partDestroyed = result.partDestroyed ? 1 : 0;
     event.contactForce = contactForce;

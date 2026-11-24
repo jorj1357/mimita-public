@@ -18,6 +18,7 @@ uniform float uColorTemperature;
 uniform float uVignette;
 uniform float uFilmGrain;
 uniform float uChromaticAberration;
+uniform int uChromaticAberrationRadial;
 uniform float uLensDistortion;
 uniform float uLensDistortionCurve;
 uniform float uLensDistortionZoom;
@@ -133,10 +134,25 @@ void main()
     if (strength > 0.001)
     {
         float off = strength * 0.02;
-        float r = texture(uScene, uv + vec2(off, 0.0)).r;
-        float b = texture(uScene, uv - vec2(off, 0.0)).b;
-        col.r = mix(col.r, r, 1.0);
-        col.b = mix(col.b, b, 1.0);
+        if (uChromaticAberrationRadial != 0)
+        {
+            vec2 fromCenter = uv - vec2(0.5);
+            float radius = length(fromCenter);
+            vec2 dir = radius > 0.0001 ? fromCenter / radius : vec2(1.0, 0.0);
+            float edge = smoothstep(0.18, 0.82, radius);
+            float radialOff = off * (0.18 + edge * 1.9);
+            float r = texture(uScene, uv + dir * radialOff).r;
+            float b = texture(uScene, uv - dir * radialOff).b;
+            col.r = mix(col.r, r, 1.0);
+            col.b = mix(col.b, b, 1.0);
+        }
+        else
+        {
+            float r = texture(uScene, uv + vec2(off, 0.0)).r;
+            float b = texture(uScene, uv - vec2(off, 0.0)).b;
+            col.r = mix(col.r, r, 1.0);
+            col.b = mix(col.b, b, 1.0);
+        }
     }
 
     // --- Lens distortion ---

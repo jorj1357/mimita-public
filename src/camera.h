@@ -64,6 +64,7 @@ double lastMouseInputTime = -1.0;
                           float positionResponseSeconds,
                           float rotationResponseSeconds,
                           bool wallCollision, float probeRadiusMeters);
+    void resetBodycamPose() { mBodycamPoseInitialized = false; }
     glm::mat4 getView() const;
     glm::mat4 getProj(float width, float height) const;
 

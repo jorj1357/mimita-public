@@ -599,3 +599,11 @@ M	src/terminal/debug-commands.cpp
   }
 }
 ```
+
+## Final result from the in-flight build sampler
+
+At 2026-11-23 19:20:47Z, attempt `game-dll-20261123T191346937240Z-35f07c` completed successfully in 420.870s: 67 translation units compiled and 576 skipped. Attempt-level `phase_durations_ms` reports wall time of 61.311s for changed-source preflight, 323.760s for compilation, 4.050s for object-cache scan, 7.642s for link, and 0.567s for publish. The longest TU was `src/network/server-gamemode.cpp` at 157.506s. The separate `worker_metrics.compile_seconds` value (385.061s) is not the compile-stage wall time. The attempt had 62 invalidation records: 43 attributed to `src/gamemode/gamemode.h`, 14 to `src/render/post-fx.h`, and five duplicate absolute-path forms. Full timings are in `.dev/build-timings/game-dll-20261123T191346937240Z-35f07c.json` and the timeline JSONL.
+
+The resource sidecar `.dev/build-timings/game-dll-20261123T191346937240Z-35f07c.resource.jsonl` has `capture_started` and `capture_completed`, but zero samples over 420.835s. It reports `status=partial`, null host CPU and available-memory measurements, and provider `windows_kernel32_host_only`; there are no sampler errors. Therefore this build gives no evidence that MiMITA runtime load caused its 420.870s duration. The automatic gap is `build-resource-sampling:game-dll-20261123T191346937240Z-35f07c`, appended to the build issue and shared with its owner.
+
+At inspection, the only shared runtime was `20261123_184017` (Bloodtest, server PID32088, client PID25772, configured 0 NPC), owned by the bodycam task. I did not sample or control it. It is not a valid NPC-cost workload. The callsite-probe interpretation and exact next measurement requirement are appended to CPU issue `issue-ed3ac775283d`. A separate read-only server journal event at 19:22:26.480Z reports Bloodtest, generation570, 0 NPC/1 player; its 57-tick window has total tick avg5.905ms, p95 27.874ms, p99/max46.091ms, and NPC-stage avg2.768ms/max42.944ms despite zero NPCs. This is an observed tick-deadline lead, not CPU attribution: no host/process sample matched the window, and elapsed-time outliers may include stalls or waits.

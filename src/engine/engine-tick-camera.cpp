@@ -1113,6 +1113,7 @@ void engineTickCamera(Engine& engine, float dt)
     // In head-world mode mouse look remains the target, while the rendered
     // camera uses the world-space orientation of the physical head.
     if (CamConfig::instance().effectiveData().orientationMode == "head_world" &&
+        !replayPlaybackActive && !gReplayEditor.isLoaded() &&
         !player.dead && !player.voidDeathTriggered &&
         (RagdollModeSystem::instance().isActive() ||
          RagdollModeSystem::instance().aimActive())) {
@@ -1143,6 +1144,7 @@ void engineTickCamera(Engine& engine, float dt)
                     bodycam->rotationResponseSeconds, bodycam->wallCollision,
                     bodycam->wallProbeRadiusMeters);
             } else {
+                camera.resetBodycamPose();
                 camera.pos = eyePosition;
                 camera.front = headFront;
                 camera.up = headUp;

@@ -318,8 +318,8 @@
       "id": 33,
       "key": "bloodtest",
       "name": "Bloodtest",
-      "description": "Physical projectile revolver and shotgun, Swordsword, and Nothing.",
-      "weapons": ["bloodtest_revolver", "bloodtest_shotgun", "swordsword", "nothing"]
+      "description": "Physical projectile AK-47 and Judgment revolver, Bat melee, and Nothing.",
+      "weapons": ["bloodtest_ak47", "bloodtest_judgement", "bloodtest_bat", "nothing"]
     }
   ]
 }

@@ -53,8 +53,12 @@ uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
         return NETWORK_WEAPON_FORCE_PUNCH;
     if (definition.id == "projectile_rifle" ||
         definition.id == "bloodtest_revolver" ||
-        definition.id == "bloodtest_shotgun")
+        definition.id == "bloodtest_shotgun" ||
+        definition.id == "bloodtest_ak47" ||
+        definition.id == "bloodtest_judgement")
         return NETWORK_WEAPON_PROJECTILE_RIFLE;
+    if (definition.id == "bloodtest_bat")
+        return NETWORK_WEAPON_SWORDSWORD;
     return NETWORK_WEAPON_NONE;
 }
 

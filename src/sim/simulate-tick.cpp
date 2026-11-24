@@ -356,7 +356,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 (!seatedDef->armRagdoll.actionScoped ||
                  MimitaMelee::currentActionUsesPhysicalArm(seatedDef->id));
             const bool headCameraMode =
-                CamConfig::instance().data().orientationMode == "head_world";
+                CamConfig::instance().effectiveData().orientationMode == "head_world";
             if ((AimBodyConfig::instance().bodyPhysicsMode() || headCameraMode ||
                  seatedArmRagdoll) &&
                 (!sim.player->usesMeleeAuthoredPose() || seatedArmRagdoll ||
@@ -432,7 +432,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 (!equippedDef->armRagdoll.actionScoped ||
                  MimitaMelee::currentActionUsesPhysicalArm(equippedDef->id));
             const bool headCameraMode =
-                CamConfig::instance().data().orientationMode == "head_world";
+                CamConfig::instance().effectiveData().orientationMode == "head_world";
             if ((AimBodyConfig::instance().bodyPhysicsMode() ||
                  headCameraMode || armRagdoll) &&
                 (!sim.player->usesMeleeAuthoredPose() || armRagdoll ||

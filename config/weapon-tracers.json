@@ -13,7 +13,16 @@
     "color": [1.0, 0.82, 0.05],
     "renderDistance": 1250.0,
     "renderFadeStartDistance": 1000.0,
-    "renderFadeEndDistance": 1250.0
+    "renderFadeEndDistance": 1250.0,
+    "projectile_trail": {
+      "enabled": true,
+      "style": "line",
+      "start_alpha": 0.5,
+      "end_alpha": 0.0,
+      "color": [1.0, 0.82, 0.05],
+      "thickness": 0.02,
+      "segments": 4
+    }
   },
   "revolver": {
     // "thickness": 0.1,
@@ -58,5 +67,27 @@
     "start_alpha": 0.9,
     "end_alpha": 0.9,
     "color": [1.0, 0.98, 0.95]
+  },
+  "bloodtest_ak47": {
+    "projectile_trail": {
+      "enabled": true,
+      "style": "line",
+      "start_alpha": 0.5,
+      "end_alpha": 0.0,
+      "color": [1.0, 0.82, 0.05],
+      "thickness": 0.025,
+      "segments": 4
+    }
+  },
+  "bloodtest_judgement": {
+    "projectile_trail": {
+      "enabled": true,
+      "style": "line",
+      "start_alpha": 0.5,
+      "end_alpha": 0.0,
+      "color": [1.0, 0.86, 0.1],
+      "thickness": 0.018,
+      "segments": 4
+    }
   }
 }

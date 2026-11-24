@@ -923,6 +923,36 @@ static void buildPlayerPartLayerMeshes(Player& player)
         buildInnerLayerMesh(source, part.collider, bodyConfig.boneShellScale,
                             boneTexture, part.layerMeshes[2]);
     }
+
+    uint64_t dimensionsHash = 1469598103934665603ull;
+    float massKg = 0.0f;
+    for (size_t i = 0; i < count; ++i) {
+        const PhysicalBodyPart& part = player.physicalBody.parts[i];
+        const glm::vec3 size = part.collider.localMax - part.collider.localMin;
+        const float values[3] = {size.x, size.y, size.z};
+        for (float value : values) {
+            uint32_t bits = 0;
+            std::memcpy(&bits, &value, sizeof(bits));
+            dimensionsHash ^= bits;
+            dimensionsHash *= 1099511628211ull;
+        }
+        massKg += std::max(0.0f, size.x * size.y * size.z) * 1000.0f;
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Animation, StructuredLevel::Important,
+        "bloodtest.body.definition.loaded",
+        player.username.empty() ? "local" : player.username,
+        "avatar body damage layers generated", 0,
+        nlohmann::json{
+            {"actor_id", player.username.empty() ? "local" : player.username},
+            {"role_id", player.avatarName()},
+            {"body_revision", std::to_string(dimensionsHash)},
+            {"part_count", (int)count},
+            {"joint_count", (int)player.perfectPoseSkeleton.nodes.size()},
+            {"part_dimensions_hash", dimensionsHash},
+            {"mass_kg", massKg},
+            {"valid", count > 0}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 // ── Shared CPU model builders ─────────────────────────────────────

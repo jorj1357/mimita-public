@@ -567,6 +567,25 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
                 {"source", "client_packet"},
                 {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
             __FILE__, __LINE__, __FUNCTION__);
+        if (packet.phase == DUEL_PHASE_ACTIVE) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.mode.active", std::to_string(packet.duelId),
+                "client applied authoritative active mode", packet.serverTick,
+                nlohmann::json{
+                    {"mode", packet.matchMode},
+                    {"map", std::string(packet.mapId)},
+                    {"phase", (int)packet.phase},
+                    {"stage", "active"},
+                    {"duel_id", packet.duelId},
+                    {"state_version", packet.stateVersion},
+                    {"server_tick", packet.serverTick},
+                    {"participant_count", packet.participantCount},
+                    {"source", "client_packet"},
+                    {"build_id", std::getenv("MIMITA_BUILD_ID")
+                        ? std::getenv("MIMITA_BUILD_ID") : ""}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
     if (packet.waveNumber != prevWaveNumber ||
         (packet.waveNpcSpawned >= packet.waveNpcTarget && prevWaveSpawned < packet.waveNpcTarget))
