@@ -52,12 +52,14 @@
     // 20 MiMITA units/sec.
     // "max_speed": 30.0,
     // "max_speed": 20.0,
-    "max_speed": 9.0,
+    // "max_speed": 9.0,
+    "max_speed": 15.0,
 
     // Keep server-side ground movement validation at the same speed.
     // "ground_speed": 30.0,
     // "ground_speed": 20.0,
-    "ground_speed": 9.0,
+    // "ground_speed": 9.0,
+    "ground_speed": 15.0,
 
     // Extremely high ground acceleration from the fast Source preset.
     //

@@ -33,8 +33,9 @@ bool spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
         const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
         const glm::vec3 normal = glm::length(surfaceNormal) > 0.001f
             ? glm::normalize(surfaceNormal) : glm::vec3(0.0f, 0.0f, 1.0f);
-        if (spawnMark && def && !def->explosionMarkTexture.empty())
-            EffectPartSystem::instance().spawnExplosionMark(position, normal, forceScale);
+        if (spawnMark)
+            EffectPartSystem::instance().spawnBulletImpact(
+                position, normal, 0.25f, 1.0f, 1.0f);
         if (def &&
             (!def->explosionShockwaveModel.empty() ||
              !def->explosionShockwaveTexture.empty())) {
@@ -43,6 +44,7 @@ bool spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
             const float randomMin = def->explosionShockwaveRandomRotationMinDeg;
             const float randomMax = def->explosionShockwaveRandomRotationMaxDeg;
             const float randomSpan = randomMax - randomMin;
+            const float baseScale = std::max(0.01f, def->explosionShockwaveModelBaseScale);
             EffectPart shockwave;
             shockwave.position = position + normal * 0.05f;
             shockwave.normal = normal;
@@ -51,8 +53,8 @@ bool spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
                 (randomSpan > 0.0f ? randomMin + rand01 * randomSpan : 0.0f);
             shockwave.endRotation.z = def->explosionShockwaveEndRotationDeg +
                 (randomSpan > 0.0f ? randomMin + rand01b * randomSpan : 0.0f);
-            shockwave.scale = def->explosionShockwaveStartScale * forceScale;
-            shockwave.endScale = def->explosionShockwaveEndScale * forceScale;
+            shockwave.scale = def->explosionShockwaveStartScale * forceScale * baseScale;
+            shockwave.endScale = def->explosionShockwaveEndScale * forceScale * baseScale;
             shockwave.alpha = def->explosionShockwaveStartAlpha;
             shockwave.endAlpha = def->explosionShockwaveEndAlpha;
             shockwave.useEndAlpha = true;
@@ -69,11 +71,13 @@ bool spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
         }
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Weapons, StructuredLevel::Important,
-            "bullet.impact.spawn", weaponId,
-            "spawned bullet-hole decal and compact shockwave",
+            "impact.surface.spawn", weaponId,
+            "spawned bullet hole and surface shockwave",
             0, nlohmann::json{{"weapon", weaponId},
                               {"force_scale", forceScale},
-                              {"spawn_mark", spawnMark}});
+                              {"spawn_mark", spawnMark},
+                              {"shockwave_model", def ? def->explosionShockwaveModel : std::string()},
+                              {"base_scale", def ? def->explosionShockwaveModelBaseScale : 1.0f}});
         return false;
     }
 
@@ -207,8 +211,10 @@ bool spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
         shockwave.maxLifetime = std::max(0.02f, weaponDef->explosionShockwaveLifetime);
         shockwave.rotation.z = startRotation;
         shockwave.endRotation.z = endRotation;
-        shockwave.scale = weaponDef->explosionShockwaveStartScale * forceScale;
-        shockwave.endScale = weaponDef->explosionShockwaveEndScale * forceScale;
+        shockwave.scale = weaponDef->explosionShockwaveStartScale * forceScale *
+            std::max(0.01f, weaponDef->explosionShockwaveModelBaseScale);
+        shockwave.endScale = weaponDef->explosionShockwaveEndScale * forceScale *
+            std::max(0.01f, weaponDef->explosionShockwaveModelBaseScale);
         shockwave.alpha = weaponDef->explosionShockwaveStartAlpha;
         shockwave.endAlpha = weaponDef->explosionShockwaveEndAlpha;
         shockwave.useEndAlpha = true;

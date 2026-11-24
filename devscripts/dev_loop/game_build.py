@@ -1022,6 +1022,30 @@ def _consume_build_notes(root: Path, attempt_id: str) -> list[dict]:
     return notes
 
 
+def _wait_for_process_exit(process: subprocess.Popen,
+                           grace_seconds: float) -> bool:
+    """Let a worker that reached its terminal record exit before killing it."""
+    if process.poll() is not None:
+        return True
+    try:
+        process.wait(timeout=max(0.0, float(grace_seconds)))
+    except subprocess.TimeoutExpired:
+        return process.poll() is not None
+    return True
+
+
+def _terminal_attempt_failure_after_timeout(attempt_id: str,
+                                            last_attempt: dict) -> bool:
+    """Trust only a complete failure record written by this exact attempt."""
+    if str(last_attempt.get("build_attempt_id") or "") != attempt_id:
+        return False
+    if str(last_attempt.get("status") or "") != "failed":
+        return False
+    phase = str(last_attempt.get("failed_phase") or last_attempt.get("phase") or "")
+    error = str(last_attempt.get("error") or "").strip()
+    return bool(phase and error)
+
+
 def _run_checked(root: Path, command: list[str], on_output,
                  timeout: float | None = None) -> int:
     startupinfo = None
@@ -1047,12 +1071,20 @@ def _run_checked(root: Path, command: list[str], on_output,
     timed_out = threading.Event()
 
     def kill_on_timeout() -> None:
+        # A terminal compiler/linker result can be written just before the
+        # worker process exits. Give that short cleanup window a chance before
+        # killing the tree and replacing its real failure with exit 124.
+        if _wait_for_process_exit(process, 2.0):
+            return
+        if process.poll() is not None:
+            return
         timed_out.set()
         try:
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=5.0,
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        except OSError:
+        except (OSError, subprocess.TimeoutExpired):
             pass
         try:
             process.kill()
@@ -1657,7 +1689,10 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     progress["phase"] = "worker_start"
     progress["updated_utc"] = _utc_now()
     _write_json(progress_path, progress)
-    build_timeout = _env_float("MIMITA_GAME_BUILD_TIMEOUT", 3600.0)
+    # Fail a wedged or unproductive DLL worker well before the old 60-minute
+    # ceiling. Keep the environment override for exceptional, intentionally
+    # long experiments; the root dev-loop supervisor kills the worker tree.
+    build_timeout = _env_float("MIMITA_GAME_BUILD_TIMEOUT", 300.0)
     slot_timeout = _env_float("MIMITA_GAME_BUILD_SLOT_TIMEOUT", 600.0)
     driver_phase_started = time.monotonic()
     set_driver_subphase("module_slot_wait", "started", driver_phase_started,
@@ -1685,12 +1720,23 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                 "worker_launch_to_first_output", "completed",
                 worker_startup_started, output_seen=False)
         slot.release()
-    if return_code == 124:
-        set_stage("worker_supervised", "failed", reason="timeout",
-                  timeout_seconds=build_timeout)
     current = _read_json(output_root / "current.json")
     last_attempt = _read_json(last_attempt_path)
     attempt_records = (str(last_attempt.get("build_attempt_id") or "") == attempt_id)
+    worker_timed_out = return_code == 124
+    if (worker_timed_out and
+            _terminal_attempt_failure_after_timeout(attempt_id, last_attempt)):
+        # The worker completed and persisted this exact attempt's terminal
+        # failure immediately before the watchdog's process-tree kill.
+        return_code = 1
+        worker_timed_out = False
+        set_stage("worker_supervised", "failed",
+                  reason="terminal_worker_failure_at_timeout_boundary",
+                  failed_phase=(last_attempt.get("failed_phase")
+                                or last_attempt.get("phase") or ""))
+    elif worker_timed_out:
+        set_stage("worker_supervised", "failed", reason="timeout",
+                  timeout_seconds=build_timeout)
     success = (return_code == 0 and str(current.get("status", "")) == "ok"
                and str(current.get("revision", "")) == revision)
     no_op = bool(success and attempt_records and last_attempt.get("no_op"))
@@ -1701,7 +1747,7 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                      if attempt_records and isinstance(last_attempt.get("errors"), list)
                      else [])
     worker_tail = "\n".join(worker_output_tail)[-4000:]
-    if return_code == 124:
+    if worker_timed_out:
         failed_phase = "worker_timeout"
         worker_error = f"worker timed out after {build_timeout:.0f}s"
         worker_errors = [worker_error]

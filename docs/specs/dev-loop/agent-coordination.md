@@ -507,6 +507,15 @@ and recurring review; they do not themselves authorize scope-changing fixes or
 changes to shared authority. Agents should inspect claimable issues during
 normal coordination and propose evidence-based solutions over time.
 
+For iterative optimization work, agents use the falsifiable, one-variable
+experiment loop in [agent self-improvement](agent-self-improvement.md) and the
+[measurement workflow](../../workflows/measurement-hypothesis-driven-improvement.md).
+Each optimization build requested for that goal names one evidence-selected
+change and compares matched runtime evidence; unrelated builds do not count.
+When the issue is resolved or progress plateaus, add up to three distinct,
+testable follow-up hypotheses to the same issue, without creating duplicate
+issues or starting unowned changes.
+
 ## Proof ledger and completion gate
 
 Every behavior change has a proof record. A proof links the task/issue, changed

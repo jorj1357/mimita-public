@@ -94,3 +94,27 @@ Controller-path proof (2026-11-24, generation 587, run 20261124_081952_arena-tes
 Reviewer: vehicle-arena-controller
 
 Identity and controller proof (2026-11-24): (1) stale expected run/build now produces network.server-identity-warning with blocked=false and the client still reaches vehicle.seat.anchor/has_local_driver=true (run 20261124_111810_stale-proof, evidence-44a7a627d8f4). (2) KBM W produced input.host-key key=87, vehicle.input.local throttle=1.0, and server vehicle.input.server actor_id=1 vehicle_id=2 throttle=1.0 with changing position (run 20261124_110752_arena-proof-1, evidence-65a28724b611). (3) vendored gamecontrollerdb loaded accepted=2299 rejected=0 loaded=true after initializing the game module GLFW joystick subsystem (run 20261124_112630_map-proof-2, evidence-946f0d5918ac). Final game generation 593 adds input.gamepad.device census. Residual: no physical pad was connected during automated proof; PS4 hardware detection and in-game rebind UI remain. Changelog: docs/changelog/2026-11-24/20261124_1045-nonblocking-identity-and-controller-db.md.
+
+## Review (needs-evidence)
+
+### 2026-11-24T18:50:50.375Z — vehicle-rl-physics
+
+Reviewer: vehicle-rl-physics
+
+RL reference physics batch 1 (2026-11-24). Generation 600, run 20261124_184753_rl-physics-5, evidence-82198f305409. Proven: vehicle.profile.applied profile=rl_soccar template=octane_rl gravity_mps2=6.5 jump_delta_vel_mps=2.9167 steering=30.57; arena.ball.spawned radius=0.9125 mass=30 z=0.9125; driver seated; vehicle.input.server throttle=1.0; vehicle.telemetry 158 samples with max speed_mps=9.92 (35.7 km/h), distance_travelled_m=47.81, 22 airborne samples, angular_speed peak 5.5; vehicle.jump delta_vel_mps=2.9167. Implemented but unproven at runtime: stall (input cancellation), flip cancel, flip reset, car-to-ball extra impulse - the keyboard-only harness cannot produce yaw+roll=0 or a 4-wheel ball contact. Known gap: measured jump rise ~1.78 m vs RL full jump ~2.6 m; immediate impulse correct, sustained portion delivering ~2/3. Collision now covers 102.4x81.92x20.48 m but the visible arena1.glb is still the old 60x41 m mesh. 60Hz world unchanged; 120Hz substep + swept-sphere CCD and the pinch convergence harness are the next batch. Changelog: docs/changelog/2026-11-24/20261124_1845-rl-reference-vehicle-physics.md.
+
+## Review (needs-evidence)
+
+### 2026-11-24T19:33:28.921Z — vehicle-settle-physics
+
+Reviewer: vehicle-settle-physics
+
+Physics-only settling attempt (2026-11-24), gen 606, evidence-b829cd8d6b25. Removed all scripted settling: the righting torque block, the pose-based idle sleep, and the template idle-settle velocity kill. Added wheel collisionRadius, collisionHalfExtents (independent of the rendered body), authored map spawn pitch/roll, and orientation telemetry (up_dot_world_up, tilt_deg, wheel_mask, asleep) plus a vehicle.rest event. RESULT: settling is NOT fixed. A car spawned at 80 deg roll was pushed to 23 deg by suspension force and rested on the chassis face; with wheel colliders enabled it vibrated (42 airborne samples in 35 s) and the jump was absorbed. Root cause: entity-vs-world contacts translate the body instead of applying an impulse at the contact point, so there is no contact torque to roll a tipped car, and a flat face stays a stable pose. This is the predicted solver gap, not tuning. Collider support is implemented but disabled. Jump is fixed: deleting the idle-settle kill restored it (vehicle.jump.apex apex_height_m=1.672, 6 airborne samples). Open: apex 1.67 m vs RL ~2.6 m (sustained force still short); needs per-tick jumpTimer/jumpHeld trace. Next batch: contact torque at entity-vs-world contacts + simultaneous-contact solve + pinch convergence harness. Changelog: docs/changelog/2026-11-24/20261124_1930-settling-physics-and-jump-fix.md.
+
+## Review (needs-evidence)
+
+### 2026-11-24T20:47:46.130Z — vehicle-solver-proof
+
+Reviewer: vehicle-solver-proof
+
+Accumulated-impulse world contact solver (2026-11-24). Gen 618, run 20261124_204047_settle-final, evidence-eec582a94504. Added solveEntityWorldContacts: contact clustering (normal >=0.94, point <=12cm, max 8 clusters), tangent basis + effective masses, 8 sequential-impulse iterations with accumulated normal and 2-axis friction clamped by mu*normal, restitution as a velocity target above the min bounce speed. Deleted the per-contact resolveWorldContactVelocity path that over-applied a full impulse per gathered contact. Wheel colliders + narrow collision slab now ENABLED (collisionRadius 0.085, slab 0.56x0.28, bodyFriction 0.85, stabilityAngularDamping 8.0). PROVEN: upright car stable and settles after a jump (up_dot 1.000, tilt 0.1 deg, 0.12 m/s, 4 wheels in 126/129 samples; jump apex 1.410 m). PARTIAL: an 80-degree spawn is rolled from up_dot 0.039 to 0.86 (~30 deg) by contact physics but keeps rolling on its wheel spheres at ~1.6 m/s and emits no vehicle.rest. Root cause: a side-lying car has zero suspension-ray contact and no contact-point slip, so Coulomb friction cannot dissipate rolling energy. Next: physical rolling resistance (oppose tangential angular velocity scaled by normal impulse and tire rollingResistance). Changelog: docs/changelog/2026-11-24/20261124_1930-settling-physics-and-jump-fix.md.

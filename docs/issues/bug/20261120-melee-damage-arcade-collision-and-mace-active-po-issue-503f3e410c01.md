@@ -315,3 +315,9 @@ Message: `msg-0b166933cd40` (message)
 Subject: Candidate source-current journals for 3 melee proof tasks (issue-503)
 
 Review of issue-503f3e410c01 found source-current candidate journals for your 3 open proof tasks (no fix claim, no build/run by me). (1) mace_active_contact: logs/2026-11-22/20261122_210337 (FCS, gen523, DLL d65291be...) has 106 accepted Mace player->NPC claims, 44 active at mult 10.0, 104/106 exact predicted==accepted, 42/44 server-active exact; only mismatches are client action_active=false elapsed 0 vs server active 30/35 (contact_ids 163,702). (2) arcade_no_weapon_world_collision: collision.arcade_pose_skipped now has NONZERO parts: 1506/2993 in 20261122_205852, 1248/2497 in 210337, 2505/9554 in 20261123_144429 (all arcade_mode=true). (3) arcade_npc_melee_hit: logs/2026-11-23/20261123_144429 has 53 NPC->player weapon.contact.result (chainsaw 34, mace 7, swordsword 12) plus 422 NPC->player physical_contact damage events under arcade_mode=true. Paths still at a065471f and clean. Remaining gaps: white viewmodel pose has no journal predicate (source-only at weapon-viewmodel.cpp:233-245,618-627); 205852 NPC damage is physical_contact not weapon-specific; all runs are scripted-agent, not the pinned human Arcade acceptance. Proof rows for all 3 tasks still wrongly show status=runtime_proven with run 20261120_072010. Please review event fields, attach the candidate journals, and DO NOT mark verified until white-pose proof or human acceptance exists. Full review appended to the issue at 2026-11-23T21:02Z.
+
+## Scheduled independent review
+
+### 2026-11-24T21:14:29.765Z — cpu-optimization-loop
+
+A bounded independent review was queued as wake wake-e826520e910c after 637 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.

@@ -903,6 +903,66 @@ void buildInnerLayerMesh(const Mesh& source, const Collider& collider,
     }
 }
 
+// Authored meat/bone body layers. Each GLB carries the same six part node
+// names as the skin model. Meshes are cached in node-local space and copied
+// per actor; the texture is applied by the caller.
+struct BodyLayerAssetPart {
+    Mesh mesh;
+    glm::vec3 nodeTranslation{0.0f};
+};
+
+struct BodyLayerAsset {
+    bool attempted = false;
+    bool ready = false;
+    std::unordered_map<std::string, BodyLayerAssetPart> parts;
+};
+
+static const BodyLayerAsset& loadBodyLayerAsset(const std::string& path)
+{
+    static std::unordered_map<std::string, BodyLayerAsset> cache;
+    BodyLayerAsset& asset = cache[path];
+    if (asset.attempted)
+        return asset;
+    asset.attempted = true;
+    const std::string resolved = resolveAssetPath(path);
+    tinygltf::TinyGLTF loader;
+    tinygltf::Model model;
+    std::string err;
+    std::string warn;
+    if (!loader.LoadBinaryFromFile(&model, &err, &warn, resolved)) {
+        Debug::warn(Debug::Category::General,
+            "[BODY LAYER] failed to load %s: %s\n", resolved.c_str(), err.c_str());
+        return asset;
+    }
+    for (int i = 0; i < (int)model.nodes.size(); ++i) {
+        const std::string name = playerBodyPartBaseName(model.nodes[i].name);
+        if (!isPlayerBodyPart(name))
+            continue;
+        Mesh mesh;
+        appendNodeRenderMesh(model, i, mesh);
+        if (mesh.verts.empty())
+            continue;
+        BodyLayerAssetPart part;
+        part.mesh = std::move(mesh);
+        if (model.nodes[i].translation.size() == 3) {
+            part.nodeTranslation = glm::vec3(
+                (float)model.nodes[i].translation[0],
+                (float)model.nodes[i].translation[1],
+                (float)model.nodes[i].translation[2]);
+        }
+        asset.parts[name] = std::move(part);
+    }
+    asset.ready = !asset.parts.empty();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Animation, StructuredLevel::Important,
+        "bloodtest.body.layer.loaded", path,
+        asset.ready ? "authored body layer loaded" : "authored body layer missing",
+        0, nlohmann::json{{"path", path},
+                          {"parts", (int)asset.parts.size()},
+                          {"ready", asset.ready}});
+    return asset;
+}
+
 // Build the nested meat/bone meshes on the main thread. Texture lookup and
 // upload must not run on the async model-load worker.
 static void buildPlayerPartLayerMeshes(Player& player)
@@ -910,18 +970,53 @@ static void buildPlayerPartLayerMeshes(Player& player)
     const ActorBodyConfig& bodyConfig = ActorBodyConfig::instance();
     const std::uint32_t meatTexture = gTextures.getPath("assets/textureshq/meat1.png");
     const std::uint32_t boneTexture = getOpaqueWhiteTexture();
+    const BodyLayerAsset& meatAsset =
+        loadBodyLayerAsset("assets/entity/player/default/bodylayers/mimita-meat-v3.glb");
+    const BodyLayerAsset& boneAsset =
+        loadBodyLayerAsset("assets/entity/player/default/bodylayers/mimita-bone-v1.glb");
     const size_t count = std::min(player.physicalBody.parts.size(),
                                   player.physicalBody.partMeshes.size());
+    int authoredMeat = 0;
+    int authoredBone = 0;
     for (size_t i = 0; i < count; ++i)
     {
         PhysicalBodyPart& part = player.physicalBody.parts[i];
         const Mesh& source = player.physicalBody.partMeshes[i];
         if (source.verts.empty())
             continue;
-        buildInnerLayerMesh(source, part.collider, bodyConfig.meatShellScale,
-                            meatTexture, part.layerMeshes[1]);
-        buildInnerLayerMesh(source, part.collider, bodyConfig.boneShellScale,
-                            boneTexture, part.layerMeshes[2]);
+
+        const glm::vec3 skinNodeTranslation = part.nodeIndex >= 0 &&
+            part.nodeIndex < (int)player.restLocalTransforms.size()
+                ? glm::vec3(player.restLocalTransforms[part.nodeIndex][3])
+                : glm::vec3(0.0f);
+
+        const auto meatIt = meatAsset.parts.find(part.name);
+        if (meatIt != meatAsset.parts.end() && !meatIt->second.mesh.verts.empty()) {
+            part.layerMeshes[1] = meatIt->second.mesh;
+            const glm::vec3 delta = meatIt->second.nodeTranslation - skinNodeTranslation;
+            for (Vertex& vertex : part.layerMeshes[1].verts)
+                vertex.pos += delta;
+            for (Mesh::Batch& batch : part.layerMeshes[1].batches)
+                batch.texture = meatTexture;
+            ++authoredMeat;
+        } else {
+            buildInnerLayerMesh(source, part.collider, bodyConfig.meatShellScale,
+                                meatTexture, part.layerMeshes[1]);
+        }
+
+        const auto boneIt = boneAsset.parts.find(part.name);
+        if (boneIt != boneAsset.parts.end() && !boneIt->second.mesh.verts.empty()) {
+            part.layerMeshes[2] = boneIt->second.mesh;
+            const glm::vec3 delta = boneIt->second.nodeTranslation - skinNodeTranslation;
+            for (Vertex& vertex : part.layerMeshes[2].verts)
+                vertex.pos += delta;
+            for (Mesh::Batch& batch : part.layerMeshes[2].batches)
+                batch.texture = boneTexture;
+            ++authoredBone;
+        } else {
+            buildInnerLayerMesh(source, part.collider, bodyConfig.boneShellScale,
+                                boneTexture, part.layerMeshes[2]);
+        }
     }
 
     uint64_t dimensionsHash = 1469598103934665603ull;
@@ -948,6 +1043,8 @@ static void buildPlayerPartLayerMeshes(Player& player)
             {"role_id", player.avatarName()},
             {"body_revision", std::to_string(dimensionsHash)},
             {"part_count", (int)count},
+            {"authored_meat_layers", authoredMeat},
+            {"authored_bone_layers", authoredBone},
             {"joint_count", (int)player.perfectPoseSkeleton.nodes.size()},
             {"part_dimensions_hash", dimensionsHash},
             {"mass_kg", massKg},

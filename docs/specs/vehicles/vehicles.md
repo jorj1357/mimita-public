@@ -554,29 +554,124 @@ reference baseline in `docs/specs/gamemodes/vehicle-arena.md`; compare measured
 trajectories and handling rather than copying simulator force units. Keep the
 profile reusable by other modes.
 
-#### Arcade arena profile (2026-11-05)
+#### Rocket League reference profile (2026-11-24)
 
-`vehicle_arena` selects `arcade_arena` through the gamemode's `vehicle_profile`
+`vehicle_arena` selects `rl_soccar` through the gamemode's `vehicle_profile`
 field. The profile lives in `config/vehicle-profiles/<id>.json` and supplies
-input mapping, automatic transmission, auto-start, boost, jump, air-control,
-steering, powerslide, wall-adhesion, and ball-contact scales. It does not own a
-second car solver.
+input mapping, automatic transmission, auto-start, gravity, boost, jump, flip,
+air-control, ground-drive, steering, powerslide, wall-adhesion, ball-contact,
+car-to-ball impulse, and settle data. It does not own a second car solver.
 
-- Ground: `W/S` throttle/brake, `A/D` steer, `Left Shift` powerslide with
-  friction x 1/3, `Left Mouse` boost, `Right Mouse` jump, `Space` ball cam.
-- Air: `W/S` pitch, `A/D` roll, no yaw; diagonals combine and opposing inputs
-  cancel that axis. Roll is torque/momentum based with profile damping.
-- All-four-wheel contact with any surface, including the ball, resets the jump
-  and enables the next double jump/flip.
-- Boost is a separate charge meter, not the engine turbo field. Capacity, drain
-  ticks, and force are profile data. MiMITA's first profile drains a full tank in
-  300 server ticks (5 s), which intentionally differs from the 3 s reference
-  baseline.
-- Car-local downforce and contact-plane damping replace world-Z assumptions so
-  wall driving stays stable. Near-vertical contacts use data-driven adhesion;
-  ceiling contacts do not, so gravity detaches the car.
-- Chassis contact uses shared restitution. Wheel-to-ball contact uses a much
-  smaller impulse scale than chassis-to-ball contact.
+Every number carries provenance. The accepted sources are the Rocket League
+reference values (`rlbot-wiki`, `smish`) and RocketSim's reverse-engineered
+implementation (`rocketsim`); anything tuned from a MiMITA measurement is
+tagged `measured` with its run ID. Values are never invented.
+
+- Units are SI. Rocket League Unreal Units are centimetres, so `uu/s -> m/s`
+  and `uu/s^2 -> m/s^2` both divide by 100.
+- Gravity is per-profile (6.5 m/s^2). The car and the arena ball apply it as a
+  per-entity gravity scale, so the global object gravity used by crates does
+  not change and does not leak into vehicle handling.
+- Air control is `alpha = A*u - D*w` per local axis, with independent `A` and
+  `D` (Roll 38.34, Pitch 12.46, Yaw 9.11 rad/s^2). Pitch and yaw damping fade
+  with input; roll damping does not. The only shared limit is the combined
+  angular velocity clamp (5.5 rad/s). There is no shared torque budget.
+- Jump is an instantaneous velocity change (2.917 m/s) plus a sustained
+  acceleration (14.583 m/s^2 for up to 0.2 s more), minus a three-tick surface
+  adhesion term (3.25 m/s^2). Apex height is an output of gravity and jump
+  power and is reported by `vehicle.jump.apex`; it is never a target pose.
+- A dodge activates from the magnitude of the rotational inputs
+  (`|pitch| + |yaw| + |roll|`) but takes its direction from the signed
+  components (`-pitch` forward, `yaw + roll` lateral). Opposing yaw and roll
+  therefore still consume the dodge while producing zero direction, zero
+  torque and zero impulse. This input cancellation is the Rocket League stall;
+  vertical velocity damping is applied independently of the directional torque,
+  which is what makes the car hang. No dedicated stall mechanic exists.
+- The dodge is a finite torque program (0.65 s) plus a speed-scaled linear
+  impulse. Opposing pitch input scales the flip's pitch component toward zero
+  (flip cancel) while the impulse already granted is kept.
+- All-four-wheel contact with any surface, including the ball, clears the used
+  flip. Leaving the surface keeps it armed, which makes flip resets chainable.
+  `vehicle.flip.reset` records each one.
+- Car-to-ball contact applies Rocket League's extra intent impulse to the ball
+  only, once per contact tick, flattened by 0.35 on Z and 0.65 along the car
+  nose, with a piecewise scale curve. It is configurable and can be disabled
+  for pure physical simulation. Pinches must emerge from simultaneous contact
+  constraints; there is no pinch multiplier.
+- Cars settle onto their wheels and then stop completely. A supported body
+  with partial wheel contact receives an alignment torque toward its contact
+  normal; a still body with no input is put to sleep so it cannot sway.
+
+Keyboard fallbacks remain for every action so the mode is playable without a
+pad. Each device produces the same normalized `VehicleInput`, so an NPC or a
+recorded input trace uses the same contract as a human.
+
+#### Vehicle settling is contact physics (2026-11-24)
+
+Cars settle through ordinary contact physics. There is no righting behaviour:
+no code inspects the car's orientation and applies a corrective torque, and the
+pose-based idle velocity kill has been deleted. The only assist is continuous
+damping of a supported body (`stabilityAngularDamping`,
+`stabilityVerticalDamping`), which is suspension/tire damping rather than a
+target pose.
+
+- A wheel may declare `collisionRadius`, which appends a collision sphere to the
+  chassis triangles. A template may also declare `collisionLength` /
+  `collisionWidth` / `collisionHeight` smaller than the rendered body, so the
+  wheel colliders can be the lowest and widest points.
+- **Both are supported but currently disabled** in `octane_rl.json`. Two measured
+  attempts failed:
+  1. Wheel colliders with the existing world-contact rule made the car vibrate
+     (42 airborne samples in 35 s) and absorbed the jump impulse on the contact
+     tick.
+  2. Making entity-versus-world contacts impulse-only (no blanket linear
+     correction) made it worse: the car flipped to 140 degrees and never rested,
+     because each contact in the gathered list applied a full impulse instead of
+     being solved together.
+- The conclusion is that naive per-contact impulses cannot deliver wheel-down
+  settling. The contact set must be solved as a constraint system (accumulated
+  normal and friction impulses, warm starting, several iterations). That is the
+  next solver batch, not a tuning change.
+- An accumulated-impulse world contact solver is implemented in
+  `PhysicalEntitySystem` (contact clustering, tangent basis, 8 sequential-impulse
+  iterations, clamped Coulomb friction, restitution as a velocity target) and its
+  translation unit compiles. It has no runtime proof yet because the shared game
+  DLL could not be linked while another agent was editing the networking module
+  (`issue-2e6440940e32`). Wheel colliders stay disabled until a batch links that
+  solver, because generation 609 still contains the old per-contact rule.
+- Measured current behaviour: with colliders disabled the car is upright and
+  stable, a jump reaches an apex of about 1.67 m, and a car spawned at 80 degrees
+  of roll is pushed most of the way upright by differential suspension force
+  (80 -> 23 degrees) and then rests on the chassis face.
+- Resting and orientation are observable from `vehicle.rest` and
+  `vehicle.telemetry` (`up_dot_world_up`, `tilt_deg`, `wheel_mask`, `asleep`).
+
+A fully inverted car resting on its roof matches Rocket League. Resting on a
+long side does not, and fixing it requires contact torque at entity-versus-world
+contacts. That work belongs to the constraint-solver batch below, together with
+the simultaneous-contact solve needed for pinches.
+
+#### Constraint solver extensibility (deferred 2026-11-24)
+
+The shared solver resolves entity contacts pairwise, and entity-versus-world
+contacts translate rather than apply impulses at the contact point. Rocket
+League needs both a contact torque so a tipped car can roll, and several
+simultaneous contacts solved as one constraint set for pinches, plus swept
+collision.
+
+The documented fallback, if the owned solver cannot deliver this, is to vendor
+Bullet (zlib licence) as a prebuilt static library and run only the car/ball
+island through it, using RocketSim's constants as the reference. It must not be
+added as source: the game module already compiles hundreds of translation units
+at minutes per file. That port is deferred until a measurement justifies it. No
+third-party physics source is vendored today.
+
+The accepted order is: write the owned contact-torque and simultaneous-contact
+solver first, measure pinch convergence across 120/240/480/960 Hz and an energy
+audit, and only then decide whether Bullet is necessary.
+
+
+
 
 The first trick-vehicle profile is shared by skateboard and BMX: W accelerates,
 S brakes and then reverses, A/D steer and lean, and holding Space while

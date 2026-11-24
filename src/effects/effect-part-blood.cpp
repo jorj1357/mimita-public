@@ -587,6 +587,40 @@ void EffectPartSystem::spawnGoreEffect(glm::vec3 hitPoint, glm::vec3 direction,
     }
     spawnChunk(gore.fleshChunks, fleshCount, false);
     spawnChunk(gore.boneShards, boneCount, true);
+
+    // Semi-realistic organ primitives. These are deliberately simple colored
+    // boxes: readable viscera without a per-organ mesh or fluid simulation.
+    int organCount = 0;
+    if (bodyPart == "torso" && force > 0.65f)
+        organCount = 1 + (force > 0.85f ? 1 : 0) + (partDestroyed ? 1 : 0);
+    else if (bodyPart == "head" && force > 0.85f)
+        organCount = partDestroyed ? 2 : 1;
+    for (int i = 0; i < organCount; ++i) {
+        const glm::vec3 dir = randomDirection(12.0f, 34.0f);
+        EffectPart organ;
+        organ.position = hitPoint + dir * 0.05f;
+        organ.velocity = dir * (2.5f + force * 4.0f);
+        organ.gravity = 22.0f;
+        organ.drag = 0.35f;
+        organ.affectedByGravity = true;
+        organ.maxLifetime = 0.8f + 0.5f * force;
+        organ.halfSize = glm::vec3(0.035f + 0.03f * force);
+        organ.scale = glm::length(organ.halfSize);
+        organ.endScale = organ.scale * 0.8f;
+        organ.color = (bodyPart == "head")
+            ? glm::vec3(0.72f, 0.22f, 0.20f)
+            : (i == 0 ? glm::vec3(0.45f, 0.02f, 0.025f)   // liver
+                      : glm::vec3(0.72f, 0.18f, 0.15f));  // lung/heart
+        organ.alpha = 0.95f;
+        organ.box = true;
+        organ.billboardText = false;
+        organ.texturePath = gore.fleshChunks.texture;
+        organ.replayType = "gore_organ";
+        organ.targetActorId = targetActorId;
+        organ.rotation = glm::vec3((float)(rand() % 6284) / 1000.0f);
+        organ.angularVelocity = glm::vec3(2.0f + force * 4.0f);
+        spawn(organ);
+    }
     spawnMist(hitPoint, gore.mist.coneDegreesMin, gore.mist.coneDegreesMax,
               (int)std::lround(glm::mix((float)gore.mist.countMin,
                                         (float)gore.mist.countMax, force) * mistMult),
@@ -628,6 +662,7 @@ void EffectPartSystem::spawnGoreEffect(glm::vec3 hitPoint, glm::vec3 direction,
             {"part_destroyed", partDestroyed},
             {"flesh_chunks", fleshCount},
             {"bone_shards", boneCount},
+            {"organ_chunks", organCount},
             {"mist_particles", (int)std::lround(glm::mix(
                 (float)gore.mist.countMin, (float)gore.mist.countMax, force) *
                 mistMult)},
@@ -781,23 +816,26 @@ void EffectPartSystem::processDeferredBloodDecals()
     while (it != mBloodDecalRequests.end() && raysCast < rayBudget) {
         const auto& req = *it;
 
-        // Do the ray-trace (the expensive part) - only rayBudgetPerFrame per frame
+        // Prefer the surface the exit cone actually faces. This puts blood on
+        // the wall behind a victim; the downward fallback still paints floors
+        // when the shot is angled into the ground.
         BloodWorldHit surfaceHit;
         bool foundSurface = false;
-
-        BloodWorldHit downHit;
-        const float downLen = 2.0f + req.damageScale * 1.0f;
-        if (traceBloodSegment(*mWorld, req.hitPoint, req.hitPoint + glm::vec3(0, 0, -downLen), downHit)) {
-            downHit.position += downHit.normal * 0.01f;
-            surfaceHit = downHit;
+        BloodWorldHit fwdHit;
+        if (traceBloodSegment(*mWorld, req.hitPoint,
+                              req.hitPoint + req.forward * 3.5f, fwdHit)) {
+            fwdHit.position += fwdHit.normal * 0.01f;
+            surfaceHit = fwdHit;
             foundSurface = true;
         }
 
         if (!foundSurface) {
-            BloodWorldHit fwdHit;
-            if (traceBloodSegment(*mWorld, req.hitPoint, req.hitPoint + req.forward * 2.0f, fwdHit)) {
-                fwdHit.position += fwdHit.normal * 0.01f;
-                surfaceHit = fwdHit;
+            BloodWorldHit downHit;
+            const float downLen = 2.0f + req.damageScale * 1.0f;
+            if (traceBloodSegment(*mWorld, req.hitPoint,
+                                  req.hitPoint + glm::vec3(0, 0, -downLen), downHit)) {
+                downHit.position += downHit.normal * 0.01f;
+                surfaceHit = downHit;
                 foundSurface = true;
             }
         }

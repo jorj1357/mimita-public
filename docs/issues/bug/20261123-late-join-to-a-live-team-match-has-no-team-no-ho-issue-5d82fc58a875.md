@@ -105,3 +105,40 @@ Gen 565 (run 20261123_165703) also proved a kill on the joiner by a team-0 NPC. 
 Limitations: FFA live regression not covered (Bloodtest run 20261123_172251 never reached active mode); code inspection only. On the tested second-client path the first placement can be the generic neutral position for about one second before the authoritative team-spawn respawn. Human visual confirmation of outline color/placement and gameplay feel remains outstanding. No close requested.
 
 Build/resource collaboration: direct observation 2026-11-23T17:47:22Z during the 642-TU game-DLL build showed 10 cc1plus processes, 4.08 GiB working set, 0.32 GiB free of 15.65 GiB on 12 logical CPUs; proposed a shared memory-aware build-worker budget in issue-2a5c5da53565. No build-authority code changed.
+
+## Scheduled independent review
+
+### 2026-11-24T19:31:08.211Z — root-mode3-latency
+
+A bounded independent review was queued as wake wake-7d23f1f7644f after 612 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (needs-evidence)
+
+### 2026-11-24T19:42:08.776Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+INDEPENDENT BOUNDED REVIEW (issue-review-sweeper; wake wake-7d23f1f7644f; read-only: no source edit, build, run, lease, close, or fix claim; 2026-11-24T19:42Z).
+
+OBSERVED FACTS
+- Readiness: ready=true, score 8/8, state=in_review, owner latejoin-team-identity, 3 tasks open (latejoin-team-capacity-spawn, latejoin-team-identity-server, latejoin-team-outlines), all with empty task evidence.
+- Proof rows for this issue are not currently verified: id74 proof-39dbdfdf1222 result=unproven ("journal event predicate not found"); id75 proof-c63791220bc7 result=unproven; id76 proof-8ee0e191b3dd result=stale ("source changed: src/network/server-gamemode.cpp"); id77 proof-e54f24bee063 result=stale; id78 proof-72fdb2cb02ab result=stale. Global proof status: proven=3, stale=27.
+- Every cited journal under C:\mimita-v9\logs\2026-11-23\ (runs 20261123_165703 and 20261123_191110) is absent. logs/ now contains 2026-11-24 recognized roots plus legacy MM-DD-YYYY dirs; there is no 2026-11-23 or 11-23-2026 directory. Only a non-journal leftover remains: .dev\agent-command-20261123_165703-client-02.jsonl.
+- Current source hashes differ from proof-recorded hashes: server-gamemode.cpp 13ef9af0... (recorded adf0ae64...); render-player.cpp bdead54b... (recorded e49a16f7...); server-gamemode.h 00eeddc1... is unchanged. Last commit touching server-gamemode.cpp is 51306c08 (2026-11-24 05:22Z) for unrelated NPC/RL work.
+- Code inspection shows the intended behavior is still implemented: chooseLiveJoinTeam/applyLiveJoinIdentity (src/network/server-gamemode.cpp:2766-2884) emit match.actor.late-join-assigned and match.actor.late-join-spawn and mark the team roster dirty; the live-join branch is reached at 2904-2919; gamemode.spawn-new-actor is emitted at 2934; src/render/render-player.cpp:604-624 gates team layers on teamIdentityKnown (both local and actor team resolved), so an unknown team suppresses colored outlines.
+- None of the retained 2026-11-24 run journals contains late-join-assigned, late-join-spawn, or team-roster-npc.replaced (0 matching events*.jsonl files).
+
+INFERENCE / UNCERTAINTY
+- The "Final runtime proof" review (id 290, 2026-11-23T19:15Z) cannot be independently re-verified now: its pinned journals were purged and its three proof rows are stale against current sources. This is an unverifiable claim, not a demonstrated regression.
+- Because the behavior code persists while proof is stale, the most likely state is "implemented but unproven at current generation"; a regression from the later unrelated edits cannot be excluded from records alone.
+- Missing retained samples are unknown, not zero.
+
+CONTRARY EVIDENCE
+- The gen565/gen569 review recorded concrete event values (team=1, role=elite_fighter, roster [5,5], npc.target-changed, server.damage.applied, client identity found=true, teammate true/false outlines). That is credible contemporaneous evidence, but it no longer satisfies proof-first verification at the current source/generation.
+- Current source still contains the exact event names and gating, including gamemode.spawn-new-actor, so the earlier missing-event objection (mode3-latency-goal) is addressed in code, though not re-proven at runtime.
+
+NEXT DISCRIMINATING CHECK (smallest)
+- Re-pin on the current dev-loop generation: one isolated TDM two-client late-join run (test profile tdm-validation, launch mode 41; second client after network.mode.start stage=active). Copy and hash server-01 and client-02 events.jsonl into a retained artifact before any rotation. Verify: match.actor.late-join-assigned team>0; match.actor.late-join-spawn; gamemode.spawn-new-actor; gamemode.team-roster-npc.replaced; gamemode.team-roster.resolved [5,5]; npc.target-changed target=<joiner>; server.damage.applied target=<joiner>; client.gamemode.local-actor-identity found=true team; player_visuals.outline team_identity_known=true for a teammate and an enemy. Then record fresh proof rows against current hashes. Also run one FFA/teamless late-join to confirm no assignment. Human outline/visual confirmation remains separate.
+- Do not close this issue on existing records. Owner remains latejoin-team-identity.
+
+VERDICT: needs-evidence (runtime proof is stale and its journals are purged; no current-generation late-join run exists).

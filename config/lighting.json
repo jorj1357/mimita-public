@@ -92,7 +92,7 @@
                 "enabled": true,
                 "color": [1.0, 0.45, 0.3],
                 "intensity": 100.0,
-                "radius": 8.0,
+                "radius": 10.0,
                 "lifetime": 0.06,
                 "fadeIn": 0.0,
                 "fadeOut": 0.06,
@@ -138,7 +138,7 @@
                 "enabled": true,
                 "color": [1.0, 0.8, 0.4],
                 "intensity": 1.5,
-                "radius": 7.0,
+                "radius": 9.0,
                 "lifetime": 0.07,
                 "fadeIn": 0.0,
                 "fadeOut": 0.07,
@@ -185,8 +185,8 @@
             "muzzleFlash": {
                 "enabled": true,
                 "color": [1.0, 0.72, 0.28],
-                "intensity": 120.0,
-                "radius": 8.0,
+                "intensity": 180.0,
+                "radius": 10.0,
                 "lifetime": 0.055,
                 "fadeIn": 0.0,
                 "fadeOut": 0.055,
@@ -201,8 +201,8 @@
             "muzzleFlash": {
                 "enabled": true,
                 "color": [1.0, 0.7, 0.3],
-                "intensity": 18.0,
-                "radius": 7.0,
+                "intensity": 60.0,
+                "radius": 9.0,
                 "lifetime": 0.06,
                 "fadeIn": 0.0,
                 "fadeOut": 0.001,
@@ -216,3 +216,4 @@
 
     }
 }
+

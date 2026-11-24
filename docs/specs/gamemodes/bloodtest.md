@@ -54,7 +54,7 @@ reactions, not a promise to reproduce another game's internals.
   toward the requested facing. Each response is independently configurable in
   live JSON, bounded, and time-step aware. Visual smoothing must not redirect
   authoritative weapon shots or smooth fixed-tick collision/damage state.
-- The mode forces first person and starts at a JSON-configured 70-degree FOV.
+- The mode forces first person and starts at a JSON-configured 100-degree FOV.
   Screenshot review may tune the value after the first prototype.
 - Crosshair settings are mode-owned: thin red arms and alpha 200/255 as the
   initial visual target. Crosshair style is a HUD setting, not a wall-visibility
@@ -274,6 +274,51 @@ requires visual review of the collision overlay and body transitions, and a
 human reviewer must watch repeated projectile trials to confirm the blood
 response is visible and responds consistently to recorded impact. Multiplayer
 and replication remain separate acceptance scenarios.
+
+## 2026-11-24 vision update
+
+These decisions refine the existing contract; they do not replace the shared
+movement, projectile, damage, camera, or match owners.
+
+- **Roster:** the first playable slice is AK-47, Judgment revolver, and the bat.
+  Other listed weapons remain planned.
+- **Capacity:** 25v25 is the target, configurable, with `npc_count` 0–25. Load
+  validation starts at 10v10 and scales only after the server holds 60 Hz.
+- **Sandbox:** a separate `bloodtest_sandbox` mode spawns free-roaming NPCs with
+  a `passive`/`aggressive`/`mixed` toggle, instant respawn, and no score.
+- **Respawn:** mode 2 (instant) is the default. Mode 1 (timer) is retained for
+  compatibility. Mode 3 lets the downed player shoot a highlighted respawn
+  target to return immediately; no timer is required. No mode forces dead air.
+- **AK-47:** 65 damage at 0–20 m, 55 at 50 m, 45 at 80 m+, 3× head. Two body
+  shots kill at 50 m. 30-round magazine, 9999 reserve.
+- **Judgment:** 1-shot head, 2-shot body, 3× head, 9999 reserve.
+- **Bat:** mace-like always-active capsule; incidental 1–5 damage scaled by
+  run-in speed; active window 60–120; white/red active tint; windup, active,
+  recovery, and return phases.
+- **Gore layers:** use `assets/entity/player/default/bodylayers/mimita-meat-v3.glb`
+  and `mimita-bone-v1.glb`, matched by part node name. Meat uses a blood texture
+  and red tint; bone uses a pale tint. Materials may be refined later.
+- **Local damage:** each part stores recent hit rays; the skin/meat fragments
+  inside the ray radius are discarded to expose the next layer. High force is
+  required to punch through bone.
+- **Organs:** high-force torso hits may emit 1–3 colored organ primitives
+  (liver/heart/lung-like) plus a dark cavity and rib hints. No fluid simulation.
+- **Blood:** every hit may place wall blood behind the victim, scaled by force
+  and direction. Decals fade after 30 seconds with hard caps.
+- **World impact:** bullets use a small bullet hole plus an optional surface
+  shockwave model or primitive. The rocket explosion mark is not used for
+  bullets. Profiles are per weapon and JSON-owned.
+- **Camera:** strong but aimable bodycam; two JSON presets (`aimable`,
+  `horror`); head lean from movement; recoil from shot impulse. Fisheye mode 1
+  affects the world only; mode 2 (world + UI) is specified but deferred.
+- **Audio:** AK uses `akfire` / `akreload` / `akequip`; Judgment uses
+  `judgementfire` / `judgementreload` / `judgementequip`. 3D hurt, death, and
+  limb-destruction sounds are required.
+- **Evidence:** `combat.hit.resolved`, `impact.surface.spawn/draw`,
+  `impact.decal.spawn/render`, `actor.replica.trace`,
+  `match.phase.changed`, `server.capacity.window`, `camera.look.trace`, and
+  `weapon.reload.mode.changed` are the acceptance stream in the per-instance
+  `events.jsonl`.
 
 ## Acceptance
 

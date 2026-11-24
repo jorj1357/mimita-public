@@ -209,6 +209,10 @@ public:
     void removeCorpsesForOwner(uint32_t ownerId);
     void clearCorpses();
     std::size_t corpseCount() const { return mCorpses.size(); }
+    // Client-only corpse hit query for visual bullet feedback against a dead
+    // ragdoll body. Returns the matching corpse actor id.
+    bool queryCorpseHit(const glm::vec3& point, float radius,
+                        std::string& outActorId) const;
 
 private:
     RagdollModeSystem() = default;

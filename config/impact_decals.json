@@ -3,11 +3,11 @@
   // "enabled": false,
   "blood": {
     "enabled": true,
-    "count": 10,
-    "minCount": 2,
+    "count": 100,
+    "minCount": 6,
     "coneDegrees": 35.0,
-    "coneDistance": 20.0,
-    "radius": 1.1,
+    "coneDistance": 8.0,
+    "radius": 1.6,
     "minRadius": 0.12,
     "height": 0.05,
     "color": [0.7, 0.01, 0.01],
@@ -29,7 +29,7 @@
       "decals_per_tick": 1,
       "start_delay_ticks": 0,
       "max_ticks": 1,
-      "ray_budget_per_frame": 4
+      "ray_budget_per_frame": 12
     },
     "color_over_lifetime": {
       "enabled": true,
@@ -261,4 +261,5 @@
     "randomRotationDegrees": 360.0
   }
 }
+
 

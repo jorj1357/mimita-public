@@ -125,7 +125,7 @@
       "show_hotbar": true,
       "show_crosshair": true,
       "show_status": true,
-      "ca_strength": 0.18
+      "ca_strength": 1.0
     },
     "bodycam": {
       "enabled": true,
@@ -135,30 +135,30 @@
         0.0,
         0.0
       ],
-      "position_response_seconds": 0.18,
-      "rotation_response_seconds": 0.16,
-      "head_response_seconds": 0.10,
-      "torso_response_seconds": 0.22,
-      "arm_response_seconds": 0.14,
-      "weapon_stability_seconds": 0.1,
+      "position_response_seconds": 0.01,
+      "rotation_response_seconds": 0.01,
+      "head_response_seconds": 0.01,
+      "torso_response_seconds": 0.01,
+      "arm_response_seconds": 0.01,
+      "weapon_stability_seconds": 0.01,
       "head_follows_body": true,
       "settle_deadband_degrees": 0.35,
       "settle_camera_deadband_degrees": 0.35,
-      "settle_camera_position_meters": 0.005,
-      "settle_camera_hold_ticks": 6,
-      "camera_sway_scale": 2.0,
+      "settle_camera_position_meters": 0.1,
+      "settle_camera_hold_ticks": 12,
+      "camera_sway_scale":  5.0,
       "camera_sway_enabled": true,
       "lens": {
-        "chromatic_aberration": 0.22,
-        "vignette": 0.34,
-        "distortion": 18.0,
-        "curve": 2.2,
-        "zoom": 1.55,
-        "edge_mode": "vignette",
+        "chromatic_aberration": 0.8,
+        "vignette": 0.5,
+        "distortion": 100.0,
+        "curve": 0.5,
+        "zoom": 2.2,
+        "edge_mode": "circle",
         "edge_radius": 0.05,
-        "edge_softness": 0.55,
-        "edge_darkness": 0.9,
-        "peripheral_blur": 1.4,
+        "edge_softness": 0.5,
+        "edge_darkness": 0.95,
+        "peripheral_blur": 4.0,
         "radial_chromatic_aberration": true
       },
       "wall_collision": {
@@ -350,4 +350,5 @@
     "spawn_policy": "keep_per_npc"
   }
 }
+
 

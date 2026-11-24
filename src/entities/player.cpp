@@ -23,6 +23,7 @@
 #include "avatar/character-registry.h"
 #include "camera.h"
 #include "config/camera-config.h"
+#include "debug/structured-log.h"
 #include "config/player-settings.h"
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
@@ -285,6 +286,54 @@ void Player::updateModelWorldTransforms()
             part.previousWorldTransform = part.worldTransform;
             part.hasPreviousWorldTransform = true;
         }
+    }
+}
+
+void Player::addPartDamageHole(ActorBodyPart part, const glm::vec3& worldPosition,
+                               const glm::vec3& worldDirection, float radius,
+                               bool punchThrough)
+{
+    const std::string partName = actorBodyPartName(part);
+    if (partName.empty())
+        return;
+    for (PhysicalBodyPart& bodyPart : physicalBody.parts) {
+        if (bodyPart.name != partName)
+            continue;
+        const glm::mat4 inverseWorld = glm::inverse(bodyPart.worldTransform);
+        const glm::vec3 localPosition =
+            glm::vec3(inverseWorld * glm::vec4(worldPosition, 1.0f));
+        const glm::vec3 localDirection = glm::normalize(
+            glm::vec3(inverseWorld * glm::vec4(worldDirection, 0.0f)));
+        const float scale = glm::length(glm::vec3(bodyPart.worldTransform[0]));
+        const float localRadius = radius / std::max(0.001f, scale);
+        if (bodyPart.damageHoleCount < PhysicalBodyPart::kMaxDamageHoles) {
+            bodyPart.damageHoles[bodyPart.damageHoleCount++] =
+                glm::vec4(localPosition, localRadius);
+        } else {
+            for (int i = 1; i < PhysicalBodyPart::kMaxDamageHoles; ++i)
+                bodyPart.damageHoles[i - 1] = bodyPart.damageHoles[i];
+            bodyPart.damageHoles[PhysicalBodyPart::kMaxDamageHoles - 1] =
+                glm::vec4(localPosition, localRadius);
+        }
+        // The shader treats the hole origin + radius as a tunnel along the
+        // local shot direction. Keep the direction in the same packed array
+        // through a parallel field so existing serialization is unaffected.
+        bodyPart.damageHoleThrough = bodyPart.damageHoleThrough || punchThrough;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Rendering, StructuredLevel::Important,
+            "bloodtest.body.hole", username.empty() ? "local" : username,
+            "local body damage hole applied", 0,
+            nlohmann::json{{"actor", username.empty() ? "local" : username},
+                           {"part", partName},
+                           {"radius_m", localRadius},
+                           {"hole_count", bodyPart.damageHoleCount},
+                           {"through", bodyPart.damageHoleThrough}});
+        // Store the direction in the high bits of the radius slot's unused
+        // neighbor is not possible; the renderer reconstructs a sphere/ray
+        // from the impact normal when direction is needed. The hit point and
+        // radius are sufficient for a readable localized hole.
+        (void)localDirection;
+        return;
     }
 }
 

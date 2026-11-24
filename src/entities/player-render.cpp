@@ -7,6 +7,7 @@
 #include <cstring>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <chrono>
 
 #include "config.h"
@@ -161,6 +162,26 @@ void Player::render(mimita::game::render::ShaderProgram& shader,
             *const_cast<Player*>(this));
     }
     const_cast<Player*>(this)->updateModelWorldTransforms();
+    {
+        static std::unordered_set<std::string> loggedLayerActors;
+        const std::string actorKey = username.empty() ? "local" : username;
+        if (!physicalBody.parts.empty() && loggedLayerActors.insert(actorKey).second) {
+            int authoredMeat = 0;
+            int authoredBone = 0;
+            for (const PhysicalBodyPart& part : physicalBody.parts) {
+                if (!part.layerMeshes[1].verts.empty()) ++authoredMeat;
+                if (!part.layerMeshes[2].verts.empty()) ++authoredBone;
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "bloodtest.body.layer.ready", actorKey,
+                "body damage layers ready for render", 0,
+                nlohmann::json{{"actor", actorKey},
+                               {"parts", (int)physicalBody.parts.size()},
+                               {"meat_layers", authoredMeat},
+                               {"bone_layers", authoredBone}});
+        }
+    }
     bool flash = spawnFlashTimer > 0.0f;
     renderCurrentPose(shader, view, proj, flash, hideHead, false, 0.0f,
                       glm::vec4(1.0f), playerTint);
@@ -443,7 +464,8 @@ void Player::renderCurrentPose(mimita::game::render::ShaderProgram& shader,
                 const ActorBodyPart actorPart = actorBodyPartFromName(part.name);
                 if (actorPart == ActorBodyPart::Unknown)
                     continue;
-                if (body.layer(actorPart) != ActorBodyLayer::Skin)
+                if (body.layer(actorPart) != ActorBodyLayer::Skin ||
+                    part.damageHoleCount > 0)
                 {
                     allPartsSkin = false;
                     break;
@@ -501,6 +523,19 @@ void Player::renderCurrentPose(mimita::game::render::ShaderProgram& shader,
 
             const glm::mat4 model = renderPartTransform(*this, part);
             r::uniformMatrix4fv(uModelLoc, 1, &model[0][0]);
+            const int holeCount =
+                (layer == ActorBodyLayer::Skin || part.damageHoleThrough)
+                    ? part.damageHoleCount : 0;
+            r::uniform1i(shader.uniform("uHoleCount"), holeCount);
+            for (int holeIndex = 0; holeIndex < holeCount; ++holeIndex) {
+                char holeName[32];
+                std::snprintf(holeName, sizeof(holeName), "uHole[%d]", holeIndex);
+                r::uniform4f(shader.uniform(holeName),
+                    part.damageHoles[holeIndex].x,
+                    part.damageHoles[holeIndex].y,
+                    part.damageHoles[holeIndex].z,
+                    part.damageHoles[holeIndex].w);
+            }
 
             // Per-part color tint from outfit.json
             glm::vec3 tint = layerTint;
@@ -595,6 +630,18 @@ void Player::renderCurrentPose(mimita::game::render::ShaderProgram& shader,
 
             const glm::mat4 model = renderPartTransform(*this, part);
             r::uniformMatrix4fv(uModelLoc, 1, &model[0][0]);
+            const int holeCount = part.damageHoleThrough
+                ? part.damageHoleCount : 0;
+            r::uniform1i(shader.uniform("uHoleCount"), holeCount);
+            for (int holeIndex = 0; holeIndex < holeCount; ++holeIndex) {
+                char holeName[32];
+                std::snprintf(holeName, sizeof(holeName), "uHole[%d]", holeIndex);
+                r::uniform4f(shader.uniform(holeName),
+                    part.damageHoles[holeIndex].x,
+                    part.damageHoles[holeIndex].y,
+                    part.damageHoles[holeIndex].z,
+                    part.damageHoles[holeIndex].w);
+            }
             r::uniform4f(uColorLoc, outlinePass ? outlineColor.r : 1.0f,
                         outlinePass ? outlineColor.g : 1.0f,
                         outlinePass ? outlineColor.b : 1.0f,
@@ -638,6 +685,7 @@ void Player::renderCurrentPose(mimita::game::render::ShaderProgram& shader,
         }
         } // !combinedDrawn
 
+        r::uniform1i(shader.uniform("uHoleCount"), 0);
         r::popState();
 
         // Reset avatar-only shader uniforms to prevent leaking into world/subsequent renders

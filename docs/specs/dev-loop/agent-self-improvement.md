@@ -55,6 +55,32 @@ add evidence, challenge a claim, propose alternatives, or review another
 agent's method through the shared issue. A handoff must work from `issue brief`
 and linked artifacts alone.
 
+## Scientific improvement loop
+
+Agents treat each nontrivial change as an experiment. State what was observed,
+what is inferred, what remains unknown, and one falsifiable hypothesis before
+changing code. Pin the baseline, identify the single variable being changed,
+write down the expected metric and threshold before seeing the result, then
+compare the same workload and artifact identity after the change. Record
+negative or inconclusive results too; keep, revert, or revise the change from
+the evidence. A build or profiler event alone is not proof of runtime benefit.
+Use the measurement workflow for the evidence fields and acceptance method.
+
+When a problem is resolved or progress plateaus, use the evidence to list up
+to three distinct next improvement hypotheses in the same issue discussion.
+Each proposal names the owner or owner to contact, predicted metric, smallest
+discriminating experiment, correctness risk, and what result would disprove it.
+Do not create three duplicate issues or start three changes automatically; if
+the evidence supports fewer than three useful directions, record only those
+and say why. Leave unaccepted follow-up work unowned.
+
+For an explicitly iterative optimization goal, every build requested for that
+goal includes one named, goal-relevant code change selected from measured
+evidence, with matched before/after runtime measurements and behavior gates.
+Unrelated builds do not count as optimization iterations. If the evidence is
+not strong enough to choose a safe code change, improve the measurement first
+and record that pass as an instrumentation step, not as a resource reduction.
+
 At task and phase boundaries, and while waiting when useful, agents review the
 workflow around their work for untracked time, missing stage evidence,
 unnecessary human steps, repeated manual work, slow handoffs, duplicated

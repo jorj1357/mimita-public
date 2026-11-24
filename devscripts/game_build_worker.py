@@ -349,6 +349,7 @@ class Progress:
             "compiled": 0,
             "skipped": 0,
             "failed": 0,
+            "cancelled": 0,
             "current": "",
             "last_completed": "",
             "active_sources": [],
@@ -489,6 +490,8 @@ class Progress:
                 self.data["skipped"] += 1
             elif status == "failed":
                 self.data["failed"] += 1
+            elif status == "cancelled":
+                self.data["cancelled"] += 1
             if self.data.get("phase") == "compile":
                 self.data["pending"] = max(0, int(self.data.get("pending", 0)) - 1)
             if status in ("compiled", "failed"):
@@ -525,6 +528,8 @@ class Progress:
             del self.data["file_events"][:-100]
             if status == "skipped":
                 self._append_locked(f"[SKIP] {self.data['completed']}/{self.data['total']} {path}")
+            elif status == "cancelled":
+                self._append_locked(f"[CANCEL] {self.data['completed']}/{self.data['total']} {path}")
             else:
                 suffix = " FAIL" if status == "failed" else ""
                 self._append_locked(
@@ -1085,6 +1090,10 @@ def _normalized_cache_token(token: str) -> str:
     return str(ROOT / path)
 
 
+def _dependency_cache_key(token: str) -> str:
+    return os.path.normcase(os.path.normpath(_normalized_cache_token(token)))
+
+
 def load_dependency_index(path: Path) -> dict:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -1171,6 +1180,43 @@ def dependency_relative(token: str) -> str:
             (".h", ".hpp", ".inl")):
         return relative_text
     return ""
+
+
+def prioritize_changed_header_dependents(
+        work: list[tuple[dict, Path, Path]],
+        dependent_headers: dict[str, list[str]],
+        changed_headers: set[str]) -> tuple[list[tuple[dict, Path, Path]], dict]:
+    """Move known changed-header dependents ahead of unrelated stale units.
+
+    The depfile is the authoritative transitive include list. This is only a
+    scheduling hint: it never changes which objects are stale or compiled.
+    Python's stable sort preserves manifest order within each priority group.
+    """
+    if not changed_headers or not work:
+        return work, {
+            "enabled": False,
+            "candidate_count": len(work),
+            "prioritized_count": 0,
+            "changed_header_count": len(changed_headers),
+            "prioritized_sources": [],
+        }
+
+    def has_changed_header(entry: tuple[dict, Path, Path]) -> bool:
+        source_path = str(entry[0]["path"]).replace("\\", "/")
+        return any(header in changed_headers
+                   for header in dependent_headers.get(source_path, ()))
+
+    matched = [entry for entry in work if has_changed_header(entry)]
+    ordered = sorted(
+        work,
+        key=lambda entry: 0 if has_changed_header(entry) else 1)
+    return ordered, {
+        "enabled": True,
+        "candidate_count": len(work),
+        "prioritized_count": len(matched),
+        "changed_header_count": len(changed_headers),
+        "prioritized_sources": [entry[0]["path"] for entry in matched[:20]],
+    }
 
 
 def cached_stat(token: str, cache: dict[str, os.stat_result | None]) -> os.stat_result | None:
@@ -1494,10 +1540,53 @@ def build(args: argparse.Namespace) -> int:
     worker_priority = set_process_priority(args.priority)
     compiler_creationflags = build_tool_creation_flags(args.priority)
 
-    def run_build_tool(command, **kwargs):
+    active_compile_processes: dict[int, subprocess.Popen] = {}
+    active_compile_lock = threading.Lock()
+
+    def terminate_compile_process(pid: int,
+                                  process: subprocess.Popen) -> None:
+        if os.name == "nt":
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=5.0,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        if process.poll() is None:
+            try:
+                process.kill()
+            except OSError:
+                pass
+
+    def cancel_active_compile_processes() -> None:
+        stop_event.set()
+        with active_compile_lock:
+            active = list(active_compile_processes.items())
+        for pid, process in active:
+            terminate_compile_process(pid, process)
+
+    def run_build_tool(command, *, tracked_compile: bool = False, **kwargs):
         if os.name == "nt":
             kwargs["creationflags"] = compiler_creationflags
-        return run_tool(command, **kwargs)
+        if not tracked_compile:
+            return run_tool(command, **kwargs)
+
+        process = subprocess.Popen(command, **kwargs)
+        with active_compile_lock:
+            already_stopping = stop_event.is_set()
+            if not already_stopping:
+                active_compile_processes[process.pid] = process
+        if already_stopping:
+            terminate_compile_process(process.pid, process)
+        try:
+            output, _ = process.communicate()
+        finally:
+            with active_compile_lock:
+                active_compile_processes.pop(process.pid, None)
+        return subprocess.CompletedProcess(command, process.returncode,
+                                            output, None)
 
     setup_started = time.monotonic()
     jobs = args.jobs if args.jobs > 0 else (os.cpu_count() or 1)
@@ -1606,6 +1695,12 @@ def build(args: argparse.Namespace) -> int:
     def normalized(path: str) -> str:
         return str(path).replace("\\", "/")
 
+    changed_header_paths: dict[str, str] = {}
+    if change_report:
+        for path in ((change_report.get("changed_headers") or []) +
+                     (change_report.get("added_headers") or [])):
+            changed_header_paths[_dependency_cache_key(path)] = normalized(path)
+
     timing_report_paths = {
         normalized(str(path))
         for path in progress.data.get("changed_paths", [])
@@ -1670,7 +1765,7 @@ def build(args: argparse.Namespace) -> int:
                               item, obj, dep, time_report=report_requested),
                           cwd=str(SOURCE_ROOT),
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          text=True)
+                          text=True, tracked_compile=True)
         output = result.stdout or ""
         diagnostics = None
         if report_requested:
@@ -1685,7 +1780,8 @@ def build(args: argparse.Namespace) -> int:
                 result = run_build_tool(compile_command(item, obj, dep),
                                   cwd=str(SOURCE_ROOT),
                                   stdout=subprocess.PIPE,
-                                  stderr=subprocess.STDOUT, text=True)
+                                  stderr=subprocess.STDOUT, text=True,
+                                  tracked_compile=True)
                 fallback_ms = (time.perf_counter() - fallback_started) * 1000.0
                 output = result.stdout or ""
                 diagnostics = {
@@ -1701,6 +1797,12 @@ def build(args: argparse.Namespace) -> int:
                               + output)
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         if result.returncode != 0:
+            if stop_event.is_set():
+                return ("cancelled", item, elapsed_ms,
+                        "cancelled after another translation unit failed",
+                        queue_wait_ms, started_utc, started_elapsed_ms,
+                        diagnostics)
+            cancel_active_compile_processes()
             return ("failed", item, elapsed_ms, output,
                     queue_wait_ms, started_utc, started_elapsed_ms,
                     diagnostics)
@@ -1750,6 +1852,7 @@ def build(args: argparse.Namespace) -> int:
         scan_started = time.monotonic()
         scan_rows: list[dict] = []
         stale: list[tuple[dict, Path, Path]] = []
+        stale_changed_header_dependencies: dict[str, list[str]] = {}
         stat_cache: dict[str, os.stat_result | None] = {}
         external_dependencies: set[str] = set()
         pch = ROOT / "src" / "pch.h.gch"
@@ -1921,6 +2024,14 @@ def build(args: argparse.Namespace) -> int:
             dependency_check_rows.append((item["path"], entry_ms))
             if is_stale:
                 stale.append((item, obj, dep))
+                if changed_header_paths and dep_tokens:
+                    matching_headers = sorted({
+                        changed_header_paths[key] for token in dep_tokens
+                        if (key := _dependency_cache_key(token))
+                        in changed_header_paths})
+                    if matching_headers:
+                        stale_changed_header_dependencies[
+                            normalized(item["path"])] = matching_headers
                 invalidation_rows.append({"path": item["path"],
                                           "reason": stale_reason or "unknown stale condition",
                                           "dependency_check_ms": round(entry_ms, 3)})
@@ -2018,6 +2129,8 @@ def build(args: argparse.Namespace) -> int:
                 "parse_ms": parse_ms, "stat_ms": stat_ms,
                 "unique_dependencies": len(stat_cache),
                 "header_fanout": dict(header_counts),
+                "stale_changed_header_dependencies":
+                    stale_changed_header_dependencies,
                 "external_dependencies": sorted(external_dependencies)}
 
     identity_dir = out_root / "identity"
@@ -2373,6 +2486,19 @@ def build(args: argparse.Namespace) -> int:
 
     work = [entry for entry in stale
             if normalized(entry[0]["path"]) not in preflight_handled]
+    priority_started = progress.subphase_start(
+        "compile.changed_header_priority",
+        stale_candidate_count=len(work),
+        changed_header_count=len(changed_header_paths))
+    work, compile_priority = prioritize_changed_header_dependents(
+        work,
+        scan.get("stale_changed_header_dependencies", {}),
+        set(changed_header_paths.values()))
+    compile_priority["ordering_ms"] = round(
+        (time.perf_counter() - priority_started) * 1000.0, 3)
+    progress.subphase_end(
+        "compile.changed_header_priority", priority_started,
+        **compile_priority)
     identity_provider_object = generation_dir / "module-identity-provider.o"
     identity_provider_dep = generation_dir / "module-identity-provider.d"
     identity_provider_entry = (
@@ -2391,6 +2517,7 @@ def build(args: argparse.Namespace) -> int:
                        scan_unique_dependencies=scan_unique_dependencies,
                        pending_compile_count=len(work) + 1,
                        identity_provider_pending=1,
+                        compile_priority=compile_priority,
                        changed_source_preflight_s=preflight_seconds)
 
     # Transitional diagnostic link input: the game DLL calls GLAD directly
@@ -2634,6 +2761,7 @@ def build(args: argparse.Namespace) -> int:
         "changed_sources": changed_sources,
         "changed_headers": changed_headers,
         "changed_header_fanout": changed_header_fanout,
+        "compile_priority": compile_priority,
         "header_fanout_top": fanout_top,
         "identity_wrapper_count": (len(IDENTITY_SOURCE_PATHS)
                                    if identity_header_changed else 0),

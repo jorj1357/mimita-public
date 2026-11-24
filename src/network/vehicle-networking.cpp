@@ -580,7 +580,11 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
                 glm::mat4 transform =
                     glm::translate(glm::mat4(1.0f), spawn.position) *
                     glm::mat4_cast(glm::angleAxis(
-                        spawn.yaw, glm::vec3(0.0f, 0.0f, 1.0f)));
+                        spawn.yaw, glm::vec3(0.0f, 0.0f, 1.0f)) *
+                        glm::angleAxis(spawn.pitch,
+                                       glm::vec3(0.0f, 1.0f, 0.0f)) *
+                        glm::angleAxis(spawn.roll,
+                                       glm::vec3(1.0f, 0.0f, 0.0f)));
                 if (npcWorld)
                     transform = settleVehicleSpawnTransform(
                         *npcWorld, *spec, transform);

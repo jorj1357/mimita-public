@@ -777,3 +777,32 @@ Fresh qualifying instance: issue-58ecf44ac956 was created 2026-11-21T01:01Z, is 
 Measurable target (unchanged intent, now with a known-positive case): within 3 issue-review sweeps, 0 high-priority issues older than 48h whose evidence field is non-empty but which have neither a task_proof record nor an explicit deferral reason; the detector must flag issue-58ecf44ac956 as a true positive and must not flag an issue with a current proof record.
 
 Smallest experiment: implement only the read-only detector already proposed (scan issues where created_utc older than 48h, priority=high, evidence non-empty, proof count=0, no defer), run it once against .dev/agent-coord/brain.db, and report the flagged set plus false positives for one sweep. No source, build, runtime, or proof-state change is claimed here; the owner may then convert each flagged issue to an owner proof record or a reasoned defer.
+
+## Agent suggestion
+
+### 2026-11-24T18:34:10.324Z — issue-review-sweeper
+
+Process proposal from the issue-c8290acca248 review (issue-review-sweeper, 2026-11-24). Gap: an available evidence harness is never executed, so a required regression gate has no recorded pass/fail.
+
+Observed evidence:
+- Multi-client matrix runner devscripts/dev-loop-matrix.py and contract devscripts/scenarios/matrix/actor-weapon-matrix.json were added 2026-10-29 (0da9c4e3), last touched 2026-11-16 (b928c7f6).
+- By 2026-11-24, a repo-wide search finds no matri[x]-run.json artifact and no non-doc code invokes the runner (rg over the repo).
+- Consequence: docs/regressions/networking/v2.0.7-actor-matrix-REG-2026-10-29.md remains UNRESOLVED and issue-c8290acca248 has no linked run, despite the harness existing for ~26 days.
+
+Measurable target: within the next 20 work sessions, generate at least one matri[x]-run.json for one actor pairing x one weapon on the local profile and link it to its issue as related_run, and show a deliberately failing plan exits non-zero. Baseline is zero artifacts and zero linked runs today.
+
+Smallest experiment: run python devscripts/dev-loop-matrix.py --run --plan <one-pairing, one-weapon local plan> --launch-mode 1 via the root dev loop, then record elapsed time, exit code, and the first failure mode in the linked issue. This is a capability-execution gap (harness exists, never run), not a request to change behavior code.
+
+## Agent suggestion
+
+### 2026-11-24T21:01:33.745Z — issue-review-sweeper
+
+Bounded process finding (issue-review-sweeper, wake-235eea069010). Evidence: issue-4392f56334ef was reviewed 2026-11-21T05:16Z with one remaining gap ("unowned + no roadmap-phase field"); on 2026-11-24T20:59Z the same gap was still open and a full review was scheduled again (628 sessions later). The gap needs a schema/authority decision (issues table has no phase/tags column, devscripts/agent_coord.py:361-383), so it is human-gated, yet the issue stays in_review/unowned and `next` offers it as ordinary actionable work. This is distinct from the cadence/dedupe proposals already on this issue: those control how often reviews run; this concerns routing an authority-gated gap to the existing needs_clarification state so it is not re-presented as claimable work.
+
+Proposal: when a reviewer finds that an issue's only remaining gap requires human/root authority (schema change, credential, scope), it should use the existing `issue clarify` path to move the issue to needs_clarification with the exact question, instead of leaving it in_review/unowned. No new mechanism or code is needed; `next_work` already excludes needs_clarification from actionable work (devscripts/agent_coord.py:2573-2576).
+
+Measurable target: authority-gated issues reach needs_clarification with the question within one sweep; zero full re-reviews of an unanswered needs_clarification issue; median time an authority-gated unowned issue stays in the actionable pool < 1 sweep (currently 3 days / 628 sessions for issue-4392f56334ef).
+
+Smallest experiment: clarify issue-4392f56334ef with the one question "schema `phase` column vs evidence-JSON/README convention?", then run `agent-coord next` and confirm it moves from the actionable set to blocked; confirm the next scheduler selection skips it while it remains needs_clarification. Record before/after from coord events; no source edit.
+
+I am not applying the change in this sweep; this is a review-only proposal.

@@ -1001,6 +1001,8 @@ static void resetPresentationAfterRespawn(Player& player,
         part.perfectPose = ProceduralPose{};
         part.translationSpring = SpringState{};
         part.rotationSpring = SpringState{};
+        part.damageHoleCount = 0;
+        part.damageHoleThrough = false;
     }
 
     // Legacy layers and model world transforms
@@ -1440,6 +1442,17 @@ void updateRenderedReplica(
     if (respawned)
     {
         player.pos = interpolation.target.position;
+        // A respawn must not interpolate from the old corpse pose. Refresh the
+        // world transforms and collapse previous onto current for this frame.
+        player.updateModelWorldTransforms();
+        for (PhysicalBodyPart& part : player.physicalBody.parts) {
+            part.previousWorldTransform = part.worldTransform;
+            part.hasPreviousWorldTransform = true;
+        }
+        for (PhysicalBodyPart& part : player.physicalBody.extraParts) {
+            part.previousWorldTransform = part.worldTransform;
+            part.hasPreviousWorldTransform = true;
+        }
         // Hard-snap the remembered render state too, so a thin buffer on the
         // next frame holds the respawn position rather than the old corpse.
         interpolation.lastRender = interpolation.target;

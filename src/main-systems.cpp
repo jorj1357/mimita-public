@@ -40,6 +40,7 @@
 #include "npc/npc.h"
 #include "npc/npc-combat.h"
 #include "camera.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "config/camera-config.h"
 #include "input/input-state.h"
 #include "input/input-poll.h"
@@ -458,6 +459,54 @@ void registerAgentCommands()
                  {"yaw", gpCamera->yaw}, {"pitch", gpCamera->pitch},
                  {"player", gpPlayer->username}});
         }, "2026-10-13", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.aim_body", "Aim camera and physical aim body at a world point",
+        "agent.aim_body <x> <y> <z>",
+        [](const std::vector<std::string>& args) {
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            if (args.size() != 3 || !parseAgentFloat(args, 0, x) ||
+                !parseAgentFloat(args, 1, y) ||
+                !parseAgentFloat(args, 2, z)) {
+                Terminal::instance().addLog("[AGENT] Usage: agent.aim_body <x> <y> <z>");
+                return;
+            }
+            glm::vec3 direction = glm::vec3(x, y, z) - gpCamera->pos;
+            if (glm::length(direction) < 0.001f || !gpPlayer)
+                return;
+            direction = glm::normalize(direction);
+            gpCamera->yaw = glm::degrees(std::atan2(direction.y, direction.x));
+            gpCamera->pitch = glm::degrees(std::asin(std::clamp(direction.z, -1.0f, 1.0f)));
+            gpCamera->updateVectors();
+            gpCamera->front = direction;
+            gpCamera->lookWishFront = direction;
+            gpPlayer->yaw = gpCamera->yaw;
+            // Let the normal fixed-tick aim body consume the wish; a short
+            // wait before shooting gives the physical head/arm time to settle.
+            gpCamera->front = direction;
+            gpCamera->lookWishFront = direction;
+            gpCamera->updateVectors();
+            writeAgentCommandEvent(
+                "avatar.command.dispatch", "agent.aim_body accepted",
+                {{"command", "agent.aim_body"}, {"target", {x, y, z}},
+                 {"camera_front", {direction.x, direction.y, direction.z}},
+                 {"player_yaw", gpPlayer->yaw},
+                 {"player", gpPlayer->username}});
+        }, "2026-11-24", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.fire_cam", "Fire once along the camera aim for deterministic impact proof",
+        "agent.fire_cam",
+        [](const std::vector<std::string>& args) {
+            if (!args.empty()) return;
+            auto& cfg = GameplayConfig::instance();
+            const GameplayAimMode previous = cfg.aimMode();
+            cfg.setAimModeOverride(GameplayAimMode::CamForward);
+            Terminal::instance().execute("shoot");
+            cfg.setAimModeOverride(previous);
+        }, "2026-11-24", CommandCategory::Debug
     });
 
     Terminal::instance().registerCommand({

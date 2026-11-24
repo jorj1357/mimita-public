@@ -32,6 +32,7 @@
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-types.h"
+#include "entities/actor-body.h"
 #include "npc/npc-difficulty-config.h"
 #include "physics/movement/movement-step.h"
 #include "physics/movement/physics-collision-shared.h"
@@ -779,43 +780,67 @@ void explodeProjectile(SOCKET sock,
         const float referenceEnergy = 0.5f * mass * referenceSpeed * referenceSpeed;
         const float energyScale = referenceEnergy > 1e-6f
             ? impactEnergy / referenceEnergy : 1.0f;
-        int damageValue = std::max(1, (int)std::round(
-            (def ? def->damage : projectile.splashDamage) * energyScale));
-        // Direct projectiles share the hitscan damage contract: range falloff
-        // plus an explicit point-blank head execution. The projectile impact
-        // has no body-part id, so the head is inferred from the impact height
-        // above the victim's feet.
+        // Classify the projectile impact into the shared six-part body so
+        // limbs can take damage and expose their meat/bone layers. The
+        // projectile kernel returns a point, not a part, so use the victim's
+        // local height/lateral offset. This is intentionally conservative and
+        // never expands the hit volume.
+        ActorBodyPart bodyPart = ActorBodyPart::Unknown;
+        glm::vec3 victimBase(0.0f);
+        bool haveVictim = false;
+        auto playerIt = players.find(directTargetId);
+        if (playerIt != players.end()) {
+            victimBase = playerIt->second.pos;
+            haveVictim = true;
+        } else {
+            auto npcIt = npcs.find(directTargetId);
+            if (npcIt != npcs.end()) {
+                victimBase = npcIt->second.pos;
+                haveVictim = true;
+            }
+        }
+        if (haveVictim) {
+            const glm::vec3 local = position - victimBase;
+            const float height = local.z;
+            const glm::vec3 flat(local.x, local.y, 0.0f);
+            const float radial = glm::length(flat);
+            const glm::vec3 up(0.0f, 0.0f, 1.0f);
+            const glm::vec3 shotDir = glm::length(projectile.velocity) > 0.001f
+                ? glm::normalize(projectile.velocity) : glm::vec3(0.0f, 1.0f, 0.0f);
+            glm::vec3 right = glm::cross(shotDir, up);
+            if (glm::length(right) < 0.001f) right = glm::vec3(1.0f, 0.0f, 0.0f);
+            else right = glm::normalize(right);
+            const float lateral = glm::dot(flat, right);
+            if (height >= 1.35f)
+                bodyPart = ActorBodyPart::Head;
+            else if (height < 0.85f)
+                bodyPart = lateral >= 0.0f ? ActorBodyPart::RightLeg : ActorBodyPart::LeftLeg;
+            else if (radial > 0.22f)
+                bodyPart = lateral >= 0.0f ? ActorBodyPart::RightArm : ActorBodyPart::LeftArm;
+            else
+                bodyPart = ActorBodyPart::Torso;
+        }
+        if (bodyPart == ActorBodyPart::Unknown)
+            bodyPart = ActorBodyPart::Torso;
+        const std::string bodyPartName = actorBodyPartName(bodyPart);
+        float shotDistance = 0.0f;
+        bool haveShotDistance = false;
+        if (projectile.ownerPlayerId != 0) {
+            auto ownerIt = players.find(projectile.ownerPlayerId);
+            if (ownerIt != players.end()) {
+                shotDistance = glm::length(position - ownerIt->second.pos);
+                haveShotDistance = true;
+            }
+        }
+        int damageValue = 1;
         if (def) {
-            float shotDistance = 0.0f;
-            bool haveShotDistance = false;
-            if (projectile.ownerPlayerId != 0) {
-                auto ownerIt = players.find(projectile.ownerPlayerId);
-                if (ownerIt != players.end()) {
-                    shotDistance = glm::length(position - ownerIt->second.pos);
-                    haveShotDistance = true;
-                }
-            }
-            bool headHit = false;
-            auto playerIt = players.find(directTargetId);
-            if (playerIt != players.end()) {
-                headHit = (position.z - playerIt->second.pos.z) >= 1.35f;
-            } else {
-                auto npcIt = npcs.find(directTargetId);
-                if (npcIt != npcs.end())
-                    headHit = (position.z - npcIt->second.pos.z) >= 1.35f;
-            }
-            const float pointBlankDamage =
-                WeaponExecution::paramOr(*def, "pointBlankHeadDamage", 0.0f);
-            const float pointBlankRange =
-                WeaponExecution::paramOr(*def, "pointBlankDistanceMeters", 0.0f);
-            if (headHit && pointBlankDamage > 0.0f && pointBlankRange > 0.0f &&
-                haveShotDistance && shotDistance <= pointBlankRange) {
-                damageValue = std::max(1, (int)std::llround(pointBlankDamage));
-            } else if (haveShotDistance) {
+            damageValue = std::max(1, WeaponExecution::computeHitscanDamage(
+                *def, bodyPartName, haveShotDistance ? shotDistance : 0.0f, 1.0f));
+            if (haveShotDistance)
                 damageValue = std::max(1, (int)std::llround(
-                    damageValue * WeaponExecution::hitscanFalloffFactor(
-                        *def, shotDistance)));
-            }
+                    damageValue * energyScale));
+        } else {
+            damageValue = std::max(1, (int)std::round(projectile.splashDamage));
         }
         const glm::vec3 shotDir = glm::length(projectile.velocity) > 0.001f
             ? glm::normalize(projectile.velocity)
@@ -857,6 +882,7 @@ void explodeProjectile(SOCKET sock,
             contact.origin = position;
             contact.point = position;
             contact.normal = -shotDir;
+            contact.bodyPart = bodyPart;
             contact.damage = damageValue;
             contact.knockback = victimKnockback;
             contact.source = ServerDamageSource::Hitscan;
@@ -873,6 +899,19 @@ void explodeProjectile(SOCKET sock,
                 resolveServerContact(players, npcs, contact);
             if (!contactResult.accepted)
                 return;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "combat.hit.resolved", std::to_string(directTargetId),
+                "authoritative projectile body-part hit", tick,
+                nlohmann::json{{"attacker_id", projectile.ownerPlayerId},
+                               {"victim_id", directTargetId},
+                               {"weapon", def ? def->id : std::string()},
+                               {"body_part", bodyPartName},
+                               {"damage", damageValue},
+                               {"shot_distance_m", shotDistance},
+                               {"impact_speed_mps", impactSpeed},
+                               {"aim_direction", {shotDir.x, shotDir.y, shotDir.z}},
+                               {"impact_position", {position.x, position.y, position.z}}});
             const bool killed = contactResult.damage.killed;
             if (killed)
             {
@@ -923,6 +962,7 @@ void explodeProjectile(SOCKET sock,
                 contact.origin = position;
                 contact.point = position;
                 contact.normal = -shotDir;
+                contact.bodyPart = bodyPart;
                 contact.damage = damageValue;
                 contact.knockback = victimKnockback;
                 contact.source = ServerDamageSource::Hitscan;
@@ -940,6 +980,19 @@ void explodeProjectile(SOCKET sock,
                 const ServerDamageResult& damage = contactResult.damage;
                 if (!contactResult.accepted)
                     return;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Weapons, StructuredLevel::Important,
+                    "combat.hit.resolved", std::to_string(directTargetId),
+                    "authoritative projectile body-part hit", tick,
+                    nlohmann::json{{"attacker_id", projectile.ownerPlayerId},
+                                   {"victim_id", directTargetId},
+                                   {"weapon", def ? def->id : std::string()},
+                                   {"body_part", bodyPartName},
+                                   {"damage", damageValue},
+                                   {"shot_distance_m", shotDistance},
+                                   {"impact_speed_mps", impactSpeed},
+                                   {"aim_direction", {shotDir.x, shotDir.y, shotDir.z}},
+                                   {"impact_position", {position.x, position.y, position.z}}});
                 queueServerDamageConfirmedEvent(
                     sock, players, tick, totalPacketsOut,
                     projectile.ownerPlayerId, victim, damageValue, damage,
@@ -2265,4 +2318,5 @@ void cancelDeadNpcProjectiles(
 }
 
 } // namespace MimitaNet
+
 

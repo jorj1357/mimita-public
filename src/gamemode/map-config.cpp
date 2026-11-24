@@ -134,6 +134,8 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
             {"template", vehicle.templateId},
             {"position", {vehicle.position.x, vehicle.position.y, vehicle.position.z}},
             {"yaw", vehicle.yaw},
+            {"pitch", vehicle.pitch},
+            {"roll", vehicle.roll},
             {"enabled", vehicle.enabled}
         });
     }
@@ -648,6 +650,8 @@ bool MapConfigRegistry::loadFromStream(const std::string& mapId,
                         item["position"][2].get<float>());
                 }
                 vehicle.yaw = item.value("yaw", 0.0f);
+                vehicle.pitch = item.value("pitch", 0.0f);
+                vehicle.roll = item.value("roll", 0.0f);
                 vehicle.enabled = item.value("enabled", true);
                 next.vehicles.push_back(std::move(vehicle));
             }

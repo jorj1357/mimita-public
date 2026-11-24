@@ -2321,6 +2321,32 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
             sProjectileWindowTotalUs += projectileStepUs;
             sProjectileWindowMaxUs = std::max(sProjectileWindowMaxUs, projectileStepUs);
             ++sProjectileWindowSteps;
+
+            // Corpse feedback is visual-only and client-side. A dead ragdoll
+            // is no longer an authoritative damage target, but bullets must
+            // still punch holes and spray blood when the player shoots it.
+            if (!projectile.exploded) {
+                std::string corpseId;
+                const glm::vec3 corpsePoint = glm::length(step.hitPosition) > 0.001f
+                    ? step.hitPosition : projectile.position;
+                if (RagdollModeSystem::instance().queryCorpseHit(
+                        corpsePoint, projectile.radius + 0.12f, corpseId)) {
+                    const glm::vec3 corpseDir = glm::length(projectile.velocity) > 0.001f
+                        ? glm::normalize(projectile.velocity) : glm::vec3(0,0,1);
+                    EffectPartSystem::instance().spawnBloodEffect(
+                        corpsePoint, corpseDir, 55.0f, "projectile", corpseId,
+                        1.0f, -1.0f, 1.4f);
+                    EffectPartSystem::instance().spawnGoreEffect(
+                        corpsePoint, corpseDir, -corpseDir, 55.0f, 30.0f,
+                        "torso", 55, false, corpseId);
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Ragdoll, StructuredLevel::Important,
+                        "corpse.hit", corpseId, "client corpse bullet feedback", 0,
+                        nlohmann::json{{"position", {corpsePoint.x, corpsePoint.y, corpsePoint.z}},
+                                       {"direction", {corpseDir.x, corpseDir.y, corpseDir.z}}});
+                    projectile.exploded = true;
+                }
+            }
             if (projectileStepUs >= 25000)
                 recordCrashBreadcrumb("client-projectile-step",
                     "id=%u fireSerial=%u stepMs=%.3f pos=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f)",

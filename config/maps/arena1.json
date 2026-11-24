@@ -4,7 +4,7 @@
    "friction": 0.35,
    "linearDamping": 0.03,
    "massKg": 30.0,
-   "maxSpeed": 0.0,
+   "maxSpeed": 60.0,
    "radius": 0.9125,
    "restitution": 0.6,
    "spawn": [
@@ -81,6 +81,31 @@
   ]
  },
  "blocks": [
+  {
+   "enabled": true,
+   "id": "arena_floor",
+   "material": "",
+   "position": [
+    0.0,
+    0.0,
+    -0.51
+   ],
+   "rotationEuler": [
+    0,
+    0,
+    0
+   ],
+   "shape": "box",
+   "size": [
+    102.4,
+    81.92,
+    1.0
+   ],
+   "tags": [
+    "arena",
+    "floor"
+   ]
+  },
   {
    "enabled": true,
    "id": "wall_side_left",
@@ -769,7 +794,9 @@
     0.2
    ],
    "yaw": 0.0,
-   "enabled": true
+   "enabled": true,
+   "roll": 0.0,
+   "pitch": 0.0
   },
   {
    "id": "orange_car",
@@ -780,7 +807,9 @@
     0.2
    ],
    "yaw": 180.0,
-   "enabled": true
+   "enabled": true,
+   "roll": 0.0,
+   "pitch": 0.0
   }
  ]
 }

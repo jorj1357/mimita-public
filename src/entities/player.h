@@ -155,6 +155,12 @@ struct PhysicalBodyPart {
     // original part mesh); 1 is meat and 2 is bone. Built at model-load time by
     // shrinking the source mesh toward the part center.
     std::array<Mesh, 3> layerMeshes{};
+    // Recent local-space bullet tunnels used by the actor shader to punch
+    // holes through the skin/meat/bone layers.
+    static constexpr int kMaxDamageHoles = 4;
+    std::array<glm::vec4, kMaxDamageHoles> damageHoles{}; // xyz local, w radius
+    int damageHoleCount = 0;
+    bool damageHoleThrough = false;
 };
 
 struct PhysicalBody {
@@ -818,6 +824,9 @@ public:
     void syncLegacyStateToLayers();
     void syncLayersToLegacyState();
     void updateModelWorldTransforms();
+    void addPartDamageHole(ActorBodyPart part, const glm::vec3& worldPosition,
+                           const glm::vec3& worldDirection, float radius,
+                           bool punchThrough);
     void updateProceduralAnimation(float dt, const glm::vec3& camForward = glm::vec3(0,1,0), const glm::vec3& camPos = glm::vec3(0), bool movementPressed = false);
 
     // True when this actor must use the exclusive authored-pose policy: Melee

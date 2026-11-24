@@ -246,6 +246,15 @@ Read these gates before doing anything else:
 
 ## Runtime safety invariants
 
+- Resource cleanup preference: at task/phase boundaries and before ending a
+  session, periodically review MiMITA EXEs started for agent work. When an
+  agent-owned client or runtime is no longer needed, stop it through its
+  supported dev-loop or runtime-registry control and verify it exited; preserve
+  its journal and artifacts. Do not stop a process unless checkout ownership
+  and active use are verified. Keep processes needed by active tasks, open proof
+  or explicit pins, game pairs still needed by an active task, and human- or
+  other-agent-owned sessions. If ownership or use is unclear, leave it running
+  and report why.
 - Gameplay collision, damage, and physics run at fixed 60 Hz, never directly
   once per render frame.
 - VSync remains forced off globally. Do not add a setting, command, config

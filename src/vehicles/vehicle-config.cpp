@@ -77,6 +77,8 @@ VehicleWheelSpec parseWheel(const json& wheel)
     VehicleWheelSpec spec;
     spec.hub = readVec3(wheel, "hub", spec.hub);
     spec.radius = readFloat(wheel, "radius", spec.radius, 0.05f, 2.0f);
+    spec.collisionRadius =
+        readFloat(wheel, "collisionRadius", spec.collisionRadius, 0.0f, 2.0f);
     spec.width = readFloat(wheel, "width", spec.width, 0.02f, 1.5f);
     spec.suspensionAxis =
         readVec3(wheel, "suspensionAxis", spec.suspensionAxis);
@@ -397,6 +399,17 @@ bool VehicleConfigRegistry::loadFile(const std::string& path,
     const float height = readFloat(root, "height", spec.halfExtents.z * 2.0f,
                                    0.2f, 10.0f);
     spec.halfExtents = glm::vec3(length, width, height) * 0.5f;
+    // Collision extents default to the rendered body. Authors can make the
+    // collision slab narrower/lower so the wheels are the lowest and widest
+    // points and the car has no stable face to rest on.
+    const float collisionLength = readFloat(
+        root, "collisionLength", spec.halfExtents.x * 2.0f, 0.05f, 50.0f);
+    const float collisionWidth = readFloat(
+        root, "collisionWidth", spec.halfExtents.y * 2.0f, 0.05f, 50.0f);
+    const float collisionHeight = readFloat(
+        root, "collisionHeight", spec.halfExtents.z * 2.0f, 0.05f, 50.0f);
+    spec.collisionHalfExtents =
+        glm::vec3(collisionLength, collisionWidth, collisionHeight) * 0.5f;
     spec.drag = readFloat(root, "drag", spec.drag, 0.0f, 10.0f);
     spec.downforce = readFloat(root, "downforce", spec.downforce, 0.0f, 10.0f);
     spec.bodyFriction = readFloat(root, "bodyFriction",

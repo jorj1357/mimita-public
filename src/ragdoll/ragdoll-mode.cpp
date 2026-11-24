@@ -3138,7 +3138,19 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
 
         stepBody(corpse.body, world, dt);
         { MIMITA_PERF_SCOPE("Ragdoll::CorpseSync");
-          syncToPlayer(corpse.actor, corpse.body); }
+          syncToPlayer(corpse.actor, corpse.body);
+          // Corpse rendering must not interpolate from the alive pose. Refresh
+          // world transforms and collapse previous onto current each update.
+          corpse.actor.updateModelWorldTransforms();
+          for (PhysicalBodyPart& part : corpse.actor.physicalBody.parts) {
+              part.previousWorldTransform = part.worldTransform;
+              part.hasPreviousWorldTransform = true;
+          }
+          for (PhysicalBodyPart& part : corpse.actor.physicalBody.extraParts) {
+              part.previousWorldTransform = part.worldTransform;
+              part.hasPreviousWorldTransform = true;
+          }
+        }
 
         if (ragdollTrace && !corpse.poseStepTraceLogged) {
             corpse.poseStepTraceLogged = true;
@@ -3240,6 +3252,29 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
         ++corpseIndex;
         ++it;
     }
+}
+
+bool RagdollModeSystem::queryCorpseHit(const glm::vec3& point, float radius,
+                                       std::string& outActorId) const
+{
+    for (const RagdollCorpse& corpse : mCorpses) {
+        if (corpse.fade >= 1.0f)
+            continue;
+        for (const RagdollModePart& part : corpse.body.parts) {
+            const Capsule capsule = capsuleOf(part.body);
+            const glm::vec3 ab = capsule.b - capsule.a;
+            const float lengthSq = glm::dot(ab, ab);
+            const float t = lengthSq > 0.000001f
+                ? glm::clamp(glm::dot(point - capsule.a, ab) / lengthSq, 0.0f, 1.0f)
+                : 0.0f;
+            const glm::vec3 closest = capsule.a + ab * t;
+            if (glm::length(point - closest) <= radius + capsule.r) {
+                outActorId = corpse.actorId;
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void RagdollModeSystem::renderCorpses(const Camera& camera)

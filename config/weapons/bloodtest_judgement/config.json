@@ -17,6 +17,10 @@
     "reserveAmmo": 9999.0,
     "splashRadius": 0.0,
     "rocketDirectDamage": 65.0,
+    "damage_close": 65.0,
+    "damage_far": 45.0,
+    "damage_falloff_start_m": 20.0,
+    "damage_falloff_end_m": 80.0,
     "distanceFalloffStart": 30.0,
     "minDamageFraction": 0.6923,
     "pointBlankHeadDamage": 1800.0,
@@ -77,7 +81,7 @@
   "enemy_impulse_multiplier": 0.0,
   "fire_delay": 0.45,
   "fire_mode": "semi_auto",
-  "headshot_multiplier": 2.0,
+  "headshot_multiplier": 3.0,
   "hitscan": false,
   "magazine_size": 6,
   "melee_contact": {
@@ -126,7 +130,8 @@
       "shockwaveRandomRotationMaxDeg": 0.0,
       "shockwaveStartColor": [1.0, 1.0, 1.0],
       "shockwaveEndColor": [1.0, 1.0, 1.0],
-      "shockwaveModelNormalize": true
+      "shockwaveModelNormalize": true,
+      "shockwaveModelBaseScale": 2.0
     }
   },
   "reserve_ammo": 9999,
@@ -134,9 +139,12 @@
   "shooter_knockback": 0.0,
   "shooter_knockback_vertical": 0.0,
   "sound": {
-    "shoot": "revolvershoot",
+    "shoot": "weapon/judgement/judgementfire.mp3",
+    "reload": "weapon/judgement/judgementreload.mp3",
+    "equip": "weapon/judgement/judgementequip.mp3",
+    "volume": 2.2,
     "dry_fire": "ui/click",
-    "pitch": 0.5,
+    "pitch": 1.0,
     "start_seconds": 0.0,
     "end_seconds": 0.1,
     "retrigger": true
@@ -174,6 +182,11 @@
   },
   "world_impact_profile": "bullet_pistol"
 }
+
+
+
+
+
 
 
 

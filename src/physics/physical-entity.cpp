@@ -124,73 +124,178 @@ void applyImpulseAtPoint(PhysicalEntity& e, const glm::vec3& impulse,
     }
 }
 
-void resolveWorldContactVelocity(PhysicalEntity& e,
-                                 const RecoveryContact& contact)
+// Accumulated-impulse contact solve for one dynamic body against the static
+// world. Contacts are first clustered (a tessellated sphere on a plane yields
+// dozens of triangle contacts that all describe one physical contact), then a
+// sequential-impulse pass iterates normal and two-axis friction impulses with
+// clamping. This is the difference between "each contact applies a full
+// impulse" (which throws a car over) and a solved constraint set (which lets it
+// roll onto its wheels).
+struct WorldContactConstraint {
+    glm::vec3 point{0.0f};
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    glm::vec3 r{0.0f};
+    glm::vec3 tangent1{1.0f, 0.0f, 0.0f};
+    glm::vec3 tangent2{0.0f, 1.0f, 0.0f};
+    float normalMass = 0.0f;
+    float tangentMass1 = 0.0f;
+    float tangentMass2 = 0.0f;
+    float bounceTarget = 0.0f;
+    float friction = 0.0f;
+    float accumulatedNormal = 0.0f;
+    float accumulatedTangent1 = 0.0f;
+    float accumulatedTangent2 = 0.0f;
+};
+
+int solveEntityWorldContacts(PhysicalEntity& e,
+                             const std::vector<RecoveryContact>& contacts,
+                             float dt)
 {
-    if (e.motion != PhysicalEntityMotion::Dynamic || e.mass <= 0.0f)
-        return;
-    // Rigid bodies respond to the exact world-surface normal. The rounded
-    // feature normal exists to stop actor limbs snagging on seams; for an
-    // irregular (holey) object it can point up along a hole rim and inject an
-    // upward velocity against gravity. Prefer the exact triangle normal, and
-    // fall back to the rounded normal only when it is missing.
-    glm::vec3 normal = contact.normal;
-    if (glm::dot(normal, normal) <= 1e-8f)
-        normal = contact.responseNormal;
-    normal = glm::normalize(normal);
+    if (e.motion != PhysicalEntityMotion::Dynamic || e.mass <= 0.0f ||
+        contacts.empty())
+        return 0;
 
-    const glm::vec3 center = glm::vec3(e.transform[3]) +
-                             e.orientation * e.centerOfMass;
-    const glm::vec3 r = contact.point - center;
-    const glm::vec3 pointVelocity = e.velocity + glm::cross(e.angularVelocity, r);
-    const glm::vec3 rCrossNormal = glm::cross(r, normal);
-    const float normalMass = 1.0f / e.mass +
-        glm::dot(glm::cross(inverseInertiaWorld(e, rCrossNormal), r), normal);
-    const float normalSpeed = glm::dot(pointVelocity, normal);
-    float normalImpulse = 0.0f;
-    if (normalSpeed < 0.0f && normalMass > 1e-6f)
-    {
-        // Below the configured minimum bounce speed, do not bounce: the object
-        // projects and settles instead of jittering on a curved/edge contact.
-        const MimitaImpact::DestructibleWorldConfig& config =
-            MimitaImpact::DestructibleWorldConfig::instance();
-        const float restitution =
-            std::fabs(normalSpeed) < config.objectMinBounceSpeed()
-                ? 0.0f : e.restitution;
-        normalImpulse = -(1.0f + restitution) * normalSpeed / normalMass;
-        applyImpulseAtPoint(e, normal * normalImpulse, contact.point, false);
-    }
+    const MimitaImpact::DestructibleWorldConfig& config =
+        MimitaImpact::DestructibleWorldConfig::instance();
+    const glm::vec3 center =
+        glm::vec3(e.transform[3]) + e.orientation * e.centerOfMass;
 
-    const glm::vec3 postNormalVelocity = e.velocity + glm::cross(e.angularVelocity, r);
-    const glm::vec3 tangentVelocity = postNormalVelocity -
-        normal * glm::dot(postNormalVelocity, normal);
-    const float tangentLength = glm::length(tangentVelocity);
-    if (tangentLength <= 1e-5f || normalMass <= 1e-6f)
-        return;
-    const glm::vec3 tangent = tangentVelocity / tangentLength;
-    const glm::vec3 rCrossTangent = glm::cross(r, tangent);
-    const float tangentMass = 1.0f / e.mass +
-        glm::dot(glm::cross(inverseInertiaWorld(e, rCrossTangent), r), tangent);
-    if (tangentMass <= 1e-6f)
-        return;
-    const float desiredTangentImpulse = -glm::dot(postNormalVelocity, tangent) /
-                                        tangentMass;
-    const bool wallContact = std::fabs(normal.z) < 0.5f;
-    const float contactFriction =
-        (wallContact && e.wallFriction >= 0.0f) ? e.wallFriction
-                                                : e.friction;
-    if (wallContact)
+    // Cluster contacts that describe the same physical contact: similar normal
+    // and nearby point. A cap bounds the solve cost per body per tick.
+    constexpr int kMaxClusters = 8;
+    constexpr float kClusterRadius = 0.12f;
+    constexpr float kClusterNormalDot = 0.94f;
+    WorldContactConstraint clusters[kMaxClusters];
+    int clusterCount = 0;
+    for (const RecoveryContact& contact : contacts)
     {
-        e.lastWallContactTick =
-            static_cast<float>(PhysicalEntitySystem::instance().simulationTick());
-        e.lastWallContactNormal = normal;
-        e.lastWallImpactSpeed = std::fabs(normalSpeed);
+        glm::vec3 normal = contact.normal;
+        if (glm::dot(normal, normal) <= 1e-8f)
+            normal = contact.responseNormal;
+        if (glm::dot(normal, normal) <= 1e-8f)
+            continue;
+        normal = glm::normalize(normal);
+
+        bool merged = false;
+        for (int i = 0; i < clusterCount; ++i)
+        {
+            if (glm::dot(clusters[i].normal, normal) >= kClusterNormalDot &&
+                glm::length(clusters[i].point - contact.point) <=
+                    kClusterRadius)
+            {
+                // Average the point so an edge/plane cluster stays centred.
+                clusters[i].point =
+                    0.5f * (clusters[i].point + contact.point);
+                merged = true;
+                break;
+            }
+        }
+        if (merged)
+            continue;
+        if (clusterCount >= kMaxClusters)
+            continue;
+        WorldContactConstraint& c = clusters[clusterCount++];
+        c.point = contact.point;
+        c.normal = normal;
+        c.r = contact.point - center;
+
+        // Tangent basis.
+        const glm::vec3 reference =
+            std::fabs(normal.z) < 0.9f ? glm::vec3(0.0f, 0.0f, 1.0f)
+                                       : glm::vec3(1.0f, 0.0f, 0.0f);
+        c.tangent1 = glm::normalize(glm::cross(normal, reference));
+        c.tangent2 = glm::normalize(glm::cross(normal, c.tangent1));
+
+        const glm::vec3 rCrossN = glm::cross(c.r, normal);
+        c.normalMass = 1.0f / e.mass +
+            glm::dot(glm::cross(inverseInertiaWorld(e, rCrossN), c.r), normal);
+        const glm::vec3 rCrossT1 = glm::cross(c.r, c.tangent1);
+        c.tangentMass1 = 1.0f / e.mass +
+            glm::dot(glm::cross(inverseInertiaWorld(e, rCrossT1), c.r),
+                     c.tangent1);
+        const glm::vec3 rCrossT2 = glm::cross(c.r, c.tangent2);
+        c.tangentMass2 = 1.0f / e.mass +
+            glm::dot(glm::cross(inverseInertiaWorld(e, rCrossT2), c.r),
+                     c.tangent2);
+
+        const bool wallContact = std::fabs(normal.z) < 0.5f;
+        c.friction = (wallContact && e.wallFriction >= 0.0f) ? e.wallFriction
+                                                            : e.friction;
+
+        // Restitution is a velocity target, applied only above the configured
+        // minimum bounce speed so a resting body does not jitter.
+        const glm::vec3 pointVelocity =
+            e.velocity + glm::cross(e.angularVelocity, c.r);
+        const float normalSpeed = glm::dot(pointVelocity, normal);
+        c.bounceTarget =
+            (normalSpeed < -config.objectMinBounceSpeed())
+                ? -e.restitution * normalSpeed
+                : 0.0f;
+
+        if (wallContact)
+        {
+            e.lastWallContactTick = static_cast<float>(
+                PhysicalEntitySystem::instance().simulationTick());
+            e.lastWallContactNormal = normal;
+            e.lastWallImpactSpeed = std::fabs(normalSpeed);
+        }
     }
-    const float frictionLimit = contactFriction * normalImpulse;
-    const float tangentImpulse = normalImpulse > 0.0f
-        ? glm::clamp(desiredTangentImpulse, -frictionLimit, frictionLimit)
-        : desiredTangentImpulse;
-    applyImpulseAtPoint(e, tangent * tangentImpulse, contact.point, false);
+    if (clusterCount == 0)
+        return 0;
+
+    constexpr int kIterations = 8;
+    for (int iteration = 0; iteration < kIterations; ++iteration)
+    {
+        for (int i = 0; i < clusterCount; ++i)
+        {
+            WorldContactConstraint& c = clusters[i];
+            if (c.normalMass <= 1e-6f)
+                continue;
+
+            glm::vec3 pointVelocity =
+                e.velocity + glm::cross(e.angularVelocity, c.r);
+            const float normalSpeed = glm::dot(pointVelocity, c.normal);
+            float lambda =
+                (c.bounceTarget - normalSpeed) / c.normalMass;
+            const float previousNormal = c.accumulatedNormal;
+            c.accumulatedNormal =
+                std::max(0.0f, previousNormal + lambda);
+            lambda = c.accumulatedNormal - previousNormal;
+            if (lambda != 0.0f)
+                applyImpulseAtPoint(e, c.normal * lambda, c.point, false);
+
+            // Coulomb friction, clamped by the accumulated normal impulse.
+            const float frictionLimit = c.friction * c.accumulatedNormal;
+            pointVelocity = e.velocity + glm::cross(e.angularVelocity, c.r);
+            if (c.tangentMass1 > 1e-6f)
+            {
+                const float vt = glm::dot(pointVelocity, c.tangent1);
+                float lambdaT = -vt / c.tangentMass1;
+                const float previous = c.accumulatedTangent1;
+                c.accumulatedTangent1 =
+                    std::clamp(previous + lambdaT, -frictionLimit,
+                               frictionLimit);
+                lambdaT = c.accumulatedTangent1 - previous;
+                if (lambdaT != 0.0f)
+                    applyImpulseAtPoint(e, c.tangent1 * lambdaT, c.point, false);
+            }
+            if (c.tangentMass2 > 1e-6f)
+            {
+                pointVelocity = e.velocity + glm::cross(e.angularVelocity, c.r);
+                const float vt = glm::dot(pointVelocity, c.tangent2);
+                float lambdaT = -vt / c.tangentMass2;
+                const float previous = c.accumulatedTangent2;
+                c.accumulatedTangent2 =
+                    std::clamp(previous + lambdaT, -frictionLimit,
+                               frictionLimit);
+                lambdaT = c.accumulatedTangent2 - previous;
+                if (lambdaT != 0.0f)
+                    applyImpulseAtPoint(e, c.tangent2 * lambdaT, c.point, false);
+            }
+        }
+    }
+    (void)dt;
+    return clusterCount;
 }
 
 void rebuildTransformFromPose(PhysicalEntity& e)
@@ -601,26 +706,19 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
                 e.transform[3] += glm::vec4(correction, 0.0f);
                 for (const RecoveryContact& contact : s_objectContacts)
                 {
-                    if (e.motion == PhysicalEntityMotion::Dynamic)
-                    {
-                        resolveWorldContactVelocity(e, contact);
-                        // The impulse solver handles angular and frictional
-                        // response. Keep the final translational invariant as
-                        // strict as the player solver: a supported body may
-                        // never retain velocity into the supporting surface.
-                        const float into = glm::dot(e.velocity, contact.normal);
-                        if (into < 0.0f)
-                            e.velocity -= contact.normal * into;
-                        if (contact.normal.z > MAX_WALKABLE_SLOPE_DOT &&
-                            std::fabs(e.velocity.z) < 0.25f)
-                            e.velocity.z = 0.0f;
-                    }
-                    else
+                    if (e.motion != PhysicalEntityMotion::Dynamic)
                     {
                         const float into = glm::dot(e.velocity, contact.normal);
                         if (into < 0.0f)
                             e.velocity -= contact.normal * into;
                     }
+                }
+                if (e.motion == PhysicalEntityMotion::Dynamic)
+                {
+                    // One solved constraint set for the whole body, so contacts
+                    // share the load instead of each applying a full impulse.
+                    solveEntityWorldContacts(e, s_objectContacts,
+                                             (float)kFixedDt);
                 }
                 if (glm::dot(correction, correction) < 1e-8f)
                     break;
@@ -1322,7 +1420,56 @@ void resolveEntityContacts(std::vector<PhysicalEntity>& entities)
                     s_contacts.push_back(c);
             }
             if (s_contacts.empty())
+            {
+                // Bounded diagnostic: two bodies whose bounds overlap but whose
+                // narrowphase produced nothing. This distinguishes "the ball is
+                // somewhere else" from "the pair test never fires".
+                const bool ballPair =
+                    a.persistenceId == "arena-ball" ||
+                    b.persistenceId == "arena-ball";
+                if (ballPair)
+                {
+                    static thread_local uint64_t sLastMissTick = 0;
+                    const uint64_t tick =
+                        PhysicalEntitySystem::instance().simulationTick();
+                    if (tick > sLastMissTick + 30)
+                    {
+                        sLastMissTick = tick;
+                        const PhysicalEntity& ball =
+                            a.persistenceId == "arena-ball" ? a : b;
+                        const PhysicalEntity& other =
+                            a.persistenceId == "arena-ball" ? b : a;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Physics,
+                            StructuredLevel::Important,
+                            "arena.ball.narrowphase.miss",
+                            std::to_string(ball.networkId),
+                            "ball bounds overlapped another body with no contact",
+                            static_cast<uint32_t>(tick),
+                            nlohmann::json{
+                                {"ball_pos",
+                                 {ball.transform[3].x, ball.transform[3].y,
+                                  ball.transform[3].z}},
+                                {"ball_half",
+                                 {ball.halfExtents.x, ball.halfExtents.y,
+                                  ball.halfExtents.z}},
+                                {"ball_triangles", ball.localTriangles.size()},
+                                {"other_pos",
+                                 {other.transform[3].x, other.transform[3].y,
+                                  other.transform[3].z}},
+                                {"other_half",
+                                 {other.halfExtents.x, other.halfExtents.y,
+                                  other.halfExtents.z}},
+                                {"other_triangles",
+                                 other.localTriangles.size()},
+                                {"other_persistence", other.persistenceId},
+                                {"forward_contacts", s_forward.size()},
+                                {"reverse_contacts", s_reverse.size()}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
+                }
                 continue;
+            }
 
             // Deterministic order and a hard per-pair cap.
             std::sort(s_contacts.begin(), s_contacts.end(),

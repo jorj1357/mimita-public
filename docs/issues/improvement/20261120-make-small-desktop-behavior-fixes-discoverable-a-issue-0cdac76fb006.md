@@ -149,3 +149,57 @@ PROCESS REVIEW
 No new dashboard-health or region-staleness proposal: continuous dashboard window health (proposed on this issue 2026-11-21T23:39) now has a third consecutive day of zero keepalive samples while a dashboard ran, and region-scoped staleness (issue-37a27bfdc575, 2026-11-21) is reinforced because whole-file sha256 flagged gui.py stale even though the three geometry functions are byte-identical. Separate process proposal appended to issue-91e3384b219b: an unexecuted repeated next-check across >=2 sweeps should escalate to a runnable task instead of producing another identical review.
 
 No new evidence that the deliverable (the standard) is implemented; nothing is claimed fixed or closed.
+
+## Scheduled independent review
+
+### 2026-11-24T18:42:31.518Z — root-resource-loop
+
+A bounded independent review was queued as wake wake-63a8663e8d98 after 602 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive)
+
+### 2026-11-24T18:48:22.620Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Bounded independent sweep 2026-11-24 (read-only; no source edit, build, close, fix claim, or issue-state change).
+
+SCOPE
+Re-checked readiness, the small-desktop standard task and proof, the exemplar dashboard monitor-retention proof, current dashboard live/saved state, the keepalive journal, source/doc hashes, and the newly changed proof doc.
+
+OBSERVED
+1. Readiness unchanged: issue brief issue-0cdac76fb006 still scores 1/8, ready=false, missing reproduction, expected_behavior, acceptance, paths, evidence, proof_expectation, risk. State=in_review; owner=dashboard-position-proof; the only linked task small-desktop-state-evidence-standard is still state=open.
+2. Deliverable still absent: docs search for "persistent desktop|small desktop|before/after state|repeat count|restart/recovery" found no reusable standard; the only relevant new text in docs/specs/dev-loop/agent-proof-and-verification.md is about gameplay visual residuals and the website release authorization, not persistent-desktop state. The issue doc is unchanged in substance (mtime 2026-11-24T18:42:31Z is the scheduled-review update).
+3. task-proof-bac2b095c7af is still result=unproven, verified_utc empty, evidence empty. Its pinned hashes are stale and one drifted further: agent-proof-and-verification.md recorded 9d2eaefb... vs current eaef36e8... (11-22/11-23 current was c05d407e...), caused by commits 07ba9003/51306c08 adding gameplay-visual and website-auth text; issue-intake-and-triage.md recorded 56d48ea9... vs current f3d370b5... (unchanged since 11-22).
+4. Exemplar proof task-proof-ed45c1b9e923 is still result=stale ("source changed: devscripts/dev_loop/gui.py"). Current gui.py sha256 267e69ea... is unchanged since the 11-22/11-23 sweeps; dashboard-keepalive.py still matches the recorded d3cc3e94.... The latest build (generation 599) changed only src/vehicles/vehicle-system.cpp, not gui.py, so it introduced no new staleness.
+5. MAJOR NEW FACT — dashboard now on the secondary display: live window hwnd=67644 is visible with rect L=-1525 T=210 R=-767 B=943; `.dev/dashboard-ui.json` (mtime 2026-11-24T18:42:50Z) is geometry "758x733+-1525+210", window_bounds x=-1525, matching the live rect exactly. Dashboard PID is still 16864 (`dev-loop.py --dashboard --no-terminal-relaunch`), running since 2026-11-23 00:56:56 — i.e. the window moved from the 11-23 x=455 placement to x=-1525 while the same process stayed alive. This is the first sweep in four where the dashboard is on negative-x (secondary) rather than primary.
+6. Keepalive still non-continuous: `.dev/dashboard-keepalive/events.jsonl` last wrote 2026-11-21T22:28:36Z (last `dashboard.healthy` rect [-986,40,-200,788]); zero samples on 2026-11-22, 11-23, and 11-24 while a dashboard has run, and no keepalive process exists. Live monitor retention is unobserved for a fourth consecutive day.
+
+INFERENCE / UNCERTAINTY
+- x=-1525 with live==saved is NOT proof of correct retention: no close/reopen cycle and no keepalive sample were captured. A human move and a self-controlled move are equally consistent, and the process never restarted, so persistence across restart is untested. The on-disk geometry matching the live window is expected by construction, not evidence of recovery.
+- The prior conclusion that gui.py drift is unrelated holds for measurement/save, but the 11-23 finding that close_view() differs from the proven d3368058 remains unresolved; no new evidence either way this sweep.
+- The pinned doc-hash drift is content-verified unrelated to the standard, yet whole-file hashing still marks the unproven record stale; this is a hashing-granularity artifact, not new standard work.
+- Absence of keepalive events is missing evidence, not evidence of a snap.
+
+CONTRARY EVIDENCE
+- docs/regressions/dev-loop/dashboard-monitor-snap-REG-2026-11-20.md is FIXED with three restart cycles and no newer snapping report.
+- The dashboard now sitting on the secondary monitor with saved==live is consistent with the fix holding and with the user simply placing it there; no snap is demonstrated.
+- The proof doc did change, but its new sections (gameplay visual residuals, website authorization) do not implement the requested persistent-desktop standard.
+
+NEXT DISCRIMINATING CHECK (now executable without a human move)
+The dashboard is already on the secondary (x=-1525) and saved state matches. Start `python devscripts/dashboard-keepalive.py --interval 5` (no --focus) for one measured 10-minute window, then close/reopen the dashboard three times while it runs; record each `dashboard.healthy` rect and `.dev/dashboard-ui.json` after each cycle, and verify one dashboard PID (no duplicate) and that geometry is written before exit. If any cycle lands at x>=0 with no human move, retention regressed; if all stay negative with a single PID, retention holds and only the standard remains. In parallel, re-verify task-proof-ed45c1b9e923 by the named geometry+close_view region rather than whole-file hash, and re-pin task-proof-bac2b095c7af to the current eaef36e8.../f3d370b5... hashes.
+
+PROCESS REVIEW
+No new distinct proposal found in this sweep. The repeated unexecuted next-check is already covered by the 2026-11-23 escalation proposal on issue-91e3384b219b; continuous dashboard window health is already proposed on this issue (2026-11-21), now with a fourth day of zero keepalive samples; and region-scoped staleness is already proposed on issue-37a27bfdc575, reinforced here because the proof doc drifted again and wrongly stales the unproven record. The check was blocked for four days by a human-only window move that occurred at 18:42:50Z today; it is now runnable, so this sweep adds no duplicate proposal.
+
+NO NEW EVIDENCE that the deliverable (the standard) is implemented; nothing is claimed fixed or closed.
+
+## Agent discussion and suggestions
+
+### 2026-11-24T18:48:51.052Z — issue-review-sweeper
+
+Message: `msg-ab75e549a9c1` (message)
+
+Subject: issue-0cdac76fb006: dashboard now on secondary, next retention check runnable
+
+Independent review of issue-0cdac76fb006 (review id 372, 2026-11-24, read-only) found a new live fact: the dashboard is now at x=-1525 on the secondary display (live hwnd 67644 rect L=-1525 T=210 R=-767 B=943), matching .dev/dashboard-ui.json geometry 758x733+-1525+210, with the same PID 16864 running since 2026-11-23 00:56:56. No keepalive sample and no restart has occurred since the move, so retention is still unproven but the next check is now runnable without a human move. Proposed smallest check: start dashboard-keepalive.py --interval 5 (no --focus) for 10 minutes, close/reopen the dashboard three times, record each dashboard.healthy rect and .dev/dashboard-ui.json per cycle, and confirm one dashboard PID only. Please confirm this check or name a smaller one, and re-pin task-proof-bac2b095c7af to the current doc hashes (eaef36e8... agent-proof-and-verification.md / f3d370b5... issue-intake-and-triage.md) and re-verify task-proof-ed45c1b9e923 by the named geometry plus close_view region instead of the whole-file hash.

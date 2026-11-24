@@ -17,6 +17,10 @@
     "reserveAmmo": 9999.0,
     "splashRadius": 0.0,
     "rocketDirectDamage": 34.0,
+    "damage_close": 65.0,
+    "damage_far": 45.0,
+    "damage_falloff_start_m": 20.0,
+    "damage_falloff_end_m": 80.0,
     "splashExponent": 2.0,
     "knockbackStrength": 0.0,
     "selfKnockbackMultiplier": 0.0,
@@ -66,7 +70,7 @@
     "impactAlphaStage3": 0.4,
     "impactStage3Ticks": 20.0
   },
-"damage": 34.0,
+"damage": 65.0,
 "damage_animation_mode": null,
 "damage_scale": null,
 "enemy_impulse_multiplier": 0.0,
@@ -134,7 +138,8 @@
       "shockwaveRandomRotationMaxDeg": 0.0,
       "shockwaveStartColor": [1.0, 1.0, 1.0],
       "shockwaveEndColor": [1.0, 1.0, 1.0],
-      "shockwaveModelNormalize": true
+      "shockwaveModelNormalize": true,
+      "shockwaveModelBaseScale": 2.0
     }
   },
 "reserve_ammo": 9999,
@@ -142,9 +147,12 @@
 "shooter_knockback": 0.0,
 "shooter_knockback_vertical": 0.0,
 "sound": {
-    "shoot": "revolvershoot",
+    "shoot": "weapon/ak47/akfire.mp3",
+    "reload": "weapon/ak47/akreload.mp3",
+    "equip": "weapon/ak47/akequip.mp3",
+    "volume": 2.5,
     "dry_fire": "ui/click",
-    "pitch": 0.5,
+    "pitch": 0.9,
     "start_seconds": 0.0,
     "end_seconds": 0.1,
     "retrigger": true
@@ -176,6 +184,11 @@
 "world_impact": null,
 "world_impact_profile": "bullet_rifle"
 }
+
+
+
+
+
 
 
 

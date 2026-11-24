@@ -424,7 +424,16 @@ mid-build `pch.h` save is excluded from that generation and picked up next.
 The build requires `MIMITA_GAME_BUILD_MIN_FREE_MB` (default 2048) free, keeps
 five newest generations plus `ready.json`/`current.json`, prunes dated logs
 beyond three days, acquires the machine-wide module build slot, and kills the
-worker after `MIMITA_GAME_BUILD_TIMEOUT` (default 3600 s).
+worker process tree after `MIMITA_GAME_BUILD_TIMEOUT` (default 300 s). This is
+a fail-fast ceiling for a stuck or unusually long worker, not a performance
+target; it can also terminate a valid large rebuild under heavy resource
+pressure. An intentional longer experiment can set the environment override.
+The timeout begins when the game-DLL worker is launched, after manifest and
+source preparation, so those earlier phases remain separately timed and are
+not bounded by this worker timeout. On a compiler error, the worker immediately
+terminates its already-running sibling compiler process trees and marks those
+translation units cancelled; queued translation units are not launched. This
+does not apply to failures that cannot be known until linking or publication.
 
 **Historical lane implementation:** the lane manager creates worktrees only under
 `.dev/agent-lanes/`, the scheduler defaults to `.dev/build-scheduler/`, the

@@ -16,6 +16,10 @@
 struct VehicleWheelSpec {
     glm::vec3 hub{0.0f};
     float radius = 0.34f;
+    // Optional collision sphere at the hub. 0 disables it. Giving the wheels
+    // real collision geometry is what makes the car settle onto them through
+    // ordinary contact physics instead of a scripted righting behaviour.
+    float collisionRadius = 0.0f;
     float width = 0.22f;
     glm::vec3 suspensionAxis{0.0f, 0.0f, -1.0f};
     // Visual/log axes. Physics rolling is still forward-roll; these let the
@@ -121,6 +125,10 @@ struct VehicleSpec {
     float density = 120.0f;
     glm::vec3 centerOfMass{0.0f};
     glm::vec3 halfExtents{2.2f, 0.9f, 0.6f};
+    // Collision extents may differ from the rendered body. A narrower, lower
+    // collision slab lets the wheels be the lowest and widest points, so a
+    // tipped car has no stable face to rest on. Zero means "use halfExtents".
+    glm::vec3 collisionHalfExtents{0.0f};
     float drag = 0.32f;
     float downforce = 0.0f;
     // Chassis-vs-world material response. Low friction lets the body slide off
@@ -286,6 +294,11 @@ struct VehicleState {
     int flipResetCount = 0;
     bool wheelOnBall = false;
     uint64_t lastFlipResetTick = 0;
+    // Orientation and support tracking. These are diagnostics and solver input,
+    // not a righting behaviour: the car settles because of its own geometry.
+    float upDotWorldUp = 1.0f;
+    int wheelMask = 0;
+    bool wasSleeping = false;
     // Metric telemetry accumulators (meters / seconds / newtons).
     float distanceTravelled = 0.0f;
     float apexHeightM = 0.0f;

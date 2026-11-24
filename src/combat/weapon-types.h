@@ -225,6 +225,7 @@ struct WeaponDefinition {    std::string id;
     float explosionShockwaveStartAlpha = 1.0f;
     float explosionShockwaveEndAlpha = 0.0f;
     bool explosionShockwaveNormalize = true;
+    float explosionShockwaveModelBaseScale = 1.0f;
     glm::vec3 explosionShockwaveStartColor{1.0f};
     glm::vec3 explosionShockwaveEndColor{1.0f};
     float explosionShockwaveRandomRotationMinDeg = 0.0f;

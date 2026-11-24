@@ -37,6 +37,7 @@ uniform int uUseInstanceModel;
 
 out vec2 vUV;
 out vec3 vWorldPos;
+out vec3 vLocalPos;
 out vec3 vNormal;
 out vec3 vViewDir;
 out vec4 vDebugColor;
@@ -60,6 +61,7 @@ void main() {
 
     vUV = aUV;
     vWorldPos = worldPos.xyz;
+    vLocalPos = aPos;
 
     // Normals should not use the regular model matrix when scale is non-uniform.
     // The inverse-transpose normal matrix keeps lighting stable when artists scale meshes.

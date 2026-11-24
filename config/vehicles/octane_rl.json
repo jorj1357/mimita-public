@@ -16,9 +16,15 @@
   "length": 1.18,
   "width": 0.842,
   "height": 0.362,
+  // Collision slab is narrower and lower than the rendered body so the wheel
+  // colliders are the lowest and widest points. A tipped car then has no stable
+  // face to rest on and contact physics rolls it back onto its wheels.
+  "collisionLength": 1.18,
+  "collisionWidth": 0.56,
+  "collisionHeight": 0.28,
   "drag": 0.0,
   "downforce": 0.0,
-  "bodyFriction": 0.3,
+  "bodyFriction": 0.85,
   "bodyWallFriction": 0.3,
   "bodyRestitution": 0.3,
   "reboundScale": 1.0,
@@ -38,7 +44,7 @@
   "bumpStopDamping": 3000,
   "antiRollForceScale": 3.0,
   "stabilityVerticalDamping": 2.0,
-  "stabilityAngularDamping": 2.0,
+  "stabilityAngularDamping": 8.0,
   "idleSettleSpeed": 1.0,
   "idleSettleHorizontal": 0.10,
   "idleSettleVertical": 0.05,
@@ -56,6 +62,7 @@
     {
       "hub": [0.40, 0.36, -0.10],
       "radius": 0.15,
+      "collisionRadius": 0.085,
       "width": 0.12,
       "suspensionAxis": [0, 0, -1],
       "spinAxis": [0, 1, 0],
@@ -76,6 +83,7 @@
     {
       "hub": [0.40, -0.36, -0.10],
       "radius": 0.15,
+      "collisionRadius": 0.085,
       "width": 0.12,
       "suspensionAxis": [0, 0, -1],
       "spinAxis": [0, 1, 0],
@@ -96,6 +104,7 @@
     {
       "hub": [-0.40, 0.36, -0.10],
       "radius": 0.15,
+      "collisionRadius": 0.085,
       "width": 0.12,
       "suspensionAxis": [0, 0, -1],
       "spinAxis": [0, 1, 0],
@@ -116,6 +125,7 @@
     {
       "hub": [-0.40, -0.36, -0.10],
       "radius": 0.15,
+      "collisionRadius": 0.085,
       "width": 0.12,
       "suspensionAxis": [0, 0, -1],
       "spinAxis": [0, 1, 0],

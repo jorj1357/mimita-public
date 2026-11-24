@@ -21,6 +21,7 @@
 #include "debug/structured-log.h"
 #include "config/networking-config.h"
 #include "entities/actor-body.h"
+#include "entities/player.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
 #include "effects/effect-part.h"
@@ -198,6 +199,31 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     hit.weaponSource = weaponId;
     hit.spawnDamageNumber = true;
 
+    // Apply a local body-layer hole to the victim so all clients see the same
+    // impact area. This is visual state only; the server still owns damage.
+    {
+        Player* victimPlayer = nullptr;
+        if (event.targetPlayerId == ctx.localPlayerId)
+            victimPlayer = mimita::game::playerPtr();
+        else {
+            auto rp = ctx.remotePlayers.find(event.targetPlayerId);
+            if (rp != ctx.remotePlayers.end()) victimPlayer = &rp->second;
+            else {
+                auto rn = ctx.remoteNpcs.find(event.targetPlayerId);
+                if (rn != ctx.remoteNpcs.end()) victimPlayer = &rn->second;
+            }
+        }
+        if (victimPlayer) {
+            const ActorBodyPart part = event.bodyPart < (uint8_t)ActorBodyPart::Count
+                ? (ActorBodyPart)event.bodyPart : ActorBodyPart::Torso;
+            const float force = std::clamp(event.damage / 65.0f, 0.0f, 1.0f);
+            victimPlayer->addPartDamageHole(
+                part, hit.position, hit.direction,
+                0.04f + 0.10f * force,
+                event.partDestroyed || event.damage >= 60);
+        }
+    }
+
     if (!localAttacker)
     {
         // Remote attacker: the prediction path never ran on this client, so
@@ -212,6 +238,11 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
 
     // Server confirmed a hit the local attacker predicted.
     ++ctx.confirmedHits;
+
+    // The shooter must see the same blood/gore/impact presentation as remote
+    // observers. This is called once per confirmed hit; hitmarker/sound remain
+    // separate below so they are not duplicated.
+    HitEffects::onHit(hit);
 
     const NetworkingConfigData& netCfg = NetworkingConfig::instance().data();
     const bool authMode = netCfg.serverAuthoritativeHits.enabled;
@@ -237,9 +268,6 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     {
         if (sink && sink->showDamageNumber)
             sink->showDamageNumber(hit, sink->user);
-        else if (authMode)
-            HitEffects::spawnHitEffects(hit.position, hit.direction, hit.normal,
-                                        hit.damage, hit.attacker, hit.victim, true);
     }
 
     // On kill, heal the local attacker to full health (matches server authority)

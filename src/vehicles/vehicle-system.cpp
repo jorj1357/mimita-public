@@ -526,8 +526,19 @@ uint32_t VehicleSystem::spawnInternal(const std::string& templateId,
         return 0;
     }
 
+    // The collision slab may be narrower/lower than the rendered body so the
+    // wheels are the lowest and widest points. Wheel colliders make the car
+    // settle onto its wheels through ordinary contact physics.
+    const glm::vec3 collisionHalf =
+        glm::dot(spec->collisionHalfExtents, spec->collisionHalfExtents) > 1e-6f
+            ? spec->collisionHalfExtents
+            : spec->halfExtents;
     std::vector<CollisionTriangle> triangles;
-    buildBoxCollisionTriangles(triangles, glm::vec3(0.0f), spec->halfExtents);
+    buildBoxCollisionTriangles(triangles, glm::vec3(0.0f), collisionHalf);
+    for (const VehicleWheelSpec& wheel : spec->wheels)
+        if (wheel.collisionRadius > 0.0f)
+            buildSphereCollisionTriangles(triangles, wheel.hub,
+                                          wheel.collisionRadius, 6, 10);
 
     PhysicalEntitySystem& entities = PhysicalEntitySystem::instance();
     const uint32_t entityId = entities.add(
@@ -685,9 +696,17 @@ bool VehicleSystem::spawnMirror(uint32_t vehicleId,
     }
     else
     {
+        const glm::vec3 collisionHalf =
+            glm::dot(spec->collisionHalfExtents,
+                     spec->collisionHalfExtents) > 1e-6f
+                ? spec->collisionHalfExtents
+                : spec->halfExtents;
         std::vector<CollisionTriangle> triangles;
-        buildBoxCollisionTriangles(triangles, glm::vec3(0.0f),
-                                   spec->halfExtents);
+        buildBoxCollisionTriangles(triangles, glm::vec3(0.0f), collisionHalf);
+        for (const VehicleWheelSpec& wheel : spec->wheels)
+            if (wheel.collisionRadius > 0.0f)
+                buildSphereCollisionTriangles(triangles, wheel.hub,
+                                              wheel.collisionRadius, 6, 10);
         entityId = entities.addReplicated(chassisNetworkId, triangles,
                                           transform,
                                           PhysicalEntityMotion::Dynamic, 0);
@@ -1878,16 +1897,32 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
     if (onGround)
     {
         state.lastGroundedTick = tick;
-        state.hasFlipped = false;
-        state.hasJumped = false;
-        state.isFlipping = false;
-        state.isJumping = false;
-        state.jumpCount = 0;
-        state.flipTimer = 0.0f;
-        state.jumpTimer = 0.0f;
-        state.airTimeSinceJump = 0.0f;
-        state.takeoffHeightM = entity.transform[3].z;
-        state.apexHeightM = state.takeoffHeightM;
+        // JUMP_RESET_TIME_PAD: the wheels are still in contact while the jump
+        // force runs, so do not clear the jump until the force has finished (or
+        // a short pad after a tap). Without this the ground reset cancels the
+        // sustained jump after three ticks.
+        const bool jumpPadActive =
+            state.isJumping ||
+            (state.hasJumped &&
+             state.jumpTimer < profile.jump.minSustainSeconds + 0.025f);
+        if (!jumpPadActive)
+        {
+            state.hasFlipped = false;
+            state.hasJumped = false;
+            state.isFlipping = false;
+            state.isJumping = false;
+            state.jumpCount = 0;
+            state.flipTimer = 0.0f;
+            state.jumpTimer = 0.0f;
+            state.airTimeSinceJump = 0.0f;
+            // Keep the apex of the jump we just finished until it has been
+            // reported, otherwise the landing tick overwrites it with 0.
+            if (!state.airborneLogged)
+            {
+                state.takeoffHeightM = entity.transform[3].z;
+                state.apexHeightM = state.takeoffHeightM;
+            }
+        }
     }
     else if (state.wheelOnBall)
     {
@@ -1898,6 +1933,9 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
         state.jumpCount = 0;
         state.isFlipping = false;
         state.flipTimer = 0.0f;
+        // Restart the double-jump clock so the restored flip is immediately
+        // usable, exactly like a jump from the ground.
+        state.airTimeSinceJump = 0.0f;
         if (!wasOnBall)
         {
             ++state.flipResetCount;
@@ -1951,7 +1989,7 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                       (2.0f * std::max(profile.gravityMps2, 0.1f))}},
                 __FILE__, __LINE__, __func__);
         }
-        else if (!onGround && state.jumpCount == 1 &&
+        else if (!onGround && state.jumpCount <= 1 &&
                  state.airTimeSinceJump <=
                      profile.jump.doubleJumpWindowSeconds)
         {
@@ -2074,13 +2112,14 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
             if (state.jumpTimer < profile.jump.minSustainSeconds)
                 accel *= profile.jump.preMinAccelScale;
             applyPhysicalEntityImpulse(entity, up * (accel * mass * dt), com);
-            state.jumpTimer += dt;
         }
         else
         {
             state.isJumping = false;
         }
     }
+    if (state.hasJumped)
+        state.jumpTimer += dt;
 
     // Surface adhesion still pulls for a few ticks after a jump, so a jump from
     // a wall or ceiling leaves the surface instead of sticking.
@@ -2256,10 +2295,32 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
     // ── Ground drive: throttle / brake / coast curves ───────────────────
     if (onGround)
     {
-        glm::vec3 forward2D(forward.x, forward.y, 0.0f);
-        if (glm::dot(forward2D, forward2D) > 1e-6f)
-            forward2D = glm::normalize(forward2D);
-        const float vf = glm::dot(entity.velocity, forward2D);
+        // Drive along the surface the wheels are on: horizontal on the floor,
+        // projected onto the contact plane on walls and the ceiling.
+        glm::vec3 driveDir(forward);
+        if (grounded > 0)
+        {
+            glm::vec3 contactNormal(0.0f);
+            for (const VehicleWheelState& wheel : state.wheels)
+                if (wheel.grounded)
+                    contactNormal += wheel.contactNormal;
+            if (glm::dot(contactNormal, contactNormal) > 1e-6f)
+                contactNormal = glm::normalize(contactNormal);
+            if (contactNormal.z > 0.5f)
+            {
+                driveDir = glm::vec3(forward.x, forward.y, 0.0f);
+            }
+            else
+            {
+                driveDir = forward - contactNormal *
+                                       glm::dot(forward, contactNormal);
+            }
+        }
+        if (glm::dot(driveDir, driveDir) > 1e-6f)
+            driveDir = glm::normalize(driveDir);
+        else
+            driveDir = forward;
+        const float vf = glm::dot(entity.velocity, driveDir);
         const float drive =
             std::clamp(state.throttle - state.brake, -1.0f, 1.0f);
         float desired = vf;
@@ -2293,7 +2354,7 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
         }
         const float deltaV = desired - vf;
         if (std::fabs(deltaV) > 1e-5f)
-            applyPhysicalEntityImpulse(entity, forward2D * (deltaV * mass), com);
+            applyPhysicalEntityImpulse(entity, driveDir * (deltaV * mass), com);
 
         const float rate = state.powerslide
                                ? profile.ground.powerslideRisePerSecond
@@ -2318,49 +2379,37 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
             entity.velocity *= profile.ground.maxSpeedMps / speed;
     }
 
-    // ── Settle on wheels, then truly stop ───────────────────────────────
-    if (grounded > 0 && grounded < wheelCount)
-    {
-        glm::vec3 surface(0.0f);
-        for (const VehicleWheelState& wheel : state.wheels)
-            if (wheel.grounded)
-                surface += wheel.contactNormal;
-        if (glm::dot(surface, surface) > 1e-6f)
-        {
-            surface = glm::normalize(surface);
-            applyPhysicalEntityImpulse(
-                entity, -surface *
-                            (profile.settle.autoRollForceMps2 * mass * dt),
-                com);
-            const glm::vec3 alignAxis = glm::cross(up, surface);
-            const float sinAngle = glm::length(alignAxis);
-            if (sinAngle > 1e-3f)
-                entity.angularVelocity +=
-                    glm::normalize(alignAxis) *
-                    (profile.settle.autoRollAngularAccel * sinAngle * dt);
-        }
-    }
+    // ── Orientation / resting state (diagnostics only) ──────────────────
+    // Orienting the car is ordinary contact physics: the wheels are real
+    // colliders and the collision slab is narrower and lower than them, so a
+    // tipped car has no stable face to rest on. Nothing here applies a torque.
+    state.upDotWorldUp = up.z;
+    state.wheelMask = 0;
+    for (int i = 0; i < wheelCount; ++i)
+        if (state.wheels[static_cast<size_t>(i)].grounded)
+            state.wheelMask |= (1 << i);
 
-    const bool noInput =
-        std::fabs(state.throttle) < 0.02f && std::fabs(state.brake) < 0.02f &&
-        std::fabs(state.steer) < 0.05f && !state.jumpHeld &&
-        state.boostInput < 0.01f && !state.powerslide;
-    const float horizontalSpeed =
-        glm::length(glm::vec2(entity.velocity.x, entity.velocity.y));
-    if (onGround && noInput && horizontalSpeed < 0.12f &&
-        glm::length(entity.angularVelocity) < 0.20f)
+    if (!state.wasSleeping && entity.sleeping)
     {
-        ++state.settleTicks;
-        if (state.settleTicks > 20)
-        {
-            entity.velocity = glm::vec3(0.0f);
-            entity.angularVelocity = glm::vec3(0.0f);
-            entity.sleeping = true;
-        }
+        state.wasSleeping = true;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Physics, StructuredLevel::Important,
+            "vehicle.rest", std::to_string(state.id),
+            "body came to rest through contact physics", tick,
+            {{"vehicle_id", state.id},
+             {"profile", profile.id},
+             {"up_dot_world_up", state.upDotWorldUp},
+             {"tilt_deg", glm::degrees(std::acos(std::clamp(
+                              state.upDotWorldUp, -1.0f, 1.0f)))},
+             {"wheel_mask", state.wheelMask},
+             {"wheels_contact", grounded},
+             {"speed_mps", glm::length(entity.velocity)},
+             {"mass_kg", entity.mass}},
+            __FILE__, __LINE__, __func__);
     }
-    else
+    else if (state.wasSleeping && !entity.sleeping)
     {
-        state.settleTicks = 0;
+        state.wasSleeping = false;
     }
 
     // ── Metric telemetry ────────────────────────────────────────────────
@@ -2387,6 +2436,11 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
              {"profile", profile.id},
              {"speed_mps", speed},
              {"speed_kmh", speed * 3.6f},
+             {"up_dot_world_up", state.upDotWorldUp},
+             {"tilt_deg", glm::degrees(std::acos(std::clamp(
+                              state.upDotWorldUp, -1.0f, 1.0f)))},
+             {"wheel_mask", state.wheelMask},
+             {"asleep", entity.sleeping},
              {"altitude_agl_m", position.z},
              {"airborne", !onGround},
              {"wheels_contact", grounded},
@@ -2419,6 +2473,8 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                  {"air_time_seconds",
                   static_cast<float>(tick - state.airborneSinceTick) / 60.0f}},
                 __FILE__, __LINE__, __func__);
+            state.takeoffHeightM = entity.transform[3].z;
+            state.apexHeightM = state.takeoffHeightM;
         }
     }
 
@@ -2772,43 +2828,22 @@ void VehicleSystem::update(float dt, const World& world)
                     allGrounded ? spec->stabilityVerticalDamping : 1.0f;
                 entity->velocity.z *= std::max(
                     0.0f, 1.0f - verticalDamping * dt);
+                // Any supported pose gets suspension/tire angular damping, not
+                // just a four-wheel stance. This bleeds the energy of a car
+                // tumbling on a wheel so contact physics can finish the settle.
+                if (grounded >= 1)
+                {
+                    const float angularDamping =
+                        spec->stabilityAngularDamping;
+                    entity->angularVelocity *= std::max(
+                        0.0f, 1.0f - angularDamping * dt);
+                }
                 if (allGrounded)
                 {
                     const float angularDamping =
                         spec->stabilityAngularDamping;
                     entity->angularVelocity *= std::max(
                         0.0f, 1.0f - angularDamping * dt);
-
-                    // Idle settle: no throttle/brake/steer means the car is
-                    // parked. Kill residual suspension pogo and roll instead
-                    // of letting the explicit 60 Hz contact loop sustain it.
-                    const bool idleInput =
-                        state.throttle < 0.01f && state.brake < 0.01f &&
-                        std::fabs(state.steer) < 0.01f &&
-                        state.handbrake < 0.01f;
-                    bool compressionOkay = true;
-                    for (size_t wheelIndex = 0;
-                         wheelIndex < state.wheels.size() &&
-                         wheelIndex < spec->wheels.size();
-                         ++wheelIndex)
-                        if (state.wheels[wheelIndex].compression >
-                            spec->wheels[wheelIndex].travel * 1.0f)
-                            compressionOkay = false;
-                    const bool alreadyNearRest = compressionOkay;
-                    if (idleInput && alreadyNearRest &&
-                        glm::length(glm::vec2(entity->velocity.x,
-                                              entity->velocity.y)) <
-                            spec->idleSettleSpeed)
-                    {
-                        entity->velocity.x *= spec->idleSettleHorizontal;
-                        entity->velocity.y *= spec->idleSettleHorizontal;
-                        entity->velocity.z *= spec->idleSettleVertical;
-                        entity->angularVelocity.x *= spec->idleSettleAngular;
-                        entity->angularVelocity.y *= spec->idleSettleAngular;
-                        entity->angularVelocity.z *= 0.90f;
-                        for (VehicleWheelState& wheel : state.wheels)
-                            wheel.spinVelocity *= 0.10f;
-                    }
                 }
             }
         }

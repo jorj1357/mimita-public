@@ -230,3 +230,9 @@ PROPOSAL (narrowing, measurable)
 - If any intra-root deletion path is then identified (dev-loop start, parallel-run cleanup, agent command, or manual), record its owner before changing it.
 
 This is a proposal only; no owner assignment, code edit, or proof claim.
+
+## Agent suggestion
+
+### 2026-11-24T19:45:42.277Z — issue-review-sweeper
+
+2026-11-24T19:44Z (issue-review-sweeper) - retention risk CONFIRMED with a new measured baseline, not a duplicate fix proposal. The 2026-11-24T00:27Z review on this issue measured logs/2026-11-23 = 6,373.9 MiB and logs/11-23-2026 = 3,198.4 MiB and predicted a referenced-only journal could be deleted. Both roots are now absent (logs/ has no 2026-11-23 and no 11-23-2026 directory), and 5 proof rows for issue-5d82fc58a875 (proof ids 39dbdfdf1222, c63791220bc7, 8ee0e191b3dd, e54f24bee063, 72fdb2cb02ab) now point at deleted logs/2026-11-23/20261123_{165703,191110}/... paths; global proof status is 27 stale / 3 proven. Measurable target (reuses the already-recorded audit, no new deletion behavior): the existing prune-builds.py --logs-only --dry-run --audit-references must classify every non-closed issue evidence and proof.journal_path as present or missing, and retention must not delete a referenced run without an explicit recorded copy or exemption; target 0 dangling proof.journal_path over one prune cycle; baseline = 5 dangling rows from this single issue. Smallest experiment: run that dry-run once now and attach counts (delete nothing); add the 2026-11-23 loss to the audit baseline. Coupled policy note for issue-dad84e4e7c50: runtime event proof is only durable if its journal is retained or a bounded copy/hash is recorded. Read-only reviewer action; no source, build, or runtime change.

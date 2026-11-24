@@ -205,6 +205,24 @@ int computeHitscanDamage(const WeaponDefinition& def, const std::string& bodyPar
         * hitscanPartMultiplier(def, bodyPart)
         * hitscanFalloffFactor(def, distance)
         * std::clamp(angleFactor, 0.0f, 1.0f);
+    // Optional two-point damage curve. It lets a weapon keep a high close
+    // damage, a readable mid-range value, and a configured minimum without
+    // fighting the legacy falloff math. Used by Bloodtest AK/Judgment.
+    const float curveClose = paramOr(def, "damage_close", 0.0f);
+    const float curveFar = paramOr(def, "damage_far", 0.0f);
+    const float curveStart = paramOr(def, "damage_falloff_start_m", 0.0f);
+    const float curveEnd = paramOr(def, "damage_falloff_end_m", 0.0f);
+    if (curveClose > 0.0f && curveFar > 0.0f && curveEnd > curveStart) {
+        const float t = std::clamp((distance - curveStart) /
+                                   std::max(0.001f, curveEnd - curveStart),
+                                   0.0f, 1.0f);
+        const float curved = glm::mix(curveClose, curveFar, t);
+        const float curedDamage = curved * std::max(0.0f, def.damageScale)
+            * hitscanPartMultiplier(def, bodyPart)
+            * std::clamp(angleFactor, 0.0f, 1.0f);
+        return curedDamage <= 0.0f ? 0
+            : std::max(1, (int)std::round(curedDamage));
+    }
     return damage <= 0.0f ? 0 : std::max(1, (int)std::round(damage));
 }
 

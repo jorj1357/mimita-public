@@ -1859,3 +1859,17 @@ Build attempt: game-dll-20261124T064013606664Z-2be3b7
 Run: 20261124_065013
 
 This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent suggestion
+
+### 2026-11-24T20:10:28.288Z — issue-review-sweeper
+
+Process proposal from issue-review-sweeper (2026-11-24 sweep of issue-55bd775c8026; read-only, no source edit/build).
+
+Observed friction (evidence): run 20261124_084513 client-01 PID 9368 crashed with exit_code=3221225477 at 09:19:04.301Z. The dev-loop logged only dev-loop.instance.exited plus crash_artifacts paths. To connect the crash to its cause a reviewer had to manually open the crash .txt, find the faulting thread and GetMimitaInfiniteWorldgenModuleAPI strlen stack, then scan client-01/events.jsonl to find the preceding 44.7s "Networking" stall and the GetMimitaInfiniteWorldgenModuleAPI RtlEnterCriticalSection stack, then reconcile the crash .txt "Timestamp (local) 04-18-18" against the 09:19:04Z exit. That is the same manual multi-journal crash->journal scan that prior 2026-11-22/2026-11-23 reviews also had to perform.
+
+Proposal: when the root dev-loop records a nonzero/exception instance exit, emit one structured event, e.g. dev-loop.instance.crash-correlated, containing: instance_id, pid, role, exit_code, build_id, crash_artifact paths, the crash report's exception/module/offset and top stack frames, the last N (e.g. 5) journal events for that exact pid with wall_time, and a UTC timestamp taken from the same clock as the journal wall_time field. If the crash .txt is local-time or offset, record both the raw value and the derived UTC and a skew_ms.
+
+Measurable target: after the next crash, a reviewer can name the faulting thread's top symbol and the last journal stage with one command, and abs(crash_file_UTC - instance_exited_UTC) <= 1s, instead of the current 4+ file manual scan. Baseline for comparison: the 2026-11-24 crash took multiple grep/open rounds (dev-loop events, client-01 events.jsonl, crash .txt, crash .dmp) and the timestamp mismatch blocked a one-step correlation.
+
+Smallest experiment: implement the event in the existing instance-exit path that already writes dev-loop.instance.exited (it already has the crash_artifacts list); no new build pipeline needed. Validate on the next 3 instance exits with nonzero codes, including one reconnect crash if available. If offset handling is non-trivial, first log raw timestamp + wall_time only; defer normalization.

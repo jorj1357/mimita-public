@@ -134,6 +134,19 @@ translation units; a preflight cannot promise to detect those compiler errors
 before that discovery. Linker and final source-coherence failures likewise
 remain failures of later phases.
 
+After the dependency scan for a header change, schedule stale translation
+units whose cached depfiles name one of the changed headers before unrelated
+stale units. The existing depfile is the transitive dependency authority. This
+ordering is only a fail-fast hint: compile every stale translation unit exactly
+once, preserve the freshness decisions and bounded worker pool, and preserve
+manifest order within the dependent and unrelated groups. Record candidate
+count, changed-header count, prioritized count and paths, and ordering cost in
+the attempt. This improves time-to-first-relevant-error when a dependent fails;
+it cannot guarantee a fixed failure deadline for arbitrary errors, compiler
+resource contention, or errors that are not represented by changed-header
+dependencies. Directly changed `.cpp` files continue to use the earlier
+changed-source preflight.
+
 For every attempt, distinguish per-translation-unit dependency-check time from
 the wall time spent scanning all depfiles, cache-result recording, worker
 output handling, and daemon journal writes. Never present one file's `46 ms`

@@ -238,6 +238,10 @@ struct MapVehicleSpawn
     std::string templateId = "car_sedan";
     glm::vec3 position{0.0f};
     float yaw = 0.0f;
+    // Authored spawn tilt, in radians. Used by the map editor and by settling
+    // tests; 0 means upright.
+    float pitch = 0.0f;
+    float roll = 0.0f;
     bool enabled = true;
     std::string name;
 };

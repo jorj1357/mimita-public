@@ -13,6 +13,7 @@ out vec4 FragColor;
 
 in vec2 vUV;
 in vec3 vWorldPos;
+in vec3 vLocalPos;
 in vec3 vNormal;
 in vec3 vViewDir;
 in vec4 vDebugColor;
@@ -40,6 +41,9 @@ uniform int uOpacityEnabled;
 
 // Alpha cutoff: fragments with alpha below this are discarded
 uniform float uAlphaCutoff;
+// Local body-part damage holes. Each entry is xyz local center + radius.
+uniform int uHoleCount;
+uniform vec4 uHole[4];
 
 // Debug mode:
 // 0 normal stylized render
@@ -191,6 +195,14 @@ float sampleShadow(vec3 sc, float bias, float softness)
 
 void main()
 {
+    // Punch localized holes through body layers. Other props leave uHoleCount
+    // at zero, so the loop is skipped.
+    for (int i = 0; i < uHoleCount; ++i) {
+        vec3 holeCenter = uHole[i].xyz;
+        float holeRadius = uHole[i].w;
+        if (holeRadius > 0.0001 && distance(vLocalPos, holeCenter) < holeRadius)
+            discard;
+    }
     if (uUseColor == 1) {
         FragColor = uColor;
         return;

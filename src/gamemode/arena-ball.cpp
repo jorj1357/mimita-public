@@ -83,7 +83,10 @@ ArenaBallSpawn spawnFromMap(const MapObjectiveConfig& config, std::string* error
     entity->friction = ball.friction;
     entity->linearDamping = ball.linearDamping;
     entity->angularDamping = 0.4f;
-    entity->maxAngularSpeed = 40.0f;
+    // Rocket League caps the ball at 6 rad/s angular velocity. The linear cap
+    // is the shared object cap (config/destructible-world.json objectMaxSpeed,
+    // 60 m/s), which matches Rocket League's 6000 uu/s.
+    entity->maxAngularSpeed = 6.0f;
     entity->gravityScale = ballGravityScale(ball.gravityMps2);
     entity->collidesWithActors = true;
     entity->motion = PhysicalEntityMotion::Dynamic;

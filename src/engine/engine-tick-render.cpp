@@ -20,6 +20,7 @@
 #include <cmath>
 #include <chrono>
 #include <memory>
+#include <unordered_map>
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "config.h"
@@ -672,10 +673,50 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                        clip.z >= -clip.w - margin &&
                        clip.z <= clip.w + margin;
             };
+            // Bounded jitter evidence: once per second per actor, record the
+            // snapshot target, interpolated render position, and previous
+            // position so a two-position flicker is visible in events.jsonl.
+            const auto traceReplica = [&](uint32_t id, const Player& actor,
+                                          const MimitaNet::EntityInterpolationState* interp,
+                                          const char* kind) {
+                static std::unordered_map<uint32_t, uint64_t> lastTraceMs;
+                const uint64_t now = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count());
+                auto& last = lastTraceMs[id];
+                if (last != 0 && now - last < 1000) return;
+                last = now;
+                nlohmann::json fields{
+                    {"entity_id", id}, {"kind", kind},
+                    {"dead", actor.dead}, {"position", {actor.pos.x, actor.pos.y, actor.pos.z}},
+                    {"spawn_generation", actor.spawnGeneration}};
+                if (interp) {
+                    fields["has_target"] = interp->hasTarget;
+                    if (interp->hasTarget) {
+                        fields["target_position"] = {interp->target.position.x,
+                            interp->target.position.y, interp->target.position.z};
+                        fields["target_server_tick"] = interp->target.serverTick;
+                        fields["target_spawn_generation"] = interp->target.spawnGeneration;
+                        fields["has_previous"] = interp->hasPrevious;
+                        fields["previous_position"] = {interp->previous.position.x,
+                            interp->previous.position.y, interp->previous.position.z};
+                        fields["step_m"] = glm::length(actor.pos - interp->previous.position);
+                    }
+                }
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Rendering, StructuredLevel::Important,
+                    "actor.replica.trace", std::to_string(id),
+                    "remote actor render position evidence", 0, fields);
+            };
             for (auto& kv : mpContext.remotePlayers) {
                 Perf::state().renderPerf.actorRemotePlayers++;
+                if (kv.second.dead) continue;
                 if (!remoteActorVisible(kv.second))
                     continue;
+                auto interpIt = mpContext.remotePlayerInterpolation.find(kv.first);
+                traceReplica(kv.first, kv.second,
+                    interpIt != mpContext.remotePlayerInterpolation.end() ? &interpIt->second : nullptr,
+                    "remote_player");
                 int remoteTeam = kv.second.matchTeam;
                 const uint8_t replicatedTeam =
                     communityMatch.teamForActor(kv.first);
@@ -701,8 +742,13 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             }
             for (auto& kv : mpContext.remoteNpcs) {
                 Perf::state().renderPerf.actorRemoteNpcs++;
+                if (kv.second.dead) continue;
                 if (!remoteActorVisible(kv.second))
                     continue;
+                auto interpIt = mpContext.remoteNpcInterpolation.find(kv.first);
+                traceReplica(kv.first, kv.second,
+                    interpIt != mpContext.remoteNpcInterpolation.end() ? &interpIt->second : nullptr,
+                    "remote_npc");
                 int remoteTeam = kv.second.matchTeam;
                 const uint8_t replicatedTeam =
                     communityMatch.teamForActor(kv.first);

@@ -84,3 +84,151 @@ The later result confirms the fanout is worth addressing, but does not justify s
 This attempt did not produce generation 596; generation 595 remained live. The two compile failures were vehicle profile/system code referencing jump-profile members missing from the captured header; a subsequent root retry failed preflight on `vehicle-system.cpp`. The sampled build window was nearly fully CPU-loaded and reached about 27 MiB available RAM, on a Bloodtest 1-NPC run with client mode unverified. Pressure is correlated with the long build, not established as its cause. No Juggernaut runtime activation or latency acceptance was demonstrated.
 
 Concrete narrowing lead: `src/actor/player-ai.cpp` includes `combat/weapon-registry.h`, which includes `weapon-types.h`; player AI reads `WeaponDefinition.behaviorType`. Investigate a narrow behavior-classification API for this consumer, and audit the remaining dependents against actual type use before splitting declarations. Keep the existing depfile graph as the correctness oracle while designing a persistent reverse index; require the index to match a full depfile audit before it can drive incremental invalidation.
+
+## Live attempt 2aff70 dependency and queue evidence
+
+During active attempt `game-dll-20261124T174700746286Z-2aff70`, the raw build JSONL contained 87 `cache.invalidation` records at inspection. Grouping equivalent relative and absolute dependency spellings gives 60 translation units invalidated by `src/gamemode/map-config.h`, 19 by `src/physics/physical-entity.h`, seven by `src/vehicles/vehicle-types.h`, and one by `src/input/gamepad-input.h`. The input header is not in this attempt context's seven `changed_paths`; its timestamp invalidation needs reconciliation before attributing it to this batch. This is depfile-backed evidence for broad header closure in this attempt, but it remains necessary work unless interface usage proves a dependency unnecessary.
+
+At 18:02:44.656Z, 589/645 units had been checked, with 36 compiled and 553 skipped; at 18:10:17.069Z, 607/645 had been checked, with 54 compiled and 553 skipped. Host CPU was 93.0–95.8%, available RAM 135–285 MiB. The 18:11:57Z worker records show `server-physical-contact.cpp` took 170.633s compiler time plus 975.547s queue wait, and `server-melee-actions.cpp` took 338.786s compiler time plus 864.453s queue wait. These measurements separate multi-minute compiler time from long worker-queue residence, but do not yet explain either cause. At the last inspected resource sample, tracked compiler/linker processes summed 4.08% of whole-host CPU and MiMITA processes 29.51%; tracked and top-process rows did not account for all reported host CPU, so process attribution is incomplete. The build was still active at this checkpoint and the runtime context was Bloodtest/slaughterhouse1/1 NPC, not the Juggernaut acceptance workload. Await terminal attempt data before drawing a result.
+
+At a later raw-worker-log read, 70 successful TU completion records were present. Their compiler-time median was 188.716s, p95 359.611s, max 512.089s; queue-wait median 393.415s, p95 1266.391s, max 1384.860s. Longest compiler records included `src/network/server-npcs.cpp` (512.089s compile +872.8s queued), `src/network/server-packets.cpp` (454.0s +919.3s), and `src/mapeditor/map-editor.cpp` (433.3s +486.0s). Sidecar progress can lag worker JSONL by a few completions, so these counts are taken from worker records. The attempt remained active; these are not terminal build totals.
+
+## Fast-fail dependent compilation (2026-11-24)
+
+The `968a7e` failure showed why a long header build could fail near the end:
+the existing preflight selected explicitly changed `.cpp` files, while stale
+`.cpp` dependents of changed headers were found only after object-cache
+discovery. In `968a7e`, `vehicle-profile.cpp` and `vehicle-system.cpp` each
+spent about 19 minutes queued before failing; their actual compiler work took
+16.5s and 20.8s. A later one-source attempt `4b9969` confirms direct `.cpp`
+preflight already catches that class of direct-source error early.
+
+The worker now uses cached depfile tokens to rank stale translation units
+referencing changed headers ahead of unrelated stale units after the full
+correctness scan. It preserves the stale set and compiles every unit once;
+this changes scheduling order only. It records priority counts, a bounded path
+list, and ordering duration. It does not provide a hard failure deadline or
+catch linker errors before linking. The focused test passed (2/2), worker and
+test `py_compile` passed, and `git diff --check` passed. No compiler or game
+build was run, and no intentionally broken source was added to the shared
+checkout. Runtime activation of the worker change is not yet proven.
+
+## Practical header-hygiene roadmap (2026-11-24)
+
+### What the evidence means
+
+`weapon-types.h` is the first high-value target: attempt `968a7e` had 264 of
+645 translation units (40.9%) invalidated because that header was newer than
+their cached objects; the current cached reverse map lists 267 dependents.
+That is a real dependency closure, not evidence that 264 compiles are
+unnecessary. A separate measured header case in attempt `2aff70` attributed
+60 stale units to `map-config.h`, 19 to `physical-entity.h`, and seven to
+`vehicle-types.h`; a direct timestamp reason for `gamepad-input.h` also needs
+reconciliation. Do not combine counts from different attempts as if they were
+one build.
+
+A later one-`.cpp` control, attempt
+`game-dll-20261124T192206880822Z-db2cf7`, completed in 15.177s: changed-source
+preflight 9.197s, compile phase 0.429s, link 2.120s, publish 1.184s, and
+object-cache scan 0.011s. This is one successful `vehicle-system.cpp` edit,
+not a header benchmark or a pressure-matched run. It demonstrates that the
+current sub-10-second goal cannot be reached by compile fan-out reduction
+alone: preflight, link, and publish already sum to about 12.5s in this sample.
+First remove avoidable fan-out; then separately reduce/replace the monolithic
+link and fixed per-attempt costs. Keep this sample's unverified runtime
+alignment caveat.
+
+### Recommended sequence
+
+1. **Measure before splitting.** Build one normalized depfile-to-header reverse
+   index and rank each project header by dependent TU count, aggregate compile
+   CPU/wall time, and observed edit frequency. For every invalidation, report
+   its cause (source/header/PCH/toolchain/flags/generated input/missing object)
+   and name the exact dependent header. Deduplicate relative and absolute path
+   spellings. Do not use direct `#include` counts as transitive fan-out.
+2. **Audit the top header's actual consumers.** For each TU depending on
+   `weapon-types.h`, classify whether it needs a complete `WeaponDefinition`,
+   only a stable enum/ID, or only a narrow query such as `behaviorType`. The
+   known `src/actor/player-ai.cpp` consumer reaches the header through
+   `weapon-registry.h` and reads `WeaponDefinition.behaviorType`; test a narrow
+   read-only classification/API boundary for this case. Record remaining
+   consumers and their required fields before changing declarations.
+3. **Remove only implementation coupling.** In one behavior-preserving batch,
+   replace header includes with forward declarations only for pointer/reference
+   use; move non-inline bodies out of headers; move volatile implementation
+   details behind `.cpp` owners; and put stable small enums/IDs/value contracts
+   in a minimal leaf header. Keep complete types where layout, by-value use,
+   inline code, or templates require them. Do not hide a dependency or retain
+   a stale object to improve the metric.
+4. **Keep correctness checks authoritative.** Compile every TU in the depfile
+   closure of a changed header. Every skip must have current source/dependency,
+   toolchain, flags, generated-input, and PCH identities. The persistent index
+   may make the lookup incremental, but a cache miss, watcher overflow,
+   schema/toolchain change, or periodic reconciliation must fail closed and
+   compare against compiler depfiles. A smaller dependency graph is the win;
+   skipping a still-valid dependency is not.
+5. **Run a controlled progression.** With a warm cache and one coordinated
+   Mode 3 request per case, compare: (a) one `.cpp` change, (b) a leaf-header
+   change, (c) the refactored top-fan-out header, and (d) a no-op/control. Keep
+   compiler, flags, PCH, machine load, and live runtime fixed. Record exact
+   changed/compiled/skipped TU lists, dependency closure, per-TU compile time,
+   preflight, scan, link, publish, resource samples, and DLL activation. Reject
+   any optimization that causes a stale behavior or omits a true dependent.
+6. **Treat PCH and modules as separate experiments.** A PCH can reduce repeated
+   parsing but does not erase semantic dependents; changing its content can
+   invalidate nearly every TU. Test PCH membership/cost independently. Only
+   after the graph is clean should the team prototype coarse NPC/vehicle DLL
+   targets with stable narrow interfaces; this can avoid unrelated domain
+   compiles and perhaps a full-game link for domain-local edits. Preserve the
+   monolithic MinGW DLL fallback. A changed shared ABI may still fan out or
+   require a cold host build.
+
+### What not to do
+
+- Do not turn off dependency scanning or skip header dependents just because
+  the user edited one file.
+- Do not add every frequently edited header to the PCH to make its immediate
+  compile look fast; account for PCH invalidation and rebuild cost.
+- Do not split headers by file size alone; choose by avoidable dependency
+  edges and measured recompilation cost.
+- Do not expect header cleanup to make full 15–20-file edit-to-live latency
+  sub-second on today's monolithic link path; the measured 2.120s link plus
+  1.184s publish and 9.197s preflight already exceed the ten-second budget.
+
+### First prototype and success criteria
+
+The first code prototype to evaluate should be extracting `WeaponRuntime`
+from `weapon-types.h` into a small leaf header and including that header from
+`entities/player.h`. Current source evidence: the depfile index has 267 TUs
+depending on `weapon-types.h`; a source include-graph walk found a path through
+`entities/player.h` for 180. `player.h` explicitly includes `weapon-types.h`,
+and the targeted symbol search found `WeaponRuntime` as its only use from that
+header. `WeaponRuntime::reset` takes `const WeaponDefinition&`, which can be
+forward-declared in a runtime-state header; the out-of-line implementation
+would retain the complete definition. This is a hypothesis from source
+inspection, not proof that all 180 depfile edges disappear: some TUs may have
+another include path to the definition. The parser also does not replace
+compiler depfiles.
+
+A second source-graph pass excluding just the `player.h` include edge still
+found a quoted-include route to `weapon-types.h` for 184 of the 267 TUs; 83
+appear to lose their last parsed source-include route. This is only a static
+estimate. Compiler depfiles remain authoritative and may expose generated,
+angle-bracket, PCH, or other paths missed by this parser. The migration build
+will recompile users of `player.h`; the expected benefit is fewer dependents
+on later edits to `WeaponDefinition`, not a free change in the first build.
+
+Before any edit, capture the complete depfile consumer list, exact include
+paths, and a baseline build. Check current ownership of `weapon-types.h` first;
+it has an unrelated active field change and must not be overwritten. Move
+only the runtime struct in the prototype, preserve its fields and behavior,
+and keep compatibility includes where existing consumers require them. After
+the root Mode 3 build, compare the new depfile closure against the old one and
+confirm that each removed edge is truly unnecessary; explicitly include the
+new leaf in each remaining consumer that needs the complete runtime state.
+Require no unexplained stale skips, fewer selected TUs on a later
+`WeaponDefinition`-only header edit, unchanged runtime behavior, reduced total
+compile CPU, and the same measured live-generation proof. If compile work
+falls but end-to-live remains above 10s, proceed to the separately measured
+preflight/link path and coarse domain-DLL prototype rather than weakening
+dependency checks.
