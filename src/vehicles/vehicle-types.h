@@ -211,6 +211,11 @@ struct VehicleInput {
     float steer = 0.0f;
     float clutch = 1.0f;
     float handbrake = 0.0f;
+    float boost = 0.0f;
+    bool jumpHeld = false;
+    bool jumpPressed = false;
+    bool powerslide = false;
+    bool ballCamToggle = false;
     bool engineToggle = false;
     bool modeToggle = false;
     bool shiftUp = false;
@@ -220,6 +225,8 @@ struct VehicleInput {
 struct VehicleState {
     uint32_t id = 0;
     std::string templateId;
+    // Named arcade profile selected by the gamemode. Empty = template physics.
+    std::string profileId;
     uint32_t entityId = 0;
     // Server-assigned identity for the chassis mirror. 0 on a purely local
     // offline vehicle.
@@ -239,7 +246,24 @@ struct VehicleState {
     int gear = 1;            // -1 = reverse, 0 = neutral, 1..N forward
     float engineRpm = 0.0f;
     float engineTorque = 0.0f;
+    // Engine turbo spool value, distinct from the arena boost charge meter.
     float boost = 0.0f;
+    // Arena boost charge. Profile data owns capacity, drain, and force.
+    float boostCharge = 0.0f;
+    // Arena jump/flip state.
+    int jumpCount = 0;
+    uint64_t lastGroundedTick = 0;
+    uint64_t jumpStartedTick = 0;
+    uint64_t lastJumpPressedTick = 0;
+    bool jumpHeld = false;
+    bool jumpHeldPrev = false;
+    bool jumpPressed = false;
+    float boostInput = 0.0f;
+    bool powerslide = false;
+    bool boostActive = false;
+    bool airRollActive = false;
+    bool allWheelsGrounded = false;
+    bool ballCam = false;
     float shiftTimer = 0.0f;
     float autoShiftLockTimer = 0.0f;
     int lastGearLogged = -999;

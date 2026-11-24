@@ -664,7 +664,11 @@ class BuildResourceSampler:
             event = row["event"]
             fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
             mode = fields.get("mode") or fields.get("active_mode")
-            if mode:
+            if mode and event in {
+                    "game.hotness.summary", "npc.server-phase-window",
+                    "performance.server-tick-window", "server.process.heartbeat",
+                    "performance.fps", "network.mode.active",
+                    "client.gamemode.local-actor-identity"}:
                 observations["journal_mode"] = {
                     "event": event, "observed_utc": row.get("wall_time"),
                     "mode": mode,
@@ -716,6 +720,15 @@ class BuildResourceSampler:
             manifest_contexts: dict[int, dict] = {}
 
             def index_instance(run: dict, instance: dict, source: str) -> None:
+                run_id = str(run.get("run_id") or "")
+                runtime_run_id = str(instance.get("runtime_run_id") or "")
+                if (runtime_run_id and run_id and
+                        runtime_run_id != run_id):
+                    # A root state snapshot can adopt a process that still
+                    # belongs to an isolated runtime. Its copied journal path
+                    # is not authoritative; let that runtime's own manifest
+                    # provide the PID/run/journal tuple.
+                    return
                 try:
                     pid = int(instance.get("pid") or 0)
                 except (TypeError, ValueError):
@@ -723,14 +736,66 @@ class BuildResourceSampler:
                 if (pid not in starts or pid not in observed_pids or
                         not instance.get("journal_path")):
                     return
-                declared_start = _parse_utc(
+                exact_start = _parse_utc(
                     instance.get("process_started_utc") or
                     instance.get("started_utc"))
-                if declared_start is not None and abs(starts[pid] - declared_start) > 5.0:
+                declared_start = exact_start
+                identity_basis = "instance_process_start"
+                if declared_start is None:
+                    # Older run manifests can omit per-instance process start
+                    # fields. Use the instance launch token first, then the run
+                    # creation time, and fail closed outside a short launch
+                    # window so a reused PID cannot inherit an old run's role.
+                    declared_start = _parse_utc(instance.get("launch_id"))
+                    identity_basis = "instance_launch_id"
+                    if declared_start is None:
+                        declared_start = _parse_utc(run.get("created_utc"))
+                        identity_basis = "run_created_utc"
+                if declared_start is None:
                     return
+                start_delta = starts[pid] - declared_start
+                if exact_start is not None:
+                    if abs(start_delta) > 5.0:
+                        return
+                elif start_delta < 0.0 or start_delta > 120.0:
+                    return
+                process_executable = None
+                if self._psutil is not None:
+                    pair = self._processes.get(pid)
+                    metadata = pair[1] if pair else {}
+                    process_executable = metadata.get("executable")
+                else:
+                    metadata = self._native_tracked_processes.get(pid, {})
+                    process_executable = metadata.get("executable")
+                manifest_executable = instance.get("executable")
+                if manifest_executable and process_executable:
+                    manifest_name = (str(manifest_executable)
+                                     .replace("\\", "/").rsplit("/", 1)[-1]
+                                     .casefold())
+                    process_name = (str(process_executable)
+                                    .replace("\\", "/").rsplit("/", 1)[-1]
+                                    .casefold())
+                    if manifest_name != process_name:
+                        return
+                run_created = _parse_utc(run.get("created_utc"))
+                run_created_delta = (abs(starts[pid] - run_created)
+                                     if run_created is not None else float("inf"))
+                existing = manifest_contexts.get(pid)
+                candidate_rank = (0 if exact_start is not None else 1,
+                                  abs(start_delta), run_created_delta)
+                if existing is not None:
+                    existing_rank = (
+                        0 if existing.get("identity_match_basis") ==
+                        "instance_process_start" else 1,
+                        abs(float(existing.get(
+                            "identity_start_delta_seconds") or 0.0)),
+                        float(existing.get(
+                            "identity_run_created_delta_seconds") or
+                            float("inf")))
+                    if candidate_rank >= existing_rank:
+                        return
                 manifest_contexts[pid] = {
-                    "run_id": str(run.get("run_id") or
-                                   instance.get("runtime_run_id") or ""),
+                    "run_id": runtime_run_id or run_id,
                     "instance_id": instance.get("instance_id"),
                     "role": instance.get("role"),
                     "pid": pid,
@@ -742,6 +807,11 @@ class BuildResourceSampler:
                     "journal_path": str(instance.get("journal_path")),
                     "process_started_utc": instance.get("process_started_utc") or
                                            instance.get("started_utc"),
+                    "identity_match_basis": identity_basis,
+                    "identity_start_delta_seconds": round(start_delta, 3),
+                    "identity_run_created_delta_seconds": (
+                        round(run_created_delta, 3)
+                        if run_created_delta != float("inf") else None),
                 }
 
             state_path = self.root / ".dev" / "state.json"
@@ -812,7 +882,8 @@ class BuildResourceSampler:
             return True
 
         servers = [row for row in rows if row.get("role") == "server" and
-                   fresh(row, "generation_npc_player", "server_tick_window")]
+                   fresh(row, "generation_npc_player", "server_tick_window",
+                         "journal_mode")]
         clients = [row for row in rows if row.get("role") == "client" and
                    fresh(row, "client_frame_window", "client_npc_view_window",
                          "journal_mode")]
@@ -820,17 +891,27 @@ class BuildResourceSampler:
                         if server.get("run_id") == client.get("run_id")), None)
         if matched is None:
             return {"status": "unavailable", "same_run_server_client": False,
+                    "mode_match": False,
                     "reason": "fresh_server_and_client_journal_evidence_not_matched"}
         server, client = matched
+        server_mode = server.get("journal", {}).get("actual_mode")
+        client_mode = client.get("journal", {}).get("actual_mode")
+        mode_match = bool(server_mode and client_mode and
+                          str(server_mode).strip().casefold() ==
+                          str(client_mode).strip().casefold())
+        status = ("observed" if mode_match else
+                  "mode_unverified" if not server_mode or not client_mode else
+                  "mode_mismatch")
         return {
-            "status": "observed",
+            "status": status,
             "same_run_server_client": True,
+            "mode_match": mode_match,
             "run_id": server.get("run_id"),
             "server_pid": server.get("pid"),
             "client_pid": client.get("pid"),
-            "server_actual_mode": server.get("journal", {}).get("actual_mode"),
-            "client_actual_mode": client.get("journal", {}).get("actual_mode"),
-            "actual_mode": client.get("journal", {}).get("actual_mode"),
+            "server_actual_mode": server_mode,
+            "client_actual_mode": client_mode,
+            "actual_mode": client_mode if mode_match else None,
             "server_observation_age_seconds": server.get("journal", {}).get(
                 "newest_observation_age_seconds"),
             "client_observation_age_seconds": client.get("journal", {}).get(
@@ -1060,7 +1141,7 @@ class BuildResourceSampler:
                 "host_commit_charge_and_limit",
             ] + (["journal_aligned_live_mode_workload_and_frame_tick_metrics"]
                  if not self._runtime_alignment_summary().get(
-                     "same_run_server_client") else []) +
+                     "mode_match") else []) +
                  (["per_process_private_bytes_when_not_exposed_by_provider"]
                  if not self._psutil and not self._native_processes else []) +
                  (["tracked_process_metrics"]

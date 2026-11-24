@@ -437,3 +437,36 @@ Message: `msg-cde2733217c2` (question)
 Subject: Sweep addendum: 148-issue baseline + measurable dedup target on issue-9a4503f6ed68
 
 Reviewed issue-6641a6c6fdf4 against its raw journal: wait fired at 60.9s during manifest_snapshot with ~553s remaining; dominant phase object_cache_scan (313.5s, parse 300.6s) had not started. I appended a read-only addendum to issue-9a4503f6ed68 recording 148 open same-signature wait issues and a measurable dedup target (0 new per 24h, <=3 rolling per kind+stage, count strictly decreasing) plus a smallest read-only experiment (group the 148 by reason sub-stage + kind+stage). It is meant to complement, not replace, your existing per-stage-budget/stall/signature-dedup proposal. Please confirm the signature-key choice or reject the addendum if redundant. No fix claimed.
+
+## Agent suggestion
+
+### 2026-11-24T05:52:16.588Z — issue-review-sweeper
+
+PROCESS PROPOSAL (issue-review-sweeper, 2026-11-24, from the bounded review of issue-76f19e7598c4). Read-only; no source edit, build, run, or fix claimed. Deliberately NOT a re-proposal of signature-dedup, the flat-budget calibration, or the in-flight-identity fix: those are already recorded here (earliest 2026-11-21) and on many wait reviews, and are awaiting a human/owner decision.
+
+NEW EVIDENCE (missing evidence / avoidable review cost)
+- The 2026-11-20 opening occurrence's own proof_expectation (Dev-loop wait event plus the issue record and reviewer wake record) is no longer verifiable: logs/2026-11-20 does not exist and logs/11-20-2026 holds 0 files, while .dev/build-timings/game-dll-20261120T204734114577Z-82e79e.json is retained. Present-day runs do retain logs/<date>/<run>/dev-loop/events.jsonl (e.g. logs/2026-11-24/20261124_004333).
+- Wait evidence carries no run_id and no journal or build-timing path, so a cold reviewer must infer the owning run journal from timestamps and attempt ids. This sweep spent effort re-deriving facts a stored pointer would have supplied.
+
+PROPOSAL
+- In check_wait_budget's game-dll-build wait dict (devscripts/dev-loop.py:3888-3900), add run_id, dev_loop_journal_path (the current run's dev-loop/events.jsonl), and build_timing_path (the attempt's .dev/build-timings/<attempt_id>.json), keyed on the in-flight attempt id rather than self.latest_build. At intake, record whether each path resolves; if the journal was pruned, store an explicit missing-journal marker instead of a dangling path.
+
+MEASURABLE TARGET
+- 100% of new over-budget wait issues after the change carry run_id plus dev_loop_journal_path and build_timing_path that both resolve on disk at creation (baseline: none today).
+- 0 wait issues whose proof_expectation cites a journal that no longer exists without an explicit journal-pruned marker (baseline: this first occurrence, journal gone).
+- Cold reviewer time-to-first-evidence for build/run identity no longer requires timestamp inference.
+
+SMALLEST EXPERIMENT
+- Add the three fields to one synthetic wait dict in devscripts/quality/test_build_friction.py and assert record_wait_incident preserves them in evidence and the paths exist; then drive one real >60s game-DLL build and check the created issue's evidence paths resolve. No gameplay or network proof is needed; this is tooling/evidence plumbing.
+
+CROSS-LINKS: in-flight identity (generation/build_id = last published) is already documented by many wait reviews incl. issue-76f19e7598c4; reason-field contamination is issue-6e08d89b55e3; failed-wake-after-review completion assertion is issue-91e3384b219b. This proposal covers the durable-pointer/retention gap those do not.
+
+## Agent discussion and suggestions
+
+### 2026-11-24T05:53:12.414Z — issue-review-sweeper
+
+Message: `msg-729c0ea9678b` (question)
+
+Subject: Durable journal/build-timing pointer for wait issues (issue-76f19e7598c4 review)
+
+Bounded independent review of issue-76f19e7598c4 found a durable-pointer evidence gap distinct from the recorded signature-dedup, flat-budget, and in-flight-identity proposals. The 2026-11-20 opening occurrence's proof_expectation can no longer be verified: logs/2026-11-20 is absent, logs/11-20-2026 holds 0 files, and wait evidence carries no run_id or journal/build-timing path. I appended a proposal on issue-9a4503f6ed68 (store run_id + dev_loop_journal_path + build_timing_path keyed on the in-flight attempt; explicit missing-journal marker) with a measurable target and test-only experiment. Please confirm it is not redundant with an existing item or route it to the wait-machinery owner. No source edit, build, close, or fix claimed.

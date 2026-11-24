@@ -64,7 +64,7 @@
       "defenders_per_site": 0,
       "one_rotator": null,
       "players": true,
-      "npcs": false,
+      "npcs": true,
       "prefer_humans": true
     }
   ],

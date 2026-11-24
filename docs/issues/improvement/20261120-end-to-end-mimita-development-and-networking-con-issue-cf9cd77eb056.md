@@ -1781,3 +1781,81 @@ Paths: devscripts/dev-loop.py
 Run: 20261124_014450
 
 This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Scheduled independent review
+
+### 2026-11-24T06:01:58.646Z — bloodtest-dev-launch
+
+A bounded independent review was queued as wake wake-bdf751ffec42 after 521 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Scheduled independent review
+
+### 2026-11-24T06:32:29.330Z — hot-reload-latency-root
+
+A bounded independent review was queued as wake wake-f482a08a6c8d after 525 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (evidence-gap: gen-583 server hang reproduced twice; snapshot-cadence vs client-stall metric corrected)
+
+### 2026-11-24T06:56:25.304Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (read-only) — issue-review-sweeper — 2026-11-24T06:55Z, wake-f482a08a6c8d. No source/config/build/stop/runtime mutation by this reviewer. I did not stop, replace, or launch any run; journal reads only.
+
+Scope and readiness
+- Issue state in_review, owner root-connection-reliability, readiness ready=true score=8 missing=[], 12 tasks.
+- python devscripts/agent-coord.py proof list --issue issue-cf9cd77eb056 returns []. No proof record is linked to this issue. Task latest_proof rows remain result=unproven (e.g. task-proof-763fe3148957, task-proof-5ff85dd68e77).
+- Issue related_build still names EXE 2026-11-22T02:37:06.972018Z (game generation 446). Newest relevant evidence is on EXE sha a48546ad82b0... with game generation 582/583, so related_build no longer describes the current evidence.
+
+Observed facts (read from the journals; causes below are labeled separately)
+1. NEW REPRODUCED FAILURE on game generation 583. Runs 20261124_064911 and 20261124_065013 (both [2 CLIENTS] Vehicle Arena - 1v1, map arena1, EXE sha a48546ad82b057b8bcc982c992a2cc8350f54e18e5a266d1858504280774e59a, game DLL build/game/generation-583/game-g583.dll sha b5da5d4fdef9f47258f33b500ab09868075f39eb36c7ff36fd64ab03500b5838) both stop all server journal output ~10.0 s after process start: last server heartbeat tick 599/598 at uptime_ms 10008/10017, last event vehicle.performance. The dev-loop then fails the run ~30 s later: 'server stalled before active mode: tick 527->600 in 30.2s' (064911) and 'tick 492->600 in 30.1s' (065013), both with max_tick_stall_ms=0.0, over_100ms_percent=0.0.
+2. Client side of 065013 (logs/2026-11-24/20261124_065013/client-01/events.jsonl): Connected 06:50:22.484Z, duplicate welcome 06:50:23.445Z, then network.client.reconnect.scheduled reason_code=health_lost snapshot_age_ms=10007 last_heard_age_ms=10007 at 06:50:34.757Z, WaitingForServer -> Reconnecting; reconnect attempts 1-4 at 6 s intervals all send_ok=true with no server response; reconnect resource probes keep snapshot_chunks=0, remote_players=0, processed_reliable_events=7. This reproduces the user-reported 'slow down then stop and reconnecting disconnected' on a fresh join.
+3. Generation correlation. Run 20261124_063130 (same EXE sha a48546ad..., game DLL build/game/generation-582/game-g582.dll sha 16f42ca5c726..., same [2 CLIENTS] Vehicle Arena - 1v1/arena1, one server + one client) ran from 06:31:30 to 06:47:32 and ended normally with network.server.player.removed. Gen 582 did not show the ~tick-600/10 s stop.
+4. Gen-583 change set. .dev/build-timings/game-dll-20261124T064013606664Z-2be3b7.json changed only src/network/vehicle-networking.cpp and src/network/server.h; note by vehicle-arena-controller (2026-11-24T06:40:09Z): 'Fix arena pad pickup to use chassis transform and replicate auto-seat so the client enters its car'. In 065013 the last server events before silence include game.transport.path {generation:1, migrated:true, path:'dll', player:1, type:64} at 06:50:24.614Z.
+5. Contrary evidence to prior review id 229. That review treated snapshot_interarrival_ms max 1493 as a failure of 'no >250 ms client stall'. In clean gen-582 run 063130 the server sends snapshots at ~1 Hz by construction (network.server.snapshot.send n=67 over ~70 s, avg 1057 ms, max 1246 ms), and the client snapshot_interarrival_ms is avg 1018 ms, max 1692 ms with 0 intervals >=2500 ms and 0 network.client.snapshot.gap. A ~1.5 s snapshot interarrival is ~1.5 baseline intervals, not a >250 ms client stall. The >250 ms client-stall signal is the frame profiler: 814 performance.frame-slice windows in 063130 contain 0 frames >250 ms after startup (steady-state max 43.57 ms; 104 PERFORMANCE_SPIKE), plus one startup performance.stall-watchdog at 06:31:37.414Z with frame_heartbeat_age_ms=2621 before the first completed frame.
+6. Partial contrary horde evidence. Retained server run 20261124_053435 (room AJU77AU, 127.0.0.1:57030, launched from .dev/current, build_match:false, build_id 2026-11-24T03:30:52.372066Z, gen 581) journal shows network.mode.start mode=jugger_horde map=dust2cyberiav4 npc_count=67 participants=68 stage=waiting waiting_for=required_clients repeating ~4 s with active_players=0. This contradicts the earlier 'loads only 1 NPC / RED-BLUE team' observation, but its run.json reports roster_count:0 and map:'', it has no client, and it is not pinned, so it does not satisfy horde-effective-mode-launch and it exposes a run.json/journal status mismatch.
+
+Inference and uncertainty
+- The ~tick-600/10 s server stop in two consecutive gen-583 runs, absent in gen-582, is consistent with a gen-583 server-side hang on the client-join/auto-seat path. That is correlation, not proven cause; no server-thread stack was captured.
+- max_tick_stall_ms=0.0 coexisting with a server that stopped at tick ~599 is a false negative: a stall detector that only closes during its own loop cannot measure a stalled or blocked loop. This is an observability gap distinct from the hang.
+- I cannot exclude a harness/launch difference between 063130 and 064911/065013; all used the same isolated harness/mode, but only the gen-583 pair failed (2/2).
+
+Next discriminating check (smallest)
+- Re-run gen 582 and gen 583 back-to-back with the identical Vehicle Arena harness and one client, and capture a server main-thread stack at ~tick 600/10 s (use a server-side stall-stack capture if one exists). If 583 reproduces and 582 does not, attribute to the gen-583 vehicle-networking auto-seat change and hand it to that owner; if both reproduce, the trigger is harness/mode-level.
+
+Cold handoff
+- Current published game DLL appears to be generation 583. Two consecutive gen-583 Vehicle Arena runs (20261124_064911, 20261124_065013) stop the server at ~tick 599 / ~10 s after a client joins while in-process tick-stall reports 0.0; the equivalent gen-582 run (20261124_063130) ran ~16 min clean. Start from those three journals and .dev/build-timings/game-dll-20261124T064013606664Z-2be3b7.json (changed: src/network/vehicle-networking.cpp, src/network/server.h).
+
+## Agent discussion and suggestions
+
+### 2026-11-24T07:10:20.868Z — issue-review-sweeper
+
+Message: `msg-d68de51a5def` (question)
+
+Subject: Gen-583 vehicle-networking: server hangs at ~tick 599 after client join
+
+Gen-583 change set (src/network/vehicle-networking.cpp + src/network/server.h, note: arena pad pickup / chassis transform / replicate auto-seat) correlates with a reproduced server hang: runs 20261124_064911 and 20261124_065013 (EXE sha a48546ad..., game DLL generation-583 sha b5da5d4f...) both stop all server journal output at ~tick 599 / uptime ~10 s right after the client joins, last event vehicle.performance; dev-loop then reports server stalled before active mode with max_tick_stall_ms=0.0. Gen-582 run 20261124_063130 with the same EXE/mode ran ~16 min clean. Can you confirm whether the gen-583 auto-seat change could block the server main loop on join, and what the smallest next check is? I made no edits.
+
+Sender: issue-review-sweeper
+Paths: src/network/vehicle-networking.cpp
+Build attempt: game-dll-20261124T064013606664Z-2be3b7
+Run: 20261124_065013
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-24T07:10:21.383Z — issue-review-sweeper
+
+Message: `msg-b42836543ec7` (question)
+
+Subject: Gen-583 vehicle-networking: server hangs at ~tick 599 after client join
+
+Gen-583 change set (src/network/vehicle-networking.cpp + src/network/server.h, note: arena pad pickup / chassis transform / replicate auto-seat) correlates with a reproduced server hang: runs 20261124_064911 and 20261124_065013 (EXE sha a48546ad..., game DLL generation-583 sha b5da5d4f...) both stop all server journal output at ~tick 599 / uptime ~10 s right after the client joins, last event vehicle.performance; dev-loop then reports server stalled before active mode with max_tick_stall_ms=0.0. Gen-582 run 20261124_063130 with the same EXE/mode ran ~16 min clean. Can you confirm whether the gen-583 auto-seat change could block the server main loop on join, and what the smallest next check is? I made no edits.
+
+Sender: issue-review-sweeper
+Paths: src/network/vehicle-networking.cpp
+Build attempt: game-dll-20261124T064013606664Z-2be3b7
+Run: 20261124_065013
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.

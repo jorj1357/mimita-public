@@ -1,0 +1,13 @@
+{
+  "comment": "Default pad layout. GLFW standard mapping is used when available; raw axis/button indices are the fallback. Users may override any binding here without touching source.",
+  "deadzone": 0.15,
+  "bindings": {
+    "steer": { "axis": 0, "invert": false, "deadzone": 0.15 },
+    "throttle": { "axis": 5, "trigger": true, "deadzone": 0.02 },
+    "brake": { "axis": 4, "trigger": true, "deadzone": 0.02 },
+    "jump": { "button": 0 },
+    "boost": { "button": 1 },
+    "powerslide": { "button": 2 },
+    "ballcam": { "button": 3 }
+  }
+}

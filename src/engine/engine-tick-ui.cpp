@@ -70,7 +70,7 @@ extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
 
-void engineTickUI(Engine& engine, float dt, bool worldPassRan, bool useOutputFramebuffer)
+void engineTickUI(Engine& engine, float dt, bool worldPassRan)
 {
     Player& player = THE_PLAYER;
     Camera& camera = THE_CAMERA;
@@ -124,7 +124,7 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan, bool useOutputFra
     }
 
     { Perf::ScopedTimer _ui("UI");
-    { MIMITA_PERF_SCOPE("UI::Begin"); uiBeginFrame(engine.window(), "game-debug-overlay", true, useOutputFramebuffer); }
+    { MIMITA_PERF_SCOPE("UI::Begin"); uiBeginFrame(engine.window(), "game-debug-overlay", true); }
 
     { MIMITA_PERF_SCOPE("UI::Text"); EffectPartSystem::instance().renderText(camera); }
 

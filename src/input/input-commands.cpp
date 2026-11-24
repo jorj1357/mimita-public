@@ -1,4 +1,5 @@
 #include "input-commands.h"
+#include "input/gamepad-input.h"
 #include "input/input-router.h"
 #include "gui/ui-system.h"
 #include "gui/gui-coord.h"
@@ -19,6 +20,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cctype>
 #include <nlohmann/json.hpp>
@@ -198,6 +200,31 @@ void InputCommandSystem::update(float dt) {
     mUpdatedThisFrame = true;
 
     mCurrentTime = glfwGetTime();
+
+    static bool gamepadConfigLoaded = false;
+    if (!gamepadConfigLoaded)
+    {
+        GamepadInput::instance().reloadConfig();
+        gamepadConfigLoaded = true;
+    }
+    GamepadInput::instance().poll();
+    {
+        static std::uint64_t lastGamepadLogMs = 0;
+        const GamepadInput& pad = GamepadInput::instance();
+        const auto nowMs = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count());
+        const bool active =
+            pad.throttle() > 0.05f || pad.brake() > 0.05f ||
+            std::fabs(pad.steer()) > 0.05f || pad.jump() || pad.boost() ||
+            pad.powerslide() || pad.ballCam();
+        if (pad.connected() && active && nowMs - lastGamepadLogMs >= 250)
+        {
+            lastGamepadLogMs = nowMs;
+            GamepadInput::instance().logState("gamepad input active");
+        }
+    }
 
     // Track focus: when unfocused, held keys stay as they were (don't force-release)
     mFocused = InputRouter::focused();

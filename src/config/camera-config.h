@@ -67,6 +67,9 @@ public:
         float positionResponseSeconds = 0.12f;
         float rotationResponseSeconds = 0.10f;
         float swayScale = 1.0f;
+        float settleDeadbandDegrees = 0.35f;
+        float settlePositionMeters = 0.005f;
+        int settleHoldTicks = 6;
         bool wallCollision = true;
         float wallProbeRadiusMeters = 0.12f;
     };

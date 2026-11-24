@@ -673,6 +673,9 @@
             "weapon_stability_seconds": { "type": "number", "required": false, "default": 0.1, "min": 0.01, "max": 2.0 },
             "head_follows_body": { "type": "boolean", "required": false, "default": false },
             "settle_deadband_degrees": { "type": "number", "required": false, "default": 0.0, "min": 0.0, "max": 3.0 },
+            "settle_camera_deadband_degrees": { "type": "number", "required": false, "default": 0.35, "min": 0.0, "max": 5.0 },
+            "settle_camera_position_meters": { "type": "number", "required": false, "default": 0.005, "min": 0.0, "max": 0.25 },
+            "settle_camera_hold_ticks": { "type": "integer", "required": false, "default": 6, "min": 1, "max": 120 },
             "camera_sway_scale": { "type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 5.0 },
             "lens": {
               "type": "object",

@@ -19,7 +19,9 @@ enum VehicleInputFlags : uint8_t
     VEHICLE_INPUT_ENGINE_TOGGLE = 1 << 0,
     VEHICLE_INPUT_MODE_TOGGLE = 1 << 1,
     VEHICLE_INPUT_SHIFT_UP = 1 << 2,
-    VEHICLE_INPUT_SHIFT_DOWN = 1 << 3
+    VEHICLE_INPUT_SHIFT_DOWN = 1 << 3,
+    VEHICLE_INPUT_JUMP_HELD = 1 << 4,
+    VEHICLE_INPUT_POWER_SLIDE = 1 << 5
 };
 
 enum VehicleSeatAction : uint8_t
@@ -38,6 +40,7 @@ struct VehicleInputPacket
     float steer = 0.0f;
     float clutch = 0.0f;
     float handbrake = 0.0f;
+    float boost = 0.0f;
     uint8_t flags = 0;
     uint8_t reserved[3] = {};
 };
@@ -107,6 +110,7 @@ struct VehicleNetStateEntry
     uint32_t seatOccupants[MAX_VEHICLE_SEATS] = {};
     float engineRpm = 0.0f;
     float speed = 0.0f;
+    float boostCharge = 0.0f;
     float throttle = 0.0f;
     float brake = 0.0f;
     float steer = 0.0f;

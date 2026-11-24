@@ -18,7 +18,9 @@
 #include "debug/debug-log.h"
 #include "entities/player.h"
 #include "impact/destructible-world-config.h"
+#include "input/gamepad-input.h"
 #include "input/input-commands.h"
+#include "input/input-router.h"
 #include "interaction/interaction-system.h"
 #include "network/multiplayer-context.h"
 #include "camera.h"
@@ -28,6 +30,7 @@
 #include "physics/ray-utils.h"
 #include "terminal/terminal-state.h"
 #include "vehicles/vehicle-config.h"
+#include "vehicles/vehicle-profile.h"
 #include "vehicles/vehicle-audio.h"
 #include "void-death/void-death.h"
 #include "world/world.h"
@@ -456,12 +459,34 @@ VehicleSystem& VehicleSystem::instance()
 
 bool VehicleSystem::loadConfig(const std::string& directory)
 {
+    VehicleProfileRegistry::instance().loadDirectory("config/vehicle-profiles");
     return VehicleConfigRegistry::instance().loadDirectory(directory);
 }
 
 bool VehicleSystem::pollReload()
 {
-    return VehicleConfigRegistry::instance().pollReload();
+    const bool profilesChanged =
+        VehicleProfileRegistry::instance().pollReload();
+    const bool templatesChanged =
+        VehicleConfigRegistry::instance().pollReload();
+    return profilesChanged || templatesChanged;
+}
+
+void VehicleSystem::setActiveProfile(const std::string& profileId)
+{
+    if (mActiveProfileId == profileId)
+        return;
+    mActiveProfileId = profileId;
+    for (VehicleState& state : mVehicles)
+        state.profileId = profileId;
+}
+
+const VehicleProfile* VehicleSystem::profileFor(
+    const VehicleState& state) const
+{
+    if (state.profileId.empty())
+        return nullptr;
+    return VehicleProfileRegistry::instance().find(state.profileId);
 }
 
 void VehicleSystem::registerFixedTick()
@@ -540,6 +565,7 @@ uint32_t VehicleSystem::spawnInternal(const std::string& templateId,
     VehicleState state;
     state.id = mNextId++;
     state.templateId = templateId;
+    state.profileId = mActiveProfileId;
     state.entityId = entityId;
     state.chassisNetworkId = chassisNetworkId;
     state.serverAuthoritative = authoritative;
@@ -549,6 +575,26 @@ uint32_t VehicleSystem::spawnInternal(const std::string& templateId,
     state.mode = VehicleControlMode::Manual;
     state.gear = 1;
     state.clutch = 0.0f;
+    if (const VehicleProfile* profile = profileFor(state))
+    {
+        if (profile->automatic)
+            state.mode = VehicleControlMode::Automatic;
+        state.engineOn = profile->engineAutoStart;
+        state.boostCharge = profile->boost.max;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Physics, StructuredLevel::Important,
+            "vehicle.profile.applied", std::to_string(state.id),
+            "vehicle arcade profile applied to a spawned vehicle", 0,
+            {{"vehicle_id", state.id},
+             {"template", templateId},
+             {"profile", profile->id},
+             {"automatic", profile->automatic},
+             {"engine_on", state.engineOn},
+             {"boost_max", profile->boost.max},
+             {"jump_impulse", profile->jump.impulse},
+             {"steering_max_deg", profile->steering.maxAngleDeg}},
+            __FILE__, __LINE__, __func__);
+    }
     state.spawnOrigin = glm::vec3(transform[3]);
     state.massKg = spec->massKg;
     state.wheels.resize(spec->wheels.size());
@@ -610,6 +656,7 @@ bool VehicleSystem::spawnMirror(uint32_t vehicleId,
     if (VehicleState* existing = find(vehicleId))
     {
         existing->templateId = templateId;
+        existing->profileId = mActiveProfileId;
         existing->chassisNetworkId = chassisNetworkId;
         existing->seatOccupants = occupants;
         if (PhysicalEntity* entity =
@@ -660,6 +707,7 @@ bool VehicleSystem::spawnMirror(uint32_t vehicleId,
     VehicleState state;
     state.id = vehicleId;
     state.templateId = templateId;
+    state.profileId = mActiveProfileId;
     state.entityId = entityId;
     state.chassisNetworkId = chassisNetworkId;
     state.serverAuthoritative = true;
@@ -992,8 +1040,9 @@ VehicleInput VehicleSystem::sampleLocalInput()
         state->pendingInput.shiftDown = false;
         return input;
     }
-    if (state->serverMirror)
-        return VehicleInput{};
+    // A local driver on a server mirror still owns its input. The mirror never
+    // applies forces locally, but the sampled input must reach the packet so
+    // the authoritative server can drive the car.
     return readLocalInput(*state);
 }
 
@@ -1167,19 +1216,66 @@ VehicleInput VehicleSystem::readLocalInput(const VehicleState& state)
 {
     VehicleInput input;
     InputCommandSystem& commands = InputCommandSystem::instance();
+    const GamepadInput& pad = GamepadInput::instance();
+    const VehicleProfile* profile = profileFor(state);
+
+    const auto boundHeld = [&](const char* logical) {
+        if (!profile)
+            return false;
+        const auto it = profile->bindings.find(logical);
+        if (it == profile->bindings.end())
+            return false;
+        const std::string& binding = it->second;
+        if (binding == "mouse_left")
+            return InputRouter::mouseDown(GLFW_MOUSE_BUTTON_LEFT);
+        if (binding == "mouse_right")
+            return InputRouter::mouseDown(GLFW_MOUSE_BUTTON_RIGHT);
+        if (binding == "key_left_shift")
+            return commands.isKeyHeld(GLFW_KEY_LEFT_SHIFT);
+        if (binding == "key_space")
+            return commands.isKeyHeld(GLFW_KEY_SPACE);
+        if (binding == "key_left_control")
+            return commands.isKeyHeld(GLFW_KEY_LEFT_CONTROL);
+        return commands.getState(binding).held;
+    };
 
     input.throttle =
         commands.getState("walkforward").held ? 1.0f : 0.0f;
+    input.throttle = std::max(input.throttle, pad.throttle());
+    if (boundHeld("throttle"))
+        input.throttle = 1.0f;
+
     input.brake = commands.getState("walkback").held ? 1.0f : 0.0f;
+    input.brake = std::max(input.brake, pad.brake());
+    if (boundHeld("brake"))
+        input.brake = 1.0f;
+
     const float left = commands.getState("walkleft").held ? 1.0f : 0.0f;
     const float right = commands.getState("walkright").held ? 1.0f : 0.0f;
-    input.steer = right - left;
+    input.steer = std::clamp(right - left + pad.steer(), -1.0f, 1.0f);
+    if (boundHeld("steerLeft"))
+        input.steer = -1.0f;
+    if (boundHeld("steerRight"))
+        input.steer = 1.0f;
 
     const bool clutchKey = commands.isKeyHeld(GLFW_KEY_LEFT_SHIFT);
     input.clutch = state.mode == VehicleControlMode::Manual
                        ? (clutchKey ? 1.0f : 0.0f)
                        : 0.0f;
-    input.handbrake = commands.isKeyHeld(GLFW_KEY_SPACE) ? 1.0f : 0.0f;
+
+    input.boost = std::max(pad.boost() ? 1.0f : 0.0f,
+                           boundHeld("boost") ? 1.0f : 0.0f);
+
+    input.jumpHeld = commands.getState("jump").held || pad.jump() ||
+                     boundHeld("jump");
+    input.powerslide = commands.getState("dash").held || pad.powerslide() ||
+                       boundHeld("powerslideAirRoll");
+    input.handbrake = input.powerslide ? 1.0f : 0.0f;
+
+    const bool ballCamHeld = commands.getState("freeze").held ||
+                             pad.ballCam() || boundHeld("ballCam");
+    input.ballCamToggle = ballCamHeld && !mPrevBallCamHeld;
+    mPrevBallCamHeld = ballCamHeld;
 
     const bool engineKey = commands.isKeyHeld(GLFW_KEY_V);
     const bool modeKey = commands.isKeyHeld(GLFW_KEY_B);
@@ -1460,12 +1556,23 @@ void VehicleSystem::updateWheel(VehicleState& state, const VehicleSpec& spec,
         forward = glm::normalize(forward);
         glm::vec3 right = glm::normalize(glm::cross(normal, forward));
 
+        const VehicleProfile* profile = profileFor(state);
+        const float maxAngleDeg = profile
+                                      ? profile->steering.maxAngleDeg
+                                      : spec.steering.maxAngleDeg;
+        const float speedFalloff = profile
+                                       ? profile->steering.speedFalloff
+                                       : spec.steering.speedFalloff;
+        const float steeringReturnRate = profile
+                                             ? profile->steering.returnRate
+                                             : spec.steering.returnRate;
+
         float steerTarget = glm::radians(wheelSpec.toeDeg);
         if (wheelSpec.steer)
         {
             const float falloff =
                 1.0f - std::clamp(std::fabs(state.speed) *
-                                      spec.steering.speedFalloff / 30.0f,
+                                      speedFalloff / 30.0f,
                                   0.0f, 0.85f);
             float ackermannScale = 1.0f;
             if (spec.steering.ackermann > 0.0f &&
@@ -1480,11 +1587,11 @@ void VehicleSystem::updateWheel(VehicleState& state, const VehicleSpec& spec,
                                                   spec.steering.ackermann;
             }
             steerTarget += state.steer * spec.steering.directionSign *
-                           glm::radians(spec.steering.maxAngleDeg) *
+                           glm::radians(maxAngleDeg) *
                            falloff * ackermannScale;
         }
         const float returnRate =
-            std::fabs(steerTarget) < 1e-4f ? spec.steering.returnRate : 10.0f;
+            std::fabs(steerTarget) < 1e-4f ? steeringReturnRate : 10.0f;
         wheel.steerAngle +=
             (steerTarget - wheel.steerAngle) *
             std::min(1.0f, returnRate * dt);
@@ -1524,7 +1631,8 @@ void VehicleSystem::updateWheel(VehicleState& state, const VehicleSpec& spec,
             mu *= spec.tire.lowSpeedGrip +
                   (1.0f - spec.tire.lowSpeedGrip) * speed01;
             if (state.handbrake > 0.01f && wheelSpec.hub.x < 0.0f)
-                mu *= spec.brakes.handbrakeGripScale;
+                mu *= profile ? profile->powerslide.gripScale
+                              : spec.brakes.handbrakeGripScale;
             const float tireLoad =
                 std::min(wheel.load,
                          spec.tire.nominalLoad * spec.tire.maxLoadScale);
@@ -1655,6 +1763,181 @@ void VehicleSystem::updateChassisAero(VehicleState& state,
                                        entity->velocity.y));
 }
 
+void VehicleSystem::updateArcadeControls(VehicleState& state,
+                                         const VehicleProfile& profile,
+                                         PhysicalEntity& entity, float dt)
+{
+    const uint64_t tick =
+        PhysicalEntitySystem::instance().simulationTick();
+    const float tickScale = dt * 60.0f;
+
+    int grounded = 0;
+    for (const VehicleWheelState& wheel : state.wheels)
+        if (wheel.grounded)
+            ++grounded;
+    state.allWheelsGrounded =
+        grounded > 0 && grounded == static_cast<int>(state.wheels.size());
+
+    const glm::vec3 forward =
+        glm::normalize(entity.orientation * glm::vec3(1.0f, 0.0f, 0.0f));
+    const glm::vec3 right =
+        glm::normalize(entity.orientation * glm::vec3(0.0f, 1.0f, 0.0f));
+    const glm::vec3 up =
+        glm::normalize(entity.orientation * glm::vec3(0.0f, 0.0f, 1.0f));
+
+    if (state.allWheelsGrounded)
+    {
+        state.lastGroundedTick = tick;
+        if (tick - state.jumpStartedTick > 6)
+            state.jumpCount = 0;
+    }
+
+    const bool jumpPressed = state.jumpHeld && !state.jumpHeldPrev;
+    if (jumpPressed)
+    {
+        if (state.allWheelsGrounded)
+        {
+            state.jumpCount = 1;
+            state.jumpStartedTick = tick;
+            state.lastJumpPressedTick = tick;
+            applyPhysicalEntityImpulse(
+                entity, up * profile.jump.impulse,
+                physicalEntityCenterOfMassWorld(entity));
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.jump", std::to_string(state.id),
+                "arena profile jump impulse applied", tick,
+                {{"vehicle_id", state.id},
+                 {"profile", profile.id},
+                 {"jump_count", state.jumpCount},
+                 {"impulse", profile.jump.impulse}},
+                __FILE__, __LINE__, __func__);
+        }
+        else if (state.jumpCount == 1 &&
+                 tick - state.jumpStartedTick <=
+                     static_cast<uint64_t>(
+                         profile.jump.secondJumpWindowSeconds * 60.0f))
+        {
+            state.jumpCount = 2;
+            state.lastJumpPressedTick = tick;
+            const float pitch = std::clamp(state.throttle - state.brake,
+                                           -1.0f, 1.0f);
+            const float roll = std::clamp(state.steer, -1.0f, 1.0f);
+            applyPhysicalEntityImpulse(
+                entity, up * profile.jump.doubleJumpImpulse,
+                physicalEntityCenterOfMassWorld(entity));
+            const glm::vec3 flipAxis =
+                right * pitch + forward * roll;
+            if (glm::dot(flipAxis, flipAxis) > 1e-5f)
+            {
+                applyPhysicalEntityAngularImpulse(
+                    entity,
+                    glm::normalize(flipAxis) *
+                        (profile.jump.doubleJumpImpulse * 0.02f));
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.jump.double", std::to_string(state.id),
+                "arena profile double jump/flip applied", tick,
+                {{"vehicle_id", state.id},
+                 {"profile", profile.id},
+                 {"jump_count", state.jumpCount},
+                 {"pitch", pitch},
+                 {"roll", roll}},
+                __FILE__, __LINE__, __func__);
+        }
+    }
+
+    if (state.jumpHeld && !state.allWheelsGrounded && state.jumpCount > 0 &&
+        tick - state.jumpStartedTick <=
+            static_cast<uint64_t>(profile.jump.heldWindowSeconds * 60.0f) &&
+        tick - state.jumpStartedTick >=
+            static_cast<uint64_t>(profile.jump.minimumHoldSeconds * 60.0f))
+    {
+        applyPhysicalEntityImpulse(
+            entity, up * (profile.jump.heldForce * dt),
+            physicalEntityCenterOfMassWorld(entity));
+    }
+    state.jumpHeldPrev = state.jumpHeld;
+
+    if (state.boostInput > 0.01f && state.boostCharge > 0.0f)
+    {
+        const float force = state.allWheelsGrounded
+                                ? profile.boost.force
+                                : profile.boost.airForce;
+        applyPhysicalEntityImpulse(
+            entity, forward * (force * state.boostInput * dt),
+            physicalEntityCenterOfMassWorld(entity));
+        state.boostCharge = std::max(
+            0.0f, state.boostCharge -
+                      profile.boost.drainPerTick * tickScale *
+                          state.boostInput);
+        if (!state.boostActive)
+        {
+            state.boostActive = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.boost", std::to_string(state.id),
+                "arena profile boost started", tick,
+                {{"vehicle_id", state.id},
+                 {"profile", profile.id},
+                 {"charge", state.boostCharge},
+                 {"force", force}},
+                __FILE__, __LINE__, __func__);
+        }
+    }
+    else if (state.boostActive)
+    {
+        state.boostActive = false;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Physics, StructuredLevel::Important,
+            "vehicle.boost.stop", std::to_string(state.id),
+            "arena profile boost stopped", tick,
+            {{"vehicle_id", state.id},
+             {"charge", state.boostCharge}},
+            __FILE__, __LINE__, __func__);
+    }
+
+    if (!state.allWheelsGrounded)
+    {
+        const float pitch =
+            std::clamp(state.throttle - state.brake, -1.0f, 1.0f);
+        const float roll = std::clamp(state.steer, -1.0f, 1.0f);
+        const glm::vec3 angularVelocity = entity.angularVelocity;
+        const glm::vec3 control =
+            right * (pitch * profile.airControl.pitchTorque) +
+            forward * (roll * profile.airControl.rollTorque);
+        const glm::vec3 damping =
+            right * (glm::dot(angularVelocity, right) *
+                     profile.airControl.pitchDamping) +
+            forward * (glm::dot(angularVelocity, forward) *
+                       profile.airControl.rollDamping);
+        applyPhysicalEntityAngularImpulse(
+            entity, (control - damping) * dt);
+        const bool active = std::fabs(pitch) + std::fabs(roll) > 0.1f;
+        if (active && !state.airRollActive)
+        {
+            state.airRollActive = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.airroll", std::to_string(state.id),
+                "arena profile air control started", tick,
+                {{"vehicle_id", state.id},
+                 {"pitch", pitch},
+                 {"roll", roll}},
+                __FILE__, __LINE__, __func__);
+        }
+        else if (!active)
+        {
+            state.airRollActive = false;
+        }
+    }
+    else
+    {
+        state.airRollActive = false;
+    }
+}
+
 void VehicleSystem::update(float dt, const World& world)
 {
     MIMITA_PERF_SCOPE("Vehicle::Update");
@@ -1776,6 +2059,11 @@ void VehicleSystem::update(float dt, const World& world)
             state.clutch = input.clutch;
             state.handbrake = input.handbrake;
         }
+        state.boostInput = input.boost;
+        state.jumpHeld = input.jumpHeld;
+        state.powerslide = input.powerslide;
+        if (input.ballCamToggle)
+            state.ballCam = !state.ballCam;
 
         if (state.prevClutch > 0.5f && state.clutch < 0.5f &&
             state.throttle > 0.30f && state.engineRpm > 3000.0f)
@@ -1866,6 +2154,9 @@ void VehicleSystem::update(float dt, const World& world)
 
         for (int i = 0; i < static_cast<int>(spec->wheels.size()); ++i)
             updateWheel(state, *spec, i, dt, world, sWheelCandidates);
+
+        if (const VehicleProfile* profile = profileFor(state))
+            updateArcadeControls(state, *profile, *entity, dt);
 
         // Anti-roll bars: couple the left/right wheels of each axle. Without
         // this, a small roll excites one side to the bump stop while the other

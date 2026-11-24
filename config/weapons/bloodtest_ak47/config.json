@@ -95,7 +95,7 @@
 "recoil_definition": null,
 "reload_time": 2.2,
 "render": null,
-"reserve_ammo": 90,
+"reserve_ammo": 91230,
 "self_impulse_multiplier": 0.0,
 "shooter_knockback": 0.0,
 "shooter_knockback_vertical": 0.0,
@@ -116,19 +116,19 @@
 "viewmodel": {
     "enabled": true,
     "scale": [
-      1.0,
-      1.0,
-      1.0
+      2.0,
+      2.0,
+      2.0
     ],
     "position": [
-      0.0,
-      0.0,
+      0.1,
+      0.1,
       0.0
     ],
     "rotation_degrees": [
-      0.0,
-      0.0,
-      90.0
+      -87.0,
+      -3.0,
+      1.0
     ]
   },
 "world_impact": null,

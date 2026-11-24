@@ -73,8 +73,7 @@ void uiInit(GLFWwindow* win)
     ensureProgram();
 }
 
-void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput,
-                  bool useOutputFramebuffer)
+void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
 {
     static bool mouseEdgeLossReportedForPress = false;
     gWindow = win;
@@ -82,7 +81,7 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput,
     int framebufferWidth = 0;
     int framebufferHeight = 0;
     mimita::game::hostFramebufferSize(framebufferWidth, framebufferHeight);
-    if (gRenderer && gRenderer->stretchesWholeFrame() && !useOutputFramebuffer) {
+    if (gRenderer && gRenderer->stretchesWholeFrame()) {
         framebufferWidth = gRenderer->sceneWidth;
         framebufferHeight = gRenderer->sceneHeight;
     }
@@ -90,20 +89,22 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput,
     if (framebufferHeight <= 0 && gRenderer) framebufferHeight = gRenderer->height;
     gFbW = framebufferWidth > 0 ? framebufferWidth : 1;
     gFbH = framebufferHeight > 0 ? framebufferHeight : 1;
-    if (useOutputFramebuffer && passName &&
+    if (gRenderer && gRenderer->stretchesWholeFrame() && passName &&
         std::strcmp(passName, "game-debug-overlay") == 0) {
-        static bool postFxPresentationLogged = false;
-        if (!postFxPresentationLogged) {
-            postFxPresentationLogged = true;
+        static bool scenePresentationLogged = false;
+        if (!scenePresentationLogged) {
+            scenePresentationLogged = true;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Gui, StructuredLevel::Important,
-                "ui.postfx.presentation", "UI",
-                "HUD drawn after PostFX at output resolution",
+                "ui.scene.presentation", "UI",
+                "HUD drawn into the stretched scene target",
                 0,
                 nlohmann::json{{"pass_name", passName},
                                {"framebuffer_width", gFbW},
                                {"framebuffer_height", gFbH},
-                               {"use_output_framebuffer", true}},
+                               {"output_width", gRenderer->width},
+                               {"output_height", gRenderer->height},
+                               {"stretched", true}},
                 __FILE__, __LINE__, __FUNCTION__);
         }
     }
@@ -369,3 +370,4 @@ const std::vector<UITrackedWidget>& uiGetTrackedWidgets()
 {
     return gTrackedWidgets;
 }
+

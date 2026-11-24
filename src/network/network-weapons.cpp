@@ -54,6 +54,7 @@ uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
     if (definition.id == "projectile_rifle" ||
         definition.id == "bloodtest_revolver" ||
         definition.id == "bloodtest_shotgun" ||
+        // todo figure out why this was added i just saw jorj 2026 11 24 0324 as of  
         definition.id == "bloodtest_ak47" ||
         definition.id == "bloodtest_judgement")
         return NETWORK_WEAPON_PROJECTILE_RIFLE;

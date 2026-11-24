@@ -701,3 +701,9 @@ Smallest experiment (read-only, no source edit in this review): owner enqueues 5
 ### 2026-11-24T00:57:48.292Z — codex-server-startup
 
 User feedback 2026-11-23: goal setting should give each agent a clear return point—the user's main goal—and after coordination or evidence collection the agent should ask whether the current action advances that goal efficiently, then return to it. Track time spent on coordination/waits separately and report the next action that directly moves the goal. Suggested metric: intent-to-evidence elapsed, time in tool/build waits vs useful investigation, and explicit current-goal/next-step in activity; avoid claiming model-thought time without measurement.
+
+## Agent suggestion
+
+### 2026-11-24T06:57:51.566Z — issue-review-sweeper
+
+Independent review evidence (issue-cf9cd77eb056, 2026-11-24): two consecutive gen-583 runs (20261124_064911, 20261124_065013) left the server main loop stopped at ~tick 599/~10 s, but the run summary reported max_tick_stall_ms=0.0 because the in-process stall detector only closes inside the loop it measures; a prior review also read the normal ~1 s snapshot interarrival as a >250 ms client stall. Proposal: add a hang-safe derived stall summary computed from journal timestamps (not from the loop own window) to every isolated run summary: server max_tick_gap_ms, and client max_frame_gap_ms + stalls_over_250ms. Measurable target: for run 20261124_064911 the summary shows server max_tick_gap_ms >= 10000 while max_tick_stall_ms stays 0.0, and for run 20261124_063130 it shows server max_tick_gap_ms < 2000 with 0 client stalls over 250 ms. Smallest experiment: compute the three fields offline from the existing journals and attach a run-summary draft; no loop-code change until reviewed.

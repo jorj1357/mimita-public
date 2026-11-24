@@ -239,6 +239,10 @@ void Camera::applyBodycamPose(const glm::vec3& targetPosition,
                               const World& world, float dt,
                               float positionResponseSeconds,
                               float rotationResponseSeconds,
+                              float settleDeadbandDegrees,
+                              float settlePositionMeters,
+                              int settleHoldTicks,
+                              bool allowSettle,
                               bool wallCollision, float probeRadiusMeters)
 {
     const float posAlpha = 1.0f - std::exp(-std::max(0.0f, dt) /
@@ -256,22 +260,74 @@ void Camera::applyBodycamPose(const glm::vec3& targetPosition,
         basis[2] = glm::vec4(up, 0.0f);
         mBodycamRotation = glm::quat_cast(basis);
         mBodycamPoseInitialized = true;
+        mBodycamSettleTicks = 0;
+        mBodycamSettled = false;
     } else {
-        pos = glm::mix(pos, targetPosition, posAlpha);
-        glm::vec3 currentRight = glm::normalize(glm::cross(front, up));
-        glm::vec3 targetRight = glm::normalize(glm::cross(targetFront, targetUp));
-        glm::mat4 currentBasis(1.0f), targetBasis(1.0f);
-        currentBasis[0] = glm::vec4(currentRight, 0.0f);
-        currentBasis[1] = glm::vec4(glm::normalize(front), 0.0f);
-        currentBasis[2] = glm::vec4(glm::normalize(up), 0.0f);
+        const glm::vec3 safeTargetFront = glm::normalize(targetFront);
+        const glm::vec3 safeTargetUp = glm::normalize(targetUp);
+        const glm::vec3 targetRight = glm::normalize(
+            glm::cross(safeTargetFront, safeTargetUp));
+        glm::mat4 targetBasis(1.0f);
         targetBasis[0] = glm::vec4(targetRight, 0.0f);
-        targetBasis[1] = glm::vec4(glm::normalize(targetFront), 0.0f);
-        targetBasis[2] = glm::vec4(glm::normalize(targetUp), 0.0f);
-        mBodycamRotation = glm::slerp(glm::quat_cast(currentBasis),
-            glm::quat_cast(targetBasis), rotAlpha);
-        right = glm::normalize(mBodycamRotation * glm::vec3(1, 0, 0));
-        front = glm::normalize(mBodycamRotation * glm::vec3(0, 1, 0));
-        up = glm::normalize(mBodycamRotation * glm::vec3(0, 0, 1));
+        targetBasis[1] = glm::vec4(safeTargetFront, 0.0f);
+        targetBasis[2] = glm::vec4(safeTargetUp, 0.0f);
+        const glm::quat targetRotation = glm::quat_cast(targetBasis);
+        const float rotationDot = std::fabs(glm::dot(
+            glm::normalize(mBodycamRotation), glm::normalize(targetRotation)));
+        const float rotationDelta = 2.0f * std::acos(
+            glm::clamp(rotationDot, 0.0f, 1.0f));
+        const float positionDelta = glm::length(targetPosition - pos);
+        const bool withinSettle =
+            allowSettle ||
+            (rotationDelta <= glm::radians(std::max(0.0f, settleDeadbandDegrees)) &&
+             positionDelta <= std::max(0.0f, settlePositionMeters));
+        if (withinSettle) {
+            ++mBodycamSettleTicks;
+        } else {
+            mBodycamSettleTicks = 0;
+        }
+        const int holdTicks = std::max(1, settleHoldTicks);
+        if (mBodycamSettleTicks >= holdTicks) {
+            if (!mBodycamSettled) {
+                mBodycamSettled = true;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Camera, StructuredLevel::Important,
+                    "camera.bodycam.settled", "bodycam",
+                    "bodycam camera held still inside the settle deadband", 0,
+                    nlohmann::json{
+                        {"rotation_delta_degrees", glm::degrees(rotationDelta)},
+                        {"position_delta_meters", positionDelta},
+                        {"settle_deadband_degrees", settleDeadbandDegrees},
+                        {"settle_position_meters", settlePositionMeters},
+                        {"hold_ticks", holdTicks}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+            // Keep the last rendered pose. This removes residual head/rigid-body
+            // micro-motion when the player is not actually aiming or moving.
+        } else {
+            if (mBodycamSettled) {
+                mBodycamSettled = false;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Camera, StructuredLevel::Important,
+                    "camera.bodycam.resumed", "bodycam",
+                    "bodycam camera resumed following the head", 0,
+                    nlohmann::json{
+                        {"rotation_delta_degrees", glm::degrees(rotationDelta)},
+                        {"position_delta_meters", positionDelta}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+            pos = glm::mix(pos, targetPosition, posAlpha);
+            glm::vec3 currentRight = glm::normalize(glm::cross(front, up));
+            glm::mat4 currentBasis(1.0f);
+            currentBasis[0] = glm::vec4(currentRight, 0.0f);
+            currentBasis[1] = glm::vec4(glm::normalize(front), 0.0f);
+            currentBasis[2] = glm::vec4(glm::normalize(up), 0.0f);
+            mBodycamRotation = glm::slerp(glm::quat_cast(currentBasis),
+                targetRotation, rotAlpha);
+            right = glm::normalize(mBodycamRotation * glm::vec3(1, 0, 0));
+            front = glm::normalize(mBodycamRotation * glm::vec3(0, 1, 0));
+            up = glm::normalize(mBodycamRotation * glm::vec3(0, 0, 1));
+        }
     }
 
     if (wallCollision) {

@@ -449,6 +449,22 @@ generated index; it is not a second hand-maintained status source.
 A TODO or ambiguous report creates a `needs_clarification` issue with the exact
 path, line, and quote. Agents do not edit the source document to resolve it.
 
+### Proactive issue intake
+
+Agents automatically create or update one complete issue when they encounter
+actionable recurring friction, a defect, a missing capability, or a
+user-facing workflow improvement. Do not wait for the user to separately ask
+for issue intake. Preserve the exact user quote when the report came from the
+user; otherwise record the observation and label inference and unknowns. Link
+the relevant user context and include reproduction, expected behavior,
+acceptance, paths, evidence, risk, and proof expectations.
+
+Leave follow-up work unowned unless an agent accepts it with `next --claim` or
+an explicit assignment. Issues make findings discoverable for future agents
+and recurring review; they do not themselves authorize scope-changing fixes or
+changes to shared authority. Agents should inspect claimable issues during
+normal coordination and propose evidence-based solutions over time.
+
 ## Proof ledger and completion gate
 
 Every behavior change has a proof record. A proof links the task/issue, changed

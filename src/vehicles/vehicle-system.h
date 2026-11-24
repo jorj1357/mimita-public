@@ -16,6 +16,8 @@
 #include "vehicles/vehicle-types.h"
 
 struct World;
+struct VehicleProfile;
+struct PhysicalEntity;
 class Player;
 class Camera;
 
@@ -32,6 +34,12 @@ public:
     bool loadConfig(const std::string& directory = "config/vehicles");
     bool pollReload();
     void registerFixedTick();
+
+    // Active gamemode-selected arcade profile. New vehicles inherit it; an
+    // empty id keeps template-only physics.
+    void setActiveProfile(const std::string& profileId);
+    const std::string& activeProfileId() const { return mActiveProfileId; }
+    const VehicleProfile* profileFor(const VehicleState& state) const;
 
     uint32_t spawn(const std::string& templateId, const glm::mat4& transform,
                    uint32_t driverActorId = 0);
@@ -116,11 +124,15 @@ private:
                      const std::vector<int>& candidates);
     void updateChassisAero(VehicleState& state, const VehicleSpec& spec,
                            float dt);
+    void updateArcadeControls(VehicleState& state,
+                              const VehicleProfile& profile,
+                              PhysicalEntity& entity, float dt);
 
     std::vector<VehicleState> mVehicles;
     uint32_t mNextId = 1;
     uint32_t mLocalVehicleId = 0;
     bool mServerProcess = false;
+    std::string mActiveProfileId;
 
     bool mSeatRequestPending = false;
     uint32_t mSeatRequestVehicleId = 0;
@@ -132,4 +144,5 @@ private:
     bool mPrevModeKey = false;
     bool mPrevShiftUpKey = false;
     bool mPrevShiftDownKey = false;
+    bool mPrevBallCamHeld = false;
 };

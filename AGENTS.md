@@ -130,6 +130,14 @@ Read these gates before doing anything else:
    `docs/specs/dev-loop/change-to-evidence-latency.md`,
    `docs/specs/dev-loop/agent-self-improvement.md`, and
    `docs/workflows/issue-intake-and-triage.md`.
+   Automatically create or update one complete issue when an agent observes
+   actionable recurring friction, a defect, a missing capability, or a
+   user-facing workflow improvement; do not wait for the user to ask for issue
+   intake. Preserve exact user wording when applicable, distinguish observed
+   evidence from inference, and link the user context. Leave follow-up work
+   unowned unless explicitly claimed so future agents can discover it through
+   `agent-coord next --claim`. Issue creation records work for review; it does
+   not authorize a scope-changing fix or a change to shared authority.
    While waiting, run `agent-coord next --mode waiting`; repair missing issue
    fields, missing evidence, and stale proofs instead of idling. A woken agent
    must inspect proof state and may not claim behavior completion without

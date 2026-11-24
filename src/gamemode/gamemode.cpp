@@ -718,6 +718,12 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 out.headFollowsBody = bodycam.value("head_follows_body", out.headFollowsBody);
                 out.settleDeadbandDegrees = std::clamp(
                     bodycam.value("settle_deadband_degrees", out.settleDeadbandDegrees), 0.0f, 3.0f);
+                out.settleCameraDeadbandDegrees = std::clamp(
+                    bodycam.value("settle_camera_deadband_degrees", out.settleCameraDeadbandDegrees), 0.0f, 5.0f);
+                out.settleCameraPositionMeters = std::clamp(
+                    bodycam.value("settle_camera_position_meters", out.settleCameraPositionMeters), 0.0f, 0.25f);
+                out.settleCameraHoldTicks = std::clamp(
+                    bodycam.value("settle_camera_hold_ticks", out.settleCameraHoldTicks), 1, 120);
                 out.cameraSwayScale = std::clamp(
                     bodycam.value("camera_sway_scale", out.cameraSwayScale), 0.0f, 5.0f);
                 if (bodycam.contains("lens") && bodycam["lens"].is_object()) {

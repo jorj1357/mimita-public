@@ -127,6 +127,9 @@ void applyPresentationPolicy(const Gamemode& mode)
         bodycam.positionResponseSeconds = p.bodycam.positionResponseSeconds;
         bodycam.rotationResponseSeconds = p.bodycam.rotationResponseSeconds;
         bodycam.swayScale = p.bodycam.cameraSwayScale;
+        bodycam.settleDeadbandDegrees = p.bodycam.settleCameraDeadbandDegrees;
+        bodycam.settlePositionMeters = p.bodycam.settleCameraPositionMeters;
+        bodycam.settleHoldTicks = p.bodycam.settleCameraHoldTicks;
         bodycam.wallCollision = p.bodycam.wallCollision;
         bodycam.wallProbeRadiusMeters = p.bodycam.wallProbeRadiusMeters;
         CamConfig::instance().setBodycamOverride(bodycam);
@@ -174,6 +177,9 @@ void applyPresentationPolicy(const Gamemode& mode)
                 {"weapon_stability_seconds", p.bodycam.weaponStabilitySeconds},
                 {"head_follows_body", p.bodycam.headFollowsBody},
                 {"settle_deadband_degrees", p.bodycam.settleDeadbandDegrees},
+                {"settle_camera_deadband_degrees", p.bodycam.settleCameraDeadbandDegrees},
+                {"settle_camera_position_meters", p.bodycam.settleCameraPositionMeters},
+                {"settle_camera_hold_ticks", p.bodycam.settleCameraHoldTicks},
                 {"sway_scale", p.bodycam.cameraSwayScale},
                 {"wall_collision", p.bodycam.wallCollision},
                 {"wall_probe_radius_m", p.bodycam.wallProbeRadiusMeters},

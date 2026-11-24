@@ -558,6 +558,19 @@
       "expect_gamemode": "connected_world",
       "require_client_connection": true,
       "require_mode_start": true
+    },
+    "59": {
+      "name": "Bloodtest - Slaughterhouse 1 with NPC",
+      "server_args": ["--mode", "bloodtest", "--gamemode", "bloodtest", "--npcs", "1"],
+      "weapon_set": "auto",
+      "client_args": ["--startup-command", "start bloodtest"],
+      "map": "slaughterhouse1",
+      "expect_map": "slaughterhouse1",
+      "expect_mode": "bloodtest",
+      "expect_gamemode": "bloodtest",
+      "expect_npcs": 1,
+      "require_client_connection": true,
+      "require_mode_start": true
     }
   }
 }

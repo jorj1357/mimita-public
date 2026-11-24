@@ -70,3 +70,19 @@ aim for all controllers any controller
 Reviewer: vehicle-rl-implementation-handoff
 
 Investigation handoff recorded in docs/handoffs/20261124_vehicle-arena-handling-controller-handoff.md. Observed: vehicle_arena selects arcade_arena, but a source-wide vehicleProfile search found only Gamemode storage/parser; the profile appears unconsumed. VehicleInput and VehicleInputPacket carry throttle/brake/steer/clutch/handbrake and toggle/shift flags, but not boost/jump/air control. GLFW 3.4 gamepad and raw joystick APIs are declared, but no application poll calls or host GameInputKind path exist. Existing 2026-11-05 launch/map/ball records are historical and do not prove current handling or controller support. A simple synthetic ball-chasing driver exists in serverTickVehicles despite npc_count=0/npcs=false; it is not roster-owned. Map goals parse, but a source search found no authoritative goal event producer/reset caller. No new build or runtime was run. Handoff includes reproduction, expected behavior, acceptance, paths, evidence, risks, dependencies, and staged next steps. Correction: context ctx-261b98182210 was accidentally recorded with an inserted phrase; do not treat that context quote as verbatim. Use the exact user quote appended after it and in the handoff document. Parent issue remains readiness=false because legacy intake fields are missing; repair through issue workflow before claim/implementation.
+
+## Review (needs-evidence)
+
+### 2026-11-24T07:19:16.635Z — vehicle-arena-controller
+
+Reviewer: vehicle-arena-controller
+
+Phase A implementation evidence (2026-11-24): added vehicle profile registry + consumption, gamepad owner and config, boost/jump/air-pitch-roll, profile steering/powerslide, arena goal detection/reset, boost pads, ball cam, boost HUD, and auto-seat replication. Build: EXE 2026-11-24T06:22:17.620103Z:a48546ad...; game generation 583. Runtime arena-test-1 (logs/2026-11-24/20261124_065802_arena-test-1) shows server vehicle.profile.applied, arena.ball.spawned, vehicle.auto_seat, arena.boostpad.collected, arena.ball.contact; client client.vehicle.profile.applied and vehicle.seat.anchor with has_local_driver=true. Residual: final seat-reset/log-rate-limit edits are unbuilt; controller/jump/boost input and a scored goal are not yet proven in a journal because host CPU was saturated and test-run readiness failed around tick 600 at ~7 Hz. In-game controller rebinding UI is not implemented; config/input/gamepad.json is the current binding surface. Next: rebuild, then run the isolated pair under lower load and send walkforward/jump/boost through the normal command queue.
+
+## Review (needs-evidence)
+
+### 2026-11-24T08:43:45.131Z — vehicle-arena-controller
+
+Reviewer: vehicle-arena-controller
+
+Controller-path proof (2026-11-24, generation 587, run 20261124_081952_arena-test-6): fixed VehicleSystem::sampleLocalInput so a local driver on a server mirror still samples input; mirrors still never apply forces. Added gamepad state/virtual diagnostics. Client events-0004.jsonl shows input.gamepad.state (virtual, throttle=1, jump=true, boost=true) and vehicle.input.local (throttle=1, boost=1, jump_held=true). Server events.jsonl shows vehicle.input.server (actor_id=1, vehicle_id=2, throttle=1, moving positions), vehicle.jump (impulse=52000), vehicle.boost (charge=99.67), vehicle.airroll (pitch=1), and vehicle.boost.stop (charge=0). Proof evidence-cbc181f4c981. Residual: no physical pad was visible to GLFW (gamepad_status connected=false), so hardware mapping still needs a live pads test; in-game rebinding UI is still pending. Journals: logs/2026-11-24/20261124_081952_arena-test-6/. Changelog: docs/changelog/2026-11-24/20261124_0840-vehicle-arena-controller-proof.md.

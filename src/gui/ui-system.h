@@ -29,8 +29,7 @@ struct UITrackedWidget {
 };
 
 void uiInit(GLFWwindow* win);
-void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput = false,
-                  bool useOutputFramebuffer = false);
+void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput = false);
 void uiEndFrame();
 
 void uiSetDebug(bool enabled);
@@ -108,3 +107,4 @@ void uiTrackWidget(const char* id, UIRect designRect);
 // Coordinate debug overlay
 void uiSetCoordDebug(bool enabled);
 bool uiCoordDebugEnabled();
+

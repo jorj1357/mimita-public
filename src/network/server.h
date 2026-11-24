@@ -84,6 +84,11 @@ struct ServerVehicleState
     // the same VehicleInput surface as human drivers.
     std::unordered_set<uint32_t> npcDriverIds;
     uint32_t npcVehicleId = 0;
+    // Vehicle Arena scoring and pad ownership. Goal detection is edge-triggered
+    // so one crossing scores once; pad timers are server-authoritative.
+    std::string arenaGoalInside;
+    uint64_t arenaLastGoalTick = 0;
+    std::vector<uint32_t> boostPadReadyTick;
 };
 
 // Bookkeeping for destructible physical-entity replication. Defined near
@@ -361,6 +366,10 @@ struct ServerPlayer
     // Server-authoritative vehicle seat. 0 = on foot.
     uint32_t seatedVehicleId = 0;
     int8_t seatedSeat = -1;
+    // Last seat state replicated to this player. Auto-seat happens in the
+    // server tick without a socket, so replication sends the enter event.
+    uint32_t lastReplicatedSeatVehicleId = 0;
+    int8_t lastReplicatedSeat = -1;
     uint32_t lastVehicleSeatRequestSerial = 0;
     uint32_t lastLoggedVehicleSeatRequestSerial = 0;
     int health = 100;

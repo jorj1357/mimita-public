@@ -31,6 +31,7 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "avatar/avatar.h"
+#include "vehicles/vehicle-system.h"
 
 #include <chrono>
 #include <cmath>
@@ -411,6 +412,19 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     // completion; it stores and renders exactly what the server sent.
     mProcedural = packet.procedural;
     const Gamemode& modeConfig = GamemodeRegistry::instance().get(mMode);
+    const std::string previousVehicleProfile =
+        VehicleSystem::instance().activeProfileId();
+    VehicleSystem::instance().setActiveProfile(modeConfig.vehicleProfile);
+    if (!modeConfig.vehicleProfile.empty() &&
+        previousVehicleProfile != modeConfig.vehicleProfile) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "client.vehicle.profile.applied", mMode,
+            "active gamemode selected a vehicle arcade profile",
+            packet.serverTick,
+            nlohmann::json{{"mode", mMode},
+                           {"profile", modeConfig.vehicleProfile}});
+    }
     // The mode's avatar policy applies to the local player too, even when the
     // mode uses gameplay roles without a presentation actor preset.
     if (modeConfig.avatar.configured) {

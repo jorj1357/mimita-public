@@ -16,7 +16,7 @@
 - Session ID: session-0534d04adc60
 - Owner: resource-profiler
 - Focus: performance
-- Summary: Captured a bounded per-thread CPU sample for the live Juggernaut server and an unrelated Bloodtest client; recorded host normalization, memory pressure, thread IDs, and the WPR privilege failure. Function/source attribution and a matched client/server workload remain unproven.
+- Summary: Captured a bounded per-thread CPU sample for the live Juggernaut server and an unrelated Bloodtest client, then tried WPR from regular and RunAs shells. WPR never recorded because the profiling privilege was disabled; no ETL was produced.
 - Status: in-progress
 - Date, time, timezone: 2026-11-24T05:19:11+00:00
 - Branch: checkpoint/one-checkout-condensation-20261111
@@ -60,13 +60,34 @@
 ## WPR stack-profile attempt
 
 - Command: `wpr -start CPU -filemode`.
-- Result: Failed before recording with “Failed to enable the policy to profile system performance” (`0xc5585011`); subsequent `wpr -status` reported not recording. No ETL was created. WPA and xperf binaries are present, but symbolized stacks remain unavailable until profiling privilege is granted to the capture process.
+- Result: Initial attempt failed before recording with “Failed to enable the policy to profile system performance” (`0xc5585011`). A user-authorized `Start-Process -Verb RunAs` attempt spawned PowerShell PID27240 and WPR PID31600; those remained stuck while `wpr -status` said not recording. A separate RunAs `whoami /priv` check reported `SeSystemProfilePrivilege Disabled`. I stopped only my own exact wrapper/WPR processes. The ETL appeared after the stop: it is 36,700,160 bytes, spans05:22:32.259515Z–05:24:16.263949Z (104.004s), and has zero lost events, but `xperf -a profile -detail` reports no sampled profile data. Thus the capture is valid as a trace container but contains no CPU profile stacks; the attempt also exceeded the intended five seconds. Filename timestamp says05:15Z but actual start was05:22Z. WPR is now idle. Free disk fell from about4.45GB to3.34GB during the interval, but causation is unknown because other activity was ongoing.
+- Next: Verify a visibly elevated Administrator PowerShell token and confirm `SeSystemProfilePrivilege` is available before another bounded trace. Inspect Local Security Policy only if it remains unavailable; do not change rights or policy without review.
+
+- Follow-up: A visible RunAs PowerShell window (PID21196; title `Administrator: Windows PowerShell 5.1`) was launched, but the supported Computer Use inventory could not enumerate it. I closed only this session-created shell; WPR remains idle. No commands were entered in it and no policy changed.
+
+## File: `.dev/perf-captures/wpr-privilege-check-20261124T0524Z.txt`
+
+- Lines/functions/headings: One captured line: `SeSystemProfilePrivilege Profile system performance Disabled`.
+- Old content or behavior: No prior file; this diagnostic output was newly created.
+- New content or behavior: Records only the profile-system-performance privilege name and token status; it contains no account/group listing.
+- Reason: Determine why the elevated WPR attempt could not start without collecting unrelated account information.
+- Why unrelated behavior is preserved: Read-only token inspection; no policy or membership was changed.
+
+## File: `.dev/perf-captures/mimita-cpu-stacks-20261124T0515Z.etl`
+
+- Lines/functions/headings: Trace covers05:22:32.259515Z–05:24:16.263949Z; 36,700,160 bytes.
+- Old content or behavior: No prior file; trace appeared after WPR stopped.
+- New content or behavior: `xperf -a tracestats` validated the ETL with zero lost buffers/events; `xperf -a profile -detail` reported no sampled profile data.
+- Reason: Verify whether the attempted WPR capture can support CPU callstack attribution.
+- Why unrelated behavior is preserved: The trace is read-only evidence and no runtime or system policy was changed.
 
 ## Validation and limitations
 
 - Read-only check: dev-loop published generation581 and no active build; WPR was idle before and after the failed capture.
 - No tests/builds were requested. The changelog gate should be run after editing.
 - The root server journal showed nearby NPC movement/combat events after the sample, but no exact in-window workload summary; do not assert a live NPC count from this sample.
+- The exact permission-check output file contains only the privilege name/status; it is not a full user/group inventory.
+- The later ETL check corrected the earlier no-file status: an ETL was produced, but it spans104s and has no sampled profile data. It cannot support function-level CPU attribution.
 - 240-FPS client frame times, continuous 60-Hz server ticks, gameplay correctness, GPU usage, disk/network throughput, and function-level CPU shares remain unverified.
 
 # Changed files and reverse steps

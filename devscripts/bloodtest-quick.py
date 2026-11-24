@@ -134,7 +134,7 @@ def main() -> int:
             elif len(clients) >= 2 and not teams_sent:
                 teams_sent = True
                 time.sleep(2.0)
-                for client_id, team in (("client-01", "1"), ("client-02", "2")):
+                for client_id, team in (("client-01", "2"), ("client-02", "1")):
                     result = dev_loop(
                         "--command", f"team_pick {team}",
                         "--client", client_id,
@@ -149,3 +149,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+

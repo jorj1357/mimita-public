@@ -21,6 +21,8 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "debug/structured-log.h"
+#include "gamemode/arena-ball.h"
+#include "gamemode/gamemode.h"
 #include "gamemode/map-config.h"
 #include "network/multiplayer-context.h"
 #include "network/server-gamemode.h"
@@ -28,6 +30,7 @@
 #include "physics/physical-entity.h"
 #include "physics/ray-utils.h"
 #include "vehicles/vehicle-config.h"
+#include "vehicles/vehicle-profile.h"
 #include "vehicles/vehicle-system.h"
 #include "void-death/void-death.h"
 #include "world/world.h"
@@ -104,6 +107,15 @@ const PhysicalEntity* findArenaBall()
     return nullptr;
 }
 
+bool gamemodeAllowsScoreNpc(const std::string& modeId)
+{
+    const Gamemode& gm = GamemodeRegistry::instance().get(modeId);
+    for (const GamemodeTeam& team : gm.teams)
+        if (team.id == "orange" && team.npcs)
+            return true;
+    return false;
+}
+
 void driveArenaNpcCar(VehicleState& vehicle, const PhysicalEntity& ball)
 {
     const PhysicalEntity* chassis =
@@ -129,6 +141,233 @@ void driveArenaNpcCar(VehicleState& vehicle, const PhysicalEntity& ball)
     input.clutch = 0.0f;
     input.handbrake = 0.0f;
     VehicleSystem::instance().setInput(vehicle.id, input);
+}
+
+int arenaTeamIndex(const std::string& team)
+{
+    if (team == "blue")
+        return 0;
+    if (team == "orange")
+        return 1;
+    return -1;
+}
+
+const ArenaKickoffConfig* arenaKickoffForTeam(const MapObjectiveConfig& map,
+                                              int team, uint32_t ordinal)
+{
+    std::vector<const ArenaKickoffConfig*> matches;
+    for (const ArenaKickoffConfig& kickoff : map.arena.kickoffs)
+    {
+        if (!kickoff.enabled)
+            continue;
+        if (arenaTeamIndex(kickoff.team) == team)
+            matches.push_back(&kickoff);
+    }
+    if (matches.empty())
+        return nullptr;
+    return matches[ordinal % matches.size()];
+}
+
+void resetVehicleToKickoff(VehicleState& vehicle, const glm::vec3& position,
+                           float yaw)
+{
+    PhysicalEntity* entity =
+        PhysicalEntitySystem::instance().find(vehicle.entityId);
+    if (!entity)
+        return;
+    entity->transform =
+        glm::translate(glm::mat4(1.0f), position) *
+        glm::mat4_cast(glm::angleAxis(yaw, glm::vec3(0.0f, 0.0f, 1.0f)));
+    entity->previousTransform = entity->transform;
+    entity->orientation =
+        glm::normalize(glm::quat_cast(glm::mat3(entity->transform)));
+    entity->velocity = glm::vec3(0.0f);
+    entity->angularVelocity = glm::vec3(0.0f);
+    entity->sleeping = false;
+    entity->sleepTicks = 0;
+    vehicle.origin = position;
+    vehicle.originVelocity = glm::vec3(0.0f);
+    vehicle.originAngularVelocity = glm::vec3(0.0f);
+    vehicle.orientation = entity->orientation;
+    vehicle.jumpCount = 0;
+    vehicle.jumpHeld = false;
+    vehicle.jumpHeldPrev = false;
+    if (const VehicleProfile* profile =
+            VehicleSystem::instance().profileFor(vehicle))
+        vehicle.boostCharge = profile->boost.max;
+}
+
+void resetArenaAfterGoal(
+    ServerVehicleState& vehicleState,
+    const std::unordered_map<uint32_t, ServerPlayer>& players,
+    const MapObjectiveConfig& map, PhysicalEntity& ball, uint32_t tick,
+    int scoringTeam)
+{
+    ArenaBall::reset(ball, map);
+    ServerGamemodeState& d = serverGamemodeState();
+    uint32_t blueOrdinal = 0;
+    uint32_t orangeOrdinal = 0;
+    for (VehicleState& vehicle : VehicleSystem::instance().vehiclesMutable())
+    {
+        if (!vehicle.serverAuthoritative || vehicle.serverMirror)
+            continue;
+        int team = 1;
+        const uint32_t driverId =
+            static_cast<uint32_t>(std::max(0, vehicle.driverActorId));
+        auto teamIt = d.communityTeams.find(driverId);
+        if (teamIt != d.communityTeams.end() && teamIt->second >= 0)
+            team = teamIt->second;
+        const uint32_t ordinal =
+            team == 0 ? blueOrdinal++ : orangeOrdinal++;
+        const ArenaKickoffConfig* kickoff =
+            arenaKickoffForTeam(map, team, ordinal);
+        if (!kickoff)
+            continue;
+        resetVehicleToKickoff(vehicle, kickoff->position, kickoff->yaw);
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Physics, StructuredLevel::Important,
+        "arena.goal.reset", "arena", "arena goal reset ball and cars", tick,
+        {{"scoring_team", scoringTeam},
+         {"ball_network_id", static_cast<int>(ball.networkId)},
+         {"ball_position", {ball.transform[3].x, ball.transform[3].y,
+                            ball.transform[3].z}},
+         {"blue_score", d.communityTeamScore[0]},
+         {"orange_score", d.communityTeamScore[1]}});
+}
+
+void tickArenaGoals(ServerVehicleState& vehicleState,
+                    const std::unordered_map<uint32_t, ServerPlayer>& players,
+                    const MapObjectiveConfig& map, uint32_t tick)
+{
+    if (!map.arena.present)
+        return;
+    PhysicalEntity* ball = nullptr;
+    for (PhysicalEntity& entity : PhysicalEntitySystem::instance().entities())
+        if (entity.persistenceId == "arena-ball")
+        {
+            ball = &entity;
+            break;
+        }
+    if (!ball)
+        return;
+
+    const glm::vec3 position(ball->transform[3]);
+    std::string inside;
+    const ArenaGoalConfig* insideGoal = nullptr;
+    for (const ArenaGoalConfig& goal : map.arena.goals)
+    {
+        if (!goal.enabled)
+            continue;
+        const glm::vec3 delta = glm::abs(position - goal.center);
+        if (delta.x <= goal.halfExtents.x &&
+            delta.y <= goal.halfExtents.y &&
+            delta.z <= goal.halfExtents.z)
+        {
+            inside = goal.id;
+            insideGoal = &goal;
+            break;
+        }
+    }
+
+    if (inside.empty())
+    {
+        vehicleState.arenaGoalInside.clear();
+        return;
+    }
+    if (inside == vehicleState.arenaGoalInside)
+        return;
+    vehicleState.arenaGoalInside = inside;
+
+    const int goalTeam = arenaTeamIndex(insideGoal->team);
+    const int scoringTeam = goalTeam < 0 ? -1 : 1 - goalTeam;
+    if (scoringTeam < 0)
+        return;
+
+    ServerGamemodeState& d = serverGamemodeState();
+    d.communityTeamScore[scoringTeam] += 1;
+    if (scoringTeam == 0)
+        d.scoreA = d.communityTeamScore[0];
+    else
+        d.scoreB = d.communityTeamScore[1];
+    vehicleState.arenaLastGoalTick = tick;
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Physics, StructuredLevel::Important,
+        "arena.goal.detected", inside, "authoritative ball entered a goal",
+        tick,
+        {{"goal_id", inside},
+         {"goal_team", insideGoal->team},
+         {"scoring_team", scoringTeam},
+         {"ball_network_id", static_cast<int>(ball->networkId)},
+         {"ball_position", {position.x, position.y, position.z}},
+         {"blue_score", d.communityTeamScore[0]},
+         {"orange_score", d.communityTeamScore[1]},
+         {"goal_value", d.goalValue}});
+    resetArenaAfterGoal(vehicleState, players, map, *ball, tick, scoringTeam);
+
+    if (d.goalValue > 0 && d.communityTeamScore[scoringTeam] >= d.goalValue)
+    {
+        d.matchOver = true;
+        d.winnerTeam = scoringTeam;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Physics, StructuredLevel::Important,
+            "arena.match.over", "arena", "arena score limit reached", tick,
+            {{"winner_team", scoringTeam},
+             {"blue_score", d.communityTeamScore[0]},
+             {"orange_score", d.communityTeamScore[1]}});
+    }
+}
+
+void tickArenaBoostPads(ServerVehicleState& vehicleState,
+                        const MapObjectiveConfig& map, uint32_t tick)
+{
+    if (map.boostPads.empty())
+        return;
+    if (vehicleState.boostPadReadyTick.size() != map.boostPads.size())
+        vehicleState.boostPadReadyTick.assign(map.boostPads.size(), 0);
+
+    for (size_t i = 0; i < map.boostPads.size(); ++i)
+    {
+        const BoostPadConfig& pad = map.boostPads[i];
+        if (!pad.enabled || tick < vehicleState.boostPadReadyTick[i])
+            continue;
+        for (VehicleState& vehicle : VehicleSystem::instance().vehiclesMutable())
+        {
+            if (!vehicle.serverAuthoritative || vehicle.serverMirror)
+                continue;
+            const VehicleProfile* profile =
+                VehicleSystem::instance().profileFor(vehicle);
+            if (!profile || profile->boost.max <= 0.0f)
+                continue;
+            const PhysicalEntity* entity =
+                PhysicalEntitySystem::instance().find(vehicle.entityId);
+            if (!entity)
+                continue;
+            const glm::vec3 delta = glm::vec3(entity->transform[3]) -
+                                    pad.position;
+            if (glm::length(delta) > pad.radius + 1.5f)
+                continue;
+            const float before = vehicle.boostCharge;
+            const float amount = pad.kind == "big" ? profile->boost.max : 12.0f;
+            vehicle.boostCharge =
+                std::clamp(vehicle.boostCharge + amount, 0.0f,
+                           profile->boost.max);
+            vehicleState.boostPadReadyTick[i] =
+                tick + static_cast<uint32_t>(std::max(1, pad.rechargeTicks));
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "arena.boostpad.collected", pad.id,
+                "authoritative boost pad pickup", tick,
+                {{"pad_id", pad.id},
+                 {"pad_kind", pad.kind},
+                 {"vehicle_id", vehicle.id},
+                 {"boost_before", before},
+                 {"boost_after", vehicle.boostCharge},
+                 {"boost_max", profile->boost.max}});
+            break;
+        }
+    }
 }
 
 uint64_t mapVehicleHash(const MapObjectiveConfig& map)
@@ -215,6 +454,7 @@ void fillVehicleState(const VehicleState& state,
             std::max(0, state.seatOccupants[i]));
     out.engineRpm = state.engineRpm;
     out.speed = state.speed;
+    out.boostCharge = state.boostCharge;
     out.throttle = state.throttle;
     out.brake = state.brake;
     out.steer = state.steer;
@@ -286,6 +526,12 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
     if ((tick % 60u) == 0u)
         VehicleSystem::instance().pollReload();
 
+    {
+        const Gamemode& gm =
+            GamemodeRegistry::instance().get(serverGamemodeState().matchMode);
+        VehicleSystem::instance().setActiveProfile(gm.vehicleProfile);
+    }
+
     const MapObjectiveConfig& map = MapConfigRegistry::instance().current();
     const std::string& mapId = map.mapId;
     const uint64_t revision = MapConfigRegistry::instance().revision();
@@ -308,6 +554,8 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
         vehicleState.mapRevision = revision;
         vehicleState.vehicleHash = vehicleHash;
         vehicleState.mapInitialized = true;
+        vehicleState.arenaGoalInside.clear();
+        vehicleState.boostPadReadyTick.assign(map.boostPads.size(), tick);
 
         if (!mapId.empty())
         {
@@ -359,10 +607,17 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
         }
     }
 
-    // Vehicle Arena 1v1: one NPC-driven car uses the same VehicleInput surface
-    // as a human driver. It is assigned to the free car nearest the orange
-    // kickoff and chases the ball.
     if (serverGamemodeState().matchMode == "vehicle_arena")
+    {
+        tickArenaGoals(vehicleState, players, map, tick);
+        tickArenaBoostPads(vehicleState, map, tick);
+    }
+
+    // Vehicle Arena NPC car: one NPC-driven car uses the same VehicleInput
+    // surface as a human driver. The mode's team data is the roster owner, so a
+    // 0-NPC practice run does not spawn an invisible synthetic driver.
+    if (serverGamemodeState().matchMode == "vehicle_arena" &&
+        gamemodeAllowsScoreNpc(serverGamemodeState().matchMode))
     {
         bool npcVehicleAlive = false;
         for (const VehicleState& vehicle : VehicleSystem::instance().vehicles())
@@ -619,6 +874,38 @@ void serverReplicateVehicles(SOCKET sock, ServerVehicleState& vehicleState,
             it = known.erase(it);
         }
 
+        if (player.seatedVehicleId == 0)
+        {
+            player.lastReplicatedSeatVehicleId = 0;
+            player.lastReplicatedSeat = -1;
+        }
+        if (player.seatedVehicleId != 0 &&
+            (player.lastReplicatedSeatVehicleId != player.seatedVehicleId ||
+             player.lastReplicatedSeat != player.seatedSeat))
+        {
+            VehicleSeatEventPacket seat{};
+            seat.header.type = PACKET_VEHICLE_SEAT_EVENT;
+            seat.header.tick = tick;
+            seat.eventId = nextReliableGameplayEventId();
+            seat.eventSessionId = serverReliableEventSessionId();
+            seat.vehicleId = player.seatedVehicleId;
+            seat.actorId = player.id;
+            seat.seat = player.seatedSeat;
+            seat.action = VEHICLE_SEAT_ENTER;
+            queueReliableGameplayEventToPlayer(
+                sock, player, &seat, sizeof(seat), seat.eventId,
+                seat.eventSessionId, totalPacketsOut);
+            player.lastReplicatedSeatVehicleId = player.seatedVehicleId;
+            player.lastReplicatedSeat = player.seatedSeat;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "vehicle.seat.replicated_auto", std::to_string(player.id),
+                "auto-seat state replicated to the owning player", tick,
+                {{"player_id", player.id},
+                 {"vehicle_id", player.seatedVehicleId},
+                 {"seat", player.seatedSeat}});
+        }
+
         if ((tick & 1u) != 0u)
             continue;
         VehicleStatePacket packet{};
@@ -688,6 +975,9 @@ void handleVehicleInputPacket(const char* buffer, int bytes,
     input.steer = std::clamp(pkt->steer, -1.0f, 1.0f);
     input.clutch = std::clamp(pkt->clutch, 0.0f, 1.0f);
     input.handbrake = std::clamp(pkt->handbrake, 0.0f, 1.0f);
+    input.boost = std::clamp(pkt->boost, 0.0f, 1.0f);
+    input.jumpHeld = (pkt->flags & VEHICLE_INPUT_JUMP_HELD) != 0;
+    input.powerslide = (pkt->flags & VEHICLE_INPUT_POWER_SLIDE) != 0;
     input.engineToggle = (pkt->flags & VEHICLE_INPUT_ENGINE_TOGGLE) != 0;
     input.modeToggle = (pkt->flags & VEHICLE_INPUT_MODE_TOGGLE) != 0;
     input.shiftUp = (pkt->flags & VEHICLE_INPUT_SHIFT_UP) != 0;
@@ -713,6 +1003,9 @@ void handleVehicleInputPacket(const char* buffer, int bytes,
              {"brake", input.brake},
              {"steer", input.steer},
              {"handbrake", input.handbrake},
+             {"boost", input.boost},
+             {"jump_held", input.jumpHeld},
+             {"powerslide", input.powerslide},
              {"speed", vehicle->speed},
              {"gear", vehicle->gear},
              {"position", entity ? std::vector<float>{entity->transform[3].x,
@@ -994,6 +1287,7 @@ void mpProcessVehicleStatePacket(MultiplayerContext&,
         vehicle->gear = entry.gear;
         vehicle->engineRpm = entry.engineRpm;
         vehicle->speed = entry.speed;
+        vehicle->boostCharge = entry.boostCharge;
         vehicle->throttle = entry.throttle;
         vehicle->brake = entry.brake;
         vehicle->steer = entry.steer;
@@ -1146,6 +1440,9 @@ void mpSendVehicleInput(MultiplayerContext& ctx, uint32_t currentMs)
              {"steer", input.steer},
              {"clutch", input.clutch},
              {"handbrake", input.handbrake},
+             {"boost", input.boost},
+             {"jump_held", input.jumpHeld},
+             {"powerslide", input.powerslide},
              {"engineToggle", input.engineToggle},
              {"modeToggle", input.modeToggle},
              {"shiftUp", input.shiftUp},
@@ -1165,6 +1462,9 @@ void mpSendVehicleInput(MultiplayerContext& ctx, uint32_t currentMs)
     pkt.steer = input.steer;
     pkt.clutch = input.clutch;
     pkt.handbrake = input.handbrake;
+    pkt.boost = input.boost;
+    if (input.jumpHeld) pkt.flags |= VEHICLE_INPUT_JUMP_HELD;
+    if (input.powerslide) pkt.flags |= VEHICLE_INPUT_POWER_SLIDE;
     if (input.engineToggle) pkt.flags |= VEHICLE_INPUT_ENGINE_TOGGLE;
     if (input.modeToggle) pkt.flags |= VEHICLE_INPUT_MODE_TOGGLE;
     if (input.shiftUp) pkt.flags |= VEHICLE_INPUT_SHIFT_UP;

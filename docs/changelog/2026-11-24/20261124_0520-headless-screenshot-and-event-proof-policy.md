@@ -19,6 +19,7 @@
 - Date, time, timezone: 2026-11-24T05:20:21Z
 - Branch: `checkpoint/one-checkout-condensation-20261111`
 - Base commit: `186eebd23ce5f8f3f10377c47277ed58bd3b4d83`
+- Final commit: `51306c08` (a concurrent shared-checkout commit included these paths; this session did not create that commit)
 
 # Requested behavior
 

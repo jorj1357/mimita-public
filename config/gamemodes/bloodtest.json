@@ -134,6 +134,9 @@
       "weapon_stability_seconds": 0.1,
       "head_follows_body": true,
       "settle_deadband_degrees": 0.35,
+      "settle_camera_deadband_degrees": 0.35,
+      "settle_camera_position_meters": 0.005,
+      "settle_camera_hold_ticks": 6,
       "camera_sway_scale": 1.0,
       "lens": {
         "chromatic_aberration": 0.22,

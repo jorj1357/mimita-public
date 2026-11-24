@@ -2,6 +2,7 @@
 
 #include "vehicles/vehicle-hud.h"
 
+#include <algorithm>
 #include <cstdio>
 
 #include <glm/glm.hpp>
@@ -10,6 +11,7 @@
 #include "gui/ui-system.h"
 #include "physics/physical-entity.h"
 #include "vehicles/vehicle-config.h"
+#include "vehicles/vehicle-profile.h"
 #include "vehicles/vehicle-system.h"
 
 namespace {
@@ -60,6 +62,17 @@ void drawVehicleHud()
                   speedKmh, (int)(state->engineRpm + 0.5f));
     uiDrawText(line, x, y, scale, {1.0f, 1.0f, 1.0f, 1.0f});
     y += 22.0f;
+
+    if (const VehicleProfile* profile = vehicles.profileFor(*state))
+    {
+        std::snprintf(line, sizeof(line), "BOOST %d%%   BALL CAM %s",
+                      (int)(100.0f * state->boostCharge /
+                            std::max(profile->boost.max, 0.01f) + 0.5f),
+                      state->ballCam ? "ON" : "OFF");
+        uiDrawText(line, x, y, scale,
+                   {0.55f, 0.85f, 1.0f, 1.0f});
+        y += 22.0f;
+    }
 
     std::snprintf(line, sizeof(line), "CLUTCH %s  BRAKE %s  HANDBRAKE %s",
                   state->clutch > 0.5f ? "DOWN" : "UP",

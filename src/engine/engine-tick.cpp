@@ -254,15 +254,10 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
                 MIMITA_PERF_SCOPE("Rendering");
                 engineTickRender(engine, dt, worldPassRan);
             } HEARTBEAT("after render");
-            const bool uiDeferredToPostFxPresentation =
-                engine.renderer && engine.renderer->stretchesWholeFrame() &&
-                !PostFX::instance().uiInSceneTarget();
-            if (!uiDeferredToPostFxPresentation) {
-                MIMITA_PERF_PROGRESS("UI");
-                MIMITA_PERF_SCOPE("UI");
-                engineTickUI(engine, dt, worldPassRan);
-                HEARTBEAT("after ui");
-            }
+            MIMITA_PERF_PROGRESS("UI");
+            MIMITA_PERF_SCOPE("UI");
+            engineTickUI(engine, dt, worldPassRan);
+            HEARTBEAT("after ui");
         }
         MIMITA_PERF_PROGRESS("DevOverlay");
         { MIMITA_PERF_SCOPE("DevOverlay");
@@ -451,12 +446,6 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
           PerfGpu::beginRegion("GPU::PostFX");
           PostFX::instance().render();
           PerfGpu::endRegion(); }
-        if (!PostFX::instance().uiInSceneTarget()) {
-            MIMITA_PERF_PROGRESS("UI");
-            MIMITA_PERF_SCOPE("UI");
-            engineTickUI(engine, dt, worldPassRan, true);
-            HEARTBEAT("after ui");
-        }
     }
 
     HEARTBEAT("end frame");

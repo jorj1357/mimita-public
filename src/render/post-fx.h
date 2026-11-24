@@ -44,11 +44,6 @@ struct PostFXData
     float retroStrength = 0.0f;
     float glitchStrength = 0.0f;
 
-    // When true, the HUD is drawn into the scene target before PostFX so lens
-    // distortion/CA/vignette also affect it. Default false keeps the HUD crisp
-    // by drawing it after the post pass.
-    bool uiInSceneTarget = false;
-
     // Procedural modifiers
     float worldWave = 0.0f;
     float screenWave = 0.0f;
@@ -117,7 +112,6 @@ public:
     // Presets
     void applyPreset(const std::string& name);
     const PostFXData& data() const { return mData; }
-    bool uiInSceneTarget() const { return mData.uiInSceneTarget; }
 
     // Animated time (for psychedelic, dream modes)
     float time() const { return mTime; }

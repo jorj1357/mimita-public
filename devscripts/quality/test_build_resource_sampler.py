@@ -5,7 +5,7 @@ import os
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -290,7 +290,8 @@ class BuildResourceSamplerTests(unittest.TestCase):
                             "pid": 321, "event": "game.hotness.summary",
                             "fields": {"generation": 99, "npcs": 0}}),
                 json.dumps({"wall_time": started, "run_id": run_id,
-                            "pid": 321, "event": "anim.melee.pose_probe",
+                            "pid": 321,
+                            "event": "performance.server-tick-window",
                             "fields": {"mode": "jugger_horde"}}),
                 json.dumps({"wall_time": started, "run_id": run_id,
                             "pid": 321, "event": "game.hotness.summary",
@@ -352,6 +353,88 @@ class BuildResourceSamplerTests(unittest.TestCase):
             sampler._refresh_runtime_context()
             self.assertNotIn(321, sampler._runtime_context_by_pid)
 
+    def test_runtime_context_uses_launch_id_when_instance_start_is_missing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_dir = root / "logs" / "2026-11-24" / "current-run"
+            server_dir = run_dir / "server-01"
+            server_dir.mkdir(parents=True)
+            process_start = datetime.now(timezone.utc)
+            launch_time = process_start - timedelta(seconds=8)
+            launch_utc = launch_time.isoformat().replace("+00:00", "Z")
+            observed = process_start.isoformat().replace("+00:00", "Z")
+            journal = server_dir / "events.jsonl"
+            journal.write_text(json.dumps({
+                "wall_time": observed, "run_id": "current-run", "pid": 321,
+                "event": "game.hotness.summary",
+                "fields": {"generation": 581, "npcs": 67, "players": 0},
+            }) + "\n", encoding="utf-8")
+            (run_dir / "run.json").write_text(json.dumps({
+                "run_id": "current-run", "created_utc": launch_utc,
+                "instances": [{"instance_id": "server-01", "role": "server",
+                               "pid": 321, "launch_id": launch_utc,
+                               "executable": "C:\\game\\mimita.exe",
+                               "journal_path": str(journal)}],
+            }), encoding="utf-8")
+            wrapper_dir = root / "logs" / "2026-11-24" / "later-wrapper"
+            wrapper_dir.mkdir(parents=True)
+            wrapper_journal = wrapper_dir / "server-01" / "events.jsonl"
+            wrapper_journal.parent.mkdir(parents=True)
+            wrapper_journal.write_text("", encoding="utf-8")
+            wrapper_created = (process_start + timedelta(minutes=15))
+            (wrapper_dir / "run.json").write_text(json.dumps({
+                "run_id": "later-wrapper",
+                "created_utc": wrapper_created.isoformat().replace(
+                    "+00:00", "Z"),
+                "instances": [{"instance_id": "server-01", "role": "server",
+                               "pid": 321, "launch_id": launch_utc,
+                               "runtime_run_id": "current-run",
+                               "executable": "C:\\game\\mimita.exe",
+                               "journal_path": str(wrapper_journal)}],
+            }), encoding="utf-8")
+
+            sampler = BuildResourceSampler(root, "runtime-launch-id")
+            sampler._psutil = object()
+            sampler._processes = {321: (None, {
+                "role": "mimita", "executable": "mimita.exe",
+                "create_time": process_start.timestamp()})}
+            sampler._refresh_runtime_context()
+
+            context = sampler._runtime_context_by_pid[321]
+            self.assertEqual(context["run_id"], "current-run")
+            self.assertEqual(context["role"], "server")
+            self.assertAlmostEqual(
+                context["identity_run_created_delta_seconds"], 8.0, delta=0.01)
+            self.assertEqual(context["identity_match_basis"], "instance_launch_id")
+            self.assertAlmostEqual(
+                context["identity_start_delta_seconds"], 8.0, delta=0.01)
+
+    def test_runtime_context_rejects_stale_run_creation_fallback_for_reused_pid(
+            self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_dir = root / "logs" / "2026-11-24" / "old-run"
+            server_dir = run_dir / "server-01"
+            server_dir.mkdir(parents=True)
+            journal = server_dir / "events.jsonl"
+            journal.write_text("", encoding="utf-8")
+            old_start = datetime.now(timezone.utc) - timedelta(hours=3)
+            old_utc = old_start.isoformat().replace("+00:00", "Z")
+            (run_dir / "run.json").write_text(json.dumps({
+                "run_id": "old-run", "created_utc": old_utc,
+                "instances": [{"instance_id": "server-01", "role": "server",
+                               "pid": 321, "executable": "mimita.exe",
+                               "journal_path": str(journal)}],
+            }), encoding="utf-8")
+
+            sampler = BuildResourceSampler(root, "runtime-stale-run-fallback")
+            sampler._psutil = object()
+            sampler._processes = {321: (None, {
+                "role": "mimita", "executable": "mimita.exe",
+                "create_time": datetime.now(timezone.utc).timestamp()})}
+            sampler._refresh_runtime_context()
+            self.assertNotIn(321, sampler._runtime_context_by_pid)
+
     def test_runtime_alignment_requires_same_run_and_fresh_mode_frame_tick_rows(self):
         sampler = BuildResourceSampler(Path("."), "runtime-alignment")
         observed = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -359,7 +442,9 @@ class BuildResourceSamplerTests(unittest.TestCase):
         sampler._runtime_context_by_pid = {
             321: {"run_id": "matched", "role": "server", "pid": 321,
                   "journal": {"generation_npc_player": dict(fresh_row),
-                              "server_tick_window": dict(fresh_row)}},
+                              "server_tick_window": dict(fresh_row),
+                              "journal_mode": dict(fresh_row),
+                              "actual_mode": "jugger_horde"}},
             322: {"run_id": "matched", "role": "client", "pid": 322,
                   "journal": {"client_frame_window": dict(fresh_row),
                               "client_npc_view_window": dict(fresh_row),
@@ -374,6 +459,7 @@ class BuildResourceSamplerTests(unittest.TestCase):
 
         result = sampler._runtime_alignment_summary()
         self.assertTrue(result["same_run_server_client"])
+        self.assertTrue(result["mode_match"])
         self.assertEqual(result["run_id"], "matched")
         self.assertEqual(result["server_pid"], 321)
         self.assertEqual(result["client_pid"], 322)
@@ -383,6 +469,54 @@ class BuildResourceSamplerTests(unittest.TestCase):
             "server_tick_window"]["observed_utc"] = "2020-01-01T00:00:00Z"
         result = sampler._runtime_alignment_summary()
         self.assertFalse(result["same_run_server_client"])
+
+    def test_runtime_alignment_rejects_same_run_mode_mismatch(self):
+        sampler = BuildResourceSampler(Path("."), "runtime-mode-mismatch")
+        observed = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        fresh_row = {"observed_utc": observed}
+        sampler._runtime_context_by_pid = {
+            321: {"run_id": "matched", "role": "server", "pid": 321,
+                  "journal": {"generation_npc_player": dict(fresh_row),
+                              "server_tick_window": dict(fresh_row),
+                              "journal_mode": dict(fresh_row),
+                              "actual_mode": "bloodtest"}},
+            322: {"run_id": "matched", "role": "client", "pid": 322,
+                  "journal": {"client_frame_window": dict(fresh_row),
+                              "client_npc_view_window": dict(fresh_row),
+                              "journal_mode": dict(fresh_row),
+                              "actual_mode": "repeat"}},
+        }
+
+        result = sampler._runtime_alignment_summary()
+
+        self.assertTrue(result["same_run_server_client"])
+        self.assertFalse(result["mode_match"])
+        self.assertEqual(result["status"], "mode_mismatch")
+        self.assertIsNone(result["actual_mode"])
+        self.assertEqual(result["server_actual_mode"], "bloodtest")
+        self.assertEqual(result["client_actual_mode"], "repeat")
+
+    def test_runtime_journal_ignores_configuration_mode_fields(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            journal = root / "events.jsonl"
+            rows = [
+                {"pid": 321, "run_id": "runtime", "event": "network.mode.active",
+                 "wall_time": "2026-11-24T07:30:50.684Z",
+                 "fields": {"mode": "bloodtest"}},
+                {"pid": 321, "run_id": "runtime",
+                 "event": "dev_timer_tips.config_loaded",
+                 "wall_time": "2026-11-24T07:34:10.945Z",
+                 "fields": {"mode": "repeat"}},
+            ]
+            journal.write_text("\n".join(json.dumps(row) for row in rows) + "\n",
+                               encoding="utf-8")
+
+            sampler = BuildResourceSampler(root, "runtime-mode-source")
+            result = sampler._read_runtime_journal(str(journal), 321, "runtime")
+
+        self.assertEqual(result["actual_mode"], "bloodtest")
+        self.assertEqual(result["journal_mode"]["event"], "network.mode.active")
 
 
 if __name__ == "__main__":

@@ -48,6 +48,7 @@
 #include "input/input-router.h"
 #include "game/game-state.h"
 #include "physics/config.h"
+#include "physics/physical-entity.h"
 #include "combat/projectile-render.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-rocket-launcher.h"
@@ -1082,6 +1083,32 @@ void engineTickCamera(Engine& engine, float dt)
         glm::vec3 seatPosition(0.0f);
         glm::vec3 seatForward(0.0f, 1.0f, 0.0f);
         if (VehicleSystem::instance().localSeatWorld(seatPosition, seatForward)) {
+            VehicleState* localVehicle = VehicleSystem::instance().find(
+                VehicleSystem::instance().localVehicleId());
+            if (localVehicle && localVehicle->ballCam) {
+                const PhysicalEntity* ball = nullptr;
+                for (const PhysicalEntity& entity :
+                     PhysicalEntitySystem::instance().entities())
+                    if (entity.persistenceId == "arena-ball") {
+                        ball = &entity;
+                        break;
+                    }
+                if (ball) {
+                    const glm::vec3 target =
+                        VehicleSystem::instance().localVehiclePosition();
+                    const glm::vec3 toBall =
+                        glm::vec3(ball->transform[3]) - target;
+                    const float length = glm::length(toBall);
+                    if (length > 0.01f) {
+                        camera.yaw = glm::degrees(
+                            std::atan2(toBall.y, toBall.x));
+                        camera.pitch = glm::degrees(
+                            std::asin(std::clamp(toBall.z / length,
+                                                 -0.99f, 0.99f)));
+                        camera.updateVectors();
+                    }
+                }
+            }
             if (!camera.thirdPerson) {
                 camera.fov = CamConfig::instance().effectiveData().fov;
                 camera.pos = seatPosition + glm::vec3(0.0f, 0.0f, 0.55f);
@@ -1139,9 +1166,28 @@ void engineTickCamera(Engine& engine, float dt)
             glm::vec3 eyePosition = glm::vec3(headTransform[3]);
             if (bodycam) eyePosition += headRotation * bodycam->eyeOffsetMeters;
             if (bodycam) {
+                static float previousYaw = 0.0f;
+                static float previousPitch = 0.0f;
+                static bool previousValid = false;
+                const float yawDelta = previousValid
+                    ? std::fabs(camera.yaw - previousYaw) : 0.0f;
+                const float pitchDelta = previousValid
+                    ? std::fabs(camera.pitch - previousPitch) : 0.0f;
+                previousYaw = camera.yaw;
+                previousPitch = camera.pitch;
+                previousValid = true;
+                const bool stationary =
+                    glm::length(glm::vec2(player.vel.x, player.vel.y)) < 0.05f &&
+                    player.ground.onGround;
+                const bool looking = yawDelta > 0.01f || pitchDelta > 0.01f;
                 camera.applyBodycamPose(eyePosition, headFront, headUp, player.pos,
                     world, dt, bodycam->positionResponseSeconds,
-                    bodycam->rotationResponseSeconds, bodycam->wallCollision,
+                    bodycam->rotationResponseSeconds,
+                    bodycam->settleDeadbandDegrees,
+                    bodycam->settlePositionMeters,
+                    bodycam->settleHoldTicks,
+                    stationary && !looking,
+                    bodycam->wallCollision,
                     bodycam->wallProbeRadiusMeters);
             } else {
                 camera.resetBodycamPose();

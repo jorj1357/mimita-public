@@ -211,6 +211,23 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                 ? dryFireFeedbackFade(gChatUiTickClock.getTick(), dryFireEl->fadeTicks)
                 : 0.0f;
             drawCrosshair(cx, cy, 1.0f, dryFireFade > 0.0f);
+            {
+                static bool centerLogged = false;
+                if (!centerLogged) {
+                    centerLogged = true;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Gui, StructuredLevel::Important,
+                        "hud.crosshair.center", modeId,
+                        "crosshair drawn in the active HUD coordinate space",
+                        gChatUiTickClock.getTick(),
+                        nlohmann::json{{"x", cx}, {"y", cy},
+                                       {"screen_width", uiScreenW()},
+                                       {"screen_height", uiScreenH()},
+                                       {"expected_center_x", uiScreenW() * 0.5f},
+                                       {"expected_center_y", uiScreenH() * 0.5f}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+            }
             if (dryFireFade > 0.0f && dryFireEl && !dryFireEl->text.empty()) {
                 glm::vec4 color = dryFireEl->getTextColorVec();
                 color.a *= dryFireEl->opacity * dryFireFade;

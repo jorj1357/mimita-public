@@ -14,6 +14,7 @@
 
 #include "debug/structured-log.h"
 #include "devtools/terminal.h"
+#include "input/gamepad-input.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/physical-entity.h"
 #include "terminal/terminal-state.h"
@@ -626,6 +627,62 @@ void registerVehicleCommands()
                 enabled = !enabled;
             Terminal::instance().addLog(
                 enabled ? "[VEHICLE] debug on" : "[VEHICLE] debug off");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "gamepad_status",
+        "Log the current gamepad device and logical action values",
+        "gamepad_status",
+        [](const std::vector<std::string>&) {
+            GamepadInput& pad = GamepadInput::instance();
+            pad.logState("gamepad status requested");
+            Terminal::instance().addLog(
+                std::string("[GAMEPAD] connected=") +
+                (pad.connected() ? "yes" : "no") +
+                " name=" + pad.name() +
+                " standard=" + (pad.standardMapping() ? "yes" : "no") +
+                " raw=" + (pad.rawFallback() ? "yes" : "no") +
+                " virtual=" + (pad.virtualActive() ? "yes" : "no"));
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "gamepad_virtual",
+        "Inject bounded synthetic pad values for controller-path proof",
+        "gamepad_virtual <throttle> <brake> <steer> <jump> <boost> <powerslide> <ballcam> | off",
+        [](const std::vector<std::string>& args) {
+            GamepadInput& pad = GamepadInput::instance();
+            if (args.size() == 1 &&
+                (args[0] == "off" || args[0] == "0" || args[0] == "clear"))
+            {
+                pad.clearVirtualState();
+                Terminal::instance().addLog("[GAMEPAD] virtual off");
+                return;
+            }
+            if (args.size() != 7)
+            {
+                Terminal::instance().addLog(
+                    "[GAMEPAD] usage: gamepad_virtual <throttle> <brake> "
+                    "<steer> <jump> <boost> <powerslide> <ballcam> | off");
+                return;
+            }
+            float values[7] = {};
+            for (int i = 0; i < 7; ++i)
+                if (!parseFloat(args[i], values[i]))
+                {
+                    Terminal::instance().addLog(
+                        "[GAMEPAD] non-numeric argument");
+                    return;
+                }
+            pad.setVirtualState(values[0], values[1], values[2],
+                                values[3] > 0.5f, values[4] > 0.5f,
+                                values[5] > 0.5f, values[6] > 0.5f);
+            Terminal::instance().addLog(
+                "[GAMEPAD] virtual throttle=" + args[0] +
+                " brake=" + args[1] + " steer=" + args[2] +
+                " jump=" + args[3] + " boost=" + args[4] +
+                " powerslide=" + args[5] + " ballcam=" + args[6]);
         }
     });
 }

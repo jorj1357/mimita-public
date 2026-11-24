@@ -63,8 +63,16 @@ double lastMouseInputTime = -1.0;
                           const World& world, float dt,
                           float positionResponseSeconds,
                           float rotationResponseSeconds,
+                          float settleDeadbandDegrees,
+                          float settlePositionMeters,
+                          int settleHoldTicks,
+                          bool allowSettle,
                           bool wallCollision, float probeRadiusMeters);
-    void resetBodycamPose() { mBodycamPoseInitialized = false; }
+    void resetBodycamPose() {
+        mBodycamPoseInitialized = false;
+        mBodycamSettleTicks = 0;
+        mBodycamSettled = false;
+    }
     glm::mat4 getView() const;
     glm::mat4 getProj(float width, float height) const;
 
@@ -74,4 +82,6 @@ private:
     bool mFirstFrame = true;
     glm::quat mBodycamRotation{1.0f, 0.0f, 0.0f, 0.0f};
     bool mBodycamPoseInitialized = false;
+    int mBodycamSettleTicks = 0;
+    bool mBodycamSettled = false;
 };
