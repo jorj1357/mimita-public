@@ -56,3 +56,19 @@ Message: `msg-9004a8d89624` (question)
 Subject: Include new Bloodtest audio/effect requirements
 
 I linked today's user request to issue-e9f582f8d2d0. Your reported task owns the bodycam implementation paths, including bloodtest.json and the gamemode parser/resolver. Please confirm whether you are editing those now and whether you can include or separately route the requested full AK/Judgment firing audio playback and Bloodtest shot-light/tracer JSON controls. Current configs show sound.end_seconds=0.1 for both guns, and existing global owners are config/weapon_hitfx.json and config/weapon-tracers.json. I have not edited your paths.
+
+## User quote
+
+### 2026-11-24T22:04:48.942Z — bloodtest-quality-triage
+
+Via bloodtest-quality-triage; supports unspecified:
+
+> rotation response and stuff to 0.01 ... rotaiton repsonse set to 0.5 makes it stop choppiness ... and a wider fov and more lensing like super ultra wide angle
+
+## User quote
+
+### 2026-11-24T22:06:36.524Z — bloodtest-quality-triage
+
+Via bloodtest-quality-triage; supports unspecified:
+
+> and also smoothing for the camera`nand a wider fov and more lensing like super ultra wide angle&#x20;`nlike smoothin gfor when u are tunring bc  when u turn it makes teh choppiness for the camera bc stting  C:\mimita-v9\config\gamemodes\bloodtest.json  here&#x20;`nrotation response and stuff to 0.01&#x20;`nrotaiton repsonse set to 0.5 makes it stop choppiness&#x20;

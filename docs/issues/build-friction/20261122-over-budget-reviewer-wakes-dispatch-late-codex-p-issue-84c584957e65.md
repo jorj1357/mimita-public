@@ -351,3 +351,17 @@ Evidence: {"attempts": 2, "build_attempt_id": "game-dll-20261124T203535650414Z-7
 Recurrence 2026-11-24 wait (issue-7ef5043ce95c, wake-c29456cabf35): wake.queued 2026-11-24T20:21:00.308Z; codex claimed/launched 20:21:11.629/.698Z then exited; wake.retry 20:25:24.985Z "previous adapter process exited; trying fallback"; opencode claimed/launched 20:36:52.814/.889Z; .dev/agent-wake/requests/wake-c29456cabf35.json attempts=2. Queue-to-final-launch 952.6s (~15m52.6s) and two wake.launched rows for one wait_id, above the <=5 min bound and against one-launch-per-wait.
 
 Evidence: {"issue": "issue-7ef5043ce95c", "launches": 2, "queue_to_launch_seconds": 952.6, "wake": "wake-c29456cabf35"}
+
+## Agent suggestion
+
+### 2026-11-24T22:01:01.756Z — build-wait-reviewer
+
+Recurrence evidence (2026-11-24, issue-6692376723be review): wake-dbeab2f5c771 was queued once at 21:01:34.368Z for a 62.207s game-dll-build wait, then launched twice: codex 21:13:39.832Z and opencode 21:45:08.474Z. wake.retry logged 21:24:13.300Z but opencode did not claim until 21:45:08.388Z, immediately after a different wait's agent-wake run --once drained the queue (wake-59dc989b28d0 for issue-ee3e906c8273). Queue-to-final-launch 2614.1s (~43.6 min). This directly reproduces the no-persistent-daemon/next-wait-drain mechanism described in this issue and the duplicate-launch acceptance violation. Evidence: .dev/agent-wake/events.jsonl, .dev/agent-wake/requests/wake-dbeab2f5c771.json, logs/2026-11-24/20261124_205956/dev-loop/events.jsonl (dev-loop.wait.reviewer-wake at 21:45:08.562Z embeds wake-dbeab2f5c771 under wait 21:43:56.034Z). Suggested next check: bound dispatch with a persistent daemon or scheduled retry and assert exactly one wake.launched per wake id.
+
+## Occurrence
+
+### 2026-11-24T22:03:16.454Z — build-wait-reviewer
+
+Recurrence 2026-11-24 (issue-98a885a0bb81, wake-a61c8e5d2cf2): request created 2026-11-24T20:56:07.426Z; primary codex wake.claimed 2026-11-24T20:56:33.917Z and wake.launched 20:56:34.041Z; wake.retry with adapter fallback to opencode at 21:13:39.208Z; opencode wake.claimed 21:14:31.612Z and wake.launched 21:14:31.937Z. The reviewer reached the issue ~18m24s after the wake was queued, matching the original codex-primary-to-opencode-fallback pattern. Exactly one wake.queued exists for the occurrence (no duplicate), so the "queued exactly once" half holds; only dispatch latency regressed. Evidence: .dev/agent-wake/events.jsonl wake-a61c8e5d2cf2 rows and .dev/agent-wake/requests/wake-a61c8e5d2cf2.json (attempts=2). Read-only; no source change.
+
+Evidence: {"attempts": 2, "dispatch_delay_seconds": 1104.5, "issue": "issue-98a885a0bb81", "opencode_launched_utc": "2026-11-24T21:14:31.937Z", "queued_utc": "2026-11-24T20:56:07.426Z", "wait_id": "game-dll-build:2026-11-24T20:55:04.680Z", "wake": "wake-a61c8e5d2cf2"}

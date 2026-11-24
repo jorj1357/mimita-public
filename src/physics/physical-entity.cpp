@@ -1381,6 +1381,35 @@ void resolveEntityContacts(std::vector<PhysicalEntity>& entities)
     for (size_t i = 0; i < entities.size(); ++i)
     {
         PhysicalEntity& a = entities[i];
+        // Bounded diagnostic for the arena ball pair path: report why the ball
+        // is or is not eligible before any narrowphase runs.
+        if (a.persistenceId == "arena-ball")
+        {
+            static thread_local uint64_t sLastBallStateTick = 0;
+            const uint64_t tick =
+                PhysicalEntitySystem::instance().simulationTick();
+            if (tick > sLastBallStateTick + 60)
+            {
+                sLastBallStateTick = tick;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Physics, StructuredLevel::Important,
+                    "arena.ball.state", std::to_string(a.networkId),
+                    "arena ball eligibility for entity pair contacts",
+                    static_cast<uint32_t>(tick),
+                    nlohmann::json{
+                        {"pos", {a.transform[3].x, a.transform[3].y,
+                                 a.transform[3].z}},
+                        {"motion", static_cast<int>(a.motion)},
+                        {"sleeping", a.sleeping},
+                        {"serverDriven", a.serverDriven},
+                        {"serverSimulated", a.serverSimulated},
+                        {"collidesWithActors", a.collidesWithActors},
+                        {"triangles", a.localTriangles.size()},
+                        {"can_move", entityCanMove(a)},
+                        {"entity_count", entities.size()}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
         if (!entityCanMove(a))
             continue;
         const AABB boxA = entityWorldAABB(a);
@@ -1501,10 +1530,38 @@ void resolveEntityContacts(std::vector<PhysicalEntity>& entities)
             if (glm::dot(normalSum, normalSum) <= 1e-8f)
                 continue;
 
+            glm::vec3 aggregateNormal = normalSum;
+            glm::vec3 aggregatePoint = pointSum / (float)count;
+            const bool spherePair =
+                a.shape == PhysicalEntityShape::Sphere ||
+                b.shape == PhysicalEntityShape::Sphere;
+            // A sphere's contact normal is the centre line, by definition. The
+            // manifold sum cannot represent it (triangle normals point in many
+            // directions and partially cancel), which is why a sphere pair was
+            // being treated as separating and never transferred an impulse.
+            if (spherePair ||
+                glm::length(normalSum) < 0.25f * static_cast<float>(count))
+            {
+                const glm::vec3 centreA =
+                    glm::vec3(a.transform[3]) + a.orientation * a.centerOfMass;
+                const glm::vec3 centreB =
+                    glm::vec3(b.transform[3]) + b.orientation * b.centerOfMass;
+                const glm::vec3 between = centreA - centreB;
+                if (glm::dot(between, between) > 1e-8f)
+                    aggregateNormal = glm::normalize(between);
+                float deepest = -1.0f;
+                for (size_t c = 0; c < count; ++c)
+                    if (s_contacts[c].penetration > deepest)
+                    {
+                        deepest = s_contacts[c].penetration;
+                        aggregatePoint = s_contacts[c].point;
+                    }
+            }
+
             RecoveryContact aggregate = s_contacts[0];
-            aggregate.normal = normalSum;
-            aggregate.responseNormal = normalSum;
-            aggregate.point = pointSum / (float)count;
+            aggregate.normal = aggregateNormal;
+            aggregate.responseNormal = aggregateNormal;
+            aggregate.point = aggregatePoint;
             aggregate.penetration = maxPenetration;
             resolveEntityPairContact(a, b, aggregate);
         }

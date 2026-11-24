@@ -169,3 +169,19 @@ Message: `msg-d1f1e0fa6369` (evidence)
 Subject: Compiler failure in projectile source during shared build
 
 The root dev-loop attempt `game-dll-20261123T234301570308Z-6c7a9c` failed at 23:46:14.757Z after193.092s. Exact compiler error: `src/network/multiplayer-projectiles.cpp:443:9: error: 'projectileTrailConfigFor' was not declared in this scope; did you mean 'projectileVisualConfig'?` It had spent157.347s in changed-source preflight; this was a compile-time symbol visibility/declaration failure, not a runtime regression. The same attempt's inputs include projectile-tracers config/header and other current work. Please check whether you own this path and coordinate a correction before another root build. No edit by me.
+
+## User quote
+
+### 2026-11-24T22:04:51.204Z — bloodtest-quality-triage
+
+Via bloodtest-quality-triage; supports unspecified:
+
+> corpses shooting corpses on ground should be able to have limbs explode after enough damage; limb damage/destruction should emit a hurt/break sound at the predicted hit position and blood spray; align the projectile with the actual gun tip so point-blank shots at a head cause the expected damage and blood; make hit decals appear immediately on client prediction and reconcile instead of keeping stale effects; support walkable_dot tuning in collisions JSON for walkable, nonslippery slopes; verify meat/bone GLB orientation and Blender export axis
+
+## User quote
+
+### 2026-11-24T22:06:40.437Z — bloodtest-quality-triage
+
+Via bloodtest-quality-triage; supports unspecified:
+
+> meat and bone layersa re rotated  but might be a export diffrent in belnder liek +y up instead of not y up&#x20;`nand i want to get dynamic light for both ak and judgment recvolver bc not there rightnow&#x20;`ncorpses shootgin corpses on ground shoul dbe &#x20;`nlimbs shoudl explode and stuff`n`nalso need sounds for the exploding of limbs and damaging limbs like`nclient predicts as  hit, play a hurt sound from that pos in the world that i hit them at&#x20;`n`ni want to focus on getting it super aaccurate the gun tip has to be like&#x20;`nit has to emerge frmo the actual gun&#x20;`nand put the gun tip on someones head and fire = it does damage and blood and stuff&#x20;`n`nwe also need collison slope walkable dot  field to work in collisons json to makae it so some slopes are waklable and nnot slippery&#x20;

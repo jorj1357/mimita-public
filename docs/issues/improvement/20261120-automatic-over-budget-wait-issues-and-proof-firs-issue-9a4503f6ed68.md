@@ -517,3 +517,41 @@ Review request (bounded), from the independent review of issue-e96486c8cc3e. I a
 Wait game-dll-build:2026-11-24T20:35:35.515Z (issue issue-21e4b1fbc77e) reconfirms the stale-identity defect on a healthy build: evidence records generation=617 and build_id=2026-11-24T19:27:02.742428Z (last completed build), while the in-flight attempt was game-dll-20261124T203535650414Z-718e6f, generation 618, request 2026-11-24T20:35:35.235Z-ce3687b4:mode3:game, success at total_seconds 228.997. dev-loop.py:3158-3170 sets started_utc at build start but game_build_generation only from the result at dev-loop.py:3259, and latest_build is the last completed build, so mid-build wait evidence cannot identify the waited-on generation. related_build and related_run are both empty. Reviewer: build-wait-reviewer.
 
 Evidence: {"build_attempt_id": "game-dll-20261124T203535650414Z-718e6f", "build_outcome": "success", "build_total_seconds": 228.997, "generation": 618, "issue": "issue-21e4b1fbc77e", "related_build_empty": true, "related_run_empty": true, "source": "devscripts/dev-loop.py:3158-3170,3259", "wait_build_id": "2026-11-24T19:27:02.742428Z", "wait_generation": 617, "wait_id": "game-dll-build:2026-11-24T20:35:35.515Z"}
+
+## Agent suggestion
+
+### 2026-11-24T21:39:32.470Z — build-wait-reviewer
+
+Recurring-wait aggregation evidence (build-wait-reviewer, 2026-11-24T21:37Z): a query found 176 build-friction issues already sharing the exact title 'Wait over budget: game-dll-build at game_build'. Per-wait_id uniqueness plus a 60s budget shorter than a normal changed-TU game-DLL preflight (this occurrence: attempt game-dll-20261124T204256895649Z-e6e8af, changed_source_preflight 173.276s) guarantees roughly one new issue per non-trivial build, realizing this issue's stated duplicate-issue risk. This occurrence (issue-d6a3c6c35682) is otherwise a normal slow-TU build that failed to compile (invalid mimita::game::playerPtr()/worldPtr()). Proposed smallest next check: aggregate repeated waits by (kind, stage) signature into one open issue with appended occurrences, keep the per-wait_id value only as an occurrence, and mint a distinct issue only when the signature or owning phase changes. Confirm scope with the human before changing shared wait authority.
+
+## Agent discussion and suggestions
+
+### 2026-11-24T21:40:27.747Z — build-wait-reviewer
+
+Message: `msg-5d30d5145da3` (question)
+
+Subject: Recurring wait duplicate flood: evidence + smallest next check
+
+build-wait-reviewer appended a suggestion to issue-9a4503f6ed68: 176 issues already share the title 'Wait over budget: game-dll-build at game_build'. This occurrence (issue-d6a3c6c35682) is a normal 173s single-TU changed_source_preflight (attempt game-dll-20261124T204256895649Z-e6e8af) that also failed to compile. Please review the evidence and agree the smallest next check: aggregate repeated waits by (kind, stage) signature as occurrences on one issue, minting a new issue only when signature/owner phase changes. Do not change shared wait authority without human confirmation.
+
+## Agent suggestion
+
+### 2026-11-24T22:03:13.496Z — build-wait-reviewer
+
+Wait-evidence field gap (observed from issue-98a885a0bb81, wait game-dll-build:2026-11-24T20:55:04.680Z). build_friction.record_wait_incident stores only the wait dict built at devscripts/dev-loop.py:3888-3900. That dict omits run_id, the game-DLL attempt id (e.g. game-dll-20261124T205504793823Z-0c153b), and the journal path, even though the dev-loop event itself carries run_id and an events_path. It also reports generation = self.game_build_generation, which is only advanced on completion (devscripts/dev-loop.py:3259), so this wait recorded generation 618 (last published) while the in-flight attempt produced generation 620. As a result the issue acceptance's "build/run IDs" is only partially met: a reviewer cannot reconstruct the attempt from the issue record alone. Suggested smallest fix: include run_id, journal/events_path, resolved game-DLL build_attempt_id when available, and split the generation field (e.g. last_published_generation plus active/requested generation). No source change made by build-wait-reviewer; reported for owner review.
+
+## Agent suggestion
+
+### 2026-11-24T22:04:47.569Z — build-wait-reviewer
+
+Occurrence (build-wait-reviewer, review of issue-723d66575ccf, wait game-dll-build:2026-11-24T21:12:25.383Z): the recurring over-budget wait signal fired on a FAILING build and hid the failure. Attempt game-dll-20261124T211225830289Z-dcfa7e (dev-loop run 20261124_205956) is success=false, failed_phase=worker_timeout, worker_error "worker timed out after 300s", total_seconds=322.968. Timeline: changed TU src/main-systems.cpp compile 162.26s (183101ms elapsed); link.lld_linker 129.32s outcome=failed exit_code=1 staged_dll_bytes=0; worker tail "[GAME BUILD] link failed in 129.32s"; supervisor stage.failed reason=timeout at 300s exit_code=124. So the first concrete failure is the link, but the 300s supervisor budget expired and it is labeled worker_timeout; the wait issue only shows elapsed=61.21s and health status does not surface the failure. This occurrence also had heavy contention: mean_host_cpu_percent=99.986, peak=100.0, minimum_available_memory_bytes=8,781,824 (~8.4 MiB); concurrent client 44.97 FPS (48/48 frames over 4.167ms budget) and live bloodtest server (1 NPC, 55 ticks/85.78ms). Evidence .dev/build-timings/game-dll-20261124T211225830289Z-dcfa7e.json and .resource.json; journal logs/2026-11-24/20261124_205956/dev-loop/events.jsonl:68-69. Same stale-identity gap as seq 16420 (build_id=2026-11-24T19:27:02.742428Z is the last completed build; related_build/related_run empty; in-flight attempt id/run id absent). Additional traceability defect: the dev-loop.wait.reviewer-wake launch_result at 21:13:40.696Z names issue-d6a3c6c35682/wake-f3dc6eef636d because build_friction.wake_reviewer runs agent-wake.py run --once (build_friction.py:244-246) which drains any pending request. Wake invariant itself held: exactly one wake.queued for this wait_id (wake-745d58660240, 21:13:34.638Z); fallback dispatch was late (~31.5 min, see issue-84c584957e65). Suggested smallest next check (owner wake-proof-wait): make wait evidence carry build_attempt_id/run_id, and classify a worker that reports a link error before exit as link_failed rather than worker_timeout; then decide whether the resource-starved link was OOM (linker error text was lost because progress.log was overwritten by gen 625). No source edit or claim made; see issue-723d66575ccf review id 394 and thread-95efec221953.
+
+## Agent discussion and suggestions
+
+### 2026-11-24T22:07:59.947Z — build-wait-reviewer
+
+Message: `msg-d24de72a4199` (evidence)
+
+Subject: Recurring wait: this one was a failed build under resource pressure
+
+New occurrence on issue-9a4503f6ed68: wait game-dll-build:2026-11-24T21:12:25.383Z (issue-723d66575ccf, review id 394) fired on a FAILING build, not just a slow one. Attempt game-dll-20261124T211225830289Z-dcfa7e: success=false, failed_phase=worker_timeout, total_seconds=322.968; changed TU src/main-systems.cpp compile 162.26s, link 129.32s exit_code=1 staged_dll_bytes=0, worker tail "link failed in 129.32s", supervisor timeout at 300s/exit 124. Host CPU 99.986%/peak 100%, min free memory 8,781,824 B (~8.4 MiB) with a live client (44.97 FPS) and bloodtest server. So the wait signal hid a build failure and the 60s budget fired far before it. Two smallest checks I recommend you evaluate under your ownership: (1) carry build_attempt_id/run_id in wait evidence (related_build/related_run are empty; build_id is the last completed build); (2) classify a worker that reports a link error before exit as link_failed, not worker_timeout. Evidence: .dev/build-timings/game-dll-20261124T211225830289Z-dcfa7e.json + .resource.json, journal logs/2026-11-24/20261124_205956/dev-loop/events.jsonl:68-69. Also confirms issue-84c584957e65 (wake -> opencode launch ~31.5 min). This is evidence only; no source edit or claim. Replies can go here (thread-95efec221953).

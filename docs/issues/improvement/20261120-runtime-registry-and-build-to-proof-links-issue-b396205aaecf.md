@@ -147,3 +147,19 @@ PROPOSAL (smallest experiment, measurable)
 - Measurable target: (a) 100% of new automatic launch-friction issues created after the change have a resolvable report-dir evidence snapshot that shows the last event before the named failing stage (baseline today: 0% - this issue's journal is gone); (b) snapshot size <=256 KB and added failure-path time <=500 ms; (c) a reviewer can identify the first divergence for a new failure without reading logs/ (0 manual log-path lookups in the issue review).
 - Smallest experiment: implement the snapshot for server_gameplay_readiness and server_logger_readiness failures only, exercise it with a staged/synthetic launch report (no new gameplay run needed), confirm evidence.json is bounded and resolves, then one real failing or blocked launch when available. Control: a successful launch writes no issue and no evidence snapshot.
 - Owner: build-runtime-subagents (this issue's owner) or the launch_report.py owner. No source edit, build, close, or fix is claimed by this review.
+
+## Agent suggestion
+
+### 2026-11-24T22:11:39.239Z — issue-review-sweeper
+
+Process/evidence proposal from issue-review-sweeper (2026-11-24 wake, fourth consecutive review of issue-503f3e410c01). Read-only; no source edit, build, or fix claim. This adds one non-duplicate facet to the existing proof-integrity proposals on this issue; it does not repeat the empty-verified/journal, missing-journal, generation-conflict, or manifest-only items.
+
+NEW OBSERVED EVIDENCE
+- task-proof-899d76b7464a (arcade_no_weapon_world_collision) records source_hashes src/network/server-players.cpp=182b68c36ae39014676e29d54a14532d9b4c2815981621d2fd1cdff023beda1c and src/physics/movement/physics-collision-glb-main.cpp=5b77a84397bed16d312610116b32351bfaffa34baf2fd462dce0ed7ba5f9bba0.
+- Current tree hashes differ on 2/2 recorded paths: server-players.cpp=69e5b9d289dc94e43fa4d94ff4e38bba6d309578662cf436e8d95bd198e00e77 (changed by commits 186eebd2 on 2026-11-23 19:07 EST and 51306c08 on 2026-11-24 00:22 EST) and physics-collision-glb-main.cpp=0abedb32ac218a14d9b5c73507dab0b24164cad41e1e060420bc22271b0eb527 (changed by d651e1332 on 2026-11-20 18:25).
+- `proof status` reports no stale reason for that row (reason=""), and the dev-loop status shows `task=arcade_no_weapon_world_collision result=unproven reason=-`, so the recorded-hash drift is invisible. The sibling tasks (arcade_npc_melee_hit, mace_active_contact) still match current hashes, so the defect is per-path, not a blanket "all stale".
+
+PROPOSAL (smallest experiment, measurable)
+- Make source_hashes drift self-invalidating: in `proof status` (and the dev-loop proof line), re-hash each recorded path in source_hashes and, when any differs from the current tree, report `stale` with the changed path(s) instead of `unproven/-`; and have `proof task-verify` refresh source_hashes from the current tree at verification time so a verified row can never carry hashes from an older generation. Do not change run/launch/retention or gameplay.
+- Measurable target: 0 proof rows whose recorded source_hashes differ from the current file hash without an explicit stale reason (baseline this sweep: 1 row, task-proof-899d76b7464a, 2/2 paths); 100% of rows verified after the change carry hashes equal to the tree at verify time; `proof status` runs under 5s on a 65-row ledger.
+- Smallest experiment: run the read-only re-hash comparison over the current proof ledger and record the flagged rows (expected: task-proof-899d76b7464a), add only the comparison to `proof status`, and confirm task-proof-899d76b7464a flips to stale while task-proof-c59c4db8a80e and task-proof-edf53b087881 stay unproven (their hashes still match). No source, build, or gameplay change.

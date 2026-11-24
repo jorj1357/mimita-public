@@ -1,9 +1,14 @@
 """Regression checks for game-worker timeout/failure races."""
 
+from pathlib import Path
 import subprocess
+import sys
+import tempfile
+import time
 import unittest
 
 from devscripts.dev_loop.game_build import (
+    _run_checked,
     _terminal_attempt_failure_after_timeout,
     _wait_for_process_exit,
 )
@@ -27,6 +32,30 @@ class _FakeProcess:
 
 
 class GameBuildTimeoutClassificationTests(unittest.TestCase):
+    def test_exact_terminal_failure_stops_worker_before_long_timeout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            record_path = Path(temp_dir) / "last-attempt.json"
+            script = (
+                "import json,sys,time; "
+                "json.dump({'build_attempt_id':sys.argv[1],"
+                "'status':'failed','phase':'link',"
+                "'error':'synthetic terminal link failure'},"
+                "open(sys.argv[2],'w')); "
+                "time.sleep(20)"
+            )
+            started = time.monotonic()
+            result = _run_checked(
+                Path(temp_dir),
+                [sys.executable, "-c", script, "attempt-current",
+                 str(record_path)],
+                lambda _line: None,
+                timeout=30.0,
+                terminal_failure_attempt=(record_path, "attempt-current"))
+            elapsed = time.monotonic() - started
+
+        self.assertEqual(result, 125)
+        self.assertLess(elapsed, 4.0)
+
     def test_already_exited_process_does_not_wait_again(self):
         process = _FakeProcess(result=1)
 

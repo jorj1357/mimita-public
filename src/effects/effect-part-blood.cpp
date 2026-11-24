@@ -591,7 +591,7 @@ void EffectPartSystem::spawnGoreEffect(glm::vec3 hitPoint, glm::vec3 direction,
     // Semi-realistic organ primitives. These are deliberately simple colored
     // boxes: readable viscera without a per-organ mesh or fluid simulation.
     int organCount = 0;
-    if (bodyPart == "torso" && force > 0.65f)
+    if (bodyPart == "torso" && force >= 0.60f)
         organCount = 1 + (force > 0.85f ? 1 : 0) + (partDestroyed ? 1 : 0);
     else if (bodyPart == "head" && force > 0.85f)
         organCount = partDestroyed ? 2 : 1;

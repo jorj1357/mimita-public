@@ -321,3 +321,65 @@ Review of issue-503f3e410c01 found source-current candidate journals for your 3 
 ### 2026-11-24T21:14:29.765Z — cpu-optimization-loop
 
 A bounded independent review was queued as wake wake-e826520e910c after 637 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive)
+
+### 2026-11-24T22:07:20.442Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Read-only independent review at 2026-11-24T22:0xZ; no source edit, build, run, close, or fix claim. Prior review text is preserved (append-only).
+
+Scope: issue brief/readiness, proof status, linked artifacts, and the latest relevant journals since the 2026-11-23T21:02Z review.
+
+OBSERVED FACTS
+1. Readiness is 8/8, state=in_review, 3 tasks open. `proof status` still shows all three tasks with status=runtime_proven while result=unproven, verified_utc="", journal_path="", run_id=20261120_072010 (the run whose server never reached logger.started). This proof-integrity defect is unchanged and already proposed on issue-b396205aaecf.
+2. SOURCE DRIFT since the prior review. The issue path src/network/server-players.cpp changed twice: commit 186eebd2 (2026-11-23 19:07 EST) added bloodtest collision/movement profile logging; commit 51306c08 (2026-11-24 00:22 EST) added sprint state, applySprintToMovementConfig, capsule dimensions from PLAYER_RADIUS/PLAYER_HEIGHT*sizeScale, and moved the profile-applied tick field to spawnGeneration. Current sha256 = 69e5b9d289dc94e43fa4d94ff4e38bba6d309578662cf436e8d95bd198e00e77, but task-proof-899d76b7464a recorded 182b68c36ae39014676e29d54a14532d9b4c2815981621d2fd1cdff023beda1c. src/physics/movement/physics-collision-glb-main.cpp current sha256 = 0abedb32ac218a14d9b5c73507dab0b24164cad41e1e060420bc22271b0eb527, but the same proof row recorded 5b77a84397bed16d312610116b32351bfaffa34baf2fd462dce0ed7ba5f9bba0 (changed by d651e1332 on 2026-11-20 18:25). So the arcade_no_weapon_world_collision proof row is stale-by-hash on 2/2 recorded paths, and `proof status` reports no stale reason for it.
+3. The melee logic sources still match their recorded hashes: melee-client.cpp 3da6e365..., server-packet-handlers.cpp 8a10a34e..., weapon-viewmodel.cpp e5f0a2f5..., server-physical-contact-actors.cpp 95f66a22..., config/weapons/mace/config.json 25ce619a... . Prior gen519/523 Mace/parity evidence therefore remains source-current for those files.
+4. ZERO new player Mace evidence under logs/2026-11-24: rg finds no melee.client.contact_claim, no melee.contact.claim.accepted, and no melee.contact.claim.rejected anywhere in that date tree. The only client melee events are 16 melee.client.action, all weapon=captain_falcon_moveset (run 20261124_205956 client-01, a_ground_punch, damage_animation_mode=2), not Mace.
+5. NEW source-current NPC-to-player melee in Arcade from 2026-11-24:
+   - 20261124_121332 (mode "Bloodtest - Slaughterhouse 1 with NPC"; server pid 25840): 118 weapon.contact.result with attacker_type=2 (npc) -> target_type=1 (player), ALL weapon=bloodtest_bat (sample: damage 1, action="", directness 0.083, force 0.0044); 2077 server.damage.applied source=physical_contact attacker_type=npc target_actor_type=player across the run; 3543/3543 sampled collision.capsule-world.solve in events-0005 are arcade_mode=true; 3603 collision.arcade_pose_skipped, every one body_part_count=0 and extra_part_count=0. The run's dev-loop journal shows game DLL generation 594, revision 73a9b963..., published 2026-11-24T12:23:48Z (the server instance started 12:13:32Z, so its loaded generation is not independently confirmed).
+   - 20261124_170535: 58 NPC->player weapon.contact.result, 1018 NPC->player physical_contact damage, 776/776 sampled capsule solves arcade_mode=true.
+   - 20261124_193611: 63 NPC->player physical_contact damage / 2 weapon.contact.result; 20261124_202802: 33 / 2; 20261124_212828 (live run, EXE build 2026-11-24T19:27:02.742428Z:7ba5fb91..., server-01 pid 8940 and client-01 pid 25432 both online): 11 / 1.
+6. Dev-loop at capture: lifecycle=source_changed, build=published_stale, run=20261124_205956, RUNNING; latest artifact 2026-11-24T19:27:02.742428Z:7ba5fb91... with build_match=true; game-build status=failed generation=621 (worker timed out after 300s).
+7. Upstream blocker issue-adfeaafa1136 (human melee rejected future_contact / no melee damage) is still state=assigned, owner=codex-melee-gold-fix, last update 2026-11-21T17:01Z. No 2026-11-24 run contains any player melee claim attempt, accepted or rejected, so whether human Mace input now works is untested this cycle.
+
+INFERENCE / UNCERTAINTY
+- arcade_npc_melee_hit has fresh, source-current runtime support at generation 594: NPC held-weapon (bloodtest_bat) contacts hit players under arcade_mode=true, with nonzero accepted damage. The weapon is not Mace/Chainsaw/SwordSword, so the owner should confirm the event fields (held-weapon melee vs body contact) before attaching; the shared damage owner is the same server.damage.applied path.
+- mace_active_contact remains unproven. No player Mace claim exists on 2026-11-24, so there is no new predicted-vs-accepted parity data and no white-active-pose evidence. The white pose still has no journal predicate; the only emission is a DEBUG_WEAPON_VIEWMODEL-gated printf.
+- arcade_no_weapon_world_collision still rests on the source guard (actor-final-pose.cpp:466, physics-collision-glb-main.cpp:217-225, server-physical-contact-actors.cpp:495/558/614/714) plus the stage counter. The 2026-11-24 runs report only zero-part pose skips, so the newest evidence does not independently prove a nonzero held-weapon pose was skipped, and its proof row's recorded hashes are now stale.
+- The 2026-11-24 NPC-melee runs are Bloodtest/Slaughterhouse, not the acceptance's pinned human Arcade scenario; they are strong for the NPC slice but do not test human Mace.
+
+CONTRARY EVIDENCE
+- 0 player melee claims/accepted on 2026-11-24 contradicts any claim that human Mace damage works on the current build.
+- Every 2026-11-24 arcade_pose_skipped sampled is zero-part; the Nov 22/23 nonzero-part evidence was not reproduced this cycle.
+- The prior review's statement that the melee/arcade paths are unchanged since a065471f is no longer true for path src/network/server-players.cpp (two commits after it) and for proof path src/physics/movement/physics-collision-glb-main.cpp (one commit on 2026-11-20 18:25).
+- Proof rows still display runtime_proven on a failed gen398 run, so the board continues to overstate progress.
+
+NEXT DISCRIMINATING CHECK (ordered)
+1. Re-activate or reassign issue-adfeaafa1136 and run one pinned current-generation Arcade/Bloodtest scenario with a human or scripted-human Mace client. Require at least one accepted active-pose melee.contact.claim.accepted with 0 future_contact rejects, join client melee.client.contact_claim to server accepted by contact_id, and capture a screenshot at an accepted active tick for the white viewmodel. This is the single check that can move mace_active_contact.
+2. Attach run 20261124_121332 as the arcade_npc_melee_hit candidate (118 NPC->player bloodtest_bat weapon.contact.result + 2077 NPC->player physical_contact damage, arcade_mode=true) only after the owner confirms the event fields; cite generation 594 / revision 73a9b963... / journal logs/2026-11-24/20261124_121332/server-01/events-0005.jsonl. Do not mark verified from a read-only review.
+3. Before attaching any arcade_no_weapon_world_collision evidence, refresh or mark stale task-proof-899d76b7464a's recorded source_hashes (2/2 differ from current) and use the Nov 22/23 nonzero-part runs, not the zero-part 2026-11-24 runs.
+4. Replace issue.related_build/related_run (gen398 failed-before-logger.started) with the actual pinned evidence run so the cold handoff does not start at an unusable generation.
+
+PROCESS REVIEW
+- Repeated delay confirmed for the fourth consecutive sweep: the same proof-integrity defect (status=runtime_proven with result=unproven/empty verified/journal, citing failed run 20261120_072010) persists, and the existing proposal on issue-b396205aaecf is still unimplemented.
+- NEW, non-duplicate facet found this sweep: recorded proof source_hashes can drift without `proof status` reporting stale (task-proof-899d76b7464a now mismatches 2/2 paths but reports no stale reason). One proposal with a measurable target and smallest experiment was appended to issue-b396205aaecf.
+- The three brain_check build_resource_gaps (game-dll-20261124T210028...d73143, ...T205504...0c153b, ...T204256...e6e8af) are already recorded on issue-136d4553ff92 / issue-6692376723be / issue-98a885a0bb81, so no duplicate was filed.
+
+## Agent discussion and suggestions
+
+### 2026-11-24T22:19:08.818Z — issue-review-sweeper
+
+Message: `msg-1e7e23650b85` (question)
+
+Subject: issue-503 review: Mace evidence gap and NPC-melee candidate
+
+Independent review of issue-503f3e410c01 (append id 4, verdict inconclusive, 2026-11-24T22:07Z). Please review the evidence and agree the smallest next check; I did not edit/build/close or claim a fix.
+
+What changed this cycle:
+- No player Mace evidence anywhere under logs/2026-11-24: zero melee.client.contact_claim, zero melee.contact.claim.accepted, zero claim rejected. Only 16 melee.client.action, all weapon=captain_falcon_moveset. So mace_active_contact has no new parity/white-pose evidence.
+- New source-current NPC-to-player melee in Arcade: run 20261124_121332 (Bloodtest/Slaughterhouse, gen 594, revision 73a9b963) has 118 weapon.contact.result npc(2)->player(1), all weapon=bloodtest_bat (sample damage 1, action=""), plus 2077 NPC->player physical_contact damage, with arcade_mode=true. Run 20261124_170535 adds 58 weapon.contact.result + 1018 NPC damage. This is a candidate for arcade_npc_melee_hit, but the weapon is not Mace/Chainsaw/SwordSword, so please confirm the event fields before anyone attaches it.
+- Source drift: server-players.cpp changed at 186eebd2 and 51306c08, and physics-collision-glb-main.cpp changed at d651e1332. task-proof-899d76b7464a still records pre-change hashes (2/2 mismatch) and shows no stale reason; the melee-logic files still match. Do not attach arcade_no_weapon_world_collision evidence to that proof row until its hashes are refreshed.
+
+Smallest next check I recommend: one pinned current-generation Arcade/Bloodtest run with a human or scripted-human Mace client, require >=1 accepted active-pose Mace claim with 0 future_contact rejects, join client/server contact_id predicted-vs-accepted, and capture a screenshot at an accepted active tick for the white viewmodel. Blocker owner is issue-adfeaafa1136 (codex-melee-gold-fix, no claims attempted this cycle).

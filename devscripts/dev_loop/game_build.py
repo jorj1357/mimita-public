@@ -1047,7 +1047,8 @@ def _terminal_attempt_failure_after_timeout(attempt_id: str,
 
 
 def _run_checked(root: Path, command: list[str], on_output,
-                 timeout: float | None = None) -> int:
+                 timeout: float | None = None,
+                 terminal_failure_attempt: tuple[Path, str] | None = None) -> int:
     startupinfo = None
     creationflags = 0
     if os.name == "nt":
@@ -1069,6 +1070,39 @@ def _run_checked(root: Path, command: list[str], on_output,
         close_fds=os.name == "nt",
     )
     timed_out = threading.Event()
+    terminal_failure_stopped = threading.Event()
+    monitor_stop = threading.Event()
+
+    def stop_after_terminal_failure() -> None:
+        if terminal_failure_attempt is None:
+            return
+        record_path, expected_attempt = terminal_failure_attempt
+        while not monitor_stop.wait(0.25):
+            if process.poll() is not None:
+                return
+            record = _read_json(record_path)
+            if not _terminal_attempt_failure_after_timeout(expected_attempt,
+                                                            record):
+                continue
+            # At this point compile/link children have already returned and the
+            # worker has durably recorded failure. Give its final result write
+            # a brief grace, then stop the worker rather than waiting for the
+            # global watchdog.
+            if _wait_for_process_exit(process, 0.5):
+                return
+            terminal_failure_stopped.set()
+            try:
+                process.kill()
+            except OSError:
+                pass
+            return
+
+    monitor = None
+    if terminal_failure_attempt is not None:
+        monitor = threading.Thread(
+            target=stop_after_terminal_failure,
+            name="game-build-terminal-failure-watchdog", daemon=True)
+        monitor.start()
 
     def kill_on_timeout() -> None:
         # A terminal compiler/linker result can be written just before the
@@ -1103,10 +1137,15 @@ def _run_checked(root: Path, command: list[str], on_output,
                 on_output(line.rstrip())
         code = process.wait()
     finally:
+        monitor_stop.set()
+        if monitor is not None:
+            monitor.join(timeout=1.25)
         if timer is not None:
             timer.cancel()
     if timed_out.is_set():
         return 124
+    if terminal_failure_stopped.is_set():
+        return 125
     return code
 
 
@@ -1712,7 +1751,9 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                         worker_startup_started)
     try:
         return_code = _run_checked(root, command, report_output,
-                                   timeout=build_timeout)
+                                   timeout=build_timeout,
+                                   terminal_failure_attempt=(
+                                       last_attempt_path, attempt_id))
     finally:
         if (worker_startup_started is not None
                 and not first_worker_output_recorded):
@@ -1724,7 +1765,15 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     last_attempt = _read_json(last_attempt_path)
     attempt_records = (str(last_attempt.get("build_attempt_id") or "") == attempt_id)
     worker_timed_out = return_code == 124
-    if (worker_timed_out and
+    terminal_worker_failure = return_code == 125
+    if (terminal_worker_failure and
+            _terminal_attempt_failure_after_timeout(attempt_id, last_attempt)):
+        return_code = 1
+        set_stage("worker_supervised", "failed",
+                  reason="terminal_worker_failure_detected",
+                  failed_phase=(last_attempt.get("failed_phase")
+                                or last_attempt.get("phase") or ""))
+    elif (worker_timed_out and
             _terminal_attempt_failure_after_timeout(attempt_id, last_attempt)):
         # The worker completed and persisted this exact attempt's terminal
         # failure immediately before the watchdog's process-tree kill.

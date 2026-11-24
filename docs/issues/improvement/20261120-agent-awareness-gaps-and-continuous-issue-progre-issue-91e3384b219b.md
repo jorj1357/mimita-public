@@ -806,3 +806,25 @@ Measurable target: authority-gated issues reach needs_clarification with the que
 Smallest experiment: clarify issue-4392f56334ef with the one question "schema `phase` column vs evidence-JSON/README convention?", then run `agent-coord next` and confirm it moves from the actionable set to blocked; confirm the next scheduler selection skips it while it remains needs_clarification. Record before/after from coord events; no source edit.
 
 I am not applying the change in this sweep; this is a review-only proposal.
+
+## User quote
+
+### 2026-11-24T22:04:55.383Z — bloodtest-quality-triage
+
+Via bloodtest-quality-triage; supports unspecified:
+
+> need better communication between deepseek in opencode and chatgpt
+
+## Agent suggestion
+
+### 2026-11-24T22:04:58.579Z — bloodtest-quality-triage
+
+Cold handoff should preserve the same task ID, linked full user context, issue owner/claim state, exact changed paths, next requested action, and a response/acknowledgement trail across OpenCode DeepSeek and ChatGPT/Codex. Distinguish the existing issue-62ab3daa615d first-line wake-prompt truncation from any remaining cross-provider synchronization gap; test both through one real handoff and reply in the shared brain.
+
+## User quote
+
+### 2026-11-24T22:06:49.310Z — bloodtest-quality-triage
+
+Via bloodtest-quality-triage; supports unspecified:
+
+> and need better comunciationbetween &#x20;`ndeepseek in opencode adn chatgpt

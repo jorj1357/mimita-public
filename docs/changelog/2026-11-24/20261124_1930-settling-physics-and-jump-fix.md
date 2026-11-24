@@ -80,6 +80,30 @@ zero airborne samples.
   or implemented then.
 - The visual arena mesh is still the old 60 × 41 m `arena1.glb`.
 
+## Ball contact defect: cancelled aggregate normal (fix written, not built)
+
+The car drove 96.68 m through the arena centre with no `arena.ball.contact` and no
+`arena.ball.extra_impulse`. `resolveEntityContacts` aggregates a pair's manifold
+into one representative contact by summing contact normals, then
+`resolveEntityPairContact` normalises that sum. For a flat box-on-box pair the
+sum is coherent, but a sphere touches through normals pointing in many
+directions that can cancel: the summed normal comes out near zero, the pair is
+treated as separating, and the ball receives nothing.
+
+Fix written in `src/physics/physical-entity.cpp`: when the summed normal is weak
+relative to the contact count (`|sum| < 0.25 * count`), fall back to the
+centre-to-centre direction, which is the correct normal for a sphere pair, and
+use the deepest contact point. Two bounded diagnostics were added alongside it:
+`arena.ball.narrowphase.miss` (bounds overlap, no contacts) and
+`arena.ball.state` (ball eligibility: motion, sleeping, flags, triangle count).
+
+**Not built.** Generation 623 contains the first diagnostic but not the fix; the
+next build request failed in `src/main-systems.cpp` — `weaponsPtr`, `cameraPtr`,
+`playerPtr`, `npcSystemPtr` are not members of `mimita::game` — which is another
+agent's in-progress edit. Signalled to `codex-networking-runtime-proof` and
+`melee-parity`. Generation 623 remains current.
+
+
 ## Risk
 
 Deleting the idle-settle kill removes the previous "car stops fidgeting" hack.
