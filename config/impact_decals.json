@@ -3,11 +3,11 @@
   // "enabled": false,
   "blood": {
     "enabled": true,
-    "count": 6,
+    "count": 10,
     "minCount": 2,
     "coneDegrees": 35.0,
     "coneDistance": 20.0,
-    "radius": 0.85,
+    "radius": 1.1,
     "minRadius": 0.12,
     "height": 0.05,
     "color": [0.7, 0.01, 0.01],
@@ -41,12 +41,12 @@
     "spray": {
       "enabled": true,
       "minCount": 4,
-      "maxCount": 20,
+      "maxCount": 32,
       "sizeMin": 0.1,
       // "sizeMin": 0.05,
       "sizeMax": 1.0,
       // "sizeMax": 0.5,
-      "bigFraction": 0.5,
+      "bigFraction": 0.65,
       "speedMin": 15.0,
       "speedMax": 100.0,
       "coneDegreesMin": 30.0,
@@ -87,7 +87,7 @@
       // "enabled": true,
       "enabled": false,
       "minCount": 5,
-      "maxCount": 20,
+      "maxCount": 32,
       "damageAtMax": 100.0,
       "forceAtMax": 20.0,
       "forwardOffsetMin": 0.05,
@@ -261,3 +261,4 @@
     "randomRotationDegrees": 360.0
   }
 }
+

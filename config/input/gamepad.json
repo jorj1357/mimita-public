@@ -1,13 +1,30 @@
 {
-  "comment": "Default pad layout. GLFW standard mapping is used when available; raw axis/button indices are the fallback. Users may override any binding here without touching source.",
-  "deadzone": 0.15,
+  // PS4/DualShock layout, Rocket League style.
+  // GLFW standard mapping button/axis indices are used when the device has a
+  // mapping in gamecontrollerdb.txt; the indices below are also the raw
+  // fallback. Every binding is editable here without touching source.
+  //
+  // PS4: Cross=0 Circle=1 Square=2 Triangle=3 L1=4 R1=5 L3=9 R3=10
+  //      L2=axis4 R2=axis5 leftStick=(0,1) rightStick=(2,3)
+  "comment": "Default pad layout. GLFW standard mapping is used when available; raw axis/button indices are the fallback.",
+  "mappings_file": "config/input/gamecontrollerdb.txt",
+  "deadzone": 0.12,
+  // Trigger travel: R2/L2 reach 100% at 85% physical travel so a squeeze is
+  // full throttle, and remain linear from the lower deadzone up to that point.
+  "upperDeadzone": 0.85,
   "bindings": {
-    "steer": { "axis": 0, "invert": false, "deadzone": 0.15 },
-    "throttle": { "axis": 5, "trigger": true, "deadzone": 0.02 },
-    "brake": { "axis": 4, "trigger": true, "deadzone": 0.02 },
+    "steer": { "axis": 0, "invert": false, "deadzone": 0.10 },
+    "pitch": { "axis": 1, "invert": true, "deadzone": 0.10 },
+    "throttle": { "axis": 5, "trigger": true, "deadzone": 0.02, "upperDeadzone": 0.85 },
+    "brake": { "axis": 4, "trigger": true, "deadzone": 0.02, "upperDeadzone": 0.85 },
     "jump": { "button": 0 },
-    "boost": { "button": 1 },
-    "powerslide": { "button": 2 },
-    "ballcam": { "button": 3 }
+    "boost": { "button": 4 },
+    "powerslide": { "button": 5 },
+    "ballcam": { "button": 3 },
+    "airRollLeft": { "button": 2 },
+    "airRollRight": { "button": 1 },
+    "lookBehind": { "button": 10 },
+    "swivelX": { "axis": 2, "deadzone": 0.12 },
+    "swivelY": { "axis": 3, "invert": true, "deadzone": 0.12 }
   }
 }

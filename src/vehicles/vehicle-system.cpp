@@ -591,7 +591,9 @@ uint32_t VehicleSystem::spawnInternal(const std::string& templateId,
              {"automatic", profile->automatic},
              {"engine_on", state.engineOn},
              {"boost_max", profile->boost.max},
-             {"jump_impulse", profile->jump.impulse},
+             {"jump_delta_vel_mps", profile->jump.immediateDeltaVelMps},
+             {"gravity_mps2", profile->gravityMps2},
+             {"profile_source", profile->source},
              {"steering_max_deg", profile->steering.maxAngleDeg}},
             __FILE__, __LINE__, __func__);
     }
@@ -1272,6 +1274,34 @@ VehicleInput VehicleSystem::readLocalInput(const VehicleState& state)
                        boundHeld("powerslideAirRoll");
     input.handbrake = input.powerslide ? 1.0f : 0.0f;
 
+    // ── Rotational intent (air) ─────────────────────────────────────────
+    // R1 is the free-air-roll modifier: airborne it remaps the horizontal
+    // stick from yaw to roll. Square/Circle are directional air roll and stay
+    // additive, so holding one against the stick makes yaw + roll == 0, which
+    // is the Rocket League stall input. Pitch stays on the vertical stick.
+    const float stickX = std::clamp(input.steer, -1.0f, 1.0f);
+    input.pitch = std::clamp(
+        pad.pitch() +
+            (commands.isKeyHeld(GLFW_KEY_UP) ? 1.0f : 0.0f) -
+            (commands.isKeyHeld(GLFW_KEY_DOWN) ? 1.0f : 0.0f),
+        -1.0f, 1.0f);
+    float directionalRoll = 0.0f;
+    if (pad.airRollLeft() || commands.isKeyHeld(GLFW_KEY_Q))
+        directionalRoll -= 1.0f;
+    if (pad.airRollRight() || commands.isKeyHeld(GLFW_KEY_E))
+        directionalRoll += 1.0f;
+    input.airRollModifier = input.powerslide;
+    if (input.airRollModifier)
+    {
+        input.roll = std::clamp(stickX + directionalRoll, -1.0f, 1.0f);
+        input.yaw = 0.0f;
+    }
+    else
+    {
+        input.roll = std::clamp(directionalRoll, -1.0f, 1.0f);
+        input.yaw = stickX;
+    }
+
     const bool ballCamHeld = commands.getState("freeze").held ||
                              pad.ballCam() || boundHeld("ballCam");
     input.ballCamToggle = ballCamHeld && !mPrevBallCamHeld;
@@ -1785,89 +1815,293 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
     const glm::vec3 up =
         glm::normalize(entity.orientation * glm::vec3(0.0f, 0.0f, 1.0f));
 
-    if (state.allWheelsGrounded)
+    // The profile owns gravity so the car and ball share Rocket League's
+    // 6.5 m/s^2 instead of the global object gravity.
+    const float gravity = std::max(profile.gravityMps2, 0.1f);
+    const float worldGravity = std::fabs(
+        MimitaImpact::DestructibleWorldConfig::instance().objectGravity());
+    if (worldGravity > 0.01f)
+        entity.gravityScale = gravity / worldGravity;
+
+    // Hand the profile's car->ball impulse parameters to the contact owner.
     {
-        state.lastGroundedTick = tick;
-        if (tick - state.jumpStartedTick > 6)
-            state.jumpCount = 0;
+        PhysicalEntityBallHitParams hitParams;
+        hitParams.enabled = profile.ballHit.extraImpulseEnabled;
+        hitParams.scale = profile.ballHit.extraImpulseScale;
+        hitParams.zScale = profile.ballHit.extraImpulseZScale;
+        hitParams.forwardScale = profile.ballHit.extraImpulseForwardScale;
+        hitParams.maxDeltaVelMps = profile.ballHit.extraImpulseMaxDeltaVelMps;
+        const int points = std::clamp(
+            static_cast<int>(profile.ballHit.extraImpulseCurve.size()), 1, 4);
+        hitParams.curvePoints = points;
+        for (int i = 0; i < points; ++i)
+            hitParams.curve[i] = profile.ballHit.extraImpulseCurve[i];
+        setPhysicalEntityBallHitParams(hitParams);
     }
 
+    const bool onGround =
+        grounded > 0 && grounded >= 3;
+    const int wheelCount = static_cast<int>(state.wheels.size());
+
+    // ── Flip-reset surface ──────────────────────────────────────────────
+    // All four wheels touching any surface restores the aerial flip. The ball
+    // is one of those surfaces, which is what makes flip resets chainable.
+    const bool wasOnBall = state.wheelOnBall;
+    state.wheelOnBall = false;
+    if (!onGround && wheelCount >= 4)
+    {
+        for (const PhysicalEntity& candidate :
+             PhysicalEntitySystem::instance().entities())
+        {
+            if (candidate.persistenceId != "arena-ball")
+                continue;
+            const glm::vec3 ballCenter(candidate.transform[3]);
+            const float ballRadius =
+                candidate.halfExtents.x > 0.01f ? candidate.halfExtents.x : 0.9125f;
+            int touching = 0;
+            for (const VehicleWheelState& wheel : state.wheels)
+            {
+                const glm::vec3 wheelCenter =
+                    glm::dot(wheel.worldCenter, wheel.worldCenter) > 1e-6f
+                        ? wheel.worldCenter
+                        : glm::vec3(entity.transform * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+                if (glm::length(wheelCenter - ballCenter) <= ballRadius + 0.30f)
+                    ++touching;
+            }
+            if (touching >= 4)
+                state.wheelOnBall = true;
+            break;
+        }
+    }
+
+    // ── Jump / flip availability ────────────────────────────────────────
+    if (onGround)
+    {
+        state.lastGroundedTick = tick;
+        state.hasFlipped = false;
+        state.hasJumped = false;
+        state.isFlipping = false;
+        state.isJumping = false;
+        state.jumpCount = 0;
+        state.flipTimer = 0.0f;
+        state.jumpTimer = 0.0f;
+        state.airTimeSinceJump = 0.0f;
+        state.takeoffHeightM = entity.transform[3].z;
+        state.apexHeightM = state.takeoffHeightM;
+    }
+    else if (state.wheelOnBall)
+    {
+        // Touching the world with all four wheels re-arms the flip while still
+        // airborne. Leaving the surface keeps it armed.
+        state.hasFlipped = false;
+        state.hasJumped = false;
+        state.jumpCount = 0;
+        state.isFlipping = false;
+        state.flipTimer = 0.0f;
+        if (!wasOnBall)
+        {
+            ++state.flipResetCount;
+            state.lastFlipResetTick = tick;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.flip.reset", std::to_string(state.id),
+                "all four wheels touched the ball: aerial flip restored", tick,
+                {{"vehicle_id", state.id},
+                 {"profile", profile.id},
+                 {"flip_resets", state.flipResetCount},
+                 {"height_m", entity.transform[3].z}},
+                __FILE__, __LINE__, __func__);
+        }
+    }
+
+    if (!onGround)
+        state.apexHeightM = std::max(
+            state.apexHeightM, static_cast<float>(entity.transform[3].z));
+
     const bool jumpPressed = state.jumpHeld && !state.jumpHeldPrev;
+    const glm::vec3 com = physicalEntityCenterOfMassWorld(entity);
+    const float mass = std::max(entity.mass, 1.0f);
+
     if (jumpPressed)
     {
-        if (state.allWheelsGrounded)
+        if (onGround && state.jumpCount == 0)
         {
             state.jumpCount = 1;
             state.jumpStartedTick = tick;
             state.lastJumpPressedTick = tick;
+            state.hasJumped = true;
+            state.isJumping = true;
+            state.jumpTimer = 0.0f;
+            state.airTimeSinceJump = 0.0f;
+            state.takeoffHeightM = entity.transform[3].z;
+            state.apexHeightM = state.takeoffHeightM;
             applyPhysicalEntityImpulse(
-                entity, up * profile.jump.impulse,
-                physicalEntityCenterOfMassWorld(entity));
+                entity, up * (profile.jump.immediateDeltaVelMps * mass), com);
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Physics, StructuredLevel::Important,
                 "vehicle.jump", std::to_string(state.id),
-                "arena profile jump impulse applied", tick,
+                "rocket league jump impulse applied", tick,
                 {{"vehicle_id", state.id},
                  {"profile", profile.id},
                  {"jump_count", state.jumpCount},
-                 {"impulse", profile.jump.impulse}},
+                 {"delta_vel_mps", profile.jump.immediateDeltaVelMps},
+                 {"predicted_apex_m",
+                  (profile.jump.immediateDeltaVelMps *
+                   profile.jump.immediateDeltaVelMps) /
+                      (2.0f * std::max(profile.gravityMps2, 0.1f))}},
                 __FILE__, __LINE__, __func__);
         }
-        else if (state.jumpCount == 1 &&
-                 tick - state.jumpStartedTick <=
-                     static_cast<uint64_t>(
-                         profile.jump.secondJumpWindowSeconds * 60.0f))
+        else if (!onGround && state.jumpCount == 1 &&
+                 state.airTimeSinceJump <=
+                     profile.jump.doubleJumpWindowSeconds)
         {
-            state.jumpCount = 2;
             state.lastJumpPressedTick = tick;
-            const float pitch = std::clamp(state.throttle - state.brake,
-                                           -1.0f, 1.0f);
-            const float roll = std::clamp(state.steer, -1.0f, 1.0f);
-            applyPhysicalEntityImpulse(
-                entity, up * profile.jump.doubleJumpImpulse,
-                physicalEntityCenterOfMassWorld(entity));
-            const glm::vec3 flipAxis =
-                right * pitch + forward * roll;
-            if (glm::dot(flipAxis, flipAxis) > 1e-5f)
+            // Dodge activation uses the MAGNITUDE of the rotational inputs;
+            // direction uses the SIGNS. Opposing yaw and roll therefore still
+            // consume the dodge while producing zero direction.
+            const float magnitude = std::fabs(state.pitchInput) +
+                                    std::fabs(state.yawInput) +
+                                    std::fabs(state.rollInput);
+            if (magnitude >= profile.jump.dodgeDeadzone)
             {
-                applyPhysicalEntityAngularImpulse(
-                    entity,
-                    glm::normalize(flipAxis) *
-                        (profile.jump.doubleJumpImpulse * 0.02f));
+                state.jumpCount = 2;
+                state.hasFlipped = true;
+                state.isFlipping = true;
+                state.flipTimer = 0.0f;
+                state.isJumping = false;
+
+                const float vertical = state.pitchInput;
+                const float horizontal = state.yawInput + state.rollInput;
+                glm::vec3 dodgeWorld(0.0f);
+                if (std::fabs(vertical) >=
+                        profile.flip.directionCancelThreshold ||
+                    std::fabs(horizontal) >=
+                        profile.flip.directionCancelThreshold)
+                {
+                    const glm::vec3 raw = forward * vertical + right * horizontal;
+                    if (glm::dot(raw, raw) > 1e-6f)
+                        dodgeWorld = glm::normalize(raw);
+                }
+                state.dodgeWorldDir = dodgeWorld;
+                state.flipAxisWorld =
+                    glm::dot(dodgeWorld, dodgeWorld) > 1e-6f
+                        ? glm::normalize(glm::cross(up, dodgeWorld))
+                        : glm::vec3(0.0f);
+
+                if (glm::dot(dodgeWorld, dodgeWorld) > 1e-6f)
+                {
+                    glm::vec3 forward2D(forward.x, forward.y, 0.0f);
+                    glm::vec3 right2D(right.x, right.y, 0.0f);
+                    if (glm::dot(forward2D, forward2D) > 1e-6f)
+                        forward2D = glm::normalize(forward2D);
+                    if (glm::dot(right2D, right2D) > 1e-6f)
+                        right2D = glm::normalize(right2D);
+                    const float forwardSpeed = glm::dot(entity.velocity, forward2D);
+                    const float ratio = std::clamp(
+                        std::fabs(forwardSpeed) /
+                            std::max(profile.ground.maxSpeedMps, 0.1f),
+                        0.0f, 1.0f);
+                    const float forwardComponent = glm::dot(dodgeWorld, forward2D);
+                    const bool backwards =
+                        std::fabs(forwardSpeed) < 1.0f
+                            ? forwardComponent < 0.0f
+                            : ((forwardComponent >= 0.0f) != (forwardSpeed >= 0.0f));
+                    const float maxSpeedScale =
+                        backwards ? profile.flip.backwardMaxSpeedScale
+                                  : profile.flip.forwardMaxSpeedScale;
+                    float deltaForward =
+                        forwardComponent * profile.flip.initialDeltaVelMps *
+                        (((maxSpeedScale - 1.0f) * ratio) + 1.0f);
+                    if (backwards)
+                        deltaForward *= profile.flip.backwardScaleX;
+                    const float deltaSide =
+                        glm::dot(dodgeWorld, right2D) *
+                        profile.flip.initialDeltaVelMps *
+                        (((profile.flip.sideMaxSpeedScale - 1.0f) * ratio) + 1.0f);
+                    glm::vec3 deltaVel =
+                        forward2D * deltaForward + right2D * deltaSide;
+                    deltaVel.z = 0.0f;
+                    applyPhysicalEntityImpulse(entity, deltaVel * mass, com);
+                }
+
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Physics, StructuredLevel::Important,
+                    "vehicle.dodge", std::to_string(state.id),
+                    "dodge program started", tick,
+                    {{"vehicle_id", state.id},
+                     {"profile", profile.id},
+                     {"pitch", state.pitchInput},
+                     {"yaw", state.yawInput},
+                     {"roll", state.rollInput},
+                     {"magnitude", magnitude},
+                     {"stall", glm::dot(state.flipAxisWorld,
+                                        state.flipAxisWorld) < 1e-6f},
+                     {"dodge_dir",
+                      {state.dodgeWorldDir.x, state.dodgeWorldDir.y,
+                       state.dodgeWorldDir.z}}},
+                    __FILE__, __LINE__, __func__);
             }
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::Physics, StructuredLevel::Important,
-                "vehicle.jump.double", std::to_string(state.id),
-                "arena profile double jump/flip applied", tick,
-                {{"vehicle_id", state.id},
-                 {"profile", profile.id},
-                 {"jump_count", state.jumpCount},
-                 {"pitch", pitch},
-                 {"roll", roll}},
-                __FILE__, __LINE__, __func__);
+            else
+            {
+                state.jumpCount = 2;
+                state.hasJumped = true;
+                applyPhysicalEntityImpulse(
+                    entity, up * (profile.jump.doubleJumpDeltaVelMps * mass), com);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Physics, StructuredLevel::Important,
+                    "vehicle.jump.double", std::to_string(state.id),
+                    "rocket league double jump applied", tick,
+                    {{"vehicle_id", state.id},
+                     {"profile", profile.id},
+                     {"jump_count", state.jumpCount},
+                     {"delta_vel_mps", profile.jump.doubleJumpDeltaVelMps}},
+                    __FILE__, __LINE__, __func__);
+            }
         }
     }
 
-    if (state.jumpHeld && !state.allWheelsGrounded && state.jumpCount > 0 &&
-        tick - state.jumpStartedTick <=
-            static_cast<uint64_t>(profile.jump.heldWindowSeconds * 60.0f) &&
-        tick - state.jumpStartedTick >=
-            static_cast<uint64_t>(profile.jump.minimumHoldSeconds * 60.0f))
+    // Sustained jump force. Height is an output of this plus gravity, never a
+    // target pose.
+    if (state.isJumping)
+    {
+        const bool sustain =
+            state.jumpTimer < profile.jump.minSustainSeconds ||
+            (state.jumpHeld &&
+             state.jumpTimer < profile.jump.sustainedWindowSeconds);
+        if (sustain)
+        {
+            float accel = profile.jump.sustainedAccelMps2;
+            if (state.jumpTimer < profile.jump.minSustainSeconds)
+                accel *= profile.jump.preMinAccelScale;
+            applyPhysicalEntityImpulse(entity, up * (accel * mass * dt), com);
+            state.jumpTimer += dt;
+        }
+        else
+        {
+            state.isJumping = false;
+        }
+    }
+
+    // Surface adhesion still pulls for a few ticks after a jump, so a jump from
+    // a wall or ceiling leaves the surface instead of sticking.
+    if (state.hasJumped && state.jumpTimer <= profile.jump.stickyTicks * dt)
     {
         applyPhysicalEntityImpulse(
-            entity, up * (profile.jump.heldForce * dt),
-            physicalEntityCenterOfMassWorld(entity));
+            entity, -up * (profile.jump.stickyAccelMps2 * mass * dt), com);
     }
+
+    if (!onGround && !state.isJumping && state.hasJumped)
+        state.airTimeSinceJump += dt;
+
     state.jumpHeldPrev = state.jumpHeld;
 
+    // ── Boost: force along the car's nose ───────────────────────────────
     if (state.boostInput > 0.01f && state.boostCharge > 0.0f)
     {
-        const float force = state.allWheelsGrounded
-                                ? profile.boost.force
-                                : profile.boost.airForce;
+        const float accel = onGround ? profile.boost.groundAccelMps2
+                                     : profile.boost.airAccelMps2;
         applyPhysicalEntityImpulse(
-            entity, forward * (force * state.boostInput * dt),
-            physicalEntityCenterOfMassWorld(entity));
+            entity, forward * (accel * state.boostInput * mass * dt), com);
         state.boostCharge = std::max(
             0.0f, state.boostCharge -
                       profile.boost.drainPerTick * tickScale *
@@ -1878,11 +2112,11 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Physics, StructuredLevel::Important,
                 "vehicle.boost", std::to_string(state.id),
-                "arena profile boost started", tick,
+                "rocket league boost force applied", tick,
                 {{"vehicle_id", state.id},
                  {"profile", profile.id},
                  {"charge", state.boostCharge},
-                 {"force", force}},
+                 {"accel_mps2", accel}},
                 __FILE__, __LINE__, __func__);
         }
     }
@@ -1898,33 +2132,109 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
             __FILE__, __LINE__, __func__);
     }
 
-    if (!state.allWheelsGrounded)
+    // ── Dodge program ───────────────────────────────────────────────────
+    // A finite torque, not a scripted rotation. Holding the stick against the
+    // flip's pitch component scales it to zero (flip cancel) while the linear
+    // impulse already granted is kept.
+    const bool stall =
+        glm::dot(state.flipAxisWorld, state.flipAxisWorld) < 1e-6f;
+    bool airControlAllowed = !state.isFlipping;
+    if (state.isFlipping)
     {
-        const float pitch =
-            std::clamp(state.throttle - state.brake, -1.0f, 1.0f);
-        const float roll = std::clamp(state.steer, -1.0f, 1.0f);
-        const glm::vec3 angularVelocity = entity.angularVelocity;
-        const glm::vec3 control =
-            right * (pitch * profile.airControl.pitchTorque) +
-            forward * (roll * profile.airControl.rollTorque);
-        const glm::vec3 damping =
-            right * (glm::dot(angularVelocity, right) *
-                     profile.airControl.pitchDamping) +
-            forward * (glm::dot(angularVelocity, forward) *
-                       profile.airControl.rollDamping);
-        applyPhysicalEntityAngularImpulse(
-            entity, (control - damping) * dt);
-        const bool active = std::fabs(pitch) + std::fabs(roll) > 0.1f;
+        if (state.flipTimer > profile.flip.torqueSeconds)
+        {
+            state.isFlipping = false;
+            airControlAllowed = true;
+        }
+        else
+        {
+            const float axisPitch = glm::dot(state.flipAxisWorld, right);
+            float pitchScale = 1.0f;
+            if (std::fabs(axisPitch) > 0.01f &&
+                std::fabs(state.pitchInput) > 0.01f &&
+                state.pitchInput * axisPitch < 0.0f)
+            {
+                pitchScale = 1.0f - std::min(std::fabs(state.pitchInput), 1.0f);
+                airControlAllowed = true;
+            }
+            const float pitchWeight = std::fabs(axisPitch);
+            const float rollWeight =
+                std::fabs(glm::dot(state.flipAxisWorld, forward));
+            const float accel =
+                profile.flip.angularAccelPitch * pitchWeight * pitchScale +
+                profile.flip.angularAccelRoll * rollWeight;
+            if (accel > 0.0f)
+                entity.angularVelocity += state.flipAxisWorld * (accel * dt);
+
+            // Vertical damping is independent of the directional torque. This
+            // is why a zero-direction dodge (a stall) hangs rather than drops.
+            if (state.flipTimer >= profile.flip.zDampStartSeconds &&
+                (entity.velocity.z < 0.0f ||
+                 state.flipTimer < profile.flip.zDampEndSeconds))
+            {
+                entity.velocity.z *= std::pow(
+                    std::max(0.0f, 1.0f - profile.flip.zDampFactor),
+                    dt * 120.0f);
+            }
+            state.flipTimer += dt;
+        }
+    }
+    if (stall && state.isFlipping)
+        airControlAllowed = true;
+
+    // ── Air control: alpha = A*u - D*w per local axis ───────────────────
+    if (!onGround)
+    {
+        if (airControlAllowed)
+        {
+            const float wPitch = glm::dot(entity.angularVelocity, right);
+            const float wYaw = glm::dot(entity.angularVelocity, up);
+            const float wRoll = glm::dot(entity.angularVelocity, forward);
+            const float pitchDampScale =
+                profile.airControl.inputScaledDamping
+                    ? (1.0f - std::fabs(state.pitchInput))
+                    : 1.0f;
+            const float yawDampScale =
+                profile.airControl.inputScaledDamping
+                    ? (1.0f - std::fabs(state.yawInput))
+                    : 1.0f;
+            const float aPitch =
+                profile.airControl.pitchAccel * state.pitchInput -
+                profile.airControl.pitchDamping * pitchDampScale * wPitch;
+            const float aYaw =
+                profile.airControl.yawAccel * state.yawInput -
+                profile.airControl.yawDamping * yawDampScale * wYaw;
+            const float aRoll =
+                profile.airControl.rollAccel * state.rollInput -
+                profile.airControl.rollDamping * wRoll;
+            // +right pitches the nose down, -forward rolls right, +up yaws
+            // right. These are the car's own axes, so the controls stay
+            // car-relative no matter where the camera points.
+            entity.angularVelocity +=
+                (right * aPitch - forward * aRoll + up * aYaw) * dt;
+        }
+
+        const float airThrottle = state.throttle - state.brake;
+        if (std::fabs(airThrottle) > 0.01f)
+            applyPhysicalEntityImpulse(
+                entity, forward * (profile.airControl.throttleAirAccelMps2 *
+                                   airThrottle * mass * dt), com);
+
+        const bool active = std::fabs(state.pitchInput) +
+                                std::fabs(state.yawInput) +
+                                std::fabs(state.rollInput) >
+                            0.1f;
         if (active && !state.airRollActive)
         {
             state.airRollActive = true;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Physics, StructuredLevel::Important,
                 "vehicle.airroll", std::to_string(state.id),
-                "arena profile air control started", tick,
+                "air control torque started", tick,
                 {{"vehicle_id", state.id},
-                 {"pitch", pitch},
-                 {"roll", roll}},
+                 {"pitch", state.pitchInput},
+                 {"yaw", state.yawInput},
+                 {"roll", state.rollInput}},
                 __FILE__, __LINE__, __func__);
         }
         else if (!active)
@@ -1936,6 +2246,184 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
     {
         state.airRollActive = false;
     }
+
+    // ── Angular velocity clamp: the only global rotational limit ────────
+    const float omega = glm::length(entity.angularVelocity);
+    if (profile.airControl.maxAngularVelocity > 0.0f &&
+        omega > profile.airControl.maxAngularVelocity)
+        entity.angularVelocity *= profile.airControl.maxAngularVelocity / omega;
+
+    // ── Ground drive: throttle / brake / coast curves ───────────────────
+    if (onGround)
+    {
+        glm::vec3 forward2D(forward.x, forward.y, 0.0f);
+        if (glm::dot(forward2D, forward2D) > 1e-6f)
+            forward2D = glm::normalize(forward2D);
+        const float vf = glm::dot(entity.velocity, forward2D);
+        const float drive =
+            std::clamp(state.throttle - state.brake, -1.0f, 1.0f);
+        float desired = vf;
+        if (std::fabs(drive) <= profile.ground.throttleDeadzone)
+        {
+            const float step = profile.ground.coastingDecelMps2 * dt;
+            desired = vf > 0.0f ? std::max(0.0f, vf - step)
+                                : std::min(0.0f, vf + step);
+        }
+        else
+        {
+            const float dir = drive > 0.0f ? 1.0f : -1.0f;
+            if (vf * dir < -0.25f)
+            {
+                desired = vf + dir * profile.ground.brakingDecelMps2 * dt;
+                if (desired * dir > 0.0f)
+                    desired = 0.0f;
+            }
+            else
+            {
+                // Velocity-dependent approach to the unboosted top speed. The
+                // 0.75 s time constant matches the documented RL acceleration
+                // fit, so 0 -> 14.1 m/s is an outcome, not a hardcoded ramp.
+                const float along = std::max(0.0f, vf * dir);
+                const float approach =
+                    (profile.ground.maxUnboostedMps - along) / 0.75f;
+                const float accel =
+                    std::clamp(approach, 0.0f, 20.0f) * std::fabs(drive);
+                desired = vf + dir * accel * dt;
+            }
+        }
+        const float deltaV = desired - vf;
+        if (std::fabs(deltaV) > 1e-5f)
+            applyPhysicalEntityImpulse(entity, forward2D * (deltaV * mass), com);
+
+        const float rate = state.powerslide
+                               ? profile.ground.powerslideRisePerSecond
+                               : -profile.ground.powerslideFallPerSecond;
+        state.handbrakeVal =
+            std::clamp(state.handbrakeVal + rate * dt, 0.0f, 1.0f);
+        state.handbrake = state.handbrakeVal;
+    }
+    else
+    {
+        state.handbrakeVal = std::clamp(
+            state.handbrakeVal - profile.ground.powerslideFallPerSecond * dt,
+            0.0f, 1.0f);
+        state.handbrake = state.handbrakeVal;
+    }
+
+    // ── Total speed clamp: cars never exceed the RL maximum ─────────────
+    if (profile.ground.maxSpeedMps > 0.0f)
+    {
+        const float speed = glm::length(entity.velocity);
+        if (speed > profile.ground.maxSpeedMps)
+            entity.velocity *= profile.ground.maxSpeedMps / speed;
+    }
+
+    // ── Settle on wheels, then truly stop ───────────────────────────────
+    if (grounded > 0 && grounded < wheelCount)
+    {
+        glm::vec3 surface(0.0f);
+        for (const VehicleWheelState& wheel : state.wheels)
+            if (wheel.grounded)
+                surface += wheel.contactNormal;
+        if (glm::dot(surface, surface) > 1e-6f)
+        {
+            surface = glm::normalize(surface);
+            applyPhysicalEntityImpulse(
+                entity, -surface *
+                            (profile.settle.autoRollForceMps2 * mass * dt),
+                com);
+            const glm::vec3 alignAxis = glm::cross(up, surface);
+            const float sinAngle = glm::length(alignAxis);
+            if (sinAngle > 1e-3f)
+                entity.angularVelocity +=
+                    glm::normalize(alignAxis) *
+                    (profile.settle.autoRollAngularAccel * sinAngle * dt);
+        }
+    }
+
+    const bool noInput =
+        std::fabs(state.throttle) < 0.02f && std::fabs(state.brake) < 0.02f &&
+        std::fabs(state.steer) < 0.05f && !state.jumpHeld &&
+        state.boostInput < 0.01f && !state.powerslide;
+    const float horizontalSpeed =
+        glm::length(glm::vec2(entity.velocity.x, entity.velocity.y));
+    if (onGround && noInput && horizontalSpeed < 0.12f &&
+        glm::length(entity.angularVelocity) < 0.20f)
+    {
+        ++state.settleTicks;
+        if (state.settleTicks > 20)
+        {
+            entity.velocity = glm::vec3(0.0f);
+            entity.angularVelocity = glm::vec3(0.0f);
+            entity.sleeping = true;
+        }
+    }
+    else
+    {
+        state.settleTicks = 0;
+    }
+
+    // ── Metric telemetry ────────────────────────────────────────────────
+    const glm::vec3 position(entity.transform[3]);
+    if (state.lastTelemetryTick == 0)
+    {
+        state.lastTelemetryPosition = position;
+        state.lastTelemetryTick = tick;
+    }
+    if (tick - state.lastTelemetryTick >= 30)
+    {
+        const float step = glm::length(
+            glm::vec2(position.x - state.lastTelemetryPosition.x,
+                      position.y - state.lastTelemetryPosition.y));
+        state.distanceTravelled += step;
+        state.lastTelemetryPosition = position;
+        state.lastTelemetryTick = tick;
+        const float speed = glm::length(entity.velocity);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Physics, StructuredLevel::Important,
+            "vehicle.telemetry", std::to_string(state.id),
+            "metric vehicle state sample", tick,
+            {{"vehicle_id", state.id},
+             {"profile", profile.id},
+             {"speed_mps", speed},
+             {"speed_kmh", speed * 3.6f},
+             {"altitude_agl_m", position.z},
+             {"airborne", !onGround},
+             {"wheels_contact", grounded},
+             {"throttle_input", state.throttle},
+             {"steer_input", state.steer},
+             {"pitch_input", state.pitchInput},
+             {"yaw_input", state.yawInput},
+             {"roll_input", state.rollInput},
+             {"angular_speed", glm::length(entity.angularVelocity)},
+             {"distance_travelled_m", state.distanceTravelled},
+             {"apex_height_m", state.apexHeightM},
+             {"flip_resets", state.flipResetCount},
+             {"ballcam", state.ballCam}},
+            __FILE__, __LINE__, __func__);
+
+        if (!onGround && !state.airborneLogged)
+        {
+            state.airborneLogged = true;
+            state.airborneSinceTick = tick;
+        }
+        else if (onGround && state.airborneLogged)
+        {
+            state.airborneLogged = false;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.jump.apex", std::to_string(state.id),
+                "measured jump apex and airtime", tick,
+                {{"vehicle_id", state.id},
+                 {"apex_height_m", state.apexHeightM - state.takeoffHeightM},
+                 {"air_time_seconds",
+                  static_cast<float>(tick - state.airborneSinceTick) / 60.0f}},
+                __FILE__, __LINE__, __func__);
+        }
+    }
+
+    state.speed =
+        glm::length(glm::vec2(entity.velocity.x, entity.velocity.y));
 }
 
 void VehicleSystem::update(float dt, const World& world)
@@ -2062,6 +2550,9 @@ void VehicleSystem::update(float dt, const World& world)
         state.boostInput = input.boost;
         state.jumpHeld = input.jumpHeld;
         state.powerslide = input.powerslide;
+        state.pitchInput = input.pitch;
+        state.yawInput = input.yaw;
+        state.rollInput = input.roll;
         if (input.ballCamToggle)
             state.ballCam = !state.ballCam;
 
@@ -2082,6 +2573,13 @@ void VehicleSystem::update(float dt, const World& world)
         }
         state.prevClutch = state.clutch;
 
+        // An arcade profile owns acceleration directly (Rocket League curves),
+        // so the template drivetrain must not add engine torque on top.
+        {
+            const VehicleProfile* activeProfile = profileFor(state);
+            state.torqueScale =
+                (activeProfile && activeProfile->arcade) ? 0.0f : 1.0f;
+        }
         updateDrivetrain(state, *spec, dt);
 
         if (state.gear != state.lastGearLogged)

@@ -58,15 +58,37 @@ struct EffectModelMesh {
 
 std::unordered_map<std::string, EffectModelMesh> gEffectModels;
 
-EffectModelMesh& effectModelFor(const std::string& path)
+EffectModelMesh& effectModelFor(const std::string& path, bool normalize)
 {
-    EffectModelMesh& cached = gEffectModels[path];
+    const std::string cacheKey = normalize ? path + "|normalized" : path;
+    EffectModelMesh& cached = gEffectModels[cacheKey];
     if (cached.attempted)
         return cached;
     cached.attempted = true;
     cached.mesh = loadGLB(path, false);
-    if (cached.mesh.verts.empty())
+    if (cached.mesh.verts.empty()) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Rendering, StructuredLevel::Important,
+            "effect.model.load", path, "effect model load failed", 0,
+            nlohmann::json{{"path", path}, {"normalized", normalize},
+                           {"vertex_count", 0}, {"batch_count", 0}});
         return cached;
+    }
+    if (normalize) {
+        glm::vec3 boundsMin(std::numeric_limits<float>::max());
+        glm::vec3 boundsMax(std::numeric_limits<float>::lowest());
+        for (const Vertex& vertex : cached.mesh.verts) {
+            boundsMin = glm::min(boundsMin, vertex.pos);
+            boundsMax = glm::max(boundsMax, vertex.pos);
+        }
+        const glm::vec3 size = boundsMax - boundsMin;
+        const float maxExtent = std::max({size.x, size.y, size.z});
+        if (maxExtent > 0.0001f) {
+            const float inv = 1.0f / maxExtent;
+            for (Vertex& vertex : cached.mesh.verts)
+                vertex.pos *= inv;
+        }
+    }
     cached.vao = mimita::game::genVertexArray();
     cached.vbo = mimita::game::genBuffer();
     r::bindVertexArray(cached.vao);
@@ -85,6 +107,12 @@ EffectModelMesh& effectModelFor(const std::string& path)
                            static_cast<std::uint32_t>(offsetof(Vertex, uv)));
     r::bindVertexArray(0);
     cached.ready = true;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Rendering, StructuredLevel::Important,
+        "effect.model.load", path, "effect model loaded", 0,
+        nlohmann::json{{"path", path}, {"normalized", normalize},
+                       {"vertex_count", cached.mesh.verts.size()},
+                       {"batch_count", cached.mesh.batches.size()}});
     return cached;
 }
 
@@ -93,7 +121,7 @@ bool drawEffectModel(const Camera& camera, const EffectPart& effect,
 {
     if (effect.modelPath.empty() || !gRenderer || !r::worldShader().ensureLoaded())
         return false;
-    EffectModelMesh& model = effectModelFor(effect.modelPath);
+    EffectModelMesh& model = effectModelFor(effect.modelPath, effect.modelNormalize);
     if (!model.ready)
         return false;
     const glm::vec3 normal = glm::length(effect.normal) > 0.001f
@@ -105,9 +133,18 @@ bool drawEffectModel(const Camera& camera, const EffectPart& effect,
         orientation = glm::angleAxis(3.14159265f, glm::vec3(1.0f, 0.0f, 0.0f));
     else if (alignment < 0.9999f)
         orientation = glm::normalize(glm::quat(alignment + 1.0f, glm::cross(source, normal)));
+    // Author-facing spin around the surface normal. The model is aligned so
+    // local +Z is the normal, so this is a rotation about local Z.
+    const float t = std::clamp(effect.lifetime / std::max(0.0001f, effect.maxLifetime),
+                               0.0f, 1.0f);
+    const float spinDegrees = glm::mix(effect.rotation.z, effect.endRotation.z, t);
+    if (std::abs(spinDegrees) > 0.001f) {
+        orientation = glm::normalize(
+            orientation * glm::angleAxis(glm::radians(spinDegrees), glm::vec3(0, 0, 1)));
+    }
     glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), effect.position)
         * glm::mat4_cast(orientation)
-        * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
+        * glm::scale(glm::mat4(1.0f), glm::vec3(std::max(0.0001f, scale)));
     r::pushState();
     r::enable(r::Capability::DepthTest);
     r::depthMask(false);
@@ -125,18 +162,36 @@ bool drawEffectModel(const Camera& camera, const EffectPart& effect,
     r::uniform1i(shader.uniform("uTex"), 0);
     r::uniform3f(shader.uniform("uTint"), color.x, color.y, color.z);
     r::uniform1f(shader.uniform("uAlphaCutoff"), 0.0f);
+    if (shader.uniform("uOpacity") >= 0)
+        r::uniform1f(shader.uniform("uOpacity"), glm::clamp(color.a, 0.0f, 1.0f));
+    if (shader.uniform("uOpacityEnabled") >= 0)
+        r::uniform1i(shader.uniform("uOpacityEnabled"), 1);
+    // Impact effects must not be proximity-faded by the body-camera rule.
+    if (shader.uniform("uCameraProximityFadeEnabled") >= 0)
+        r::uniform1i(shader.uniform("uCameraProximityFadeEnabled"), 0);
     r::enable(r::Capability::DepthTest);
-    r::depthMask(true);
     r::activeTexture(0);
+    const std::uint32_t overrideTexture = effect.texturePath.empty()
+        ? 0u : gTextures.getPath(effect.texturePath);
     r::bindVertexArray(model.vao);
     for (const Mesh::Batch& batch : model.mesh.batches) {
-        std::uint32_t tex = batch.texture ? batch.texture : gTextures.get("default");
+        std::uint32_t tex = overrideTexture;
+        if (!tex) tex = batch.texture ? batch.texture : gTextures.get("default");
         r::bindTexture(r::TextureTarget::Texture2D, tex);
         r::drawArrays(r::Primitive::Triangles,
                       static_cast<std::int32_t>(batch.first),
                       static_cast<std::int32_t>(batch.count));
     }
     r::bindVertexArray(0);
+    // Uniforms are global state, not part of the GL state stack. Restore the
+    // defaults so the next actor/world draw is not left semi-transparent or
+    // proximity-faded by this effect.
+    if (shader.uniform("uOpacityEnabled") >= 0)
+        r::uniform1i(shader.uniform("uOpacityEnabled"), 0);
+    if (shader.uniform("uOpacity") >= 0)
+        r::uniform1f(shader.uniform("uOpacity"), 1.0f);
+    if (shader.uniform("uCameraProximityFadeEnabled") >= 0)
+        r::uniform1i(shader.uniform("uCameraProximityFadeEnabled"), 1);
     r::popState();
     return true;
 }
@@ -452,7 +507,9 @@ void EffectPartSystem::render(const Camera& camera) const {
         // visible wherever its shadow is (the shadow pass has no distance cull).
         bool isExplosionEffect =
             effect.replayType.find("_explosion_sphere") != std::string::npos ||
-            effect.replayType.find("_explosion_smoke") != std::string::npos;
+            effect.replayType.find("_explosion_smoke") != std::string::npos ||
+            effect.replayType == "explosion_shockwave" ||
+            effect.replayType == "impact_shockwave";
 
         float distFade;
         if (effect.replayType == "tracer")
@@ -501,7 +558,8 @@ void EffectPartSystem::render(const Camera& camera) const {
         const bool damageNumber = effect.replayType == "damage_number" ||
                                   effect.replayType == "server_disagreement_text";
         float alpha = effect.alpha * distFade;
-        if (effect.useEndAlpha || effect.replayType == "explosion_shockwave")
+        if (effect.useEndAlpha || effect.replayType == "explosion_shockwave" ||
+            effect.replayType == "impact_shockwave")
             alpha = glm::mix(effect.alpha, effect.endAlpha, t) * distFade;
         else if (!damageNumber && (effect.replayType != "death_ellipsoid" || HitEffects::config().deathEllipsoid.fade))
             alpha *= (1.0f - t);
@@ -509,6 +567,8 @@ void EffectPartSystem::render(const Camera& camera) const {
         float drawScale = effect.scale + (effect.endScale - effect.scale) * t;
         
         glm::vec3 displayColor = effect.color;
+        if (effect.useEndColor)
+            displayColor = glm::mix(effect.color, effect.endColor, t);
         if (effect.phaseColors)
         {
             const float ageTicks = effect.lifetime * 60.0f;
@@ -607,30 +667,32 @@ void EffectPartSystem::render(const Camera& camera) const {
                 orientation = glm::normalize(glm::quat(alignment + 1.0f, glm::cross(sourceAxis, direction)));
             renderProjectile(camera, effect.position, orientation, rocketCfg);
         }
-        else if (effect.replayType == "explosion_shockwave" && !effect.texturePath.empty()) {
-            const glm::vec3 n = glm::length(effect.normal) > 0.001f
-                ? glm::normalize(effect.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
-            const glm::vec3 tangent = glm::normalize(
-                std::fabs(n.z) < 0.99f ? glm::cross(n, glm::vec3(0.0f, 0.0f, 1.0f))
-                                       : glm::cross(n, glm::vec3(1.0f, 0.0f, 0.0f)));
-            const glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
-            const float angle = glm::radians(glm::mix(effect.rotation.z, effect.endRotation.z, t));
-            const glm::vec3 right = tangent * std::cos(angle) + bitangent * std::sin(angle);
-            const glm::vec3 up = -tangent * std::sin(angle) + bitangent * std::cos(angle);
-            std::vector<TexturedParticleVertex> verts;
-            appendTexturedQuad(verts, effect.position, right * drawScale, up * drawScale, drawColor);
-            const bool texturedDrawn = drawTexturedHitParticles(camera, verts, effect.texturePath);
-            const bool modelFallbackDrawn = !texturedDrawn &&
-                drawEffectModel(camera, effect, drawScale, drawColor);
-            if (texturedDrawn || modelFallbackDrawn)
-                logShockwaveDraw(effect, texturedDrawn ? "textured_quad" : "model_fallback",
-                    alpha, drawScale,
-                    std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f));
-        }
-        else if (effect.replayType == "explosion_shockwave" && !effect.modelPath.empty()) {
-            if (drawEffectModel(camera, effect, drawScale, drawColor))
-                logShockwaveDraw(effect, "model_mesh", alpha, drawScale,
-                    std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f));
+        else if (effect.replayType == "explosion_shockwave" ||
+                 effect.replayType == "impact_shockwave") {
+            bool drawn = false;
+            const char* renderPath = "";
+            if (!effect.modelPath.empty()) {
+                drawn = drawEffectModel(camera, effect, drawScale, drawColor);
+                renderPath = "model_mesh";
+            }
+            if (!drawn && !effect.texturePath.empty()) {
+                const glm::vec3 n = glm::length(effect.normal) > 0.001f
+                    ? glm::normalize(effect.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
+                const glm::vec3 tangent = glm::normalize(
+                    std::fabs(n.z) < 0.99f ? glm::cross(n, glm::vec3(0.0f, 0.0f, 1.0f))
+                                           : glm::cross(n, glm::vec3(1.0f, 0.0f, 0.0f)));
+                const glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
+                const float angle = glm::radians(glm::mix(effect.rotation.z, effect.endRotation.z, t));
+                const glm::vec3 right = tangent * std::cos(angle) + bitangent * std::sin(angle);
+                const glm::vec3 up = -tangent * std::sin(angle) + bitangent * std::cos(angle);
+                std::vector<TexturedParticleVertex> verts;
+                appendTexturedQuad(verts, effect.position, right * drawScale, up * drawScale, drawColor);
+                drawn = drawTexturedHitParticles(camera, verts, effect.texturePath);
+                renderPath = "textured_quad";
+            }
+            if (drawn)
+                logShockwaveDraw(effect, renderPath, alpha, drawScale,
+                    std::clamp(effect.lifetime / std::max(0.0001f, effect.maxLifetime), 0.0f, 1.0f));
         }
         else if (!effect.billboardText) {
             if (effect.cameraOverlayWorld || effect.cameraOverlayHud)

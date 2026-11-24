@@ -22,6 +22,7 @@ extern std::uint32_t gProgram;
 extern std::uint32_t gVao;
 extern std::uint32_t gVbo;
 extern std::int32_t gScreenLoc;
+extern std::int32_t gCaStrengthLoc;
 extern std::int32_t gColorLoc;
 extern std::int32_t gUseTexLoc;
 extern std::int32_t gTexLoc;

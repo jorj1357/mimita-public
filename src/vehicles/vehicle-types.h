@@ -209,6 +209,17 @@ struct VehicleInput {
     float throttle = 0.0f;
     float brake = 0.0f;
     float steer = 0.0f;
+    // Normalized rotational intent. Every device (gamepad, keyboard, touch,
+    // NPC policy) publishes these three axes so the aerial solver never knows
+    // which device produced them. See docs/specs/vehicles/vehicles.md.
+    //   pitch: nose down (+1) / nose up (-1) about the car's right axis
+    //   yaw:   about the car's up axis
+    //   roll:  about the car's forward axis (includes directional air roll)
+    float pitch = 0.0f;
+    float yaw = 0.0f;
+    float roll = 0.0f;
+    // R1/free-air-roll modifier: airborne it remaps stick X from yaw to roll.
+    bool airRollModifier = false;
     float clutch = 1.0f;
     float handbrake = 0.0f;
     float boost = 0.0f;
@@ -258,6 +269,31 @@ struct VehicleState {
     bool jumpHeld = false;
     bool jumpHeldPrev = false;
     bool jumpPressed = false;
+    // Rocket League aerial/dodge state. All timing is seconds, all lengths are
+    // meters. The dodge is a finite torque + impulse program; stall, flip
+    // cancel and flip reset emerge from these rules (no dedicated mechanics).
+    bool hasFlipped = false;
+    bool isFlipping = false;
+    bool isJumping = false;
+    bool hasJumped = false;
+    float flipTimer = 0.0f;
+    float jumpTimer = 0.0f;
+    float airTimeSinceJump = 0.0f;
+    float handbrakeVal = 0.0f;
+    glm::vec3 flipTorqueLocal{0.0f};
+    glm::vec3 flipAxisWorld{0.0f};
+    glm::vec3 dodgeWorldDir{0.0f};
+    int flipResetCount = 0;
+    bool wheelOnBall = false;
+    uint64_t lastFlipResetTick = 0;
+    // Metric telemetry accumulators (meters / seconds / newtons).
+    float distanceTravelled = 0.0f;
+    float apexHeightM = 0.0f;
+    float takeoffHeightM = 0.0f;
+    glm::vec3 lastTelemetryPosition{0.0f};
+    uint64_t airborneSinceTick = 0;
+    bool airborneLogged = false;
+    uint64_t lastTelemetryTick = 0;
     float boostInput = 0.0f;
     bool powerslide = false;
     bool boostActive = false;
@@ -275,6 +311,11 @@ struct VehicleState {
     float throttle = 0.0f;
     float brake = 0.0f;
     float steer = 0.0f;
+    // Last sampled rotational intent (see VehicleInput). Kept on state so the
+    // fixed tick can evaluate the dodge and air-control model.
+    float pitchInput = 0.0f;
+    float yawInput = 0.0f;
+    float rollInput = 0.0f;
     float clutch = 1.0f;
     float handbrake = 0.0f;
     float speed = 0.0f;

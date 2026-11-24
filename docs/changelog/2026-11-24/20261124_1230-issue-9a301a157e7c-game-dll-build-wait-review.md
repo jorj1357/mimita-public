@@ -1,0 +1,11 @@
+# game-dll-build wait review (issue-9a301a157e7c)
+
+Reviewed wait `game-dll-build:2026-11-24T11:31:17.691Z` (61.713 seconds at the 60 s budget check, stage `game_build`) against attempt `game-dll-20261124T113118610851Z-05382c`, run `20261124_112426`, journal `logs/2026-11-24/20261124_112426/dev-loop/events.jsonl`.
+
+Acceptance passed for this occurrence: `dev-loop.wait.over_budget` (created=true) and `dev-loop.wait.reviewer-wake` (queued=true) are both present at line 63/62 (`11:32:25.128Z`); exactly one `wake.queued` for `wake-90ca64fe06de` (`11:32:20.925Z`); one issue/doc and one wake request file carry the wait_id. This differs from the 11:16Z sibling review of issue-8b5c92a76d97, where the journal had only a misleading `dev-loop.wait.issue-failed`.
+
+The build was real and succeeded, not stalled: generation 593 published at `11:34:18.768Z`, total 163.37 s, compile 79.008 s, link 51.568 s. The slowest translation unit was the single changed file `src/input/gamepad-input.cpp` at 74.481 s (generated identity TU 4.428 s). In the same run window the prior gen592 attempt `game-dll-20261124T112400384612Z-eb878a` compiled the same TU in 15.111 s (total 31.943 s), so the overage is dominated by that one TU. Resource sidecar for 05382c: 106 samples @1 s, 12 logical CPUs, mean host CPU 99.997%/peak 100%, minimum available memory ~45.6 MiB of 16.8 GB; live Bloodtest with 2 players/0 NPC and two clients at ~112/~94 FPS. Direct values were already recorded on issue-136d4553ff92 and issue-ed3ac775283d, so this review treats them as pressure correlation, not causality.
+
+Findings appended: gap_key `build-resource-sampling:game-dll-20261124T113118610851Z-05382c` (plus siblings eb878a and 6d43ee) recorded once on issue-136d4553ff92 with a smallest-next-check question to build-coordinator; build-stress resource occurrence on issue-2a5c5da53565; duplicate/late reviewer dispatch occurrence on issue-84c584957e65 (wake queued once but launched twice: codex `11:32:25.007Z`, retry `11:34:08.350Z`, opencode `11:58:05.004Z`, attempts=2, ~25m44s queue-to-launch). F2 stale generation/build_id (592/EXE id vs in-flight 593) and F3 duplicate-issue volume were already tracked and were not re-filed.
+
+No source edit, build, runtime change, process control, or runtime/behavior proof. Issue remains `in_review`; no file leases held.

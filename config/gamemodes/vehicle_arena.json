@@ -238,7 +238,7 @@
   "roles": {},
   "actor_preset": "",
   "movement_preset": "",
-  "vehicle_profile": "arcade_arena",
+  "vehicle_profile": "rl_soccar",
   "npc_behavior_profile": "",
   "npc_targeting": {
     "enabled": false,

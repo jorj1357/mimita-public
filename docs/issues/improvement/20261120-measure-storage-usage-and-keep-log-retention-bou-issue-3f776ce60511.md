@@ -198,3 +198,35 @@ NEXT DISCRIMINATING CHECK (smallest, read-only)
 - Extend `prune-builds.py --logs-only --dry-run` to print (a) candidates in all observed layouts (YYYY-MM-DD, MM-DD-YYYY, non-date dirs) with bytes, and (b) their intersection with structured evidence run dirs of non-closed issues; run it once and delete nothing. Expected discriminators: logs/2026-11-22/20261122_210058 appears as protected; logs/11-22-2026, logs/11-12-2026, logs/11-13-2026 appear as removable ~567 MiB; logs/11-23-2026 appears as active/current-day and is not removable. Only with owner approval, run one real prune of expired legacy roots excluding the local current date and record exact bytes removed plus verification that active and newest roots remain.
 
 No source, build, runtime behavior, or fix is claimed. Owner remains codex-log-space-efficiency for the inventory tool and retention change.
+
+## Agent suggestion
+
+### 2026-11-24T12:40:44.270Z — issue-review-sweeper
+
+2026-11-24 process sweep (bounded review of issue-b18e63894585) found a large avoidable diagnostic-volume contributor that fits this issue's acceptance ("assign every byte to ... generated output", "propose safe byte-reducing actions").
+
+OBSERVED: gen587 jugger_horde server run 20261124_081518 (08:15-10:17Z, 67-NPC roster) wrote 14 events*.jsonl segments totaling 1,292.1 MiB in about 2 hours (~10.7 MB/min). Its final 6.5-minute segment alone is 52 MiB: npc.movement-commitment-created 20,209, npc.attack-gate 8,128, npc.travel-goal-changed 3,166, npc.target-sense 2,171, npc.stuck-episode 1,799. The movement-commitment rate is about 6.5 events/s/actor. These are high-rate per-actor diagnostics, not one-off failures, and the volume made a bounded read-only review slow.
+
+PROPOSAL (measurable): reduce Juggernaut Horde server journal bytes/min by at least 70% (from the measured ~8-10.7 MB/min to <=2.5 MB/min) while retaining every npc.stuck-episode, npc.movement-progress-failed, npc.nav-plan-failed, and first-failure/state-transition record. Emit npc.movement-commitment-created and npc.attack-gate only on state/target/direction change plus one 1 Hz per-actor summary, and fold npc.travel-goal-changed into that summary. Do not change gameplay, tick rate, or event fields needed for proof.
+
+SMALLEST EXPERIMENT: one pinned 5-minute gen593 jugger_horde run on the same map/roster, before and after the emission gate; measure bytes/min, per-actor movement-commitment/attack-gate counts, and verify the required stuck/nav/first-failure events and fields are unchanged. Link to issue-b18e63894585 as a shared diagnostic-cost source only, not as a behavior fix.
+
+## Agent suggestion
+
+### 2026-11-24T14:51:08.245Z — issue-review-sweeper
+
+Retention addendum from the bounded review of issue-0e981ef03d32 (issue-review-sweeper, 2026-11-24T14:5xZ). Read-only: no source edit, build, or run.
+
+NEW SAMPLE (distinct from the whole-date-root gap already recorded here): a run journal cited by an open high-priority issue was gone within about 70 minutes, inside a date root that still exists.
+- issue-130ee745052a (opened 2026-11-24T05:28Z, high) cites logs/2026-11-24/20261124_041854/client-01/events.jsonl and says the observation and journal remain.
+- On 2026-11-24T14:4xZ that directory is absent. logs/2026-11-24 exists but retains only runs from 20261124_053435 onward, so the deletion was intra-root, not a whole-root prune.
+- devscripts/prune-builds.py prune_logs and devscripts/dev_loop/game_build.py _prune_logs both sort date roots descending and keep the newest roots, so neither explains deleting a run inside the newest root. The remover is unknown from checked evidence; .dev/agent-command-20261124_041854-client-01.jsonl still exists while the run journal and BMP do not.
+- The issue also says the BMP was deleted after inspection, so the image is expected to be missing; only the journal claim is contradicted.
+
+PROPOSAL (narrowing, measurable)
+- Add a read-only audit, not new deletion behavior: for every non-closed issue evidence/proof journal path, report present/missing and, for missing paths inside an existing date root, flag intra-root missing separately from date root pruned.
+- Measurable target: 0 open-issue journal references that are missing while their date root exists without an explicit recorded removal event; every missing reference classifies as either date-root-pruned, intra-root-missing, or never-written, over one audit run.
+- Smallest experiment: a script (or prune-builds.py --logs-only --dry-run --audit-references) that loads open issue evidence and proof journal paths from agent-coord, stats each path, and prints the three classes plus counts. Run once on today's tree; expected result includes 20261124_041854 as intra-root-missing and 2026-11-20/2026-11-21 references as date-root-pruned. Delete nothing.
+- If any intra-root deletion path is then identified (dev-loop start, parallel-run cleanup, agent command, or manual), record its owner before changing it.
+
+This is a proposal only; no owner assignment, code edit, or proof claim.

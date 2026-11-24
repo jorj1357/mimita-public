@@ -110,8 +110,11 @@ public:
     ~ScopedServerJournalEnvironment()
     {
         for (auto it = previous.rbegin(); it != previous.rend(); ++it)
-            SetEnvironmentVariableA(it->first.c_str(),
-                                    it->second.first ? it->second.second.c_str() : nullptr);
+        {
+            const char* value = it->second.first ? it->second.second.c_str() : nullptr;
+            SetEnvironmentVariableA(it->first.c_str(), value);
+            _putenv_s(it->first.c_str(), value ? value : "");
+        }
     }
 
 private:
@@ -119,7 +122,11 @@ private:
     {
         const char* oldValue = std::getenv(name);
         previous.push_back({name, {oldValue != nullptr, oldValue ? oldValue : ""}});
+        // CreateProcess inherits the Win32 process environment, while the
+        // child's getenv() sees the CRT copy. Update both so the server journal
+        // identity cannot silently fall back to the client's journal.
         SetEnvironmentVariableA(name, value);
+        _putenv_s(name, value);
     }
 
     std::vector<std::pair<std::string, std::pair<bool, std::string>>> previous;
@@ -555,6 +562,12 @@ bool launchServerPresetAndJoin(const MimitaNet::ServerLaunchSettings& settings)
     }
     gPendingLocalJoinFallbackRoomCode.clear();
     gPendingLocalJoinFallbackStartMs = 0;
+
+    // A GUI-created local server is not the dev-loop's pinned server. Clear a
+    // stale expected run id so the client does not compare it against the new
+    // server's run. The identity check is diagnostic and never blocks, but a
+    // clean local launch should not emit a misleading warning.
+    _putenv_s("MIMITA_EXPECTED_RUN_ID", "");
 
     auto queueLocalJoin = [](const MimitaNet::ServerLaunchSettings& launchSettings) {
         gPendingConnect = {};

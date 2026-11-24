@@ -51,24 +51,29 @@
     // FAST SOURCE PRESET VALUE:
     // 20 MiMITA units/sec.
     // "max_speed": 30.0,
+    // "max_speed": 20.0,
     "max_speed": 9.0,
 
     // Keep server-side ground movement validation at the same speed.
     // "ground_speed": 30.0,
+    // "ground_speed": 20.0,
     "ground_speed": 9.0,
 
     // Extremely high ground acceleration from the fast Source preset.
     //
     // This makes WASD feel nearly instant instead of gradually accelerating
     // like strict CS 1.6 sv_accelerate 5.
-    // "ground_acceleration": 2.0,
-    "ground_acceleration": 4.0,
+    "ground_acceleration": 2.0,
+    // "ground_acceleration": 0.5,
+    // "ground_acceleration": 4.0,
 
     // Ground friction from the fast Source preset.
     //
     // Higher values remove ground velocity more aggressively when movement
     // input is released.
-    "friction": 1.25,
+    // "friction": 1.25,
+    // "friction": 5.25,
+    "friction": 1.0,
 
     // Very small stop-speed threshold from the fast preset.
     //

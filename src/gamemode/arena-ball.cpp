@@ -9,6 +9,7 @@
 
 #include "debug/structured-log.h"
 #include "gamemode/map-config.h"
+#include "impact/destructible-world-config.h"
 #include "physics/physical-entity.h"
 
 namespace ArenaBall
@@ -16,6 +17,17 @@ namespace ArenaBall
 namespace
 {
 constexpr const char* kBallPersistenceId = "arena-ball";
+
+// Convert the authored ball gravity into the per-entity scale the shared
+// object integrator uses. Keeps global object gravity untouched for crates.
+float ballGravityScale(float gravityMps2)
+{
+    const float worldGravity = std::fabs(
+        MimitaImpact::DestructibleWorldConfig::instance().objectGravity());
+    if (worldGravity <= 0.01f)
+        return 1.0f;
+    return gravityMps2 / worldGravity;
+}
 
 void removeExistingBall()
 {
@@ -72,7 +84,7 @@ ArenaBallSpawn spawnFromMap(const MapObjectiveConfig& config, std::string* error
     entity->linearDamping = ball.linearDamping;
     entity->angularDamping = 0.4f;
     entity->maxAngularSpeed = 40.0f;
-    entity->gravityScale = 1.0f;
+    entity->gravityScale = ballGravityScale(ball.gravityMps2);
     entity->collidesWithActors = true;
     entity->motion = PhysicalEntityMotion::Dynamic;
     entity->serverSimulated = true;
@@ -115,6 +127,7 @@ bool reset(PhysicalEntity& ball, const MapObjectiveConfig& config)
     ball.restitution = data.restitution;
     ball.friction = data.friction;
     ball.linearDamping = data.linearDamping;
+    ball.gravityScale = ballGravityScale(data.gravityMps2);
     ball.transform = glm::mat4(1.0f);
     ball.transform[3] = glm::vec4(data.spawn, 1.0f);
     ball.previousTransform = ball.transform;

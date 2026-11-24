@@ -207,11 +207,26 @@ struct GamemodeBodycam {
     float wallProbeRadiusMeters = 0.12f;
 };
 
+// Mode-level HUD presentation policy. "normal" draws the HUD at output
+// resolution after PostFX; "scene" keeps the legacy scene-space layer so the
+// bodycam lens distorts the HUD with the world.
+struct GamemodeHudPolicy {
+    bool configured = false;
+    bool enabled = true;
+    bool sceneLayer = false;
+    bool showChat = true;
+    bool showHotbar = true;
+    bool showCrosshair = true;
+    bool showStatus = true;
+    float caStrength = 0.12f;
+};
+
 // Mode-level presentation policy. Most missing keys mean "no policy";
 // player_outlines is opt-in during community matches. Actor-preset
 // presentation refines other settings where both exist.
 struct GamemodePresentation {
     GamemodeBodycam bodycam;
+    GamemodeHudPolicy hud;
     bool hasGoldRewardPopup = false;
     bool goldRewardPopup = true;
     bool hasDamageNumbers = false;       bool damageNumbers = true;
@@ -528,3 +543,5 @@ private:
 };
 
 void applyGamemodeToDuelConfig(DuelConfig& cfg, const Gamemode& gm);
+
+

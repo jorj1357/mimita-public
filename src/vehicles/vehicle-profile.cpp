@@ -55,7 +55,71 @@ std::string readString(const json& root, const char* key,
     return root[key].get<std::string>();
 }
 
+// Piecewise-linear curve as (input, output) pairs. Accepts [[x,y], ...] or
+// [{"x":x,"y":y}, ...] so authors can annotate points without a schema change.
+std::vector<glm::vec2> readCurve(const json& root, const char* key,
+                                 const std::vector<glm::vec2>& fallback)
+{
+    if (!root.contains(key) || !root[key].is_array() || root[key].empty())
+        return fallback;
+    std::vector<glm::vec2> out;
+    out.reserve(root[key].size());
+    for (const json& item : root[key])
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        if (item.is_array() && item.size() >= 2 && item[0].is_number() &&
+            item[1].is_number())
+        {
+            x = item[0].get<float>();
+            y = item[1].get<float>();
+        }
+        else if (item.is_object() && item.contains("x") && item.contains("y"))
+        {
+            x = item["x"].get<float>();
+            y = item["y"].get<float>();
+        }
+        else
+        {
+            return fallback;
+        }
+        if (!std::isfinite(x) || !std::isfinite(y))
+            return fallback;
+        out.emplace_back(x, y);
+    }
+    return out;
+}
+
+float sampleCurve(const std::vector<glm::vec2>& curve, float input,
+                  float fallback)
+{
+    if (curve.empty())
+        return fallback;
+    if (input <= curve.front().x)
+        return curve.front().y;
+    for (size_t i = 1; i < curve.size(); ++i)
+    {
+        if (input <= curve[i].x)
+        {
+            const glm::vec2& a = curve[i - 1];
+            const glm::vec2& b = curve[i];
+            const float span = b.x - a.x;
+            if (span <= 1e-6f)
+                return b.y;
+            const float t = (input - a.x) / span;
+            return a.y + (b.y - a.y) * t;
+        }
+    }
+    return curve.back().y;
+}
+
 }  // namespace
+
+float vehicleProfileCurveSample(const std::vector<glm::vec2>& curve, float input,
+                                float fallback)
+{
+    return sampleCurve(curve, input, fallback);
+}
 
 VehicleProfileRegistry& VehicleProfileRegistry::instance()
 {
@@ -87,6 +151,9 @@ bool VehicleProfileRegistry::loadFile(const std::string& path,
     if (profile.id.empty())
         return false;
     profile.description = readString(root, "description", "");
+    profile.source = readString(root, "source", profile.source);
+    profile.gravityMps2 =
+        readFloat(root, "gravityMps2", profile.gravityMps2, 0.0f, 100.0f);
 
     if (root.contains("transmission") && root["transmission"].is_object())
     {
@@ -113,6 +180,12 @@ bool VehicleProfileRegistry::loadFile(const std::string& path,
             profile.boost.drainPerTick =
                 profile.boost.max / profile.boost.fullDrainTicks;
         }
+        profile.boost.groundAccelMps2 = readFloat(
+            boost, "groundAccelMps2", profile.boost.groundAccelMps2, 0.0f, 500.0f);
+        profile.boost.airAccelMps2 = readFloat(
+            boost, "airAccelMps2", profile.boost.airAccelMps2, 0.0f, 500.0f);
+        profile.boost.minBoostSeconds = readFloat(
+            boost, "minBoostSeconds", profile.boost.minBoostSeconds, 0.0f, 5.0f);
         profile.boost.force =
             readFloat(boost, "force", profile.boost.force, 0.0f, 1.0e7f);
         profile.boost.airForce =
@@ -122,37 +195,97 @@ bool VehicleProfileRegistry::loadFile(const std::string& path,
     if (root.contains("jump") && root["jump"].is_object())
     {
         const json& jump = root["jump"];
-        profile.jump.impulse =
-            readFloat(jump, "impulse", profile.jump.impulse, 0.0f, 1.0e8f);
-        profile.jump.heldForce =
-            readFloat(jump, "heldForce", profile.jump.heldForce, 0.0f, 1.0e8f);
-        profile.jump.heldWindowSeconds = readFloat(
-            jump, "heldWindowSeconds", profile.jump.heldWindowSeconds,
+        profile.jump.immediateDeltaVelMps = readFloat(
+            jump, "immediateDeltaVelMps", profile.jump.immediateDeltaVelMps,
+            0.0f, 100.0f);
+        profile.jump.sustainedAccelMps2 = readFloat(
+            jump, "sustainedAccelMps2", profile.jump.sustainedAccelMps2,
+            0.0f, 500.0f);
+        profile.jump.sustainedWindowSeconds = readFloat(
+            jump, "sustainedWindowSeconds", profile.jump.sustainedWindowSeconds,
             0.0f, 5.0f);
-        profile.jump.minimumHoldSeconds = readFloat(
-            jump, "minimumHoldSeconds", profile.jump.minimumHoldSeconds,
+        profile.jump.minSustainSeconds = readFloat(
+            jump, "minSustainSeconds", profile.jump.minSustainSeconds,
             0.0f, 5.0f);
-        profile.jump.doubleJumpImpulse = readFloat(
-            jump, "doubleJumpImpulse", profile.jump.doubleJumpImpulse,
-            0.0f, 1.0e8f);
-        profile.jump.secondJumpWindowSeconds = readFloat(
-            jump, "secondJumpWindowSeconds",
-            profile.jump.secondJumpWindowSeconds, 0.0f, 10.0f);
+        profile.jump.preMinAccelScale = readFloat(
+            jump, "preMinAccelScale", profile.jump.preMinAccelScale, 0.0f, 5.0f);
+        profile.jump.stickyAccelMps2 = readFloat(
+            jump, "stickyAccelMps2", profile.jump.stickyAccelMps2, 0.0f, 100.0f);
+        profile.jump.stickyTicks = static_cast<int>(readFloat(
+            jump, "stickyTicks", static_cast<float>(profile.jump.stickyTicks),
+            0.0f, 120.0f));
+        profile.jump.doubleJumpDeltaVelMps = readFloat(
+            jump, "doubleJumpDeltaVelMps", profile.jump.doubleJumpDeltaVelMps,
+            0.0f, 100.0f);
+        profile.jump.doubleJumpWindowSeconds = readFloat(
+            jump, "doubleJumpWindowSeconds",
+            profile.jump.doubleJumpWindowSeconds, 0.0f, 10.0f);
+        profile.jump.dodgeDeadzone = readFloat(
+            jump, "dodgeDeadzone", profile.jump.dodgeDeadzone, 0.0f, 3.0f);
+    }
+
+    if (root.contains("flip") && root["flip"].is_object())
+    {
+        const json& flip = root["flip"];
+        profile.flip.angularAccelPitch = readFloat(
+            flip, "angularAccelPitch", profile.flip.angularAccelPitch,
+            0.0f, 500.0f);
+        profile.flip.angularAccelRoll = readFloat(
+            flip, "angularAccelRoll", profile.flip.angularAccelRoll,
+            0.0f, 500.0f);
+        profile.flip.torqueSeconds = readFloat(
+            flip, "torqueSeconds", profile.flip.torqueSeconds, 0.0f, 5.0f);
+        profile.flip.pitchLockSeconds = readFloat(
+            flip, "pitchLockSeconds", profile.flip.pitchLockSeconds, 0.0f, 5.0f);
+        profile.flip.initialDeltaVelMps = readFloat(
+            flip, "initialDeltaVelMps", profile.flip.initialDeltaVelMps,
+            0.0f, 100.0f);
+        profile.flip.forwardMaxSpeedScale = readFloat(
+            flip, "forwardMaxSpeedScale", profile.flip.forwardMaxSpeedScale,
+            0.0f, 10.0f);
+        profile.flip.sideMaxSpeedScale = readFloat(
+            flip, "sideMaxSpeedScale", profile.flip.sideMaxSpeedScale,
+            0.0f, 10.0f);
+        profile.flip.backwardMaxSpeedScale = readFloat(
+            flip, "backwardMaxSpeedScale", profile.flip.backwardMaxSpeedScale,
+            0.0f, 10.0f);
+        profile.flip.backwardScaleX = readFloat(
+            flip, "backwardScaleX", profile.flip.backwardScaleX, 0.0f, 10.0f);
+        profile.flip.zDampFactor = readFloat(
+            flip, "zDampFactor", profile.flip.zDampFactor, 0.0f, 1.0f);
+        profile.flip.zDampStartSeconds = readFloat(
+            flip, "zDampStartSeconds", profile.flip.zDampStartSeconds,
+            0.0f, 5.0f);
+        profile.flip.zDampEndSeconds = readFloat(
+            flip, "zDampEndSeconds", profile.flip.zDampEndSeconds, 0.0f, 5.0f);
+        profile.flip.directionCancelThreshold = readFloat(
+            flip, "directionCancelThreshold",
+            profile.flip.directionCancelThreshold, 0.0f, 2.0f);
     }
 
     if (root.contains("airControl") && root["airControl"].is_object())
     {
         const json& air = root["airControl"];
-        profile.airControl.pitchTorque = readFloat(
-            air, "pitchTorque", profile.airControl.pitchTorque, 0.0f, 1.0e7f);
-        profile.airControl.rollTorque = readFloat(
-            air, "rollTorque", profile.airControl.rollTorque, 0.0f, 1.0e7f);
+        profile.airControl.pitchAccel = readFloat(
+            air, "pitchAccel", profile.airControl.pitchAccel, 0.0f, 500.0f);
+        profile.airControl.yawAccel = readFloat(
+            air, "yawAccel", profile.airControl.yawAccel, 0.0f, 500.0f);
+        profile.airControl.rollAccel = readFloat(
+            air, "rollAccel", profile.airControl.rollAccel, 0.0f, 500.0f);
         profile.airControl.pitchDamping = readFloat(
-            air, "pitchDamping", profile.airControl.pitchDamping, 0.0f, 1.0e6f);
+            air, "pitchDamping", profile.airControl.pitchDamping, 0.0f, 100.0f);
+        profile.airControl.yawDamping = readFloat(
+            air, "yawDamping", profile.airControl.yawDamping, 0.0f, 100.0f);
         profile.airControl.rollDamping = readFloat(
-            air, "rollDamping", profile.airControl.rollDamping, 0.0f, 1.0e6f);
-        profile.airControl.yawEnabled =
-            readBool(air, "yawEnabled", profile.airControl.yawEnabled);
+            air, "rollDamping", profile.airControl.rollDamping, 0.0f, 100.0f);
+        profile.airControl.maxAngularVelocity = readFloat(
+            air, "maxAngularVelocity", profile.airControl.maxAngularVelocity,
+            0.0f, 100.0f);
+        profile.airControl.inputScaledDamping = readBool(
+            air, "inputScaledDamping", profile.airControl.inputScaledDamping);
+        profile.airControl.throttleAirAccelMps2 = readFloat(
+            air, "throttleAirAccelMps2", profile.airControl.throttleAirAccelMps2,
+            0.0f, 100.0f);
     }
 
     if (root.contains("steering") && root["steering"].is_object())
@@ -196,6 +329,96 @@ bool VehicleProfileRegistry::loadFile(const std::string& path,
         profile.ballContact.chassisImpulseScale = readFloat(
             contact, "chassisImpulseScale",
             profile.ballContact.chassisImpulseScale, 0.0f, 10.0f);
+    }
+
+    if (root.contains("ground") && root["ground"].is_object())
+    {
+        const json& ground = root["ground"];
+        profile.ground.maxSpeedMps = readFloat(
+            ground, "maxSpeedMps", profile.ground.maxSpeedMps, 0.0f, 200.0f);
+        profile.ground.supersonicMps = readFloat(
+            ground, "supersonicMps", profile.ground.supersonicMps, 0.0f, 200.0f);
+        profile.ground.maxUnboostedMps = readFloat(
+            ground, "maxUnboostedMps", profile.ground.maxUnboostedMps,
+            0.0f, 200.0f);
+        profile.ground.coastingDecelMps2 = readFloat(
+            ground, "coastingDecelMps2", profile.ground.coastingDecelMps2,
+            0.0f, 200.0f);
+        profile.ground.brakingDecelMps2 = readFloat(
+            ground, "brakingDecelMps2", profile.ground.brakingDecelMps2,
+            0.0f, 500.0f);
+        profile.ground.throttleDeadzone = readFloat(
+            ground, "throttleDeadzone", profile.ground.throttleDeadzone,
+            0.0f, 1.0f);
+        profile.ground.powerslideRisePerSecond = readFloat(
+            ground, "powerslideRisePerSecond",
+            profile.ground.powerslideRisePerSecond, 0.0f, 50.0f);
+        profile.ground.powerslideFallPerSecond = readFloat(
+            ground, "powerslideFallPerSecond",
+            profile.ground.powerslideFallPerSecond, 0.0f, 50.0f);
+        profile.ground.powerslideLatFrictionScale = readFloat(
+            ground, "powerslideLatFrictionScale",
+            profile.ground.powerslideLatFrictionScale, 0.0f, 1.0f);
+        profile.ground.powerslideLongFrictionMin = readFloat(
+            ground, "powerslideLongFrictionMin",
+            profile.ground.powerslideLongFrictionMin, 0.0f, 2.0f);
+        profile.ground.powerslideLongFrictionMax = readFloat(
+            ground, "powerslideLongFrictionMax",
+            profile.ground.powerslideLongFrictionMax, 0.0f, 2.0f);
+    }
+
+    if (root.contains("ballHit") && root["ballHit"].is_object())
+    {
+        const json& hit = root["ballHit"];
+        profile.ballHit.extraImpulseEnabled = readBool(
+            hit, "extraImpulseEnabled", profile.ballHit.extraImpulseEnabled);
+        profile.ballHit.extraImpulseScale = readFloat(
+            hit, "extraImpulseScale", profile.ballHit.extraImpulseScale,
+            0.0f, 100.0f);
+        profile.ballHit.extraImpulseZScale = readFloat(
+            hit, "extraImpulseZScale", profile.ballHit.extraImpulseZScale,
+            0.0f, 2.0f);
+        profile.ballHit.extraImpulseForwardScale = readFloat(
+            hit, "extraImpulseForwardScale",
+            profile.ballHit.extraImpulseForwardScale, 0.0f, 2.0f);
+        profile.ballHit.extraImpulseMaxDeltaVelMps = readFloat(
+            hit, "extraImpulseMaxDeltaVelMps",
+            profile.ballHit.extraImpulseMaxDeltaVelMps, 0.0f, 500.0f);
+        profile.ballHit.extraImpulseCurve = readCurve(
+            hit, "extraImpulseCurve", profile.ballHit.extraImpulseCurve);
+        profile.ballHit.carBallFriction = readFloat(
+            hit, "carBallFriction", profile.ballHit.carBallFriction, 0.0f, 10.0f);
+        profile.ballHit.carBallRestitution = readFloat(
+            hit, "carBallRestitution", profile.ballHit.carBallRestitution,
+            0.0f, 1.0f);
+    }
+
+    if (root.contains("settle") && root["settle"].is_object())
+    {
+        const json& settle = root["settle"];
+        profile.settle.stickyForceGravityScale = readFloat(
+            settle, "stickyForceGravityScale",
+            profile.settle.stickyForceGravityScale, 0.0f, 5.0f);
+        profile.settle.autoFlipImpulseMps = readFloat(
+            settle, "autoFlipImpulseMps", profile.settle.autoFlipImpulseMps,
+            0.0f, 50.0f);
+        profile.settle.autoFlipAngularAccel = readFloat(
+            settle, "autoFlipAngularAccel",
+            profile.settle.autoFlipAngularAccel, 0.0f, 200.0f);
+        profile.settle.autoFlipSeconds = readFloat(
+            settle, "autoFlipSeconds", profile.settle.autoFlipSeconds, 0.0f, 5.0f);
+        profile.settle.autoFlipNormalZThreshold = readFloat(
+            settle, "autoFlipNormalZThreshold",
+            profile.settle.autoFlipNormalZThreshold, -1.0f, 1.0f);
+        profile.settle.autoFlipRollThresholdRad = readFloat(
+            settle, "autoFlipRollThresholdRad",
+            profile.settle.autoFlipRollThresholdRad, 0.0f, 4.0f);
+        profile.settle.autoRollForceMps2 = readFloat(
+            settle, "autoRollForceMps2", profile.settle.autoRollForceMps2,
+            0.0f, 100.0f);
+        profile.settle.autoRollAngularAccel = readFloat(
+            settle, "autoRollAngularAccel", profile.settle.autoRollAngularAccel,
+            0.0f, 200.0f);
     }
 
     if (root.contains("bindings") && root["bindings"].is_object())

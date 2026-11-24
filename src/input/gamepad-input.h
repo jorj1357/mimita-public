@@ -17,6 +17,9 @@ struct GamepadBinding {
     bool trigger = false;
     bool invert = false;
     float deadzone = 0.15f;
+    // Value at which the axis reports full travel. < 1.0 makes a trigger reach
+    // 100% before it is physically fully pressed, with a linear ramp below.
+    float upperDeadzone = 1.0f;
 };
 
 class GamepadInput {
@@ -51,17 +54,25 @@ public:
     float throttle() const { return value("throttle"); }
     float brake() const { return value("brake"); }
     float steer() const { return value("steer"); }
+    float pitch() const { return value("pitch"); }
+    float swivelX() const { return value("swivelX"); }
+    float swivelY() const { return value("swivelY"); }
     bool boost() const { return held("boost"); }
     bool jump() const { return held("jump"); }
     bool powerslide() const { return held("powerslide"); }
     bool ballCam() const { return held("ballcam"); }
+    bool airRollLeft() const { return held("airRollLeft"); }
+    bool airRollRight() const { return held("airRollRight"); }
+    bool lookBehind() const { return held("lookBehind"); }
 
 private:
     GamepadInput();
 
     void applyDefaultBindings();
+    void loadMappings();
     void pollState();
-    float axisValue(int axis, bool trigger, bool invert, float deadzone) const;
+    float axisValue(int axis, bool trigger, bool invert, float deadzone,
+                    float upperDeadzone = 1.0f) const;
     bool buttonValue(int button) const;
 
     std::unordered_map<std::string, GamepadBinding> mBindings;
@@ -71,6 +82,7 @@ private:
     int mDeviceId = -1;
     std::string mName;
     std::string mConfigPath = "config/input/gamepad.json";
+    std::string mMappingsPath = "config/input/gamecontrollerdb.txt";
 
     // GLFW standardized state, or raw fallback.
     float mAxes[16] = {};

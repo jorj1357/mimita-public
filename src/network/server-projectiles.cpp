@@ -779,8 +779,44 @@ void explodeProjectile(SOCKET sock,
         const float referenceEnergy = 0.5f * mass * referenceSpeed * referenceSpeed;
         const float energyScale = referenceEnergy > 1e-6f
             ? impactEnergy / referenceEnergy : 1.0f;
-        const int damageValue = std::max(1, (int)std::round(
+        int damageValue = std::max(1, (int)std::round(
             (def ? def->damage : projectile.splashDamage) * energyScale));
+        // Direct projectiles share the hitscan damage contract: range falloff
+        // plus an explicit point-blank head execution. The projectile impact
+        // has no body-part id, so the head is inferred from the impact height
+        // above the victim's feet.
+        if (def) {
+            float shotDistance = 0.0f;
+            bool haveShotDistance = false;
+            if (projectile.ownerPlayerId != 0) {
+                auto ownerIt = players.find(projectile.ownerPlayerId);
+                if (ownerIt != players.end()) {
+                    shotDistance = glm::length(position - ownerIt->second.pos);
+                    haveShotDistance = true;
+                }
+            }
+            bool headHit = false;
+            auto playerIt = players.find(directTargetId);
+            if (playerIt != players.end()) {
+                headHit = (position.z - playerIt->second.pos.z) >= 1.35f;
+            } else {
+                auto npcIt = npcs.find(directTargetId);
+                if (npcIt != npcs.end())
+                    headHit = (position.z - npcIt->second.pos.z) >= 1.35f;
+            }
+            const float pointBlankDamage =
+                WeaponExecution::paramOr(*def, "pointBlankHeadDamage", 0.0f);
+            const float pointBlankRange =
+                WeaponExecution::paramOr(*def, "pointBlankDistanceMeters", 0.0f);
+            if (headHit && pointBlankDamage > 0.0f && pointBlankRange > 0.0f &&
+                haveShotDistance && shotDistance <= pointBlankRange) {
+                damageValue = std::max(1, (int)std::llround(pointBlankDamage));
+            } else if (haveShotDistance) {
+                damageValue = std::max(1, (int)std::llround(
+                    damageValue * WeaponExecution::hitscanFalloffFactor(
+                        *def, shotDistance)));
+            }
+        }
         const glm::vec3 shotDir = glm::length(projectile.velocity) > 0.001f
             ? glm::normalize(projectile.velocity)
             : glm::vec3(0.0f, 1.0f, 0.0f);

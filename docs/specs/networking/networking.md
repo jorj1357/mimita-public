@@ -4456,14 +4456,42 @@ still use the registered room through coordinator/ICE. A localhost-only test
 cannot count as external multiplayer acceptance. The regression
 `docs/regressions/dev-loop/dev-loop-bypassed-REG-2026-09-27.md` still applies
 to dev-loop scenarios that claim to validate remote room-code/ICE joins. Keep
-room lookup failure separate from a wrong run/build identity. The exact
-user-reported text “room identity not found” was not found as a literal in the
-inspected command/network owners; capture the exact text and journal event
-during reproduction.
+room lookup failure separate from a wrong run/build identity. A run/build
+metadata difference is warning-only and must not block the join; see
+“Non-blocking runtime identity metadata” above. The exact user-reported text
+“room identity not found” was not found as a literal in the inspected
+command/network owners; capture the exact text and journal event during
+reproduction.
 
 `docs/specs/dev-loop/dev-loop.md` section 19.7 records the reported failure
 and runtime evidence needed when this command is sent through the AI/dev-loop
 path. Section 22 there documents the dev-loop's own command-line options.
+
+### Non-blocking runtime identity metadata — 2026-11-24
+
+Runtime `run_id` and expected `build_id` launch metadata are diagnostics, not a
+connection gate. They are not ownership, authentication, protocol, or content
+identity. A client must never reject, tear down, or refuse to spawn because the
+server's runtime run id or expected build id differs from a value inherited in
+the client environment.
+
+When a welcome, join accept, or reconnect accept carries different runtime
+identity metadata, the client emits one bounded
+`network.server-identity-warning` event with `blocked=false`, the stage,
+expected/actual run ids, expected/actual build ids, and whether run and build
+differ. It then continues the normal join, map-sync, spawn, and gameplay path.
+The warning must not change connection state or suppress map readiness.
+
+Compatibility is decided by the transport protocol version, packet schema
+validation, content/map identity, and explicit server authorization. A stale
+`MIMITA_EXPECTED_RUN_ID` from a dev-loop or test harness is especially expected
+after a local server restart or a GUI-created server; it must not make the
+server unjoinable.
+
+Process/preset ownership checks remain separate and may still block a client
+from attaching to a knowingly different server. Pinned dev-loop test runs may
+assert an exact run/build identity in their scenario verdict, but the runtime
+itself records the mismatch as a warning instead of breaking the session.
 
 ## Connectivity FAQ — can other people join?
 

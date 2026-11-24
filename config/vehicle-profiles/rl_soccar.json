@@ -1,0 +1,196 @@
+// Rocket League reference vehicle profile (SI units).
+//
+// Every number below is taken from a documented Rocket League source, not
+// invented:
+//   rlbot-wiki  https://wiki.rlbot.org/v5/botmaking/useful-game-values/
+//               https://wiki.rlbot.org/v5/botmaking/jumping-physics/
+//   smish       https://www.smish.dev/rocket_league/aerial_control/
+//               https://www.smish.dev/rocket_league/ground_control/
+//               https://www.smish.dev/rocket_league/ball_simulation_3/
+//   rocketsim   https://github.com/ZealanL/RocketSim (src/RLConst.h, Car.cpp)
+//
+// 1 Unreal Unit = 1 cm, so RL uu/s -> m/s is /100 and uu/s^2 -> m/s^2 is /100.
+// Where RL's value is not public (dodge deadzone, flip torque in SI) the value
+// comes from RocketSim's reverse-engineered implementation and is marked below.
+// Every field is editable; change a value and the next profile reload uses it.
+{
+  "id": "rl_soccar",
+  "description": "Rocket League reference physics. Data only; the shared vehicle solver applies these as forces, impulses and per-axis torques.",
+  "source": "rlbot-wiki+smish+rocketsim",
+  "gravityMps2": 6.5,
+
+  "transmission": {
+    "automatic": true,
+    "engine_auto_start": true
+  },
+
+  "boost": {
+    // BOOST_MAX 100, drain 33.33/s, BOOST_ACCEL_GROUND 991.666 uu/s^2,
+    // BOOST_ACCEL_AIR 1058.333 uu/s^2, BOOST_MIN_TIME 0.1 s.
+    "max": 100.0,
+    "fullDrainTicks": 180,
+    "drainPerTick": 0.5555556,
+    "groundAccelMps2": 9.91666,
+    "airAccelMps2": 10.58333,
+    "minBoostSeconds": 0.1,
+
+    // Legacy force fields are unused when the accel fields are present.
+    "force": 0.0,
+    "airForce": 0.0
+  },
+
+  "jump": {
+    // JUMP_IMMEDIATE_FORCE 291.667 uu/s, JUMP_ACCEL 1458.33 uu/s^2,
+    // JUMP_MAX_TIME 0.2 s, JUMP_MIN_TIME 0.025 s, pre-min scale 0.62,
+    // sticky 325 uu/s^2 for 3 ticks, DOUBLEJUMP_MAX_DELAY 1.25 s.
+    "immediateDeltaVelMps": 2.9167,
+    "sustainedAccelMps2": 14.5833,
+    "sustainedWindowSeconds": 0.2,
+    "minSustainSeconds": 0.025,
+    "preMinAccelScale": 0.62,
+    "stickyAccelMps2": 3.25,
+    "stickyTicks": 3,
+    "doubleJumpDeltaVelMps": 2.9167,
+    "doubleJumpWindowSeconds": 1.25,
+
+    // Dodge activates when |pitch| + |yaw| + |roll| exceeds this.
+    // RocketSim CarConfig default dodge deadzone.
+    "dodgeDeadzone": 0.1
+  },
+
+  "flip": {
+    // RocketSim FLIP_TORQUE_X/Y converted from the fixed-point torque unit:
+    // 260 * 0.0959931 = 24.96 (lateral/roll), 224 * 0.0959931 = 21.50 (pitch).
+    "angularAccelPitch": 21.5,
+    "angularAccelRoll": 24.96,
+    "torqueSeconds": 0.65,
+    "pitchLockSeconds": 1.0,
+
+    // FLIP_INITIAL_VEL_SCALE 500 uu/s and the forward-speed scaling factors.
+    "initialDeltaVelMps": 5.0,
+    "forwardMaxSpeedScale": 1.0,
+    "sideMaxSpeedScale": 1.9,
+    "backwardMaxSpeedScale": 2.5,
+    "backwardScaleX": 1.0666667,
+
+    // FLIP_Z_DAMP_120 0.35 between FLIP_Z_DAMP_START 0.15 and END 0.21.
+    "zDampFactor": 0.35,
+    "zDampStartSeconds": 0.15,
+    "zDampEndSeconds": 0.21,
+
+    // Direction components below this are treated as zero. Two opposing
+    // horizontal inputs therefore cancel the dodge direction (a stall).
+    "directionCancelThreshold": 0.1
+  },
+
+  "airControl": {
+    // Maximum angular acceleration per axis (rad/s^2). Documented as
+    // pitch 12.46, yaw 9.11, roll 38.34 (RLBot wiki).
+    "pitchAccel": 12.46,
+    "yawAccel": 9.11,
+    "rollAccel": 38.34,
+
+    // Damping (s^-1). smish fits 2.80/1.89/4.47; RocketSim uses
+    // (30, 20, 50) * 0.0959931 = 2.88/1.92/4.80. RocketSim is our comparison
+    // target, so its values are the default.
+    "pitchDamping": 2.88,
+    "yawDamping": 1.92,
+    "rollDamping": 4.80,
+
+    // CAR_MAX_ANG_SPEED, applied to the combined angular velocity vector.
+    "maxAngularVelocity": 5.5,
+    // Pitch and yaw damping fade as input rises; roll damping does not.
+    "inputScaledDamping": true,
+
+    // Airborne throttle still nudges the car: 66.667 uu/s^2 forward.
+    "throttleAirAccelMps2": 0.66667
+  },
+
+  "ground": {
+    // CAR_MAX_SPEED 2300 uu/s, supersonic 2200, unboosted 1410.
+    "maxSpeedMps": 23.0,
+    "supersonicMps": 22.0,
+    "maxUnboostedMps": 14.1,
+
+    // Braking 3500 uu/s^2, coasting 525 uu/s^2.
+    "brakingDecelMps2": 35.0,
+    "coastingDecelMps2": 5.25,
+    "throttleDeadzone": 0.001,
+
+    // Powerslide is analog: rise 5/s, fall 2/s. Lateral friction drops to 0.1,
+    // longitudinal friction stays between 0.5 and 0.9.
+    "powerslideRisePerSecond": 5.0,
+    "powerslideFallPerSecond": 2.0,
+    "powerslideLatFrictionScale": 0.1,
+    "powerslideLongFrictionMin": 0.5,
+    "powerslideLongFrictionMax": 0.9
+  },
+
+  "steering": {
+    // STEER_ANGLE_FROM_SPEED_CURVE at 0 m/s is 0.53356 rad = 30.57 degrees.
+    "maxAngleDeg": 30.57,
+    "speedFalloff": 0.55,
+    "returnRate": 6.0
+  },
+
+  "powerslide": {
+    // Handbrake lateral grip multiplier while sliding.
+    "gripScale": 0.1
+  },
+
+  "wall": {
+    // Surface adhesion while driving on walls/ceiling (uu/s^2 -> m/s^2).
+    "adhesionForce": 18000.0,
+    "adhesionMaxNormalUpDot": 0.35,
+    "slideGravityScale": 1.0
+  },
+
+  "ballContact": {
+    "wheelImpulseScale": 0.18,
+    "chassisImpulseScale": 1.0
+  },
+
+  "ballHit": {
+    // The deliberate non-conserving car->ball impulse. RocketSim:
+    // Z scale 0.35, forward scale 0.65, max relative speed 4600 uu/s,
+    // scale curve 0.65 at 0, 0.65 at 5 m/s, 0.55 at 23, 0.30 at 46.
+    "extraImpulseEnabled": true,
+    "extraImpulseScale": 1.0,
+    "extraImpulseZScale": 0.35,
+    "extraImpulseForwardScale": 0.65,
+    "extraImpulseMaxDeltaVelMps": 46.0,
+    "extraImpulseCurve": [
+      [0.0, 0.65],
+      [5.0, 0.65],
+      [23.0, 0.55],
+      [46.0, 0.30]
+    ],
+    "carBallFriction": 2.0,
+    "carBallRestitution": 0.0
+  },
+
+  "settle": {
+    // Sticky force is 0.5 * gravity, rising toward 1.5 * gravity on walls.
+    "stickyForceGravityScale": 0.5,
+    // CAR_AUTOFLIP_IMPULSE 200 uu/s, torque 50 (4.8 rad/s^2), time 0.4 s.
+    "autoFlipImpulseMps": 2.0,
+    "autoFlipAngularAccel": 4.8,
+    "autoFlipSeconds": 0.4,
+    "autoFlipNormalZThreshold": 0.7071,
+    "autoFlipRollThresholdRad": 2.8,
+    // CAR_AUTOROLL_FORCE 100 uu/s^2, torque 80 (7.68 rad/s^2).
+    "autoRollForceMps2": 1.0,
+    "autoRollAngularAccel": 7.68
+  },
+
+  "bindings": {
+    "throttle": "walkforward",
+    "brake": "walkback",
+    "steerLeft": "walkleft",
+    "steerRight": "walkright",
+    "boost": "key_left_shift",
+    "jump": "key_space",
+    "powerslideAirRoll": "key_left_control",
+    "ballCam": "freeze"
+  }
+}

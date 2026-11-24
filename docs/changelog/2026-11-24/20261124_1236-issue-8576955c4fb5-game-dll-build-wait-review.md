@@ -1,0 +1,11 @@
+# game-dll-build wait review (issue-8576955c4fb5)
+
+Reviewed wait `game-dll-build:2026-11-24T10:36:51.643Z` (61.311 s at the 60 s budget check, stage `game_build`) against attempt `game-dll-20261124T103652183287Z-745ef3` (request `2026-11-24T10:36:50.061Z-abe6d51b:mode3:game`), run `20261124_084513`, journal `logs/2026-11-24/20261124_084513/dev-loop/events.jsonl`.
+
+Acceptance is partial for this occurrence. The issue (created `10:37:53.411Z`) and exactly one reviewer wake `wake-7949763eebb4` (`wake.queued 10:37:55.012Z`, `.dev/agent-wake/events.jsonl`) exist. However the dev-loop half of the proof is missing: the only event for this wait_id is line 274 `dev-loop.wait.issue-failed` at `10:38:25.296Z` with error `agent-wake.py run --once ... timed out after 30 seconds`. There is no `dev-loop.wait.over_budget` and no `dev-loop.wait.reviewer-wake`, even though the record and wake succeeded. Root cause is the known synchronous `run --once` (timeout=30) inside `build_friction.wake_reviewer` after the wait_id is already marked reported, so a launch timeout retracts the journal proof and is logged as a record failure.
+
+The build was real and succeeded, not stalled: generation 590 published at `10:53:22.048Z`, total 989.864 s, worker 969.791 s, compiled 208 / skipped 437, compile_max 171.288 s (`src/network/server-gamemode.cpp`), changed_source_preflight 40.549 s, link 12.867 s. The 208-TU rebuild followed header-dependency invalidations (`ui-system.h`, `debug-visuals.h`, `gamepad-input.h`), so the flat 60 s budget is far below this legitimate rebuild duration.
+
+Occurrences appended to existing owners: `dev-loop.wait.over_budget`/`reviewer-wake` missing on issue-9a4503f6ed68; truncated mid-JSON `reason` on issue-6e08d89b55e3; late reviewer dispatch (codex launch +996.8 s, opencode fallback launched +3269.9 s after queue) on issue-84c584957e65. Evidence identity gap (`build_id` is the EXE artifact, `generation` 587 stale vs published 590, no `build_attempt_id`/`run_id`) was already tracked (`issue-136d4553ff92` / issue-9a4503f6ed68) and was not re-filed.
+
+No source edit, build, runtime change, process control, or runtime/behavior proof. Issue remains `in_review`; no file leases held.

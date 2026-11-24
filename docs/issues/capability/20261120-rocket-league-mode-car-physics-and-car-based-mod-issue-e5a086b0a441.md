@@ -86,3 +86,11 @@ Phase A implementation evidence (2026-11-24): added vehicle profile registry + c
 Reviewer: vehicle-arena-controller
 
 Controller-path proof (2026-11-24, generation 587, run 20261124_081952_arena-test-6): fixed VehicleSystem::sampleLocalInput so a local driver on a server mirror still samples input; mirrors still never apply forces. Added gamepad state/virtual diagnostics. Client events-0004.jsonl shows input.gamepad.state (virtual, throttle=1, jump=true, boost=true) and vehicle.input.local (throttle=1, boost=1, jump_held=true). Server events.jsonl shows vehicle.input.server (actor_id=1, vehicle_id=2, throttle=1, moving positions), vehicle.jump (impulse=52000), vehicle.boost (charge=99.67), vehicle.airroll (pitch=1), and vehicle.boost.stop (charge=0). Proof evidence-cbc181f4c981. Residual: no physical pad was visible to GLFW (gamepad_status connected=false), so hardware mapping still needs a live pads test; in-game rebinding UI is still pending. Journals: logs/2026-11-24/20261124_081952_arena-test-6/. Changelog: docs/changelog/2026-11-24/20261124_0840-vehicle-arena-controller-proof.md.
+
+## Review (needs-evidence)
+
+### 2026-11-24T11:46:05.186Z — vehicle-arena-controller
+
+Reviewer: vehicle-arena-controller
+
+Identity and controller proof (2026-11-24): (1) stale expected run/build now produces network.server-identity-warning with blocked=false and the client still reaches vehicle.seat.anchor/has_local_driver=true (run 20261124_111810_stale-proof, evidence-44a7a627d8f4). (2) KBM W produced input.host-key key=87, vehicle.input.local throttle=1.0, and server vehicle.input.server actor_id=1 vehicle_id=2 throttle=1.0 with changing position (run 20261124_110752_arena-proof-1, evidence-65a28724b611). (3) vendored gamecontrollerdb loaded accepted=2299 rejected=0 loaded=true after initializing the game module GLFW joystick subsystem (run 20261124_112630_map-proof-2, evidence-946f0d5918ac). Final game generation 593 adds input.gamepad.device census. Residual: no physical pad was connected during automated proof; PS4 hardware detection and in-game rebind UI remain. Changelog: docs/changelog/2026-11-24/20261124_1045-nonblocking-identity-and-controller-db.md.

@@ -29,8 +29,19 @@ struct UITrackedWidget {
 };
 
 void uiInit(GLFWwindow* win);
-void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput = false);
+void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput = false,
+                  bool useOutputFramebuffer = false);
 void uiEndFrame();
+
+void uiSetHudPolicy(bool sceneLayer, bool showChat, bool showHotbar,
+                    bool showCrosshair, bool showStatus, float caStrength);
+void uiSetHudSceneLayer(bool sceneLayer);
+bool uiHudSceneLayer();
+bool uiHudShowChat();
+bool uiHudShowHotbar();
+bool uiHudShowCrosshair();
+bool uiHudShowStatus();
+float uiHudCaStrength();
 
 void uiSetDebug(bool enabled);
 void uiSetEditMode(bool enabled);

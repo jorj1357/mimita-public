@@ -687,6 +687,19 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         // behavior; the actor preset refines these where both exist. ──
         if (root.contains("presentation") && root["presentation"].is_object()) {
             const auto& p = root["presentation"];
+            if (p.contains("hud") && p["hud"].is_object()) {
+                const auto& hud = p["hud"];
+                auto& out = next.presentation.hud;
+                out.configured = true;
+                out.enabled = hud.value("enabled", out.enabled);
+                out.sceneLayer = hud.value("layer", std::string("normal")) == "scene";
+                out.showChat = hud.value("show_chat", out.showChat);
+                out.showHotbar = hud.value("show_hotbar", out.showHotbar);
+                out.showCrosshair = hud.value("show_crosshair", out.showCrosshair);
+                out.showStatus = hud.value("show_status", out.showStatus);
+                out.caStrength = std::clamp(
+                    hud.value("ca_strength", out.caStrength), 0.0f, 1.0f);
+            }
             if (p.contains("bodycam") && p["bodycam"].is_object()) {
                 const auto& bodycam = p["bodycam"];
                 auto& out = next.presentation.bodycam;
@@ -1201,3 +1214,5 @@ void applyGamemodeToDuelConfig(DuelConfig& cfg, const Gamemode& gm)
     cfg.spawnTracerSeconds = gm.spawnTracerSeconds;
     cfg.allowRematch = gm.allowRematch;
 }
+
+

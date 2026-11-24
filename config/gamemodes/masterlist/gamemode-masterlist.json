@@ -655,6 +655,19 @@
       "type": "object",
       "required": false,
       "fields": {
+        "hud": {
+          "type": "object",
+          "required": false,
+          "fields": {
+            "enabled": { "type": "boolean", "required": false, "default": true },
+            "layer": { "type": "string", "required": false, "default": "normal" },
+            "show_chat": { "type": "boolean", "required": false, "default": true },
+            "show_hotbar": { "type": "boolean", "required": false, "default": true },
+            "show_crosshair": { "type": "boolean", "required": false, "default": true },
+            "show_status": { "type": "boolean", "required": false, "default": true },
+            "ca_strength": { "type": "number", "required": false, "default": 0.12, "min": 0.0, "max": 1.0 }
+          }
+        },
         "bodycam": {
           "type": "object",
           "required": false,
@@ -677,6 +690,7 @@
             "settle_camera_position_meters": { "type": "number", "required": false, "default": 0.005, "min": 0.0, "max": 0.25 },
             "settle_camera_hold_ticks": { "type": "integer", "required": false, "default": 6, "min": 1, "max": 120 },
             "camera_sway_scale": { "type": "number", "required": false, "default": 1.0, "min": 0.0, "max": 5.0 },
+            "camera_sway_enabled": { "type": "boolean", "required": false, "default": false },
             "lens": {
               "type": "object",
               "required": false,
@@ -1820,3 +1834,4 @@
     }
   }
 }
+

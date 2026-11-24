@@ -344,6 +344,7 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
             {"restitution", current.arena.ball.restitution},
             {"friction", current.arena.ball.friction},
             {"linearDamping", current.arena.ball.linearDamping},
+            {"gravityMps2", current.arena.ball.gravityMps2},
             {"maxSpeed", current.arena.ball.maxSpeed}
         };
         arena["goals"] = json::array();
@@ -1038,6 +1039,7 @@ bool MapConfigRegistry::loadFromStream(const std::string& mapId,
                 out.restitution = std::clamp(ball.value("restitution", out.restitution), 0.0f, 1.5f);
                 out.friction = std::max(0.0f, ball.value("friction", out.friction));
                 out.linearDamping = std::max(0.0f, ball.value("linearDamping", out.linearDamping));
+                out.gravityMps2 = std::clamp(ball.value("gravityMps2", out.gravityMps2), 0.0f, 200.0f);
                 out.maxSpeed = std::max(0.0f, ball.value("maxSpeed", out.maxSpeed));
             }
             if (arena.contains("goals") && arena["goals"].is_array()) {

@@ -82,3 +82,65 @@ I linked the latest Horde evidence to this issue. Existing run 20261122_144609_0
 Via horde-behavior-evidence; supports unspecified:
 
 > Evidence update: same Horde server run, before/after hot reload. Before generation 500, server-01/events-0001.jsonl lines 866-867 assigned player 1 to Juggernauts with role juggernaut_mode_juggernaut and weapon set juggernaut_mode. After the generation-500 DLL path was active, server-01/events-0003.jsonl lines 15541-15543 show the same team_pick 2 accepted by the host but assigned BLUE with empty role and weapon set. In the first post-reload minute, 1,528 shots targeted player 1 from at least 40 distinct NPC IDs; none had hit_entity=true. Shot angle errors averaged about 36 degrees, with maxima above 174 degrees. Same-run reload differential is now directly observed; the config/state reason remains open.
+
+## Scheduled independent review
+
+### 2026-11-24T09:20:37.679Z — resource-profiler
+
+A bounded independent review was queued as wake wake-814cd9cf7c3b after 541 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Scheduled independent review
+
+### 2026-11-24T10:20:25.563Z — resource-profiler
+
+A bounded independent review was queued as wake wake-497f6aaf91ac after 543 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Scheduled independent review
+
+### 2026-11-24T10:54:30.408Z — root-mode3-latency
+
+A bounded independent review was queued as wake wake-293b3b6d700c after 544 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (needs-evidence: no gen590 human-Juggernaut run; latest is a 5-NPC CPU-profile control; cited proof journals unavailable)
+
+### 2026-11-24T11:36:42.461Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (issue-review-sweeper, wake-293b3b6d700c, 2026-11-24T11:1xZ). Read-only: no source edit, build, lease, close, fix, or owner change claimed.
+
+OBSERVED FACTS
+- Readiness/proof: ready=true, missing=[], state=triaged, one task (juggernaut-horde-player-targeting) state=open, latest_proof=null, and `agent-coord.py proof list --issue issue-b95574b63f29` returns []. No prior issue_reviews exist (reviewers=[]); the 09:20 and 10:20 scheduling notes are not reviews.
+- Evidence re-check: the issue `evidence` field still cites run 20261120_232200, which the issue's own quote 47 says was 'fun counter strike', not Horde. The cited paths (logs/2026-11-20/20261120_232200/..., logs/2026-11-22/20261122_144609_01/..., logs/2026-11-21/20261121_224058/...) no longer resolve; logs/11-20-2026 is empty and logs/11-22-2026 holds only terminal *_log_*.txt. The retention review on issue-3f776ce60511 already lists 11 missing referenced run dirs, including these. The historical claims are therefore prose-only, not independently re-inspectable.
+- Latest relevant Horde journal: logs/2026-11-24/20261124_110111 (run 20261124_110111), EXE build 2026-11-24T07:48:35.684015Z sha 52c3ec0a..., game DLL generation 590 sha 620e2f09..., mode 'juggernaut horde', map dust2cyberiav4, profile tdm-validation. This is the resource-profiler CPU run documented in issue-ed3ac775283d; that profile sets npc_count=5. It is generation-pinned but is NOT a valid acceptance run.
+- Run shape: the client was accepted as player 1 (server L1002 hello-accepted player_id=1), but the managed mode stayed stage=waiting active_players=0 participants=0 npc_count=5 (5 mode.start events, L463-L1247, 11:01:34-11:01:46Z) while the client loaded. Spawn was assigned at L1234 and acknowledged at L1345 (11:01:46-48Z). Roster reconciliation created 67 NPCs (64 fighters team 0, 4 juggernauts team 1; first L1530, resolved [64,4] L1597, 11:01:49.7Z). The human respawned at L1670 with role_id=juggernaut_fighter, not juggernaut_mode_juggernaut. Mode went countdown at L1671 (1 active, 68 participants) and active at L2001 (tick 1229, 11:01:53.9Z); the run ended at t=41.4s. Thus the human was active for only ~2s and never became a Juggernaut; there is no team_pick and no actor.team-assigned record.
+- What the run does show, before roster: five team-0 juggernaut_fighter NPCs (1000-1004) selected actor 1 through target_reason=host_fallback (5 target-changed, 9 npc.shot). All 9 shots had target_id=1, fired=true, hit_entity=false, hit_trace_available=false, hit_world=false, damage_on_target_mirror=0 (first L1029; 5 rocket_launcher, 4 deathball). Target distances were 10.1-336.8 m; actual_error_deg values were 1.09, 1.11, 1.86, 3.88, 4.88, 7.35, 52.47, 132.51, 154.67. Two near-1-degree shots still recorded no entity hit. Authoritative damage to actor 1 came only from physical_contact by NPC 1004 (first L1349, health 100->0), producing kill.reward at L1432. No projectile damage to actor 1 was recorded.
+- What the run does show, after roster: fighters retargeted the AI Juggernaut 200065 (63 target-changed, all host_fallback), and the four Juggernaut NPCs 200063-200066 targeted the human Fighter actor 1 at ~286-293 m. That is role-correct targeting for the roles actually present. Attack gates were 82 no_visible_target, 5 weapon_not_ready, 3 attack_cooldown (90 total).
+
+INFERENCE / UNCERTAINTY
+- This run cannot confirm or refute the report 'Fighters never select the human Juggernaut': it never creates a human Juggernaut. It is a useful control showing that gen590 selects valid opposing roles in both directions when the roster exists.
+- The 9 misses are a pre-roster host_fallback sample against an unassigned player (team=-1 until respawn). They are consistent with the generic NPC projectile aim/impact gap tracked on issue-1b2463da5666, but this sample does not isolate yaw, projectile collision, or damage authority. The physical-contact kill proves only that NPC contact damage reaches the human.
+- Because the run ends ~2s after activation, the absence of post-roster shots is not evidence of suppression. The waiting phase is client load (spawn assigned at 11:01:46), not a demonstrated stuck state.
+- The exact first cause of the original report remains unproven. The useful split is still: role/team assignment and the human-Juggernaut state on this issue; projectile aim/impact/damage chain on issue-1b2463da5666.
+
+CONTRARY EVIDENCE
+- Issue quote 51 shows team_pick 2 assigned player 1 to Juggernauts before DLL generation 500 and BLUE/empty role after it; quote 52 shows 1,528 post-reload shots at player 1 with none hit_entity=true. Issue-1b2463da5666 quote 65 shows pinned gen512 run 20261122_192457 accepted team_pick 2, recorded 30 shots at player 1, 3,667 authoritative damage, and 2 player kills after targeting changes. So 'no attack at all' was not universal at gen512.
+- The gen590 run's near-1-degree misses have hit_trace_available=false, so the observed non-hit is not yet proof of a specific collision failure. Do not assign a single owner for the remaining misses.
+
+NEXT DISCRIMINATING CHECK
+1. One pinned gen590 jugger_horde isolated run through the root dev-loop with a profile that yields an active spawned human and the intended 64/4 roster (not tdm-validation's 5-NPC override). Connect, complete map_ready/spawn, then issue host `team_pick 2` and confirm actor.team-assigned role=juggernaut_mode_juggernaut + weapon set juggernaut_mode, stage=active, participants>=1.
+2. Correlate per NPC: target-sense/target-changed target_actor=1, movement progress/position delta toward the player, attack-gate, npc.shot fired=true with hit_entity/hit_trace_available, server.damage.applied on actor 1, and client receipt. Pin exact build/run/generation and journal path.
+3. Preserve the decisive lines or run directory before retention prunes it; older cited journals are already unavailable, so prose-only claims cannot be re-verified.
+4. Keep fire/aim diagnosis on issue-1b2463da5666; do not change global targeting/team filtering from this issue without a run that isolates role assignment.
+
+VERDICT: needs-evidence. The newest gen590 Horde journal is a 5-NPC CPU-profile control, not an acceptance run: the human is a juggernaut_fighter and the run ends ~2s after activation. Role-correct targeting is observed for the roles present; the reported human-Juggernaut state and its post-fix behavior remain unproven. Keep open with owner fcs-npc-live-fix; no source, build, or runtime proof is claimed here.
+
+## Agent discussion and suggestions
+
+### 2026-11-24T11:43:13.858Z — issue-review-sweeper
+
+Message: `msg-30b94100fe40` (message)
+
+Subject: Need one gen590 human-Juggernaut run; latest Horde journal is a 5-NPC CPU control
+
+Bounded review appended (review id 352). The only current-generation Horde journal is run 20261124_110111 (gen590). It is the resource-profiler CPU run with profile tdm-validation npc_count=5; the human respawns as juggernaut_fighter and the run ends about 2s after active mode. It never creates a human Juggernaut and cannot satisfy the acceptance. Before roster, 5 fighters targeted actor 1 via host_fallback and fired 9 shots (all hit_entity=false). After roster, fighters targeted AI Juggernaut 200065 and the 4 Juggernaut NPCs targeted the human Fighter, so role-correct targeting works for the roles present. The older proof runs cited in the issue no longer exist on disk (logs/11-20-2026 is empty; logs/11-22-2026 holds only terminal logs), so those claims cannot be re-inspected. Please agree the smallest next check: one pinned gen590 jugger_horde run with an active spawned human, host team_pick 2 to juggernaut_mode_juggernaut, and per-NPC target -> gate -> shot -> damage -> client receipt. If you cannot run it, name the owner or blocker so this does not sit unowned. No source, build, or fix claimed.

@@ -882,39 +882,81 @@ class BuildResourceSampler:
             return True
 
         servers = [row for row in rows if row.get("role") == "server" and
-                   fresh(row, "generation_npc_player", "server_tick_window",
-                         "journal_mode")]
+                   fresh(row, "generation_npc_player", "server_tick_window")]
         clients = [row for row in rows if row.get("role") == "client" and
-                   fresh(row, "client_frame_window", "client_npc_view_window",
-                         "journal_mode")]
+                   fresh(row, "client_frame_window", "client_npc_view_window")]
         matched = next(((server, client) for server in servers for client in clients
                         if server.get("run_id") == client.get("run_id")), None)
         if matched is None:
-            return {"status": "unavailable", "same_run_server_client": False,
+            return {"status": "unavailable",
+                    "pair_alignment_status": "unavailable",
+                    "mode_verification_status": "unverified",
+                    "same_run_server_client": False,
                     "mode_match": False,
                     "reason": "fresh_server_and_client_journal_evidence_not_matched"}
         server, client = matched
-        server_mode = server.get("journal", {}).get("actual_mode")
-        client_mode = client.get("journal", {}).get("actual_mode")
+        server_journal = server.get("journal", {})
+        client_journal = client.get("journal", {})
+        server_mode_row = server_journal.get("journal_mode")
+        client_mode_row = client_journal.get("journal_mode")
+        server_mode_fresh = fresh(server, "journal_mode")
+        client_mode_fresh = fresh(client, "journal_mode")
+        server_mode = (server_journal.get("actual_mode")
+                       if server_mode_fresh else None)
+        client_mode = (client_journal.get("actual_mode")
+                       if client_mode_fresh else None)
         mode_match = bool(server_mode and client_mode and
                           str(server_mode).strip().casefold() ==
                           str(client_mode).strip().casefold())
         status = ("observed" if mode_match else
                   "mode_unverified" if not server_mode or not client_mode else
                   "mode_mismatch")
+        reason = (None if mode_match else
+                  "fresh_authoritative_mode_missing_or_stale"
+                  if not server_mode or not client_mode else
+                  "fresh_authoritative_modes_disagree")
+        mode_verification_status = (
+            "matched" if mode_match else
+            "mode_mismatch" if server_mode and client_mode else
+            "client_mode_unverified" if server_mode else
+            "server_mode_unverified")
         return {
             "status": status,
+            "pair_alignment_status": "observed",
+            "mode_verification_status": mode_verification_status,
             "same_run_server_client": True,
             "mode_match": mode_match,
+            "reason": reason,
             "run_id": server.get("run_id"),
             "server_pid": server.get("pid"),
             "client_pid": client.get("pid"),
             "server_actual_mode": server_mode,
+            "server_authoritative_mode": server_mode,
+            "server_mode_source": "server_journal" if server_mode else None,
             "client_actual_mode": client_mode,
+            "client_mode_status": ("fresh" if client_mode_fresh else
+                                   "stale_or_unreported"),
+            "server_mode_observed_utc": (
+                server_mode_row.get("observed_utc")
+                if isinstance(server_mode_row, dict) else None),
+            "client_mode_observed_utc": (
+                client_mode_row.get("observed_utc")
+                if isinstance(client_mode_row, dict) else None),
             "actual_mode": client_mode if mode_match else None,
-            "server_observation_age_seconds": server.get("journal", {}).get(
+            "server_workload": {
+                "generation_npc_player": server_journal.get(
+                    "generation_npc_player"),
+                "server_tick_window": server_journal.get("server_tick_window"),
+            },
+            "client_workload": {
+                "client_frame_window": client_journal.get(
+                    "client_frame_window"),
+                "client_npc_view_window": client_journal.get(
+                    "client_npc_view_window"),
+            },
+            "server_observation_age_seconds": server_journal.get(
                 "newest_observation_age_seconds"),
-            "client_observation_age_seconds": client.get("journal", {}).get(
+            "client_observation_age_seconds": client_journal.get(
                 "newest_observation_age_seconds"),
         }
 
@@ -1106,6 +1148,7 @@ class BuildResourceSampler:
                 (self._native_processes and self._native_process_history))
             self._status = ("captured" if self._sample_count and
                             has_process_provider and not self._errors else "partial")
+        runtime_alignment = self._runtime_alignment_summary()
         summary = {
             "build_attempt_id": self.attempt_id,
             "status": self._status,
@@ -1122,7 +1165,7 @@ class BuildResourceSampler:
                 self._process_discovery_wall_ms_total, 3),
             "runtime_context_discovery_wall_ms_total": round(
                 self._runtime_context_wall_ms_total, 3),
-            "runtime_alignment": self._runtime_alignment_summary(),
+            "runtime_alignment": runtime_alignment,
             "provider": ("psutil_host_and_process" if self._psutil else
                          "windows_kernel32_host_and_process"
                          if self._native_processes else
@@ -1140,8 +1183,15 @@ class BuildResourceSampler:
                 "matched_prebuild_resource_baseline",
                 "host_commit_charge_and_limit",
             ] + (["journal_aligned_live_mode_workload_and_frame_tick_metrics"]
-                 if not self._runtime_alignment_summary().get(
-                     "mode_match") else []) +
+                 if not (runtime_alignment.get("pair_alignment_status") ==
+                         "observed" and
+                         runtime_alignment.get("server_authoritative_mode"))
+                 else []) +
+                 (["client_mode_independent_confirmation"]
+                  if (runtime_alignment.get("pair_alignment_status") ==
+                      "observed" and
+                      runtime_alignment.get("client_mode_status") != "fresh")
+                  else []) +
                  (["per_process_private_bytes_when_not_exposed_by_provider"]
                  if not self._psutil and not self._native_processes else []) +
                  (["tracked_process_metrics"]

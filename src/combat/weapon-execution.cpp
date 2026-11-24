@@ -192,6 +192,15 @@ int computeHitscanDamage(const WeaponDefinition& def, const std::string& bodyPar
         def.allowedBodyParts.find(bodyPart) == def.allowedBodyParts.end()) {
         return 0;
     }
+    // Point-blank headshots can carry an explicit execution damage so a
+    // face-to-face head hit always kills regardless of the normal head
+    // multiplier and falloff.
+    if (bodyPart == "head") {
+        const float pointBlankDamage = paramOr(def, "pointBlankHeadDamage", 0.0f);
+        const float pointBlankRange = paramOr(def, "pointBlankDistanceMeters", 0.0f);
+        if (pointBlankDamage > 0.0f && distance <= pointBlankRange)
+            return std::max(1, (int)std::llround(pointBlankDamage));
+    }
     const float damage = def.damage * std::max(0.0f, def.damageScale)
         * hitscanPartMultiplier(def, bodyPart)
         * hitscanFalloffFactor(def, distance)

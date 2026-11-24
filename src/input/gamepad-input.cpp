@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <sstream>
 
 #include <GLFW/glfw3.h>
 #include <nlohmann/json.hpp>
@@ -18,12 +19,36 @@ using json = nlohmann::json;
 
 namespace {
 
-float applyDeadzone(float value, float deadzone)
+bool ensureGamepadGlfw()
+{
+    static int state = 0;  // 0 = unknown, 1 = ready, -1 = failed
+    if (state == 0)
+    {
+        state = glfwInit() ? 1 : -1;
+        if (state < 0)
+        {
+            const char* error = nullptr;
+            glfwGetError(&error);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Errors,
+                "input.gamepad.glfw-init", "gamepad",
+                "gamepad GLFW initialization failed",
+                0,
+                {{"result", "failed"},
+                 {"glfw_error", error ? error : ""}});
+        }
+    }
+    return state > 0;
+}
+
+float applyDeadzone(float value, float deadzone, float upperDeadzone = 1.0f)
 {
     const float magnitude = std::fabs(value);
     if (magnitude <= deadzone)
         return 0.0f;
-    const float scaled = (magnitude - deadzone) / std::max(1.0f - deadzone, 0.01f);
+    const float span = std::max(
+        std::clamp(upperDeadzone, deadzone + 0.01f, 1.0f) - deadzone, 0.01f);
+    const float scaled = (magnitude - deadzone) / span;
     return std::copysign(std::clamp(scaled, 0.0f, 1.0f), value);
 }
 
@@ -53,18 +78,40 @@ void GamepadInput::applyDefaultBindings()
     throttle.axis = GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER;
     throttle.trigger = true;
     throttle.deadzone = 0.02f;
+    throttle.upperDeadzone = 0.85f;
     mBindings["throttle"] = throttle;
 
     GamepadBinding brake;
     brake.axis = GLFW_GAMEPAD_AXIS_LEFT_TRIGGER;
     brake.trigger = true;
     brake.deadzone = 0.02f;
+    brake.upperDeadzone = 0.85f;
     mBindings["brake"] = brake;
 
     mBindings["jump"].button = GLFW_GAMEPAD_BUTTON_A;
-    mBindings["boost"].button = GLFW_GAMEPAD_BUTTON_B;
-    mBindings["powerslide"].button = GLFW_GAMEPAD_BUTTON_X;
+    mBindings["boost"].button = GLFW_GAMEPAD_BUTTON_LEFT_BUMPER;
+    mBindings["powerslide"].button = GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER;
     mBindings["ballcam"].button = GLFW_GAMEPAD_BUTTON_Y;
+    mBindings["airRollLeft"].button = GLFW_GAMEPAD_BUTTON_X;
+    mBindings["airRollRight"].button = GLFW_GAMEPAD_BUTTON_B;
+    mBindings["lookBehind"].button = GLFW_GAMEPAD_BUTTON_RIGHT_THUMB;
+
+    GamepadBinding pitch;
+    pitch.axis = GLFW_GAMEPAD_AXIS_LEFT_Y;
+    pitch.invert = true;
+    pitch.deadzone = 0.10f;
+    mBindings["pitch"] = pitch;
+
+    GamepadBinding swivelX;
+    swivelX.axis = GLFW_GAMEPAD_AXIS_RIGHT_X;
+    swivelX.deadzone = 0.12f;
+    mBindings["swivelX"] = swivelX;
+
+    GamepadBinding swivelY;
+    swivelY.axis = GLFW_GAMEPAD_AXIS_RIGHT_Y;
+    swivelY.invert = true;
+    swivelY.deadzone = 0.12f;
+    mBindings["swivelY"] = swivelY;
 }
 
 bool GamepadInput::reloadConfig()
@@ -73,13 +120,20 @@ bool GamepadInput::reloadConfig()
 
     std::ifstream file(mConfigPath);
     if (!file.is_open())
+    {
+        loadMappings();
         return false;
+    }
 
     try
     {
         const json root = parseJsonConfig(file);
         if (!root.is_object())
+        {
+            loadMappings();
             return false;
+        }
+        mMappingsPath = root.value("mappings_file", mMappingsPath);
         const float defaultDeadzone =
             root.value("deadzone", 0.15f);
         if (root.contains("bindings") && root["bindings"].is_object())
@@ -97,8 +151,11 @@ bool GamepadInput::reloadConfig()
                 binding.invert = node.value("invert", binding.invert);
                 binding.deadzone =
                     node.value("deadzone", defaultDeadzone);
+                binding.upperDeadzone =
+                    node.value("upperDeadzone", binding.upperDeadzone);
             }
         }
+        loadMappings();
         return true;
     }
     catch (const std::exception& e)
@@ -107,7 +164,100 @@ bool GamepadInput::reloadConfig()
                     "[GAMEPAD] failed to load %s: %s\n",
                     mConfigPath.c_str(), e.what());
         applyDefaultBindings();
+        loadMappings();
         return false;
+    }
+}
+
+void GamepadInput::loadMappings()
+{
+    if (!ensureGamepadGlfw())
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "input.gamepad.mappings", "gamepad",
+            "controller mapping database skipped because GLFW is unavailable",
+            0,
+            {{"path", mMappingsPath},
+             {"loaded", false},
+             {"result", "glfw_unavailable"}});
+        return;
+    }
+
+    std::ifstream file(mMappingsPath);
+    if (!file.is_open())
+    {
+        Debug::warn(Debug::Category::General,
+                    "[GAMEPAD] mappings file missing: %s\n",
+                    mMappingsPath.c_str());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "input.gamepad.mappings", "gamepad",
+            "controller mapping database was not found",
+            0,
+            {{"path", mMappingsPath},
+             {"loaded", false},
+             {"result", "missing"}});
+        return;
+    }
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    const std::string mappings = buffer.str();
+
+    // Load line by line. This keeps one malformed or platform-specific entry
+    // from rejecting the entire database and makes the accepted/rejected count
+    // observable in the runtime journal.
+    std::istringstream lines(mappings);
+    std::string line;
+    int accepted = 0;
+    int rejected = 0;
+    while (std::getline(lines, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        if (line.empty() || line[0] == '#')
+            continue;
+        if (glfwUpdateGamepadMappings(line.c_str()))
+            ++accepted;
+        else
+            ++rejected;
+    }
+
+    glfwGetError(nullptr);  // clear an earlier stale error before reporting
+    const char* glfwError = nullptr;
+    glfwGetError(&glfwError);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "input.gamepad.mappings", "gamepad",
+        "controller mapping database load result",
+        0,
+        {{"path", mMappingsPath},
+         {"loaded", accepted > 0},
+         {"accepted", accepted},
+         {"rejected", rejected},
+         {"bytes", mappings.size()},
+         {"glfw_error", glfwError ? glfwError : ""},
+         {"result", accepted > 0 ? "ok" : "rejected"}});
+    Debug::log(Debug::Category::General,
+               "[GAMEPAD] mapping database accepted=%d rejected=%d (%s)\n",
+               accepted, rejected, mMappingsPath.c_str());
+
+    // One bounded device census after mappings load. This distinguishes "no
+    // physical device present" from "device present but unmapped", which the
+    // later logical-action state alone cannot show.
+    for (int jid = GLFW_JOYSTICK_1; jid <= GLFW_JOYSTICK_LAST; ++jid)
+    {
+        if (!glfwJoystickPresent(jid))
+            continue;
+        const char* name = glfwGetJoystickName(jid);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "input.gamepad.device", "gamepad",
+            "physical joystick detected", 0,
+            {{"joystick_id", jid},
+             {"name", name ? name : ""},
+             {"standard_mapping", glfwJoystickIsGamepad(jid) != 0}});
     }
 }
 
@@ -180,6 +330,11 @@ void GamepadInput::logState(const char* reason)
 
 void GamepadInput::poll()
 {
+    if (!ensureGamepadGlfw())
+    {
+        mConnected = false;
+        return;
+    }
     if (mVirtual)
     {
         mConnected = true;
@@ -260,7 +415,7 @@ void GamepadInput::poll()
 }
 
 float GamepadInput::axisValue(int axis, bool trigger, bool invert,
-                              float deadzone) const
+                              float deadzone, float upperDeadzone) const
 {
     if (axis < 0 || axis >= mAxisCount || axis >= 16)
         return 0.0f;
@@ -271,10 +426,17 @@ float GamepadInput::axisValue(int axis, bool trigger, bool invert,
         value = -value;
     if (trigger)
     {
-        value = std::clamp((value + 1.0f) * 0.5f, 0.0f, 1.0f);
-        return value <= deadzone ? 0.0f : value;
+        // Raw trigger range is 0..1 for GLFW gamepads. Remap lower/upper
+        // deadzones so a configurable travel reaches 100% early and the scale
+        // stays linear in between.
+        const float raw = std::clamp((value + 1.0f) * 0.5f, 0.0f, 1.0f);
+        if (raw <= deadzone)
+            return 0.0f;
+        const float span = std::max(
+            std::clamp(upperDeadzone, deadzone + 0.01f, 1.0f) - deadzone, 0.01f);
+        return std::clamp((raw - deadzone) / span, 0.0f, 1.0f);
     }
-    return applyDeadzone(value, deadzone);
+    return applyDeadzone(value, deadzone, upperDeadzone);
 }
 
 bool GamepadInput::buttonValue(int button) const
@@ -307,7 +469,7 @@ bool GamepadInput::held(const std::string& action) const
         return buttonValue(binding.button);
     if (binding.axis >= 0)
         return axisValue(binding.axis, binding.trigger, binding.invert,
-                         binding.deadzone) > 0.35f;
+                         binding.deadzone, binding.upperDeadzone) > 0.35f;
     return false;
 }
 
@@ -338,7 +500,7 @@ float GamepadInput::value(const std::string& action) const
     const GamepadBinding& binding = it->second;
     if (binding.axis >= 0)
         return axisValue(binding.axis, binding.trigger, binding.invert,
-                         binding.deadzone);
+                         binding.deadzone, binding.upperDeadzone);
     if (binding.button >= 0)
         return buttonValue(binding.button) ? 1.0f : 0.0f;
     return 0.0f;

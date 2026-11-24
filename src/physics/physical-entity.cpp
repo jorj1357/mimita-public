@@ -239,6 +239,37 @@ void updateSettling(PhysicalEntity& e,
 
 } // namespace
 
+PhysicalEntityBallHitParams gBallHitParams;
+
+namespace {
+float sampleBallHitCurve(float speed)
+{
+    const int n = std::clamp(gBallHitParams.curvePoints, 1, 4);
+    if (n <= 1)
+        return gBallHitParams.curve[0].y;
+    if (speed <= gBallHitParams.curve[0].x)
+        return gBallHitParams.curve[0].y;
+    for (int i = 1; i < n; ++i)
+    {
+        if (speed <= gBallHitParams.curve[i].x)
+        {
+            const glm::vec2& lo = gBallHitParams.curve[i - 1];
+            const glm::vec2& hi = gBallHitParams.curve[i];
+            const float span = hi.x - lo.x;
+            if (span <= 1e-6f)
+                return hi.y;
+            return lo.y + (hi.y - lo.y) * ((speed - lo.x) / span);
+        }
+    }
+    return gBallHitParams.curve[n - 1].y;
+}
+} // namespace
+
+void setPhysicalEntityBallHitParams(const PhysicalEntityBallHitParams& params)
+{
+    gBallHitParams = params;
+}
+
 void refreshEntityMassProperties(PhysicalEntity& e)
 {
     refreshMassProperties(e);
@@ -1074,6 +1105,63 @@ void resolveEntityPairContact(PhysicalEntity& a, PhysicalEntity& b,
                                      : arenaBallB ? b.velocity : glm::vec3(0.0f);
     applyImpulseAtPoint(a, normal * normalImpulse, point, false);
     applyImpulseAtPoint(b, -normal * normalImpulse, point, false);
+
+    // Rocket League's extra car->ball impulse. Applied to the ball only, at most
+    // once per contact tick, in a flattened direction that reflects player
+    // intent. This is the one deliberate violation of momentum conservation.
+    if ((arenaBallA || arenaBallB) && gBallHitParams.enabled)
+    {
+        PhysicalEntity& ball = arenaBallA ? a : b;
+        PhysicalEntity& other = arenaBallA ? b : a;
+        if (other.persistenceId.rfind("vehicle-", 0) == 0)
+        {
+            const glm::vec3 relPos = glm::vec3(ball.transform[3]) -
+                                     glm::vec3(other.transform[3]);
+            const glm::vec3 relVel = ball.velocity - other.velocity;
+            const float relSpeed = std::min(
+                glm::length(relVel),
+                std::max(0.0f, gBallHitParams.maxDeltaVelMps));
+            if (relSpeed > 0.01f)
+            {
+                glm::vec3 hitDir(relPos.x, relPos.y,
+                                 relPos.z * gBallHitParams.zScale);
+                if (glm::dot(hitDir, hitDir) > 1e-8f)
+                    hitDir = glm::normalize(hitDir);
+                glm::vec3 carForward =
+                    other.orientation * glm::vec3(1.0f, 0.0f, 0.0f);
+                if (glm::dot(carForward, carForward) > 1e-8f)
+                    carForward = glm::normalize(carForward);
+                const glm::vec3 adjusted =
+                    hitDir - carForward *
+                                 (glm::dot(hitDir, carForward) *
+                                  (1.0f - gBallHitParams.forwardScale));
+                if (glm::dot(adjusted, adjusted) > 1e-8f)
+                    hitDir = glm::normalize(adjusted);
+                const glm::vec3 addedVel =
+                    hitDir * (relSpeed * sampleBallHitCurve(relSpeed) *
+                              gBallHitParams.scale);
+                ball.velocity += addedVel;
+                ball.sleeping = false;
+                ball.sleepTicks = 0;
+                ball.sleepAnchorValid = false;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Physics, StructuredLevel::Important,
+                    "arena.ball.extra_impulse", std::to_string(ball.networkId),
+                    "rocket league car-to-ball intent impulse applied",
+                    static_cast<uint32_t>(
+                        PhysicalEntitySystem::instance().simulationTick()),
+                    nlohmann::json{
+                        {"source", "physical_entity"},
+                        {"ball_network_id", ball.networkId},
+                        {"car_network_id", other.networkId},
+                        {"relative_speed_mps", relSpeed},
+                        {"added_vel_mps",
+                         {addedVel.x, addedVel.y, addedVel.z}},
+                        {"hit_dir", {hitDir.x, hitDir.y, hitDir.z}}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
+    }
     if (arenaBallA || arenaBallB)
     {
         const PhysicalEntity& ball = arenaBallA ? a : b;

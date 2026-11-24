@@ -9,6 +9,7 @@
 */
 
 #include <cstdio>
+#include <cctype>
 #include "game/resident-state-module.h"
 #include <string>
 #include <vector>
@@ -16,6 +17,7 @@
 #include <algorithm>
 #include "devtools/terminal.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "debug/config-npc.h"
 #include "debug/debug-visuals.h"
 #include "debug/validate-assets.h"
@@ -25,6 +27,7 @@
 #include "effects/zombie-tower-effects.h"
 #include "terminal/terminal-state.h"
 #include "gui/hud/player-nameplates.h"
+#include "gui/ui-system.h"
 #include "gui/gui-bindings.h"
 #include "network/server.h"
 #include "network/server-gamemode.h"
@@ -43,6 +46,27 @@
 
 void registerDebugCommands()
 {
+    Terminal::instance().registerCommand({
+        "bodycam_ui", "Switch Bloodtest HUD layer: normal (screen space), scene (bodycam-distorted), or toggle.", "bodycam_ui normal|scene|toggle",
+        [](const std::vector<std::string>& args) {
+            std::string arg = args.empty() ? "toggle" : args[0];
+            std::transform(arg.begin(), arg.end(), arg.begin(),
+                           [](unsigned char c) { return (char)std::tolower(c); });
+            bool scene = uiHudSceneLayer();
+            if (arg == "normal") scene = false;
+            else if (arg == "scene") scene = true;
+            else if (arg == "toggle") scene = !scene;
+            else { Terminal::instance().addLog("[BODYCAM_UI] Usage: bodycam_ui normal|scene|toggle"); return; }
+            uiSetHudSceneLayer(scene);
+            Terminal::instance().addLog(std::string("[BODYCAM_UI] layer=") + (scene ? "scene" : "normal"));
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Gui, StructuredLevel::Important,
+                "hud.layer.command", scene ? "scene" : "normal",
+                "terminal HUD layer override", 0,
+                nlohmann::json{{"layer", scene ? "scene" : "normal"}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    });
     Terminal::instance().registerCommand({
         "modestartnow", "Start a community mode at the 3-2-1 countdown; host only.", "modestartnow <number>",
         [](const std::vector<std::string>& args) {
@@ -1018,3 +1042,4 @@ void registerDebugCommands()
         "2026-08-03", CommandCategory::Debug
     });
 }
+

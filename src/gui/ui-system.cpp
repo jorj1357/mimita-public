@@ -27,6 +27,7 @@ std::uint32_t gProgram = 0;
 std::uint32_t gVao = 0;
 std::uint32_t gVbo = 0;
 std::int32_t gScreenLoc = -1;
+std::int32_t gCaStrengthLoc = -1;
 std::int32_t gColorLoc = -1;
 std::int32_t gUseTexLoc = -1;
 std::int32_t gTexLoc = -1;
@@ -51,6 +52,12 @@ bool gCoordDebug = false;
 double gScrollYOffset = 0.0;
 bool gDropdownModalActive = false;
 bool gOwnsHoverInput = false;
+bool gHudSceneLayer = false;
+bool gHudShowChat = true;
+bool gHudShowHotbar = true;
+bool gHudShowCrosshair = true;
+bool gHudShowStatus = true;
+float gHudCaStrength = 0.12f;
 std::vector<UIVertex> gBatchVertices;
 }
 
@@ -73,7 +80,27 @@ void uiInit(GLFWwindow* win)
     ensureProgram();
 }
 
-void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
+void uiSetHudPolicy(bool sceneLayer, bool showChat, bool showHotbar,
+                    bool showCrosshair, bool showStatus, float caStrength)
+{
+    gHudSceneLayer = sceneLayer;
+    gHudShowChat = showChat;
+    gHudShowHotbar = showHotbar;
+    gHudShowCrosshair = showCrosshair;
+    gHudShowStatus = showStatus;
+    gHudCaStrength = std::clamp(caStrength, 0.0f, 1.0f);
+}
+
+void uiSetHudSceneLayer(bool sceneLayer) { gHudSceneLayer = sceneLayer; }
+bool uiHudSceneLayer() { return gHudSceneLayer; }
+bool uiHudShowChat() { return gHudShowChat; }
+bool uiHudShowHotbar() { return gHudShowHotbar; }
+bool uiHudShowCrosshair() { return gHudShowCrosshair; }
+bool uiHudShowStatus() { return gHudShowStatus; }
+float uiHudCaStrength() { return gHudCaStrength; }
+
+void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput,
+                  bool useOutputFramebuffer)
 {
     static bool mouseEdgeLossReportedForPress = false;
     gWindow = win;
@@ -81,7 +108,8 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
     int framebufferWidth = 0;
     int framebufferHeight = 0;
     mimita::game::hostFramebufferSize(framebufferWidth, framebufferHeight);
-    if (gRenderer && gRenderer->stretchesWholeFrame()) {
+    if (gRenderer && gRenderer->stretchesWholeFrame() &&
+        gHudSceneLayer && !useOutputFramebuffer) {
         framebufferWidth = gRenderer->sceneWidth;
         framebufferHeight = gRenderer->sceneHeight;
     }

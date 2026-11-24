@@ -595,6 +595,43 @@ physics owner.
   must come from the clutch/tire physics, not a scripted mode.
 - Slamming the emergency brake locks the rear wheels and must produce slip.
 
+### 11.5 Gamepad input owner (2026-11-24)
+
+Vehicles consume gamepad input through the shared input owner, not a
+vehicle-only controller path. The first implementation uses the vendored GLFW
+3.4 gamepad API:
+
+- `glfwJoystickIsGamepad` / `glfwGetGamepadState` for devices with a standard
+  mapping;
+- raw joystick axes and buttons for unmapped devices;
+- `config/input/gamepad.json` for bindings, deadzone, trigger range, and invert;
+- `config/input/gamecontrollerdb.txt`, vendored from the open-source
+  SDL_GameControllerDB, loaded with `glfwUpdateGamepadMappings` before polling.
+
+The game module initializes its own GLFW joystick subsystem before mapping or
+polling. Joystick axis/button state is updated when polled, so gamepad sampling
+does not require a window or a separate frame-event loop in the module.
+
+No external binary input library is required. The mapping database covers common
+Xbox, PlayStation, Switch, and generic controllers and remains human-readable in
+the repository. A physical device that Windows/GLFW does not expose at all is a
+pairing/driver issue, not a reason to add a second input framework.
+
+Requirements:
+
+- keyboard/mouse and gamepad feed the same logical vehicle actions;
+- triggers and steering axes are normalized and deadzoned;
+- disconnect/reconnect neutralizes held actions;
+- the gamepad owner never creates a parallel vehicle solver or action state;
+- a bounded `gamepad_status`/`input.gamepad.state` diagnostic reports the
+  detected device, mapping kind, and live logical values.
+
+Future fallback: if GLFW still cannot see a supported physical device after the
+mapping database is loaded, add a small in-repo Windows Raw Input/HID backend
+behind the same gamepad owner. Defer that until a real device test proves GLFW
+insufficient. Do not add SDL as a second window/input framework without a
+measured capability gap.
+
 ---
 
 ## 12. Seats, ragdoll, and weapons

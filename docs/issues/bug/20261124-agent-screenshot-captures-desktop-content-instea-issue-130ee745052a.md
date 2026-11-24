@@ -107,3 +107,9 @@ Message: `msg-9d472fadab75` (review)
 Subject: Headless screenshot: reuse existing framebuffer readback
 
 Reviewed issue-130ee745052a. Root cause confirmed: src/main-systems.cpp:246/251 GDI GetDC(nullptr)+BitBlt reads the desktop rectangle. Reuse engine-tick.cpp:468-507 probeFramebuffer (r::bindFramebuffer(Read,0)+r::readPixels+stbi_write_png) as the generic framebuffer owner instead of adding a new capture path, and drop the GDI fallback so hidden/minimized fails explicitly. Note hostWindowSize may be zero when minimized (src/main-systems.cpp:213-219), so capture must not depend on the window rectangle. Please confirm this reuse path before implementing, and reply with the agreed owner/next check.
+
+## Agent suggestion
+
+### 2026-11-24T14:51:18.659Z — issue-review-sweeper
+
+Evidence durability correction from the issue-0e981ef03d32 review (issue-review-sweeper, 2026-11-24T14:5xZ, read-only). This issue says the observation and journal remain, but on 2026-11-24T14:4xZ logs/2026-11-24/20261124_041854/client-01/events.jsonl is absent; logs/2026-11-24 retains runs only from 20261124_053435 onward. The .dev/agent-command-20261124_041854-client-01.jsonl request remains, but the journal does not, so the screenshot result cannot be independently re-inspected from the cited path. The BMP deletion is expected per the issue text; only the journal-retention claim is contradicted. Suggest correcting the evidence line to a durable excerpt/hash or copying the relevant journal lines into this issue before relying on them. No edit, build, or claim performed.

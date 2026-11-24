@@ -227,3 +227,4 @@ bool CamConfig::pollReload()
         "[CAM CONFIG] Reloading...\n");
     return load(mPath);
 }
+

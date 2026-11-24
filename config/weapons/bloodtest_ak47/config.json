@@ -14,7 +14,7 @@
     "spreadMode": 0.0,
     "spreadBlend": 0.0,
     "fixedPatternCycle": 100.0,
-    "reserveAmmo": 90.0,
+    "reserveAmmo": 9999.0,
     "splashRadius": 0.0,
     "rocketDirectDamage": 34.0,
     "splashExponent": 2.0,
@@ -83,7 +83,7 @@
 "pellet_count": null,
 "penetration_count": 2,
 "penetration_scale": 1.0,
-"pose_id": "shotgun",
+"pose_id": "revolver",
 "projectile_base_radius": 0.018,
 "projectile_density": 7800.0,
 "projectile_lifetime": 3.0,
@@ -92,10 +92,52 @@
 "projectile_shape": 0,
 "projectile_speed": 520.0,
 "recoil": 16.0,
-"recoil_definition": null,
+"recoil_definition": {
+    "enabled": true,
+    "pitch_per_shot": 0.4,
+    "yaw_per_shot": 0.25,
+    "roll_per_shot": 0.0,
+    "accumulation_per_shot": 0.5,
+    "max_accumulation": 4.0,
+    "recovery_delay": 0.05,
+    "recovery_rate": 8.0,
+    "camera_scale": 0.25,
+    "camera_ads_scale": 0.1,
+    "camera_recovery_rate": 14.0,
+    "viewmodel_back_per_shot": 0.02,
+    "viewmodel_pitch_per_shot": 0.4,
+    "viewmodel_yaw_per_shot": 0.2,
+    "viewmodel_roll_per_shot": 0.0,
+    "viewmodel_recovery_rate": 12.0,
+    "viewmodel_ads_scale": 0.5,
+    "arm_pitch_per_shot": 0.3,
+    "arm_yaw_per_shot": 0.15,
+    "arm_roll_per_shot": 0.0,
+    "arm_recovery_rate": 12.0,
+    "arm_ads_scale": 0.25
+  },
 "reload_time": 2.2,
-"render": null,
-"reserve_ammo": 91230,
+"render": {
+    "explosion": {
+      "markTexture": "assets/textureshq/holesbullet4.png",
+      "shockwaveModel": "assets/objects/things/effects-objects/shockwave-v1.glb",
+      "shockwaveTexture": "assets/textureshq/rocket-shockwave-v1.png",
+      "shockwaveScale": 0.5,
+      "shockwaveLifetimeSeconds": 0.1,
+      "shockwaveStartScale": 0.5,
+      "shockwaveEndScale": 2.0,
+      "shockwaveStartAlpha": 0.5,
+      "shockwaveEndAlpha": 0.0,
+      "shockwaveStartRotationDeg": 0.0,
+      "shockwaveEndRotationDeg": 360.0,
+      "shockwaveRandomRotationMinDeg": 0.0,
+      "shockwaveRandomRotationMaxDeg": 0.0,
+      "shockwaveStartColor": [1.0, 1.0, 1.0],
+      "shockwaveEndColor": [1.0, 1.0, 1.0],
+      "shockwaveModelNormalize": true
+    }
+  },
+"reserve_ammo": 9999,
 "self_impulse_multiplier": 0.0,
 "shooter_knockback": 0.0,
 "shooter_knockback_vertical": 0.0,
@@ -134,3 +176,8 @@
 "world_impact": null,
 "world_impact_profile": "bullet_rifle"
 }
+
+
+
+
+

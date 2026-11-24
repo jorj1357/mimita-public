@@ -1,0 +1,183 @@
+// Rocket League Octane-class body for the vehicle arena.
+//
+// Dimensions and mass are Rocket League reference values, not MiMITA guesses:
+//   hitbox 118.0 x 84.2 x 36.2 uu  -> 1.18 x 0.842 x 0.362 m
+//   car mass 180 kg
+//   suspension stiffness 500, compression damping 25, relaxation damping 40,
+//   max suspension travel 12 cm (RocketSim RLConst::BTVehicle)
+//
+// The arcade profile owns acceleration, so the engine/gearbox here only keep
+// the shared drivetrain state machine valid.
+{
+  "id": "octane_rl",
+  "massKg": 180,
+  "density": 120,
+  "centerOfMass": [0.0, 0.0, -0.06],
+  "length": 1.18,
+  "width": 0.842,
+  "height": 0.362,
+  "drag": 0.0,
+  "downforce": 0.0,
+  "bodyFriction": 0.3,
+  "bodyWallFriction": 0.3,
+  "bodyRestitution": 0.3,
+  "reboundScale": 1.0,
+  "coastDeceleration": 0.0,
+  "coastSpinDamping": 0.0,
+
+  "speedTargets": { "zeroTo60KmhSeconds": 0.0, "topSpeedKmh": 82.8 },
+  "linearDamping": 0.0,
+  "angularDamping": 0.0,
+  "maxAngularSpeed": 5.5,
+  "sleepLinearThreshold": 0.10,
+  "sleepAngularThreshold": 0.10,
+  "sleepRequiredTicks": 40,
+
+  "maxSuspensionForce": 6000,
+  "bumpStopStiffness": 60000,
+  "bumpStopDamping": 3000,
+  "antiRollForceScale": 3.0,
+  "stabilityVerticalDamping": 2.0,
+  "stabilityAngularDamping": 2.0,
+  "idleSettleSpeed": 1.0,
+  "idleSettleHorizontal": 0.10,
+  "idleSettleVertical": 0.05,
+  "idleSettleAngular": 0.05,
+
+  "interactionRadius": 8.0,
+  "bodyTexture": "assets/textureshq/240sx.png",
+  "wheelTexture": "assets/textureshq/dark1.png",
+  "engineSound": "assets/sound/weapon/chainsaw/chainsawidle.wav",
+  "wheelSegments": 20,
+
+  // Wheel hubs in metres. X forward, Y right, Z up. Ride height matches the
+  // 17.0-17.05 uu resting height documented for Octane-class bodies.
+  "wheels": [
+    {
+      "hub": [0.40, 0.36, -0.10],
+      "radius": 0.15,
+      "width": 0.12,
+      "suspensionAxis": [0, 0, -1],
+      "spinAxis": [0, 1, 0],
+      "steerAxis": [0, 0, 1],
+      "restLength": 0.08,
+      "travel": 0.12,
+      "springRate": 18000,
+      "damperRate": 1200,
+      "antiRoll": 6000,
+      "antiRollDamping": 900,
+      "unsprungMass": 8,
+      "spinInertia": 0.9,
+      "maxSpinVelocity": 200,
+      "steer": true,
+      "drive": false,
+      "brake": true
+    },
+    {
+      "hub": [0.40, -0.36, -0.10],
+      "radius": 0.15,
+      "width": 0.12,
+      "suspensionAxis": [0, 0, -1],
+      "spinAxis": [0, 1, 0],
+      "steerAxis": [0, 0, 1],
+      "restLength": 0.08,
+      "travel": 0.12,
+      "springRate": 18000,
+      "damperRate": 1200,
+      "antiRoll": 6000,
+      "antiRollDamping": 900,
+      "unsprungMass": 8,
+      "spinInertia": 0.9,
+      "maxSpinVelocity": 200,
+      "steer": true,
+      "drive": false,
+      "brake": true
+    },
+    {
+      "hub": [-0.40, 0.36, -0.10],
+      "radius": 0.15,
+      "width": 0.12,
+      "suspensionAxis": [0, 0, -1],
+      "spinAxis": [0, 1, 0],
+      "steerAxis": [0, 0, 1],
+      "restLength": 0.08,
+      "travel": 0.12,
+      "springRate": 18000,
+      "damperRate": 1200,
+      "antiRoll": 6000,
+      "antiRollDamping": 900,
+      "unsprungMass": 8,
+      "spinInertia": 0.9,
+      "maxSpinVelocity": 200,
+      "steer": false,
+      "drive": true,
+      "brake": true
+    },
+    {
+      "hub": [-0.40, -0.36, -0.10],
+      "radius": 0.15,
+      "width": 0.12,
+      "suspensionAxis": [0, 0, -1],
+      "spinAxis": [0, 1, 0],
+      "steerAxis": [0, 0, 1],
+      "restLength": 0.08,
+      "travel": 0.12,
+      "springRate": 18000,
+      "damperRate": 1200,
+      "antiRoll": 6000,
+      "antiRollDamping": 900,
+      "unsprungMass": 8,
+      "spinInertia": 0.9,
+      "maxSpinVelocity": 200,
+      "steer": false,
+      "drive": true,
+      "brake": true
+    }
+  ],
+
+  "tire": {
+    "mu": 1.5,
+    "loadSensitivity": 0.0002,
+    "nominalLoad": 292.5,
+    "peakSlipRatio": 0.12,
+    "peakSlipAngle": 0.12,
+    "frictionCircle": true,
+    "lowSpeed": 0.6,
+    "lowSpeedGrip": 1.0,
+    "rollingResistance": 0.015,
+    "maxLoadScale": 3.0,
+    "slipStiffness": 1.0,
+    "camberGain": 0.0
+  },
+
+  "engine": {
+    "inertia": 0.12,
+    "idleRpm": 900,
+    "redlineRpm": 6800,
+    "frictionTorque": 8,
+    "torqueCurve": [[900, 120], [3000, 180], [6800, 90]],
+    "clutchKickBoost": 0.0
+  },
+  "gearbox": {
+    "ratios": [-3.0, 0.0, 3.0, 2.0, 1.4, 1.0],
+    "finalDrive": 3.0,
+    "shiftTime": 0.05,
+    "clutchCapacity": 400
+  },
+  "differential": {
+    "type": "welded",
+    "frontRearSplit": 0.0,
+    "preloadTorque": 20.0,
+    "powerLock": 0.65,
+    "coastLock": 0.30,
+    "lockStrength": 0.85,
+    "biasRatio": 2.0
+  },
+  "steering": { "maxAngleDeg": 30.57, "speedFalloff": 0.55, "returnRate": 6.0,
+    "directionSign": -1.0, "ackermann": 0.0 },
+  "brakes": { "maxTorque": 0, "handbrakeTorque": 0, "handbrakeGripScale": 0.1 },
+
+  "seats": [
+    { "name": "driver", "anchor": [0.0, 0.0, 0.10], "riderOffset": [0.0, 0.0, 0.42], "pose": "sit" }
+  ]
+}

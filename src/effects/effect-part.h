@@ -17,6 +17,9 @@ struct EffectPart
 {
     glm::vec3 position{0.0f};
     glm::vec3 color{1.0f, 1.0f, 1.0f};
+    // Optional second color for effects that interpolate color over lifetime.
+    glm::vec3 endColor{1.0f, 1.0f, 1.0f};
+    bool useEndColor = false;
     glm::vec3 velocity{0.0f};
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
     glm::vec3 rotation{0.0f};
@@ -30,6 +33,10 @@ struct EffectPart
     std::string replayType = "effect";
     std::string texturePath;
     std::string modelPath;
+    // When true, the loaded model is normalized so its largest extent is 1.0.
+    // Impact shockwave models are authored at arbitrary scale; gameplay JSON
+    // then expresses scale in meters instead of model units.
+    bool modelNormalize = false;
     std::string materialName;
     std::string assetId;
     bool billboardText = true;

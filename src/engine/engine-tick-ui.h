@@ -2,10 +2,11 @@
 
 struct Engine;
 
-void engineTickUI(Engine& engine, float dt, bool worldPassRan);
+void engineTickUI(Engine& engine, float dt, bool worldPassRan, bool useOutputFramebuffer = false);
 void engineTickUIHUD(Engine& engine, float dt);
 void engineTickUIReplayHUD(Engine& engine, float dt);
 void engineTickUIGameHUD(Engine& engine, float dt);
 void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan);
 // Local loss-aftermath presentation: scare sounds, fatal window, and exit.
 void engineTickAftermathUi(Engine& engine, float dt);
+

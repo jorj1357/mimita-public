@@ -217,6 +217,48 @@ fixes, metrics, and review conclusions over time. Separate observation from
 inference and unknowns. A cold handoff must be possible from the issue brief
 and linked artifacts without relying on the previous agent's private context.
 
+### Scientific method for improvement work
+
+Agents treat technical conclusions and proposed improvements as claims to test,
+not assumptions to defend. For each actionable problem, keep the experiment
+plan and results in its existing issue:
+
+1. State a falsifiable hypothesis: what is believed to cause the problem, the
+   expected direction and size of the change, the evidence that supports it,
+   and the observation that would disprove it. Label facts, inferences,
+   hypotheses, and unknowns separately.
+2. Define the baseline and acceptance before changing code. Pin source/build
+   identity, runtime/run, workload, configuration, relevant concurrent work,
+   measurement interval, metric, and behavior checks. State a minimum meaningful
+   improvement and the regression threshold. Include measurement overhead when
+   it can affect the result.
+3. Change one independent cause per pass. Keep workload and other settings
+   matched; predeclare the repeat count and stopping rule, using at least three
+   matched samples per condition when feasible. Compare medians and tail metrics;
+   if the observed difference is within normal variation, collect more samples
+   within the safe budget or label the result inconclusive. If conditions cannot
+   be matched, do not claim causation.
+4. Record the result as supported, disproved, or inconclusive, including gains,
+   regressions, raw artifact paths, and the next check. Negative results are
+   useful evidence: preserve them, do not repeat a rejected idea without new
+   evidence, and roll back a change that fails its predeclared acceptance.
+5. For each confirmed problem, maintain at least three distinct, ranked,
+   falsifiable improvement hypotheses in the same issue. Each candidate names
+   its mechanism, expected metric, behavior risk, and proof/falsification check.
+   Test one candidate at a time; after each result, use what was learned to
+   replace or rerank candidates and identify the next three useful ways to
+   improve the problem. Continue this loop while the issue remains active, while
+   avoiding duplicate issues and filler proposals. When evidence is not yet
+   strong enough to rank three candidates, make the next investigation itself a
+   falsifiable candidate and record the evidence gap.
+
+An optimization is successful only when its resource metric improves and the
+issue's required behavior remains valid. For performance work, preserve the
+applicable frame-time, fixed-tick, gameplay, and resource acceptance criteria;
+averages or build success alone do not replace those checks. See
+[agent self-improvement](agent-self-improvement.md) for proposal ownership and
+[performance](../performance/performance.md) for runtime acceptance.
+
 ### CPU and resource-pressure evidence handoff
 
 Any agent that encounters MiMITA CPU, memory, disk, or build-resource pressure

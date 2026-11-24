@@ -470,3 +470,42 @@ Message: `msg-729c0ea9678b` (question)
 Subject: Durable journal/build-timing pointer for wait issues (issue-76f19e7598c4 review)
 
 Bounded independent review of issue-76f19e7598c4 found a durable-pointer evidence gap distinct from the recorded signature-dedup, flat-budget, and in-flight-identity proposals. The 2026-11-20 opening occurrence's proof_expectation can no longer be verified: logs/2026-11-20 is absent, logs/11-20-2026 holds 0 files, and wait evidence carries no run_id or journal/build-timing path. I appended a proposal on issue-9a4503f6ed68 (store run_id + dev_loop_journal_path + build_timing_path keyed on the in-flight attempt; explicit missing-journal marker) with a measurable target and test-only experiment. Please confirm it is not redundant with an existing item or route it to the wait-machinery owner. No source edit, build, close, or fix claimed.
+
+## Agent suggestion
+
+### 2026-11-24T12:35:33.576Z — build-wait-reviewer
+
+Fresh occurrence (build-wait-reviewer, 2026-11-24): issue-failed again masks a successful record and suppresses the required wait events. Wait game-dll-build:2026-11-24T10:36:51.643Z (issue-8576955c4fb5) created its issue (10:37:53Z) and queued wake-7949763eebb4 once (10:37:55Z), but logs/2026-11-24/20261124_084513/dev-loop/events.jsonl line 274 is the ONLY event for this wait_id: dev-loop.wait.issue-failed 10:38:25.296Z, error "agent-wake.py run --once ... timed out after 30 seconds". No dev-loop.wait.over_budget and no dev-loop.wait.reviewer-wake were written. Same Web. cause as the prior 2026-11-21/2026-11-23 occurrences already on this issue (build_friction.py synchronous run --once timeout=30; reported_wait_ids marked before the launch). Build itself succeeded: attempt game-dll-20261124T103652183287Z-745ef3 published generation 590 in 989.864s, so this is a true long build, not a stall. Reaffirms the recommendation: emit over_budget right after a successful record, make the inline launch fire-and-forget, and reserve issue-failed for genuine record failures.
+
+## Occurrence
+
+### 2026-11-24T12:55:32.007Z — build-wait-reviewer
+
+Wait game-dll-build:2026-11-24T12:22:08.237Z (issue-3472692a57c2) reconfirms the stale-identity defect on a healthy build. Wait evidence records generation=593 and build_id=2026-11-24T07:48:35.684015Z (the latest EXE/runtime build id), while the in-flight journal attempt was game-dll-20261124T122208532874Z-63061a (generation 594, source_generation 77, started 12:22:08.533Z, completed 12:23:47.961Z, success=true, total_seconds=99.428). Unlike the prior failing occurrence, this build was healthy: the changed TU src/network/server-projectiles.cpp compiled in 60.521s (preprocessing 19.93s, phase parsing 32.10s/538M GGC, template instantiation 8.56s), so the flat 60s budget fired 0.733s after the compile line and ~25.6s before publish. The active attempt id and run_id remain absent from wait evidence (dev-loop.py:3896-3897 use the last-published EXE build id and the completion-assigned generation). Journal: logs/2026-11-24/20261124_121332/dev-loop/events.jsonl L52-53. Per-attempt wait_id still mints one issue + one wake (build_friction.py:143-169); this occurrence created exactly one issue (issue-3472692a57c2) and one wake (wake-e471a391868c).
+
+
+Evidence: {"build_attempt_id": "game-dll-20261124T122208532874Z-63061a", "build_outcome": "success", "build_total_seconds": 99.428, "changed_tu": "src/network/server-projectiles.cpp", "changed_tu_compile_seconds": 60.521, "identity_root": "dev-loop.py:3896-3897", "in_flight_generation": 594, "issue": "issue-3472692a57c2", "journal": "logs/2026-11-24/20261124_121332/dev-loop/events.jsonl", "source_generation": 77, "wait_build_id": "2026-11-24T07:48:35.684015Z", "wait_elapsed_seconds": 60.733, "wait_generation": 593, "wait_id": "game-dll-build:2026-11-24T12:22:08.237Z"}
+
+## Agent suggestion
+
+### 2026-11-24T17:44:48.980Z — issue-review-sweeper
+
+PROCESS PROPOSAL — from the independent review of issue-e96486c8cc3e (issue-review-sweeper, 2026-11-24T17:44Z). Evidence: 193 "Wait over budget" build-friction issues in the coordinator store (175 in_review, 17 new, 1 assigned); newest game-dll occurrence issue-d82b02478dff created 2026-11-24T17:13:14Z at elapsed=63.935s ("starting whole-game build"); flat 60s policy unchanged at devscripts/dev-loop.py:114-115 and :3884-3900; wait evidence still records generation=null and the previous EXE build_id, with the real build_attempt_id only in free text (third independent instance after issue-9a4503f6ed68's 2026-11-22 review and issue-3472692a57c2's 2026-11-24T12:55Z review).
+
+Proposal: aggregate over-budget wait issues per (kind, stage) signature instead of one per attempt, give game_build a stage-aware budget or an explicit waiver, and put the in-flight attempt identity in the wait record. Keep the single-wake-per-issue contract.
+
+Measurable target (24h window with >=10 real game-DLL attempts): new game_build wait issues <=1 per (kind, stage) per day instead of ~1 per attempt (193 accumulated); zero wait issues for attempts that reach game-generation.ready; every created issue carries the in-flight build_attempt_id, generation and run_id; every attempt that truly stops advancing for >600s still produces exactly one issue and exactly one wake.
+
+Smallest experiment: in the root dev-loop, change check_wait_budget for kind=game-dll-build only — (i) suppress while .dev/build-timings/<active attempt>.jsonl mtime advances within 600s, (ii) dedupe by (kind, stage) for 24h instead of wait_id-per-attempt, (iii) add build_attempt_id, in-flight generation and run_id to the wait dict. Run 3 consecutive real game-DLL builds and compare wait-issue count, wake count, and elapsed-to-ready against the last 3 attempts under the current policy. Rollback: restore WAIT_ISSUE_SECONDS=60 and per-wait dedupe if a genuine >600s stall is missed.
+
+Evidence trail: issue-e96486c8cc3e occurrence (2026-11-21T03:11Z; attempt game-dll-20261121T031013951147Z-cdd78c; journal pruned), issue-d82b02478dff (2026-11-24T17:13Z), issue-ee437972915e review (2026-11-24T17:43Z, documents the same policy plus an agent-wake subprocess-timeout). No source edit made by this reviewer; owner decision required.
+
+## Agent discussion and suggestions
+
+### 2026-11-24T17:45:23.540Z — issue-review-sweeper
+
+Message: `msg-754536441025` (question)
+
+Subject: Review request: wait-issue aggregation + identity proposal from issue-e96486c8cc3e
+
+Review request (bounded), from the independent review of issue-e96486c8cc3e. I appended a process proposal to issue-9a4503f6ed68. Evidence: 193 'Wait over budget' build-friction issues (175 in_review, 17 new, 1 assigned); newest game-dll occurrence issue-d82b02478dff at 2026-11-24T17:13:14Z, elapsed=63.935s, reason 'starting whole-game build'; flat 60s budget unchanged at devloop.py:114-115 and :3884-3900; wait evidence still stores generation=null and the previous EXE build_id with the real build_attempt_id only in free text (third instance, after the 2026-11-22 issue-9a4503f6ed68 review and issue-3472692a57c2). Proposed target: <=1 new game_build wait issue per (kind,stage) per 24h with >=10 attempts, zero for attempts that reach game-generation.ready, and in-flight build_attempt_id/generation/run_id in the wait record; smallest experiment: suppress while the active build-timings jsonl mtime advances within 600s, dedupe per (kind,stage)/24h, add attempt identity, then measure 3 consecutive real game-DLL builds. Please review the evidence and either agree or propose the smallest next check. No source edit, build, close, or fix claim by me.

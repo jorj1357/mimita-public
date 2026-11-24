@@ -707,3 +707,73 @@ User feedback 2026-11-23: goal setting should give each agent a clear return poi
 ### 2026-11-24T06:57:51.566Z — issue-review-sweeper
 
 Independent review evidence (issue-cf9cd77eb056, 2026-11-24): two consecutive gen-583 runs (20261124_064911, 20261124_065013) left the server main loop stopped at ~tick 599/~10 s, but the run summary reported max_tick_stall_ms=0.0 because the in-process stall detector only closes inside the loop it measures; a prior review also read the normal ~1 s snapshot interarrival as a >250 ms client stall. Proposal: add a hang-safe derived stall summary computed from journal timestamps (not from the loop own window) to every isolated run summary: server max_tick_gap_ms, and client max_frame_gap_ms + stalls_over_250ms. Measurable target: for run 20261124_064911 the summary shows server max_tick_gap_ms >= 10000 while max_tick_stall_ms stays 0.0, and for run 20261124_063130 it shows server max_tick_gap_ms < 2000 with 0 client stalls over 250 ms. Smallest experiment: compute the three fields offline from the existing journals and attach a run-summary draft; no loop-code change until reviewed.
+
+## Agent suggestion
+
+### 2026-11-24T11:42:02.316Z — issue-review-sweeper
+
+Review-wake completion gap (issue-review-sweeper, wake-293b3b6d700c, 2026-11-24). Recurrence/acceptance case for the wake completion-marker work and the scheduler review path. Observed: the scheduler queued sweeps 541 (wake-814cd9cf7c3b, codex, launched 09:20:38Z) and 543 (wake-497f6aaf91ac, codex, launched 10:20:26Z) for issue-b95574b63f29. Neither produced an issue_reviews row. Wake 541 read the actual Horde journals (the log shows repeated rg over logs/2026-11-24/20261124_081518) and then ended at about 10:19:37Z with UnknownError 'Failed to execute statement' after about 59 min; the request was cancelled at 10:20:22Z with child_pid=0. Wake 543's log failed at 10:20:46Z on the opencode project-row insert ('database is locked'), so it never started; the request was cancelled at 10:54:27Z. The same issue was then re-scheduled with a new sweep key (544), and the current sweep (544, opencode) is the first to append a review. So a launched review wake can do useful work or fail, leave no completion record, and the scheduler cannot distinguish that from in-progress work. This is a repeated delay (2 consecutive sweeps, about 45-59 min each) and an avoidable retry. Proposal (coordinator-only, no gameplay source): add a review-sweep completion classifier. On launch, record pending (wake_id, issue, launched_utc, adapter). On sync, any launched sweep older than 15 min with no issue_reviews row created after launch is classified completed-no-append (process exited) or still-running, marked failed-no-append, and retried once with a different adapter; do not advance cadence for that issue and do not re-schedule it without an intervening review. Expose pending/overdue review sweeps in status/brain_check. Measurable target: over the next 10 scheduled sweeps, 100 percent either append a review or an explicit no-new-evidence note within 15 min of launch, or are recorded failed-no-append and retried once; zero issues re-scheduled without an intervening review; median launch-to-append <= 15 min. Smallest experiment: a standalone read-only classifier over the existing issue_reviews and wake request/log timestamps for wake-814cd9cf7c3b, wake-497f6aaf91ac and wake-293b3b6d700c; show completed/failed-no-append classifications, then one live retry. No code, build, or authority change claimed.
+
+## Agent suggestion
+
+### 2026-11-24T13:29:08.981Z — issue-review-sweeper
+
+Development-process proposal from issue-review-sweeper (wake-48eb3936273d, bounded review of issue-13d080318e1c, 2026-11-24). Read-only; no source, build, or runtime change performed.
+
+Observed evidence gap: while reviewing the 240 FPS auto-trace issue I had to reconstruct one run's identity by scanning four rotated client journal segments. In run 20261124_122748, the only `performance.baseline` record (the record carrying `build_id`, process ID, target FPS, and vsync) is in `logs/2026-11-24/20261124_122748/client-01/events-0002.jsonl` at t=8.26, while the current `events.jsonl` segment begins at t=2981. That baseline's own `run_id` and `events_path` fields are empty even though the envelope has `run_id`. The existing `devscripts/perf-evidence.py:168-184` prints recent `performance.fps` windows but does not find the baseline build identity or scan rotated segments, so every performance review repeats this manual join.
+
+Proposal (safe read-only AI capability): extend the existing `devscripts/perf-evidence.py` with an identity join that scans all segments for a run's `performance.baseline` and prints `build_id`, run/launch/PID, target frame ms/FPS, vsync, and the latest N `performance.fps` over-budget windows plus their journal paths. No issue creation, source change, or build.
+
+Measurable target: one invocation returns the run identity and the over-budget window in <=1 reviewer tool call; across the next 5 FPS/perf reviews, reviewer journal-scan commands to establish build identity fall from about 6 to <=1, and 5/5 reviews cite an exact `build_id` without manual rotation search.
+
+Smallest experiment: add the read-only join to `perf-evidence.py`, run it on run 20261124_122748, and verify the output contains `build_id=2026-11-24T07:48:35.684015Z:52c3ec0a...` together with the t=2981.47 window of 124 over-budget frames out of 171. If the join cannot find the baseline because the first segment was pruned, it must print an explicit missing-identity record rather than infer one. Owner to claim; do not close the underlying issue from the helper alone.
+
+## Agent suggestion
+
+### 2026-11-24T14:28:54.424Z — issue-review-sweeper
+
+Process proposal from the independent review of issue-70cbf4d13c02 (2026-11-24, read-only; no code changed).
+
+Observed evidence:
+- `agent-coordination.md:190-193` requires tracking review coverage, age of the oldest unreviewed high-priority/unproven issue, evidence-bearing review rate, no-op/duplicate rate, wake failures, and review latency. Existing review provenance cannot compute those metrics.
+- In `.dev/agent-coord/events.jsonl`: 101 `coord.issue_review.scheduled` events over 81 distinct issues; 9 issues scheduled 2-4 times; 4 repeat pairs fell 21-60 minutes apart (issue-55bd775c8026 21.5m, issue-1d1b9c62ac08 24.3m, issue-cf9cd77eb056 30.5m, issue-b95574b63f29 59.8m and 34.1m) while the documented intent is a 24h same-issue cooldown unless new evidence arrives.
+- 361 `coord.issue.updated` records have a `review_(...)` change with 200+ distinct free-form verdict strings, and each event carries only {change, issue}. There is no `coord.issue.reviewed` completion event and no reviewer/evidence/build/run fields on the event.
+- Existing structured reviews exist (for example issue-89efbbc86535 review id 1 has reviewer, verdict, and a long body), so the detail is persisted in the issue record; it is the shared event/metric surface that is missing.
+
+Proposal: Make review outcomes machine-classifiable and cooldown-aware.
+1. Constrain `issue review --verdict` to a small enum (for example pass, pass-with-findings, needs-evidence, confirmed, disproved, inconclusive, no-op) and keep free text only in the body.
+2. Record structured fields on the review: reviewer, issue, verdict enum, evidence refs (journal/build/run/issue paths), and a `no_new_evidence` boolean.
+3. Emit one `coord.issue.reviewed` event per completed review with those fields plus duration since the schedule, and make the scheduler skip a same-issue re-review inside the 24h cooldown unless a new-evidence marker exists.
+4. Keep a legacy mapping for existing `review_(...)` rows rather than rewriting history.
+
+Measurable target: for the next 20 completed reviews, 20/20 carry an enum verdict and at least one structured evidence ref or an explicit `no_new_evidence=true`, and 20/20 emit exactly one `coord.issue.reviewed`; scheduler coverage, duplicate/no-op rate, and median review latency are computed from events with zero manual text parsing; within-cooldown same-issue reschedules without a new-evidence marker go from the current 4 observed pairs to 0.
+
+Smallest experiment: in a temporary coordination root, append 5 reviews through the CLI (4 valid enum values plus 1 invalid) and assert the invalid verdict is rejected, 5 structured reviews and 5 `coord.issue.reviewed` events exist, and the metrics query returns coverage/duplicate/latency. Then run a read-only mapping over the last 20 existing `review_(...)` strings and report how many map to an enum unambiguously. Success = 20/20 structured events, at least 18/20 legacy verdicts mapped, and 0 ambiguous cooldown reschedules in the test. Stop and report if legacy strings cannot be mapped without guessing.
+
+This is a proposal only. It needs an owner and normal edit/build authority; this reviewer made no source edit and claims no runtime proof.
+
+## Agent suggestion
+
+### 2026-11-24T15:05:45.574Z — issue-review-sweeper
+
+Process proposal from the 2026-11-24 independent review of issue-c481ab36713a (issue-review-sweeper; read-only, no source edit).
+
+Observed evidence for the gap: issue-c481ab36713a is ready=true (8/8), priority=high, state=new, owner empty, with 4 tasks all state=planned and zero proof records. It has now received two independent reviews (2026-11-23 and 2026-11-24) after which the task/owner/proof state is unchanged. The existing scheduler task `stale-issue-heartbeat` (this issue) defines the loop as "select one stale/unproven open issue; append evidence/counterevidence and one grounded development-process suggestion" - i.e. review-only. The review loop therefore produces evidence but has no defined handoff that turns a reviewed-but-unowned, ready, high-priority issue into an owned implementation step. (Separately, the scheduler repeat-schedule/cooldown defect is already recorded in issue-70cbf4d13c02's 2026-11-24 review, so this proposal does not duplicate it.)
+
+Proposal (smallest): after a review finds an issue ready+high+unowned with zero implementation state change since the prior review, require the reviewer's next-step to name one concrete claimable task and have the next waiting activation surface it through `next --claim`; do not auto-apply a fix or change authority.
+
+Measurable target: for ready+high+unowned issues that receive a second independent review with no task/owner/proof state change, 8/10 get an owner on one of their existing tasks within 10 completed work sessions (or the issue records an explicit deferral reason), with zero duplicate issues created. Baseline from this sample: 0 owners after 2 reviews over ~1.3 days.
+
+Smallest experiment: use issue-c481ab36713a itself. After this review's append, have the next `next --mode waiting` activation attempt `next --claim` on a task of this issue and record the owner + elapsed sessions, or record why it declined. Falsifiable: if no task is claimable or no owner appears within 10 sessions despite the issue staying ready+high, the handoff gap is confirmed and a scheduler/reviewer change is justified; if an owner appears promptly, the loop is already sufficient.
+
+## Agent suggestion
+
+### 2026-11-24T15:32:59.107Z — issue-review-sweeper
+
+Recurrence of the 2026-11-22 proposal at this issue (the high-priority-issue-with-evidence-but-no-proof-record detector) from issue-review-sweeper sweep wake-02add8f2f53a.
+
+Fresh qualifying instance: issue-58ecf44ac956 was created 2026-11-21T01:01Z, is priority=high, has a non-empty evidence object (fast_probe 0.483 ms), yet proof list --issue returns zero task_proof records and its only task windows-identity-fast-probe-live-proof has latest_proof=null and empty evidence. The underlying source fix landed 2026-11-21T21:47Z (commit d89884f6) and a real isolated run (logs/2026-11-24/20261124_110111) already records server+client process_started_utc with growing journals, so the issue stayed triaged for about 62 hours and was selected for this review only because no proof record existed. This is the same repeated missing-evidence/progress gap already recorded here on 2026-11-22 and 2026-11-23; recorded as evidence, not a second proposal.
+
+Measurable target (unchanged intent, now with a known-positive case): within 3 issue-review sweeps, 0 high-priority issues older than 48h whose evidence field is non-empty but which have neither a task_proof record nor an explicit deferral reason; the detector must flag issue-58ecf44ac956 as a true positive and must not flag an issue with a current proof record.
+
+Smallest experiment: implement only the read-only detector already proposed (scan issues where created_utc older than 48h, priority=high, evidence non-empty, proof count=0, no defer), run it once against .dev/agent-coord/brain.db, and report the flagged set plus false positives for one sweep. No source, build, runtime, or proof-state change is claimed here; the owner may then convert each flagged issue to an owner proof record or a reasoned defer.

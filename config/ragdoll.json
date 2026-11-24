@@ -3,8 +3,8 @@
     // "enabled": false,
     "toggle_key": "G",
     "gravity_scale": 2.0,
-    "body_linear_damping": 0.01,
-    "body_angular_damping": 2.5,
+    "body_linear_damping": 0.35,
+    "body_angular_damping": 6.0,
     "stop_linear_speed": 0.1,
     "stop_angular_speed": 0.4,
     "joint_stiffness": 2000.0,
@@ -13,9 +13,9 @@
     "corpse": {
         "lifetime_seconds": 20.0,
         "fade_seconds": 4.0,
-        "death_impulse_multiplier": 1.5,
-        "spawn_velocity_multiplier": 2.01,
-        "blood_interval_seconds": 0.12,
+        "death_impulse_multiplier": 0.8,
+        "spawn_velocity_multiplier": 1.1,
+        "blood_interval_seconds": 0.08,
         "blood_enabled": true,
         // Presentation-only corpse solver budget. The alive G ragdoll keeps
         // the full solver_iterations below.
@@ -29,7 +29,7 @@
     "solver_iterations": 24,
     "max_fall_speed": 60.0,
     "restitution": 0.0,
-    "friction": 0.5,
+    "friction": 1.25,
     "self_collision": true,
     "joint_position_beta": 1.5,
     "limit_position_beta": 0.25,
@@ -210,3 +210,4 @@
         "third_person_allowed": true
     }
 }
+

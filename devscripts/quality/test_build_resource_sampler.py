@@ -459,6 +459,8 @@ class BuildResourceSamplerTests(unittest.TestCase):
 
         result = sampler._runtime_alignment_summary()
         self.assertTrue(result["same_run_server_client"])
+        self.assertEqual(result["pair_alignment_status"], "observed")
+        self.assertEqual(result["mode_verification_status"], "matched")
         self.assertTrue(result["mode_match"])
         self.assertEqual(result["run_id"], "matched")
         self.assertEqual(result["server_pid"], 321)
@@ -469,6 +471,7 @@ class BuildResourceSamplerTests(unittest.TestCase):
             "server_tick_window"]["observed_utc"] = "2020-01-01T00:00:00Z"
         result = sampler._runtime_alignment_summary()
         self.assertFalse(result["same_run_server_client"])
+        self.assertEqual(result["pair_alignment_status"], "unavailable")
 
     def test_runtime_alignment_rejects_same_run_mode_mismatch(self):
         sampler = BuildResourceSampler(Path("."), "runtime-mode-mismatch")
@@ -490,11 +493,131 @@ class BuildResourceSamplerTests(unittest.TestCase):
         result = sampler._runtime_alignment_summary()
 
         self.assertTrue(result["same_run_server_client"])
+        self.assertEqual(result["pair_alignment_status"], "observed")
+        self.assertEqual(result["mode_verification_status"], "mode_mismatch")
         self.assertFalse(result["mode_match"])
         self.assertEqual(result["status"], "mode_mismatch")
         self.assertIsNone(result["actual_mode"])
         self.assertEqual(result["server_actual_mode"], "bloodtest")
         self.assertEqual(result["client_actual_mode"], "repeat")
+
+    def test_runtime_alignment_keeps_same_run_when_client_mode_is_missing(self):
+        sampler = BuildResourceSampler(Path("."), "runtime-mode-unverified")
+        observed = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        fresh_row = {"observed_utc": observed}
+        server_hotness = {**fresh_row, "event": "game.hotness.summary",
+                          "fields": {"npcs": 67, "players": 1}}
+        server_tick = {**fresh_row, "event": "performance.server-tick-window",
+                       "fields": {"ticks": 60, "p95_ms": 12.0}}
+        client_frame = {**fresh_row, "event": "performance.fps",
+                        "fields": {"frames": 240, "frames_over_budget": 1}}
+        client_npcs = {**fresh_row, "event": "client.npc.viewport-window",
+                       "fields": {"remote_npcs": 67, "alive": 67}}
+        sampler._runtime_context_by_pid = {
+            321: {"run_id": "matched", "role": "server", "pid": 321,
+                  "journal": {"generation_npc_player": server_hotness,
+                              "server_tick_window": server_tick,
+                              "journal_mode": dict(fresh_row),
+                              "actual_mode": "bloodtest"}},
+            322: {"run_id": "matched", "role": "client", "pid": 322,
+                  "journal": {"client_frame_window": client_frame,
+                              "client_npc_view_window": client_npcs,
+                              "actual_mode": None}},
+        }
+
+        result = sampler._runtime_alignment_summary()
+
+        self.assertTrue(result["same_run_server_client"])
+        self.assertEqual(result["pair_alignment_status"], "observed")
+        self.assertEqual(result["mode_verification_status"],
+                         "client_mode_unverified")
+        self.assertFalse(result["mode_match"])
+        self.assertEqual(result["status"], "mode_unverified")
+        self.assertEqual(result["reason"],
+                         "fresh_authoritative_mode_missing_or_stale")
+        self.assertEqual(result["server_actual_mode"], "bloodtest")
+        self.assertEqual(result["server_authoritative_mode"], "bloodtest")
+        self.assertEqual(result["server_mode_source"], "server_journal")
+        self.assertEqual(result["client_mode_status"], "stale_or_unreported")
+        self.assertIsNone(result["client_actual_mode"])
+        self.assertIsNone(result["actual_mode"])
+        self.assertEqual(
+            result["server_workload"]["generation_npc_player"]["fields"]["npcs"],
+            67)
+        self.assertEqual(
+            result["client_workload"]["client_frame_window"]["fields"]["frames"],
+            240)
+
+    def test_resource_summary_separates_pair_evidence_from_client_mode_gap(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            sampler = BuildResourceSampler(Path(temporary),
+                                            "runtime-pair-mode-gap")
+            observed = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            fresh_row = {"observed_utc": observed}
+            sampler._status = "captured"
+            sampler._sample_count = 1
+            sampler._runtime_context_by_pid = {
+                321: {"run_id": "matched", "role": "server", "pid": 321,
+                      "journal": {
+                          "generation_npc_player": {
+                              **fresh_row, "fields": {"npcs": 67, "players": 1}},
+                          "server_tick_window": {
+                              **fresh_row, "fields": {"ticks": 60}},
+                          "journal_mode": dict(fresh_row),
+                          "actual_mode": "bloodtest"}},
+                322: {"run_id": "matched", "role": "client", "pid": 322,
+                      "journal": {
+                          "client_frame_window": {
+                              **fresh_row, "fields": {"frames": 240}},
+                          "client_npc_view_window": {
+                              **fresh_row, "fields": {"remote_npcs": 67}},
+                          "actual_mode": None}},
+            }
+
+            summary = sampler.stop()
+
+        self.assertEqual(summary["runtime_alignment"]["pair_alignment_status"],
+                         "observed")
+        self.assertEqual(summary["runtime_alignment"]["server_authoritative_mode"],
+                         "bloodtest")
+        self.assertEqual(summary["runtime_alignment"]["client_mode_status"],
+                         "stale_or_unreported")
+        self.assertNotIn("journal_aligned_live_mode_workload_and_frame_tick_metrics",
+                         summary["unavailable_fields"])
+        self.assertIn("client_mode_independent_confirmation",
+                      summary["unavailable_fields"])
+
+    def test_runtime_alignment_does_not_trust_stale_mode_rows(self):
+        sampler = BuildResourceSampler(Path("."), "runtime-stale-mode")
+        observed = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        fresh_row = {"observed_utc": observed}
+        stale_mode = {"observed_utc": "2020-01-01T00:00:00Z",
+                      "mode": "repeat"}
+        sampler._runtime_context_by_pid = {
+            321: {"run_id": "matched", "role": "server", "pid": 321,
+                  "journal": {"generation_npc_player": dict(fresh_row),
+                              "server_tick_window": dict(fresh_row),
+                              "journal_mode": dict(fresh_row),
+                              "actual_mode": "bloodtest"}},
+            322: {"run_id": "matched", "role": "client", "pid": 322,
+                  "journal": {"client_frame_window": dict(fresh_row),
+                              "client_npc_view_window": dict(fresh_row),
+                              "journal_mode": stale_mode,
+                              "actual_mode": "repeat"}},
+        }
+
+        result = sampler._runtime_alignment_summary()
+
+        self.assertTrue(result["same_run_server_client"])
+        self.assertEqual(result["pair_alignment_status"], "observed")
+        self.assertEqual(result["mode_verification_status"],
+                         "client_mode_unverified")
+        self.assertFalse(result["mode_match"])
+        self.assertEqual(result["status"], "mode_unverified")
+        self.assertEqual(result["client_mode_observed_utc"],
+                         "2020-01-01T00:00:00Z")
+        self.assertIsNone(result["client_actual_mode"])
+        self.assertIsNone(result["actual_mode"])
 
     def test_runtime_journal_ignores_configuration_mode_fields(self):
         with tempfile.TemporaryDirectory() as temporary:

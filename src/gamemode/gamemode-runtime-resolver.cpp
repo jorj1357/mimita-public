@@ -11,6 +11,7 @@
 #include "entities/aimbody-config.h"
 #include "combat/actor-preset-weapons.h"
 #include "gui/hud/healthbar-config.h"
+#include "gui/ui-system.h"
 #include "killfeed/killfeed.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
@@ -103,6 +104,13 @@ void applyPresentationPolicy(const Gamemode& mode)
 {
     const GamemodePresentation& p = mode.presentation;
     ActorPresetWeapons::setModePresentationOverride(p);
+
+    uiSetHudPolicy(p.hud.configured && p.hud.enabled && p.hud.sceneLayer,
+                   !p.hud.configured || (p.hud.enabled && p.hud.showChat),
+                   !p.hud.configured || (p.hud.enabled && p.hud.showHotbar),
+                   !p.hud.configured || (p.hud.enabled && p.hud.showCrosshair),
+                   !p.hud.configured || (p.hud.enabled && p.hud.showStatus),
+                   p.hud.caStrength);
 
     if (p.hasKillfeed)
         KillfeedManager::instance().setModeEnabledOverride(p.killfeed);
@@ -265,6 +273,7 @@ void GamemodeRuntimeResolver::clearClient()
     CamConfig::instance().clearBodycamOverride();
     AimBodyConfig::instance().clearBodycamResponseOverride();
     PostFX::instance().clearBodycamLensOverride();
+    uiSetHudPolicy(false, true, true, true, true, 0.12f);
     ActorPresetWeapons::clearModePresentationOverride();
     KillfeedManager::instance().clearModeEnabledOverride();
     ImpactDecalsConfig::instance().clearRuntimeClientFeedbackOverride();
@@ -274,3 +283,5 @@ void GamemodeRuntimeResolver::clearClient()
     body.clearEnabledOverride();
     body.clearModeOverride();
 }
+
+

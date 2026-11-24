@@ -59,6 +59,7 @@ namespace r = mimita::game::render;
 #include "network/server.h"
 #include "network/server-browser.h"
 #include "gui/gui-main.h"
+#include "gui/ui-system.h"
 #include "terminal/terminal-state.h"
 #include "mapeditor/map-editor.h"
 #include "gui/menus/pause-menu.h"
@@ -254,10 +255,15 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
                 MIMITA_PERF_SCOPE("Rendering");
                 engineTickRender(engine, dt, worldPassRan);
             } HEARTBEAT("after render");
-            MIMITA_PERF_PROGRESS("UI");
-            MIMITA_PERF_SCOPE("UI");
-            engineTickUI(engine, dt, worldPassRan);
-            HEARTBEAT("after ui");
+            const bool hudDeferred =
+                engine.renderer && engine.renderer->stretchesWholeFrame() &&
+                !uiHudSceneLayer();
+            if (!hudDeferred) {
+                MIMITA_PERF_PROGRESS("UI");
+                MIMITA_PERF_SCOPE("UI");
+                engineTickUI(engine, dt, worldPassRan);
+                HEARTBEAT("after ui");
+            }
         }
         MIMITA_PERF_PROGRESS("DevOverlay");
         { MIMITA_PERF_SCOPE("DevOverlay");
@@ -446,6 +452,12 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
           PerfGpu::beginRegion("GPU::PostFX");
           PostFX::instance().render();
           PerfGpu::endRegion(); }
+        if (!uiHudSceneLayer()) {
+            MIMITA_PERF_PROGRESS("UI");
+            MIMITA_PERF_SCOPE("UI");
+            engineTickUI(engine, dt, worldPassRan, true);
+            HEARTBEAT("after ui");
+        }
     }
 
     HEARTBEAT("end frame");
@@ -570,3 +582,5 @@ void engineTick(Engine& engine)
     engineTickSimulate(engine, state);
     engineTickRenderFrame(engine, state);
 }
+
+

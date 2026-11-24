@@ -95,3 +95,4 @@ private:
     std::optional<bool> mHitFlinchOverride;
     std::optional<ModeBodycamOverride> mBodycamOverride;
 };
+

@@ -80,6 +80,47 @@ std::string chatUtcNow()
 constexpr uint32_t POST_GAP_RESYNC_TICKS = 30;
 // How long the post-gap resync stays armed after the gap is detected.
 constexpr uint64_t POST_GAP_RESYNC_WINDOW_MS = 1000;
+
+// Runtime run/build identity differences are diagnostic metadata, not a
+// connection security boundary. A locally hosted server or a restarted
+// dev-loop server can legitimately differ from the client's launch identity.
+// Warn once in the journal and continue; protocol/version validation already
+// decided whether the transport is compatible.
+void warnServerIdentityMismatch(MultiplayerContext& ctx, const char* stage,
+                                const char* expectedRunId,
+                                const char* expectedBuildId,
+                                const char* actualRunId,
+                                const char* actualBuildId)
+{
+    const bool runDiffers =
+        expectedRunId && *expectedRunId &&
+        std::string(expectedRunId) != (actualRunId ? actualRunId : "");
+    const bool buildDiffers =
+        expectedBuildId && *expectedBuildId &&
+        std::string(expectedBuildId) != (actualBuildId ? actualBuildId : "");
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.server-identity-warning", "", 
+        "runtime identity metadata differs; connection continues",
+        ctx.tick,
+        {{"stage", stage ? stage : ""},
+         {"expected_run_id", expectedRunId ? expectedRunId : ""},
+         {"actual_run_id", actualRunId ? actualRunId : ""},
+         {"expected_build_id", expectedBuildId ? expectedBuildId : ""},
+         {"actual_build_id", actualBuildId ? actualBuildId : ""},
+         {"run_differs", runDiffers},
+         {"build_differs", buildDiffers},
+         {"blocked", false}},
+        __FILE__, __LINE__, __FUNCTION__);
+    printf("[NET CONNECT] identity warning stage=%s expectedRun=%s "
+           "actualRun=%s expectedBuild=%s actualBuild=%s; continuing\n",
+           stage ? stage : "",
+           expectedRunId ? expectedRunId : "",
+           actualRunId ? actualRunId : "",
+           expectedBuildId ? expectedBuildId : "",
+           actualBuildId ? actualBuildId : "");
+}
+
 std::optional<bool> activeModeGoldPopupOverride()
 {
     const auto& match = CommunityMatchClient::instance();
@@ -178,17 +219,6 @@ void processMapConfigSnapshotPacket(
          {"geometry_signature", assembly.geometrySignature},
          {"bytes", assembly.totalBytes}});
     assembly = MultiplayerContext::MapConfigSnapshotAssembly{};
-}
-
-void rejectUnexpectedServer(MultiplayerContext& ctx)
-{
-    const bool ownedUdpSocket = ctx.sock != INVALID_SOCKET;
-    teardownPreviousSession(ctx, DisconnectPolicy::Rejected);
-    if (ownedUdpSocket)
-        netShutdown();
-    ctx.serverIdentityMismatch = true;
-    ctx.connectFailed = true;
-    ctx.connectionStatus = "Server identity mismatch";
 }
 
 void logClientSnapshotDiagnostics(MultiplayerContext& ctx,
@@ -1591,20 +1621,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                              sizeof(welcome->runtimeBuildId)) != 0;
             if (runMismatch || buildMismatch)
             {
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Network, StructuredLevel::Errors,
-                    "network.server-identity-mismatch", "", "server rejected by runtime identity", ctx.tick,
-                    {{"expected_run_id", expectedRunId ? expectedRunId : ""},
-                     {"actual_run_id", welcome->runtimeRunId},
-                     {"expected_build_id", expectedBuildId ? expectedBuildId : ""},
-                     {"actual_build_id", welcome->runtimeBuildId},
-                     {"server_tick", welcome->header.tick}},
-                    __FILE__, __LINE__, __FUNCTION__);
-                printf("[NET CONNECT] rejected server identity expectedRun=%s actualRun=%s expectedBuild=%s actualBuild=%s\n",
-                       expectedRunId ? expectedRunId : "", welcome->runtimeRunId,
-                       expectedBuildId ? expectedBuildId : "", welcome->runtimeBuildId);
-                rejectUnexpectedServer(ctx);
-                return;
+                warnServerIdentityMismatch(
+                    ctx, "welcome", expectedRunId, expectedBuildId,
+                    welcome->runtimeRunId, welcome->runtimeBuildId);
             }
             const uint32_t previousPlayerId = ctx.localPlayerId;
             const std::string previousRequiredMap = ctx.requiredMapId;
@@ -1700,16 +1719,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 (expectedBuildId && *expectedBuildId && std::strncmp(expectedBuildId, accept->runtimeBuildId, sizeof(accept->runtimeBuildId)) != 0);
             if (identityMismatch)
             {
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Network, StructuredLevel::Errors,
-                    "network.server-identity-mismatch", "", "join accepted by unexpected runtime", ctx.tick,
-                    {{"expected_run_id", expectedRunId ? expectedRunId : ""},
-                     {"actual_run_id", accept->runtimeRunId},
-                     {"expected_build_id", expectedBuildId ? expectedBuildId : ""},
-                     {"actual_build_id", accept->runtimeBuildId}},
-                    __FILE__, __LINE__, __FUNCTION__);
-                rejectUnexpectedServer(ctx);
-                return;
+                warnServerIdentityMismatch(
+                    ctx, "join_accept", expectedRunId, expectedBuildId,
+                    accept->runtimeRunId, accept->runtimeBuildId);
             }
             const uint32_t previousPlayerId = ctx.localPlayerId;
             const std::string previousRequiredMap = ctx.requiredMapId;
@@ -1840,16 +1852,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 (expectedBuildId && *expectedBuildId && std::strncmp(expectedBuildId, accept->runtimeBuildId, sizeof(accept->runtimeBuildId)) != 0);
             if (identityMismatch)
             {
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Network, StructuredLevel::Errors,
-                    "network.server-identity-mismatch", "", "reconnected to unexpected runtime", ctx.tick,
-                    {{"expected_run_id", expectedRunId ? expectedRunId : ""},
-                     {"actual_run_id", accept->runtimeRunId},
-                     {"expected_build_id", expectedBuildId ? expectedBuildId : ""},
-                     {"actual_build_id", accept->runtimeBuildId}},
-                    __FILE__, __LINE__, __FUNCTION__);
-                rejectUnexpectedServer(ctx);
-                return;
+                warnServerIdentityMismatch(
+                    ctx, "reconnect_accept", expectedRunId, expectedBuildId,
+                    accept->runtimeRunId, accept->runtimeBuildId);
             }
             ctx.localPlayerId = accept->assignedPlayerId;
             // Resume transport sends so the server can keep producing

@@ -14,9 +14,13 @@
     "spreadMode": 0.0,
     "spreadBlend": 0.0,
     "fixedPatternCycle": 100.0,
-    "reserveAmmo": 54.0,
+    "reserveAmmo": 9999.0,
     "splashRadius": 0.0,
-    "rocketDirectDamage": 55.0,
+    "rocketDirectDamage": 65.0,
+    "distanceFalloffStart": 30.0,
+    "minDamageFraction": 0.6923,
+    "pointBlankHeadDamage": 1800.0,
+    "pointBlankDistanceMeters": 1.5,
     "splashExponent": 2.0,
     "knockbackStrength": 0.0,
     "selfKnockbackMultiplier": 0.0,
@@ -67,7 +71,7 @@
     "impactStage3Ticks": 20.0,
     "upBias": 0.0
   },
-  "damage": 55.0,
+  "damage": 65.0,
   "damage_animation_mode": null,
   "damage_scale": null,
   "enemy_impulse_multiplier": 0.0,
@@ -105,8 +109,27 @@
   "recoil": 42.0,
   "recoil_definition": null,
   "reload_time": 1.5,
-  "render": null,
-  "reserve_ammo": 54,
+  "render": {
+    "explosion": {
+      "markTexture": "assets/textureshq/holesbullet4.png",
+      "shockwaveModel": "assets/objects/things/effects-objects/shockwave-v1.glb",
+      "shockwaveTexture": "assets/textureshq/rocket-shockwave-v1.png",
+      "shockwaveScale": 0.5,
+      "shockwaveLifetimeSeconds": 0.1,
+      "shockwaveStartScale": 0.5,
+      "shockwaveEndScale": 2.0,
+      "shockwaveStartAlpha": 0.5,
+      "shockwaveEndAlpha": 0.0,
+      "shockwaveStartRotationDeg": 0.0,
+      "shockwaveEndRotationDeg": 360.0,
+      "shockwaveRandomRotationMinDeg": 0.0,
+      "shockwaveRandomRotationMaxDeg": 0.0,
+      "shockwaveStartColor": [1.0, 1.0, 1.0],
+      "shockwaveEndColor": [1.0, 1.0, 1.0],
+      "shockwaveModelNormalize": true
+    }
+  },
+  "reserve_ammo": 9999,
   "self_impulse_multiplier": 0.01,
   "shooter_knockback": 0.0,
   "shooter_knockback_vertical": 0.0,
@@ -151,3 +174,9 @@
   },
   "world_impact_profile": "bullet_pistol"
 }
+
+
+
+
+
+

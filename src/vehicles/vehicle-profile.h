@@ -13,30 +13,111 @@
 #include <unordered_map>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 struct VehicleBoostProfile {
     float max = 100.0f;
     float fullDrainTicks = 300.0f;
     float drainPerTick = 0.3333333f;
-    float force = 42000.0f;
-    float airForce = 42000.0f;
+    // Acceleration style (SI). Rocket League applies force, not impulse.
+    float groundAccelMps2 = 9.91666f;
+    float airAccelMps2 = 10.58333f;
+    float minBoostSeconds = 0.1f;
+    float force = 0.0f;
+    float airForce = 0.0f;
 };
 
+// Rocket League jump model: one instantaneous velocity change, then a sustained
+// acceleration while the button is held, minus a short surface-adhesion term.
+// Jump height is an output of gravity and these values, never a target.
 struct VehicleJumpProfile {
-    float impulse = 52000.0f;
-    float heldForce = 21000.0f;
-    float heldWindowSeconds = 0.2f;
-    float minimumHoldSeconds = 0.025f;
-    float doubleJumpImpulse = 52000.0f;
-    float secondJumpWindowSeconds = 1.25f;
+    float immediateDeltaVelMps = 2.9167f;   // 291.667 uu/s
+    float sustainedAccelMps2 = 14.5833f;    // 1460 uu/s^2
+    float sustainedWindowSeconds = 0.2f;    // JUMP_MAX_TIME
+    float minSustainSeconds = 0.025f;       // JUMP_MIN_TIME
+    float preMinAccelScale = 0.62f;         // pre-minimum acceleration scale
+    float stickyAccelMps2 = 3.25f;          // 325 uu/s^2
+    int stickyTicks = 3;
+    float doubleJumpDeltaVelMps = 2.9167f;  // 291.667 uu/s
+    float doubleJumpWindowSeconds = 1.25f;  // DOUBLEJUMP_MAX_DELAY
+    // Dodge activates from the magnitude of the rotational inputs.
+    float dodgeDeadzone = 0.1f;
 };
 
-struct VehicleAirControlProfile {
-    float pitchTorque = 130.0f;
-    float rollTorque = 400.0f;
-    float pitchDamping = 30.0f;
-    float rollDamping = 50.0f;
-    bool yawEnabled = false;
+// Finite dodge program. Direction comes from (-pitch, yaw + roll). When the
+// horizontal inputs cancel, direction and torque are zero but the dodge is
+// still consumed, which is the Rocket League stall.
+struct VehicleFlipProfile {
+    float angularAccelPitch = 21.5f;
+    float angularAccelRoll = 25.0f;
+    float torqueSeconds = 0.65f;
+    float pitchLockSeconds = 1.0f;
+    float initialDeltaVelMps = 5.0f;
+    float forwardMaxSpeedScale = 1.0f;
+    float sideMaxSpeedScale = 1.9f;
+    float backwardMaxSpeedScale = 2.5f;
+    float backwardScaleX = 16.0f / 15.0f;
+    float zDampFactor = 0.35f;
+    float zDampStartSeconds = 0.15f;
+    float zDampEndSeconds = 0.21f;
+    float directionCancelThreshold = 0.1f;
 };
+
+// Per-axis angular acceleration and damping. There is no shared budget: each
+// axis obeys alpha = A*u - D*w, and only the combined |w| is clamped.
+struct VehicleAirControlProfile {
+    float pitchAccel = 12.46f;
+    float yawAccel = 9.11f;
+    float rollAccel = 38.34f;
+    float pitchDamping = 2.88f;
+    float yawDamping = 1.92f;
+    float rollDamping = 4.80f;
+    float maxAngularVelocity = 5.5f;
+    bool inputScaledDamping = true;
+    float throttleAirAccelMps2 = 0.6667f;
+};
+
+struct VehicleGroundProfile {
+    float maxSpeedMps = 23.0f;
+    float supersonicMps = 22.0f;
+    float maxUnboostedMps = 14.1f;
+    float coastingDecelMps2 = 5.25f;
+    float brakingDecelMps2 = 35.0f;
+    float throttleDeadzone = 0.001f;
+    float powerslideRisePerSecond = 5.0f;
+    float powerslideFallPerSecond = 2.0f;
+    float powerslideLatFrictionScale = 0.1f;
+    float powerslideLongFrictionMin = 0.5f;
+    float powerslideLongFrictionMax = 0.9f;
+};
+
+// The one deliberate Rocket League gameplay impulse: a non-conserving velocity
+// kick added to the ball on the first tick of a car contact. Configurable and
+// switchable so pure physical simulation remains available.
+struct VehicleBallHitProfile {
+    bool extraImpulseEnabled = true;
+    float extraImpulseScale = 1.0f;
+    float extraImpulseZScale = 0.35f;
+    float extraImpulseForwardScale = 0.65f;
+    float extraImpulseMaxDeltaVelMps = 46.0f;
+    std::vector<glm::vec2> extraImpulseCurve{
+        {0.0f, 0.65f}, {5.0f, 0.65f}, {23.0f, 0.55f}, {46.0f, 0.30f}};
+    float carBallFriction = 2.0f;
+    float carBallRestitution = 0.0f;
+};
+
+// Surface behaviour that keeps cars on their wheels without a scripted pose.
+struct VehicleSettleProfile {
+    float stickyForceGravityScale = 0.5f;
+    float autoFlipImpulseMps = 2.0f;
+    float autoFlipAngularAccel = 4.8f;
+    float autoFlipSeconds = 0.4f;
+    float autoFlipNormalZThreshold = 0.7071f;
+    float autoFlipRollThresholdRad = 2.8f;
+    float autoRollForceMps2 = 1.0f;
+    float autoRollAngularAccel = 7.68f;
+};
+
 
 struct VehicleSteeringProfile {
     float maxAngleDeg = 35.0f;
@@ -62,19 +143,32 @@ struct VehicleBallContactProfile {
 struct VehicleProfile {
     std::string id;
     std::string description;
+    // Provenance for the whole profile: which reference the numbers came from.
+    std::string source = "rocketsim";
     bool automatic = true;
     bool engineAutoStart = true;
     bool arcade = true;
+    // SI world constants used by the profile's derived values.
+    float gravityMps2 = 6.5f;
     VehicleBoostProfile boost;
     VehicleJumpProfile jump;
+    VehicleFlipProfile flip;
     VehicleAirControlProfile airControl;
+    VehicleGroundProfile ground;
     VehicleSteeringProfile steering;
     VehiclePowerslideProfile powerslide;
     VehicleWallProfile wall;
     VehicleBallContactProfile ballContact;
+    VehicleBallHitProfile ballHit;
+    VehicleSettleProfile settle;
     // Logical action -> input action name (for example "boost" -> "mouse_left").
     std::unordered_map<std::string, std::string> bindings;
 };
+
+// Sample a profile piecewise-linear curve (input -> output), clamped at the
+// ends. Used for the Rocket League extra-impulse scale.
+float vehicleProfileCurveSample(const std::vector<glm::vec2>& curve, float input,
+                                float fallback);
 
 class VehicleProfileRegistry {
 public:

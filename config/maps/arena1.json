@@ -1,380 +1,786 @@
 {
-  "arena": {
-    "ball": {
-      "friction": 0.35,
-      "linearDamping": 0.03,
-      "massKg": 30.0,
-      "maxSpeed": 60.0,
-      "radius": 0.9125,
-      "restitution": 0.6,
-      "spawn": [
-        0.0,
-        0.0,
-        2.0
-      ],
-      "visualRadius": 0.95
-    },
-    "goals": [
-      {
-        "center": [
-          -30.0,
-          0.0,
-          3.0
-        ],
-        "enabled": true,
-        "facing": [
-          1.0,
-          0.0,
-          0.0
-        ],
-        "halfExtents": [
-          1.0,
-          6.0,
-          3.0
-        ],
-        "id": "blue_goal",
-        "team": "blue"
-      },
-      {
-        "center": [
-          30.0,
-          0.0,
-          3.0
-        ],
-        "enabled": true,
-        "facing": [
-          -1.0,
-          0.0,
-          0.0
-        ],
-        "halfExtents": [
-          1.0,
-          6.0,
-          3.0
-        ],
-        "id": "orange_goal",
-        "team": "orange"
-      }
+ "arena": {
+  "ball": {
+   "friction": 0.35,
+   "linearDamping": 0.03,
+   "massKg": 30.0,
+   "maxSpeed": 0.0,
+   "radius": 0.9125,
+   "restitution": 0.6,
+   "spawn": [
+    0.0,
+    0.0,
+    0.9125
+   ],
+   "visualRadius": 0.95,
+   "gravityMps2": 6.5
+  },
+  "goals": [
+   {
+    "id": "blue_goal",
+    "team": "blue",
+    "enabled": true,
+    "center": [
+     -51.2,
+     0.0,
+     3.213875
     ],
-    "kickoffs": [
-      {
-        "id": "blue_kickoff_1",
-        "position": [
-          -20.0,
-          0.0,
-          1.0
-        ],
-        "team": "blue",
-        "yaw": 0.0
-      },
-      {
-        "id": "orange_kickoff_1",
-        "position": [
-          20.0,
-          0.0,
-          1.0
-        ],
-        "team": "orange",
-        "yaw": 180.0
-      }
+    "facing": [
+     1.0,
+     0.0,
+     0.0
+    ],
+    "halfExtents": [
+     1.0,
+     8.92755,
+     3.213875
     ]
-  },
-  "blocks": [
-    {
-      "enabled": true,
-      "id": "wall_left_a",
-      "material": "",
-      "position": [
-        -30.0,
-        -13.0,
-        4.0
-      ],
-      "rotationEuler": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "shape": "box",
-      "size": [
-        1.0,
-        14.0,
-        8.0
-      ],
-      "tags": [
-        "arena",
-        "wall"
-      ]
-    },
-    {
-      "enabled": true,
-      "id": "wall_left_b",
-      "material": "",
-      "position": [
-        -30.0,
-        13.0,
-        4.0
-      ],
-      "rotationEuler": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "shape": "box",
-      "size": [
-        1.0,
-        14.0,
-        8.0
-      ],
-      "tags": [
-        "arena",
-        "wall"
-      ]
-    },
-    {
-      "enabled": true,
-      "id": "wall_right_a",
-      "material": "",
-      "position": [
-        30.0,
-        -13.0,
-        4.0
-      ],
-      "rotationEuler": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "shape": "box",
-      "size": [
-        1.0,
-        14.0,
-        8.0
-      ],
-      "tags": [
-        "arena",
-        "wall"
-      ]
-    },
-    {
-      "enabled": true,
-      "id": "wall_right_b",
-      "material": "",
-      "position": [
-        30.0,
-        13.0,
-        4.0
-      ],
-      "rotationEuler": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "shape": "box",
-      "size": [
-        1.0,
-        14.0,
-        8.0
-      ],
-      "tags": [
-        "arena",
-        "wall"
-      ]
-    },
-    {
-      "enabled": true,
-      "id": "wall_side_left",
-      "material": "",
-      "position": [
-        0.0,
-        -20.5,
-        4.0
-      ],
-      "rotationEuler": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "shape": "box",
-      "size": [
-        60.0,
-        1.0,
-        8.0
-      ],
-      "tags": [
-        "arena",
-        "wall"
-      ]
-    },
-    {
-      "enabled": true,
-      "id": "wall_side_right",
-      "material": "",
-      "position": [
-        0.0,
-        20.5,
-        4.0
-      ],
-      "rotationEuler": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "shape": "box",
-      "size": [
-        60.0,
-        1.0,
-        8.0
-      ],
-      "tags": [
-        "arena",
-        "wall"
-      ]
-    },
-    {
-      "enabled": true,
-      "id": "goal_back_left",
-      "material": "",
-      "position": [
-        -34.0,
-        0.0,
-        3.0
-      ],
-      "rotationEuler": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "shape": "box",
-      "size": [
-        1.0,
-        12.0,
-        6.0
-      ],
-      "tags": [
-        "arena",
-        "goal"
-      ]
-    },
-    {
-      "enabled": true,
-      "id": "goal_back_right",
-      "material": "",
-      "position": [
-        34.0,
-        0.0,
-        3.0
-      ],
-      "rotationEuler": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "shape": "box",
-      "size": [
-        1.0,
-        12.0,
-        6.0
-      ],
-      "tags": [
-        "arena",
-        "goal"
-      ]
-    }
-  ],
-  "bomb": {
-    "defuse_seconds": 5.0,
-    "explosion_seconds": 40.0,
-    "plant_seconds": 3.0
-  },
-  "bomb_sites": [],
-  "boost_pads": [
-    {
-      "enabled": true,
-      "id": "pad_big_center",
-      "kind": "big",
-      "position": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "radius": 2.0,
-      "rechargeTicks": 600
-    },
-    {
-      "enabled": true,
-      "id": "pad_small_left",
-      "kind": "small",
-      "position": [
-        -12.0,
-        -10.0,
-        0.0
-      ],
-      "radius": 1.0,
-      "rechargeTicks": 240
-    },
-    {
-      "enabled": true,
-      "id": "pad_small_right",
-      "kind": "small",
-      "position": [
-        12.0,
-        10.0,
-        0.0
-      ],
-      "radius": 1.0,
-      "rechargeTicks": 240
-    }
-  ],
-  "entities": [],
-  "glb_objects": [],
-  "payload": {
-    "cart_origin": {
-      "position": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "yaw": 0.0
-    },
-    "cart_size": [
-      2.0,
-      1.5,
-      1.0
+   },
+   {
+    "id": "orange_goal",
+    "team": "orange",
+    "enabled": true,
+    "center": [
+     51.2,
+     0.0,
+     3.213875
     ],
-    "facing_mode": "fixed",
-    "interaction_box": {
-      "offset": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "rotationEuler": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "size": [
-        3.0,
-        2.25,
-        1.5
-      ]
-    },
-    "route": []
-  },
-  "vehicles": [
-    {
-      "id": "blue_car",
-      "template": "car_sedan",
-      "position": [-20.0, 0.0, 1.0],
-      "yaw": 0.0,
-      "enabled": true
-    },
-    {
-      "id": "orange_car",
-      "template": "car_sedan",
-      "position": [20.0, 0.0, 1.0],
-      "yaw": 180.0,
-      "enabled": true
-    }
+    "facing": [
+     -1.0,
+     0.0,
+     0.0
+    ],
+    "halfExtents": [
+     1.0,
+     8.92755,
+     3.213875
+    ]
+   }
+  ],
+  "kickoffs": [
+   {
+    "id": "blue_kickoff_1",
+    "team": "blue",
+    "position": [
+     -40.0,
+     0.0,
+     0.2
+    ],
+    "yaw": 0.0
+   },
+   {
+    "id": "orange_kickoff_1",
+    "team": "orange",
+    "position": [
+     40.0,
+     0.0,
+     0.2
+    ],
+    "yaw": 180.0
+   }
   ]
+ },
+ "blocks": [
+  {
+   "enabled": true,
+   "id": "wall_side_left",
+   "material": "",
+   "position": [
+    0.0,
+    -40.96,
+    10.24
+   ],
+   "rotationEuler": [
+    0,
+    0,
+    0
+   ],
+   "shape": "box",
+   "size": [
+    102.4,
+    1.0,
+    20.48
+   ],
+   "tags": [
+    "arena",
+    "wall"
+   ]
+  },
+  {
+   "enabled": true,
+   "id": "wall_side_right",
+   "material": "",
+   "position": [
+    0.0,
+    40.96,
+    10.24
+   ],
+   "rotationEuler": [
+    0,
+    0,
+    0
+   ],
+   "shape": "box",
+   "size": [
+    102.4,
+    1.0,
+    20.48
+   ],
+   "tags": [
+    "arena",
+    "wall"
+   ]
+  },
+  {
+   "enabled": true,
+   "id": "wall_back_left_a",
+   "material": "",
+   "position": [
+    -51.2,
+    -24.943775,
+    10.24
+   ],
+   "rotationEuler": [
+    0,
+    0,
+    0
+   ],
+   "shape": "box",
+   "size": [
+    1.0,
+    32.03245,
+    20.48
+   ],
+   "tags": [
+    "arena",
+    "wall"
+   ]
+  },
+  {
+   "enabled": true,
+   "id": "wall_back_left_b",
+   "material": "",
+   "position": [
+    -51.2,
+    24.943775,
+    10.24
+   ],
+   "rotationEuler": [
+    0,
+    0,
+    0
+   ],
+   "shape": "box",
+   "size": [
+    1.0,
+    32.03245,
+    20.48
+   ],
+   "tags": [
+    "arena",
+    "wall"
+   ]
+  },
+  {
+   "enabled": true,
+   "id": "goal_header_left",
+   "material": "",
+   "position": [
+    -51.2,
+    0.0,
+    13.453875
+   ],
+   "rotationEuler": [
+    0,
+    0,
+    0
+   ],
+   "shape": "box",
+   "size": [
+    1.0,
+    17.8551,
+    14.05225
+   ],
+   "tags": [
+    "arena",
+    "wall"
+   ]
+  },
+  {
+   "enabled": true,
+   "id": "wall_back_right_a",
+   "material": "",
+   "position": [
+    51.2,
+    -24.943775,
+    10.24
+   ],
+   "rotationEuler": [
+    0,
+    0,
+    0
+   ],
+   "shape": "box",
+   "size": [
+    1.0,
+    32.03245,
+    20.48
+   ],
+   "tags": [
+    "arena",
+    "wall"
+   ]
+  },
+  {
+   "enabled": true,
+   "id": "wall_back_right_b",
+   "material": "",
+   "position": [
+    51.2,
+    24.943775,
+    10.24
+   ],
+   "rotationEuler": [
+    0,
+    0,
+    0
+   ],
+   "shape": "box",
+   "size": [
+    1.0,
+    32.03245,
+    20.48
+   ],
+   "tags": [
+    "arena",
+    "wall"
+   ]
+  },
+  {
+   "enabled": true,
+   "id": "goal_header_right",
+   "material": "",
+   "position": [
+    51.2,
+    0.0,
+    13.453875
+   ],
+   "rotationEuler": [
+    0,
+    0,
+    0
+   ],
+   "shape": "box",
+   "size": [
+    1.0,
+    17.8551,
+    14.05225
+   ],
+   "tags": [
+    "arena",
+    "wall"
+   ]
+  },
+  {
+   "enabled": true,
+   "id": "ceiling",
+   "material": "",
+   "position": [
+    0.0,
+    0.0,
+    20.48
+   ],
+   "rotationEuler": [
+    0,
+    0,
+    0
+   ],
+   "shape": "box",
+   "size": [
+    102.4,
+    81.92,
+    1.0
+   ],
+   "tags": [
+    "arena",
+    "ceiling"
+   ]
+  }
+ ],
+ "bomb": {
+  "defuse_seconds": 5.0,
+  "explosion_seconds": 40.0,
+  "plant_seconds": 3.0
+ },
+ "bomb_sites": [],
+ "boost_pads": [
+  {
+   "enabled": true,
+   "id": "pad_big_0",
+   "kind": "big",
+   "position": [
+    0.0,
+    -35.84,
+    0.08
+   ],
+   "radius": 2.08,
+   "rechargeTicks": 600
+  },
+  {
+   "enabled": true,
+   "id": "pad_big_1",
+   "kind": "big",
+   "position": [
+    0.0,
+    35.84,
+    0.08
+   ],
+   "radius": 2.08,
+   "rechargeTicks": 600
+  },
+  {
+   "enabled": true,
+   "id": "pad_big_2",
+   "kind": "big",
+   "position": [
+    40.96,
+    -30.72,
+    0.08
+   ],
+   "radius": 2.08,
+   "rechargeTicks": 600
+  },
+  {
+   "enabled": true,
+   "id": "pad_big_3",
+   "kind": "big",
+   "position": [
+    40.96,
+    30.72,
+    0.08
+   ],
+   "radius": 2.08,
+   "rechargeTicks": 600
+  },
+  {
+   "enabled": true,
+   "id": "pad_big_4",
+   "kind": "big",
+   "position": [
+    -40.96,
+    -30.72,
+    0.08
+   ],
+   "radius": 2.08,
+   "rechargeTicks": 600
+  },
+  {
+   "enabled": true,
+   "id": "pad_big_5",
+   "kind": "big",
+   "position": [
+    -40.96,
+    30.72,
+    0.08
+   ],
+   "radius": 2.08,
+   "rechargeTicks": 600
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_0",
+   "kind": "small",
+   "position": [
+    -42.4,
+    0.0,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_1",
+   "kind": "small",
+   "position": [
+    -41.84,
+    -17.92,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_2",
+   "kind": "small",
+   "position": [
+    -41.84,
+    17.92,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_3",
+   "kind": "small",
+   "position": [
+    -33.08,
+    -9.4,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_4",
+   "kind": "small",
+   "position": [
+    -33.08,
+    9.4,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_5",
+   "kind": "small",
+   "position": [
+    -28.16,
+    0.0,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_6",
+   "kind": "small",
+   "position": [
+    -24.84,
+    -35.84,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_7",
+   "kind": "small",
+   "position": [
+    -24.84,
+    35.84,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_8",
+   "kind": "small",
+   "position": [
+    -23.02,
+    -17.88,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_9",
+   "kind": "small",
+   "position": [
+    -23.02,
+    17.88,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_10",
+   "kind": "small",
+   "position": [
+    -10.36,
+    -20.48,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_11",
+   "kind": "small",
+   "position": [
+    -10.36,
+    20.48,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_12",
+   "kind": "small",
+   "position": [
+    -10.24,
+    0.0,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_13",
+   "kind": "small",
+   "position": [
+    0.0,
+    -10.24,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_14",
+   "kind": "small",
+   "position": [
+    0.0,
+    10.24,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_15",
+   "kind": "small",
+   "position": [
+    10.24,
+    0.0,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_16",
+   "kind": "small",
+   "position": [
+    10.36,
+    -20.48,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_17",
+   "kind": "small",
+   "position": [
+    10.36,
+    20.48,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_18",
+   "kind": "small",
+   "position": [
+    23.02,
+    -17.88,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_19",
+   "kind": "small",
+   "position": [
+    23.02,
+    17.88,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_20",
+   "kind": "small",
+   "position": [
+    24.84,
+    -35.84,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_21",
+   "kind": "small",
+   "position": [
+    24.84,
+    35.84,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_22",
+   "kind": "small",
+   "position": [
+    28.16,
+    0.0,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_23",
+   "kind": "small",
+   "position": [
+    33.08,
+    -9.4,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_24",
+   "kind": "small",
+   "position": [
+    33.08,
+    9.4,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_25",
+   "kind": "small",
+   "position": [
+    41.84,
+    -17.92,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_26",
+   "kind": "small",
+   "position": [
+    41.84,
+    17.92,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_27",
+   "kind": "small",
+   "position": [
+    42.4,
+    0.0,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  }
+ ],
+ "entities": [],
+ "glb_objects": [],
+ "payload": {
+  "cart_origin": {
+   "position": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "yaw": 0.0
+  },
+  "cart_size": [
+   2.0,
+   1.5,
+   1.0
+  ],
+  "facing_mode": "fixed",
+  "interaction_box": {
+   "offset": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "size": [
+    3.0,
+    2.25,
+    1.5
+   ]
+  },
+  "route": []
+ },
+ "vehicles": [
+  {
+   "id": "blue_car",
+   "template": "octane_rl",
+   "position": [
+    -40.0,
+    0.0,
+    0.2
+   ],
+   "yaw": 0.0,
+   "enabled": true
+  },
+  {
+   "id": "orange_car",
+   "template": "octane_rl",
+   "position": [
+    40.0,
+    0.0,
+    0.2
+   ],
+   "yaw": 180.0,
+   "enabled": true
+  }
+ ]
 }

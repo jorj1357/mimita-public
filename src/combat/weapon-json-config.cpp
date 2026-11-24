@@ -561,6 +561,9 @@ void applyWeaponRenderJson(WeaponDefinition& def, const json& root)
                 def.explosionShockwaveStartAlpha = explosion["shockwaveStartAlpha"].get<float>();
             if (explosion.contains("shockwaveEndAlpha") && explosion["shockwaveEndAlpha"].is_number())
                 def.explosionShockwaveEndAlpha = explosion["shockwaveEndAlpha"].get<float>();
+            weaponJsonVec3(explosion, "shockwaveStartColor", def.explosionShockwaveStartColor);
+            weaponJsonVec3(explosion, "shockwaveEndColor", def.explosionShockwaveEndColor);
+            weaponJsonBool(explosion, "shockwaveModelNormalize", def.explosionShockwaveNormalize);
             if (explosion.contains("shockwaveRandomRotationMinDeg") && explosion["shockwaveRandomRotationMinDeg"].is_number())
                 def.explosionShockwaveRandomRotationMinDeg = explosion["shockwaveRandomRotationMinDeg"].get<float>();
             if (explosion.contains("shockwaveRandomRotationMaxDeg") && explosion["shockwaveRandomRotationMaxDeg"].is_number())

@@ -118,6 +118,15 @@
     "fatal_window": true
   },
   "presentation": {
+    "hud": {
+      "enabled": true,
+      "layer": "normal",
+      "show_chat": true,
+      "show_hotbar": true,
+      "show_crosshair": true,
+      "show_status": true,
+      "ca_strength": 0.18
+    },
     "bodycam": {
       "enabled": true,
       "orientation_mode": "head_world",
@@ -126,8 +135,8 @@
         0.0,
         0.0
       ],
-      "position_response_seconds": 0.12,
-      "rotation_response_seconds": 0.1,
+      "position_response_seconds": 0.18,
+      "rotation_response_seconds": 0.16,
       "head_response_seconds": 0.10,
       "torso_response_seconds": 0.22,
       "arm_response_seconds": 0.14,
@@ -137,7 +146,8 @@
       "settle_camera_deadband_degrees": 0.35,
       "settle_camera_position_meters": 0.005,
       "settle_camera_hold_ticks": 6,
-      "camera_sway_scale": 1.0,
+      "camera_sway_scale": 2.0,
+      "camera_sway_enabled": true,
       "lens": {
         "chromatic_aberration": 0.22,
         "vignette": 0.34,
@@ -261,7 +271,7 @@
       1.0
     ]
   },
-  "camera_fov": 70.0,
+  "camera_fov": 100.0,
   "force_first_person": true,
   "hide_healthbars": false,
   "ragdoll_enabled": true,
@@ -340,3 +350,4 @@
     "spawn_policy": "keep_per_npc"
   }
 }
+

@@ -120,11 +120,13 @@ void ensureProgram()
         "layout(location=3) in float aTextureMode;\n"
         "uniform vec2 uScreen;\n"
         "out vec2 vUV;\n"
+        "out vec2 vScreenPos;\n"
         "out vec4 vColor;\n"
         "flat out int vTextureMode;\n"
         "void main(){\n"
         "  vec2 ndc = vec2((aPos.x/uScreen.x)*2.0-1.0, 1.0-(aPos.y/uScreen.y)*2.0);\n"
         "  vUV = aUV;\n"
+        "  vScreenPos = aPos / uScreen;\n"
         "  vColor = aColor;\n"
         "  vTextureMode = int(aTextureMode + 0.5);\n"
         "  gl_Position = vec4(ndc, 0.0, 1.0);\n"
@@ -133,15 +135,24 @@ void ensureProgram()
         "#version 330 core\n"
         "out vec4 FragColor;\n"
         "in vec2 vUV;\n"
+        "in vec2 vScreenPos;\n"
         "in vec4 vColor;\n"
         "flat in int vTextureMode;\n"
         "uniform sampler2D uFontPage0;\n"
         "uniform sampler2D uFontPage1;\n"
         "uniform sampler2D uImageTex;\n"
+        "uniform float uCaStrength;\n"
+        "vec4 uiSampleCa(sampler2D tex, vec2 uv){\n"
+        "  vec2 off = (vScreenPos - vec2(0.5)) * uCaStrength * 0.01;\n"
+        "  vec4 r = texture(tex, uv + off);\n"
+        "  vec4 g = texture(tex, uv);\n"
+        "  vec4 b = texture(tex, uv - off);\n"
+        "  return vec4(r.r, g.g, b.b, g.a);\n"
+        "}\n"
         "void main(){\n"
-        "  if (vTextureMode == 3) { FragColor = texture(uImageTex, vUV) * vColor; return; }\n"
-        "  if (vTextureMode == 2) { FragColor = texture(uFontPage1, vUV) * vColor; return; }\n"
-        "  if (vTextureMode == 1) { FragColor = texture(uFontPage0, vUV) * vColor; return; }\n"
+        "  if (vTextureMode == 3) { FragColor = uiSampleCa(uImageTex, vUV) * vColor; return; }\n"
+        "  if (vTextureMode == 2) { FragColor = uiSampleCa(uFontPage1, vUV) * vColor; return; }\n"
+        "  if (vTextureMode == 1) { FragColor = uiSampleCa(uFontPage0, vUV) * vColor; return; }\n"
         "  FragColor = vColor;\n"
         "}\n";
 
@@ -169,6 +180,7 @@ void ensureProgram()
     }
 
     gScreenLoc = r::getUniformLocation(gProgram, "uScreen");
+    gCaStrengthLoc = r::getUniformLocation(gProgram, "uCaStrength");
     gColorLoc = -1;
     gUseTexLoc = -1;
     gTexLoc = -1;
@@ -212,6 +224,7 @@ void drawTexturedQuad(const float* verts, int vertCount, std::uint32_t tex, glm:
     r::enable(r::Capability::Blend);
     r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
     r::uniform2f(gScreenLoc, (float)gFbW, (float)gFbH);
+    r::uniform1f(gCaStrengthLoc, uiHudCaStrength());
     r::uniform1i(gImageTexLoc, 0);
     r::activeTexture(0);
     r::bindTexture(r::TextureTarget::Texture2D, tex);
@@ -235,6 +248,7 @@ void uiFlushBatch()
     ensureProgram();
     r::useProgram(gProgram);
     r::uniform2f(gScreenLoc, (float)gFbW, (float)gFbH);
+    r::uniform1f(gCaStrengthLoc, uiHudCaStrength());
     static std::int32_t fontPage0Loc = -1;
     static std::int32_t fontPage1Loc = -1;
     if (fontPage0Loc < 0) {

@@ -324,7 +324,11 @@ struct ArenaBallConfig
     float restitution = 0.6f;
     float friction = 0.35f;
     float linearDamping = 0.03f;
-    float maxSpeed = 60.0f;
+    // Local gravity for the ball. Rocket League uses 6.5 m/s^2; the rest of
+    // MiMITA's object gravity may differ, so the spawn converts this to a
+    // per-entity gravity scale instead of changing global physics.
+    float gravityMps2 = 6.5f;
+    float maxSpeed = 0.0f;
 };
 
 struct ArenaGoalConfig

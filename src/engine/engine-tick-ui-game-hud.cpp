@@ -186,7 +186,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         const bool currentWeaponHasCrosshair = replayViewedActor
             ? replayViewedActor->weaponName != "nothing"
             : (currentDef && currentDef->id != "nothing");
-        if (currentWeaponHasCrosshair) {
+        if (currentWeaponHasCrosshair && uiHudShowCrosshair()) {
             updateCrosshairDynamic(dt, glm::length(glm::vec2(vel)), grounded, didDash, shooting);
             float cx = uiScreenW() * 0.5f, cy = uiScreenH() * 0.5f;
             if (GameplayConfig::instance().aimMode() == GameplayAimMode::Physical &&
@@ -500,7 +500,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         glm::vec4 wepColEq = readTextCol("hotbarWeaponColorEquipped", {1.0f,0.85f,0.35f,1});
 
         const int slotCount = static_cast<int>(cachedEntries.size());
-        if (slotCount > 0) {
+        if (uiHudShowHotbar() && slotCount > 0) {
             float totalWidth = slotSize * slotCount + gap * (slotCount - 1);
             float x = uiScreenW() * 0.5f - totalWidth * 0.5f;
             float y = uiScreenH() - yOffset;
@@ -662,7 +662,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                         "[CHAT TRACE 3 BEFORE HUD GATE] mimita::game::chatHistoryPtr()=%p chatOpen=%d\n",
                         (void*)mimita::game::chatHistoryPtr(),
                         (int)gChatWindowState.open);
-    if (mimita::game::chatHistoryPtr() && (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showChat()))
+    if (uiHudShowChat() && mimita::game::chatHistoryPtr() && (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showChat()))
     {
         renderChatWindow(gChatWindowState, engine.window(), gChatHistory,
                          gChatUiTickClock, uiScreenW(), uiScreenH());
@@ -681,3 +681,6 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     { MIMITA_PERF_SCOPE("HUD::Interaction");
       InteractionSystem::instance().draw(camera); }
 }
+
+
+

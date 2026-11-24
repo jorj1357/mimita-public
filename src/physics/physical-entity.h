@@ -240,6 +240,22 @@ glm::vec3 physicalEntityInverseInertiaWorld(const PhysicalEntity& entity,
 void applyPhysicalEntityAngularImpulse(PhysicalEntity& entity,
                                        const glm::vec3& angularImpulse);
 
+// Rocket League's deliberate non-conserving car->ball impulse. The vehicle
+// profile owns these values; the physics contact owner consumes them. Pure
+// physical simulation is available by setting `enabled = false`.
+struct PhysicalEntityBallHitParams {
+    bool enabled = true;
+    float scale = 1.0f;
+    float zScale = 0.35f;
+    float forwardScale = 0.65f;
+    float maxDeltaVelMps = 46.0f;
+    // Piecewise-linear (relative speed m/s, factor), sorted by speed.
+    glm::vec2 curve[4] = {{0.0f, 0.65f}, {5.0f, 0.65f},
+                          {23.0f, 0.55f}, {46.0f, 0.30f}};
+    int curvePoints = 4;
+};
+void setPhysicalEntityBallHitParams(const PhysicalEntityBallHitParams& params);
+
 // Appends the 12 triangles of an axis-aligned box centered at `center` with half
 // extents `half`, in entity-local space, with outward normals.
 void buildBoxCollisionTriangles(std::vector<CollisionTriangle>& out,

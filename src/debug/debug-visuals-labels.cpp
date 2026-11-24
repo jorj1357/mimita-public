@@ -156,3 +156,4 @@ bool projectToScreenUnclamped(const Camera& camera, glm::vec3 worldPos,
 }
 
 } // namespace DebugVis
+
