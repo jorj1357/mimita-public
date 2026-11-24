@@ -196,6 +196,36 @@ A later run appends a new proof record. Corrections are append-only.
 A build-only result can be recorded as `build_only`; it cannot satisfy the
 completion gate unless the task is explicitly exempted with a reason.
 
+## Gameplay change evidence and visual residuals
+
+Every new gameplay behavior change must name the pinned runtime event and
+fields that prove the behavior. The event must come from the owning gameplay
+path for the exact artifact, game generation, and run. A successful build, a
+code inspection, or a synthetic event created only to satisfy the gate is not
+runtime proof.
+
+Visual acceptance is a separate claim from runtime proof:
+
+- `runtime_proven` means the required owner-level event was observed.
+- `human_accepted` means a person observed the exact build and run and accepted
+  the visible behavior.
+- A task may be event-proven and still await visual acceptance. The task or
+  issue remains open with an explicit visual residual until a human observes
+  the behavior or the owner records a reasoned exemption.
+- Do not claim visual acceptance from a desktop screenshot, an unrelated
+  application window, a hidden or covered game window, or an image without
+  run/build/tick identity.
+- Visual proof must use the headless framebuffer contract in
+  `docs/specs/dev-loop/visual-proof-screenshots.md` once available. Until
+  headless capture works, record the limitation and the next required check;
+  do not substitute `agent.screenshot` desktop capture.
+- Every gameplay change note should state: the proving event, the pinned
+  run/build/generation, and the visual check either completed or still pending.
+
+This keeps completion honest for gameplay work while preserving the existing
+focused-check and exemption paths for documentation-only and tooling-only
+changes.
+
 ## Agent build/test capability
 
 The long-term direction is maximum safe agent capability:
@@ -269,6 +299,10 @@ metric and issue.
 
 - A behavior task cannot be marked done without verified runtime proof or a
   reasoned exemption.
+- Every gameplay change reports its proving event and pinned identity separately
+  from its visual acceptance.
+- An unresolved visual check is visible as an explicit residual and cannot be
+  silently closed or replaced by a desktop screenshot.
 - The unproven board shows every changed behavior path without current proof.
 - A source change after proof marks the proof stale.
 - A proof names the exact artifact, SHA-256, game generation, run ID, journal,

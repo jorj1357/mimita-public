@@ -3221,6 +3221,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         if (input->grabHeld) stateFlags |= NET_STATE_GRABBING;
         if (input->crouchHeld) stateFlags |= NET_STATE_CROUCHING;
         if (input->interactHeld) stateFlags |= NET_STATE_INTERACTING;
+        if (input->sprintHeld) stateFlags |= NET_STATE_SPRINTING;
         if (input->interactHeld && !ctx.lastSentInteractHeld)
         {
             ++ctx.nextLocalInteractSerial;

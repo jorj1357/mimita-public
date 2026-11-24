@@ -294,6 +294,12 @@ Rules:
 - Stopping one instance must not stop unrelated instances.
 - Duplicate `instance_id` is rejected.
 - The dashboard uses the same control requests as the CLI.
+- A one-shot `--command` that names `--client <instance_id>` must also name
+  `--expected-run-id <run_id>`. The CLI checks the selected run before sending,
+  and the daemon checks it again when dispatching; a run change rejects the
+  command instead of retargeting the same instance ID in a different run.
+- For `--runtime <runtime_id> --command`, `--expected-run-id` identifies that
+  runtime's run, not the primary run.
 - No cross-run adoption. A process from another run is reported as external,
   never added to the active run manifest or assigned one of its instance IDs.
 - A verified external MiMITA process may be stopped as an explicit process

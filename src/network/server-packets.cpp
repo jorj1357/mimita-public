@@ -315,6 +315,8 @@ uint32_t movementReportFlagsFromInput(const InputPacket& input,
         flags |= MOVEMENT_REPORT_DOWN_DASH_PRESSED;
     if ((input.stateFlags & NET_STATE_FREEZING) != 0)
         flags |= MOVEMENT_REPORT_FREEZE_HELD;
+    if ((input.stateFlags & NET_STATE_SPRINTING) != 0)
+        flags |= MOVEMENT_REPORT_SPRINT_HELD;
     return flags;
 }
 
@@ -377,6 +379,8 @@ void applyAcceptedInputPresentation(ServerPlayer& player,
         (report.movementFlags & MOVEMENT_REPORT_DOWN_DASH_PRESSED) != 0;
     player.input.freezeHeld =
         (report.movementFlags & MOVEMENT_REPORT_FREEZE_HELD) != 0;
+    player.input.sprintHeld =
+        (report.movementFlags & MOVEMENT_REPORT_SPRINT_HELD) != 0;
     player.input.flyUp =
         (report.movementFlags & MOVEMENT_REPORT_FLY_UP) != 0;
     player.input.flyDown =

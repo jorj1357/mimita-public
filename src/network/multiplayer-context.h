@@ -933,6 +933,7 @@ struct MpInput
     bool downDashPressed = false;
     bool attackPressed = false;
     bool freezeHeld = false;
+    bool sprintHeld = false;
     // Melee: held shield (Q) and grab (E) intent, replicated in stateFlags.
     bool shieldHeld = false;
     bool grabHeld = false;

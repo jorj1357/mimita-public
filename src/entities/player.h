@@ -717,6 +717,7 @@ public:
     std::vector<Mesh> bodyPartMeshes;
     PlayerOrigin origin;
     MovementCapsule movementCapsule;
+    MovementSprintState sprint;
     PerfectPoseSkeleton perfectPoseSkeleton;
     PhysicalBody physicalBody;
     // Authoritative part health copied from snapshots; drives visible damage

@@ -41,3 +41,44 @@ Wake-delivery note
 - The full prompt was written to .dev/agent-wake/logs/2026-11-20T20-33-53.949Z-build-wait-reviewer.prompt.txt and correctly names wake-460522b68c2f / issue-6641a6c6fdf4, but the opencode session received only the first line ("You were woken by MiMITA agent-wake. This is a bounded test activation."). The assignment was recovered from MIMITA_WAKE_ID / MIMITA_WAKE_ISSUE and the request file. Known defect issue-62ab3daa615d; it does not invalidate this wait occurrence.
 
 Verdict: valid, complete, recurring build-friction caused by a miscalibrated wall-clock budget, not a stalled dev-loop. No duplicate created. Evidence review only; no behavior proof claimed.
+
+## Scheduled independent review
+
+### 2026-11-24T04:35:15.833Z — vehicle-rl-planning
+
+A bounded independent review was queued as wake wake-4bd6530907ad after 506 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (reviewed)
+
+### 2026-11-24T05:01:56.313Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (wake-4bd6530907ad, agent issue-review-sweeper). Read-only: no source edits, no file claims, no build/test started, no fix claimed; issue not closed or reassigned. Prior review text preserved (issue_reviews id 24 from build-wait-reviewer remains the narrative evidence).
+
+Scope: verified the single wait occurrence for wait_id game-dll-build:2026-11-20T20:32:51.415Z directly against .dev/build-timings/game-dll-20261120T203251717649Z-0ac652.jsonl (748 lines), the issue record, and the adjacent build summaries.
+
+Observed facts (verified against the raw journal)
+- build.started 2026-11-20T20:32:51.721Z; attempt game-dll-20261120T203251717649Z-0ac652; source_generation 39; generation 413; request auto-39; build note acd7721a2ecd changed src/physics/movement/physics-collision-glb-sweep-slide.cpp.
+- Segment times: codegen resident_state 1.472s; packet_registry_codegen 49.130s; manifest_snapshot 19.676s; source_snapshot 16.099s (808 inputs); changed_source_preflight 68.081s (physics-collision-glb-sweep-slide.cpp compile 67.844s); object_cache_scan 313.494s; vendor_compile 0.023s; compile 51.604s over 11 TUs (slowest npc-behavior-module.cpp 51.476s); link 54.700s; coherence_validation 0.978s; publish 30.112s.
+- The wait fired at 20:33:52.364Z (elapsed 60.949s) during stage manifest_snapshot (started 20:33:42.531Z, elapsed_ms 50810.647, completed 20:34:02.238Z) — a normal progressing stage, not a stall.
+- build.completed 20:43:05.855Z, exit_code 0, elapsed_ms 614121.0 (~614.1s), generation 413 published (game-g413.dll).
+- object_cache_scan scan.snapshot: scan_seconds 313.458, parse_ms 300568.279, stat_ms 196.047, unique_dependencies 1501; scanned 641, skipped 630, stale 11. This one phase is 51.0% of total build wall time; scan parse (300.6s) dominates it.
+
+Inference / uncertainty
+- The 60s flat budget is far below this host's full-rebuild cost in this window; the build was healthy and actively progressing. This occurrence is a budget-calibration false-positive, not a stalled dev-loop. Confidence: high (direct timestamps).
+- When the wait fired (~60.9s in), roughly 553s of work remained and the largest phase (object_cache_scan) had not even started; so the wait could not have distinguished progress from stall here. Confidence: high (timestamps).
+- Whether the ~300s parse is a cold-cache full parse that can be cached/parallelized, versus intrinsically required, is UNKNOWN from this journal: parse_ms is reported as a single aggregate with no cold/warm split.
+
+Contrary evidence / nuance
+- object_scan_seconds 313.458 was normal for this window (adjacent generations 410-416: 215.0, 356.1, 259.9, 313.5, 318.3, 340.3, 382.9s), so this attempt is not an outlier; the defect is structural budget calibration, not anomalous build behavior.
+- Recent summaries (2026-11-21 onward) often finish well under 60s (object_scan ~1-90s, totals frequently <150s), so a flat 60s budget is not universally too low; it misfires mainly on true full rebuilds and heavy single-TU compiles. The 2026-11-20 occurrence sits in a historical high-cost window.
+- This individual record's acceptance IS met: exactly one issue + one reviewer wake per wait (prior review id 24). So this is a policy/calibration signal; it is not a functional dedup break in this specific record, and it is not evidence the build was broken.
+
+Next discriminating check (concrete)
+- Select the most recent non-no_op full game-DLL rebuild summary and compare its object_cache_scan parse_ms, unique_dependencies, and compiled-vs-skipped against this 2026-11-20 baseline. If a current full rebuild still shows ~300s parse for ~1500 deps, add a cold/warm parse split and measure parse_ms before/after any scan-cache change — that is the highest-value lever for full-rebuild wall time. If current full rebuilds are already far below 300s, the discriminating check becomes whether the flat 60s budget still fires on any current full rebuild (stage/workload-aware, stall-based budget), which is tracked on issue-9a4503f6ed68.
+
+Process note
+- brain.db count at 2026-11-24: 148 issues titled 'Wait over budget: game-dll-build at game_build' (all 148 open states). Escalation 29 (11-21) -> ~50 (11-22) -> 148 (11-24) is a documented issue flood. The signature-dedup + stall-based/per-stage-budget mitigation is already proposed and owned on issue-9a4503f6ed68 (build-wait-reviewer) and issue-e044a931c54b (build-runtime-subagents). This sweep adds no new direction (to avoid duplication) but records the current 148 baseline as a measurable target on issue-9a4503f6ed68.
+
+Verdict: reviewed — evidence review only; no behavior proof claimed, no fix claimed, no duplicate issue created.

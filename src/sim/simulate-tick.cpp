@@ -69,6 +69,7 @@ static InputState inputStateFromFrame(const InputFrame& frame)
     state.downDashPressed = frame.downDashPressed;
     state.freezeHeld = frame.freezeHeld;
     state.freezePressed = frame.freezePressed;
+    state.sprintHeld = frame.sprintHeld;
     state.fisterTogglePressed = frame.fisterTogglePressed;
     state.fisterFistHeld = frame.fisterFistHeld;
     state.fisterParryHeld = frame.fisterParryHeld;
@@ -417,6 +418,43 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             setCollisionEntityContext("Player", 0, false);
             physicsMainUpdate(*sim.player, *sim.world, normalInput, TICK_DT);
             clearCollisionEntityContext();
+
+            {
+                static bool lastActive = false;
+                static bool lastExhausted = false;
+                static float lastStamina = -1.0f;
+                static uint64_t lastLogTick = 0;
+                const MovementSprintState& sprint = sim.player->sprint;
+                const uint64_t tick = sim.player->movementSimulationTick;
+                const bool changed = sprint.active != lastActive ||
+                    sprint.exhausted != lastExhausted;
+                if (changed || (sprint.active && tick - lastLogTick >= 30)) {
+                    const float staminaBefore = lastStamina < 0.0f
+                        ? sprint.stamina : lastStamina;
+                    lastActive = sprint.active;
+                    lastExhausted = sprint.exhausted;
+                    lastStamina = sprint.stamina;
+                    lastLogTick = tick;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Physics, StructuredLevel::Important,
+                        "bloodtest.sprint.state", "local_player",
+                        "sprint/stamina state", tick,
+                        nlohmann::json{
+                            {"actor_id", "local_player"},
+                            {"tick", tick},
+                            {"input_down", sprint.inputDown},
+                            {"active", sprint.active},
+                            {"exhausted", sprint.exhausted},
+                            {"speed_target_mps", sprint.targetSpeedMps},
+                            {"speed_current_mps", glm::length(glm::vec2(
+                                sim.player->vel.x, sim.player->vel.y))},
+                            {"speed_multiplier", sprint.speedMultiplier},
+                            {"stamina_before", staminaBefore},
+                            {"stamina_after", sprint.stamina},
+                            {"stamina_max", sprint.staminaMax}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+            }
 
             // Always-on physical aim body (aimbody.json mode == "physical" or
             // "hybrid"). Runs after normal movement/animation so it owns the

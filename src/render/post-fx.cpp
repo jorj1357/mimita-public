@@ -71,6 +71,7 @@ void PostFX::loadConfig(const std::string& path)
         read("scanlines", mData.scanlines, 0.0f);
         read("pixelation", mData.pixelation, 0.0f);
         read("posterize", mData.posterize, 0.0f);
+        mData.uiInSceneTarget = j.value("ui_in_scene_target", false);
 
         read("guiBrightness", mData.guiBrightness, 1.0f);
         read("guiContrast", mData.guiContrast, 1.0f);

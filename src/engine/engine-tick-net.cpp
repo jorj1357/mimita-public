@@ -270,6 +270,7 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.dashPressed = cmd.isDashPressed();
         mpInput.downDashPressed = cmd.isDownDashPressed();
         mpInput.freezeHeld = cmd.isFreezeHeld();
+        mpInput.sprintHeld = cmd.getState("sprint").held;
         // Melee: held shield intent (Q). The local Melee driver samples the key
         // and publishes it; the server runs the authoritative shield.
         mpInput.shieldHeld = MimitaMelee::shieldHeld();
@@ -297,6 +298,7 @@ void engineTickNet(Engine& engine, float dt)
                 mpInput.dashPressed = false;
                 mpInput.downDashPressed = false;
                 mpInput.freezeHeld = false;
+                mpInput.sprintHeld = false;
                 mpInput.shieldHeld = false;
                 mpInput.crouchHeld = false;
                 mpInput.interactHeld = false;
@@ -333,6 +335,7 @@ void engineTickNet(Engine& engine, float dt)
             mpInput.dashPressed = recorded->dashPressed;
             mpInput.downDashPressed = recorded->downDashPressed;
             mpInput.freezeHeld = recorded->freezeHeld;
+            mpInput.sprintHeld = recorded->sprintHeld;
             mpInput.shieldHeld = recorded->shieldHeld;
             mpInput.crouchHeld = recorded->crouchHeld;
             mpInput.interactHeld = recorded->interactHeld;
@@ -354,6 +357,7 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.dashPressed = ai.dashPressed;
         mpInput.downDashPressed = ai.downDashPressed;
         mpInput.freezeHeld = ai.freezeHeld;
+        mpInput.sprintHeld = ai.sprintHeld;
         mpInput.shieldHeld = ai.shieldHeld;
         mpInput.crouchHeld = ai.crouchHeld;
         mpInput.interactHeld = ai.interactHeld;

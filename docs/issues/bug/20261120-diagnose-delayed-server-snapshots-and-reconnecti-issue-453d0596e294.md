@@ -219,3 +219,43 @@ Message: `msg-d7755e73527f` (message)
 Subject: Pinned FCS snapshot cadence and recurring long server tick
 
 2026-11-22 runtime follow-up from pinned run 20261122_231658 (build e24aaf16cbfb97461c3d51e25f7f1424c56865155889c6be816a7bc9b9b44e82, game DLL generation 545, FCS Dust2 Cyberia). During continued connected play the client reported 132 snapshots received in a 1.037 s metrics window, RTT 35 ms, snapshot age 46 ms, room P3MTGWS, connection_state=Connected. A 604.245 ms server tick at 23:35:11.718Z was attributed as gamemode_ms=583.026, npc_ms=20.831, snapshot_ms=0.257; same tick round.start round 13 reason=countdown. This is a performance-driven snapshot-latency lead, not proof of disconnect/reconnect in this interval. Process-scoped agent.gui_button leaveButton click was later reported delivered/completed but produced no new ui.button_input or disconnect event after the client was already in-game, so the run did not perform a second leave/rejoin. Stopped only this owned isolated run after capture. More precise round subphase diagnostics exist in source but were not built because of the separate failed-revision retry latch (posted to issue 136d4553ff92).
+
+## Context
+
+### 2026-11-24T00:33:59.065Z — damage-lightning-backlog
+
+reproduction: TDM atdm run: client snapshot journal has a 149.743s inter-apply gap; after recovery window it reports Connecting/zero received packets while server player count is zero, with reconnect accepts repeating. Server ticks continued.
+expected_behavior: Connected TDM clients receive fresh NPC snapshots at the expected cadence; reconnect accept promptly restores the active peer and snapshot flow, while delayed entity updates are not replayed as a stale backlog.
+acceptance: In a pinned atdm TDM dev-loop run, server/client logs establish the first missing reconnect/snapshot step; NPC snapshots continue without multi-second freezes and reconnect restores flow promptly. Compare with a smaller map under equivalent NPC/player load before attributing to map streaming.
+paths: ['src/network/multiplayer-tick.cpp', 'src/network/server-ice.cpp', 'logs/2026-11-24/20261124_001546/server-01/events.jsonl', 'logs/2026-11-24/20261124_001546/client-01/events.jsonl']
+related_build: 2026-11-23T19:22:15.804284Z:2e24d312603e4135cdd9be0d870a11ce4be98042e253296de6ca16ca189d512b
+related_run: 20261124_001546
+evidence: {'text': 'run.json pins stale build 2026-11-23T19:22:15.804284Z and source_generation 4. AtDM server tick windows continued during the ~140s snapshot send gap; snapshot payload was 2 chunks/~1747B for 9 NPCs. Client journal later had one chunk timeout and long gap; following it, Connecting with packets_received_delta=0 and snapshots_received_total=0. Server marked peer stale and had repeated reconnect accepts; player count oscillated 0 to 1. Indicates reconnect/transport state as stronger lead than map/chunk load, but first lost packet remains unproven.'}
+risk: Do not claim map root cause from this stale-binary local run. Avoid touching reconnect or packet paths until active owners confirm shared dirty changes.
+proof_expectation: Real dev-loop runtime proof on exact new build; capture server/client journals and compare atdm with lighter map under matched load; report snapshot cadence and reconnect recovery with pinned IDs.
+context_id: ctx-614f852b5cd8
+
+## Agent suggestion
+
+### 2026-11-24T00:35:27.467Z — damage-lightning-backlog
+
+2026-11-24 TDM/atdm follow-up: Run 20261124_001546 on stale build 2026-11-23T19:22:15.804284Z shows client snapshot gap ~149.743s; server tick windows continue, and atdm snapshots are 2 chunks (~1.7KB) for 9 NPCs. Server eventually stops reporting a peer and status has client pids=[]; earlier reconnect traces show repeated accepts but no packet receive/snapshot recovery. AtDM NPC phase windows around 00:34:27-00:34:38 report 9 NPCs and ~0.51-0.72s aggregate work per 1s window (~48-65 simulation ticks); this suggests measurable NPC CPU load but does not explain client receive silence alone. Root cause is not proven because latest runtime build is stale and client journal is sparse/offline. Trace reconnect accept -> map-ready -> fresh snapshot and client receive as distinct stages before attributing to map streaming.
+
+## Agent suggestion
+
+### 2026-11-24T00:39:09.933Z — resource-profiler
+
+Read-only evidence handoff for the user's TDM disconnect/frozen-NPC report (context ctx-614f852b5cd8 already linked here). In run 20261124_001546, dev-loop run.json lists only server PID5192 on map tdm and client PID13292. At 00:18:57Z the aligned sample/journal showed this pair with 9 NPC/1 player. In rotated server journal server-01/events-0001.jsonl, by 00:19:48.397Z server PID5192's game.hotness.summary reports 9 NPC/0 players; its performance tick windows and heartbeat continue afterward, so the process/server loop did not stop. In rotated client journal client-01/events-0002.jsonl, at 00:19:58.968Z client PID13292 logs 
+etwork.client.snapshot.received, snapshot.applied, and client.npc-avatar.snapshot-reassembled; near 00:19:59.049Z/00:19:59.144Z it also contains server-role events from child PID19132 on TDM map dust2cyberiav4, 9 NPC/2 players. PID19132 is absent from run.json and its events are mixed into the client journal. This suggests the client/session may have transitioned to a second, unregistered server; it does not prove the reported disconnect's cause or that tdm is faulty. No explicit disconnect/reconnect event was found in the inspected rows. No evidence yet that chunk/map loading caused the lag. Cross-reference CPU issue issue-ed3ac775283d: previous matched sample host was saturated; pair used 17.09% whole-host CPU, with no function-level CPU rows verified. Next: reconstruct the first connection/player-count transition across rotated journals, register child server identities/journals in run.json, and capture snapshots/tick timing plus process CPU in the same interval. Keep owner unassigned until accepted.
+
+## Agent suggestion
+
+### 2026-11-24T00:42:24.819Z — damage-lightning-backlog
+
+Cross-thread follow-up verified in the run's rotated journals: at 2026-11-24T00:19:25Z a second server process (PID 19132) starts with mode team_deathmatch and map dust2cyberiav4; its startup/operational events are logged inside client-01/events-0002.jsonl. Around this window the root run.json server PID 5192 remains the atdm TDM server and logs zero players, while the child server later logs 2 players and active NPC/snapshot simulation. This provides a plausible session/server transition during the apparent freeze/disconnect and may explain why the primary run's client journal went quiet. It does not prove causality or that world streaming caused the transition. Investigate the initiating UI/action and process-parent/session relationship, correlate player slot transitions and both server transports, and register child server identity/journaling so dev-loop tracks the actual active game session. Keep the atdm workload finding separate: atdm did produce severe NPC tick stalls (e.g. 571.5ms in tick 77548) but the independent child server on dust2cyberiav4 subsequently ran near 58Hz and NPC snapshots; distinguish these timelines before attributing the original freeze.
+
+## Agent suggestion
+
+### 2026-11-24T00:43:22.339Z — resource-profiler
+
+Performance evidence for the user report, same run/window already described above: exact window 00:18:57.157–00:19:11.648 UTC, server PID5192/client PID13292, 9 NPC/1 player at sample start. Rotated server journal server-01/events-0001.jsonl covers14 tick windows/726 ticks: weighted total work18.315ms vs16.667ms budget, max tick269.338ms, max window p95 75.416ms, four >100ms ticks; weighted NPC phase17.117ms, max242.421ms. Client journal client-01/events-0002.jsonl: 73 frame slices/2,924 frames; weighted mean4.886ms (~205 FPS), 31.22% above4.167ms; worst 200ms slice p95/p99 and max frame113.533ms. This objectively explains that the run had severe server/client timing delays while user reported slow/frozen NPC updates, but does not prove the disconnect cause or implicate map/chunk loading. Main dev-loop server PID5192 on atdm continued emitting ticks with9NPC after its players count reached0. By 00:19:59Z, client PID13292 received/applied NPC snapshots while events from unregistered child server PID19132 identified TDM/dust2cyberiav4,9NPC/2players. Correlate this session transition with the first missing snapshot/disconnect event; preserve unknown cause until that is found.

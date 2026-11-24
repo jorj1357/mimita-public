@@ -22,14 +22,55 @@ Normal mode:
 4. Draw GUI/HUD on the default framebuffer.
 5. Swap buffers.
 
-Full-frame stretched modes 5/6:
+Full-frame stretched modes 5/6 (default, crisp HUD):
 
-1. Render the complete frame, including GUI, at 1024x768.
-2. Run PostFX against that full-frame target.
-3. Stretch the result to the display and swap.
+1. Render world/actors/effects at 1024x768 into the scene target.
+2. Run PostFX against that scene target and stretch the result to the display.
+3. Draw GUI/HUD on the default output framebuffer at output resolution.
+4. Swap buffers.
 
 The FBO is therefore required for output scaling even when all effects are
 identity. `full` and `minimal` keep the FBO; `off` does not.
+
+### Why the GUI looked eaten by the world
+
+In the previous stretched path the HUD was drawn into the 1024x768 scene target
+before PostFX. The GUI was not depth-occluded: UI depth testing is disabled.
+Instead the lens stage resampled the scene and the HUD together. Radial lens
+distortion pulled background pixels inward at the frame edges, radial chromatic
+aberration offset the channels, vignette darkened the corners, and peripheral
+blur softened the whole outer image. A large `distortion` value therefore made
+the HUD appear to smear, stretch, or disappear into the world. The same warp
+also moved HUD space relative to the visible geometry, which read as the world
+eating the interface.
+
+The default is now to draw the HUD after PostFX at output resolution, so it is
+crisp and unaffected by lens effects.
+
+### Intentional in-scene UI for horror
+
+Set `ui_in_scene_target` to `true` in `config/postfx.json` to restore the old
+in-scene path deliberately. The HUD then renders into the 1024x768 target and is
+processed with the world, producing the warped, vignetted, color-fringed
+interface. This is a presentation choice for horror, found-footage, or
+dying-camera moments, not a fallback.
+
+```json
+{
+  "mode": "full",
+  "ui_in_scene_target": true,
+  "lensDistortion": 35.0,
+  "chromaticAberration": 0.35,
+  "vignette": 0.45,
+  "scanlines": 0.2,
+  "filmGrain": 0.08
+}
+```
+
+`ui_in_scene_target` currently applies to full-frame stretched modes, where the
+HUD is otherwise drawn after the post/stretch pass. In normal non-stretched
+mode the HUD already draws after PostFX; the flag does not move it back into the
+scene target.
 
 ## Modes
 

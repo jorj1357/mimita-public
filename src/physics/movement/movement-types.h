@@ -97,6 +97,9 @@ struct MovementCommand {
     bool groundReturnPressed = false;
     bool freezeHeld = false;
     bool freezePressed = false;
+    // Mode-owned sprint input. Applied by the shared movement kernel and
+    // bounded by stamina; dash remains a separate edge-triggered action.
+    bool sprintHeld = false;
     // Melee: held crouch/down input. Airborne it requests faster descent; on
     // the ground it selects the crouch pose without activating legacy down-dash.
     bool crouchHeld = false;
@@ -492,6 +495,17 @@ struct MovementContactConsumeResult {
     uint16_t contactOverflowCount = 0;
 };
 
+struct MovementSprintState {
+    bool inputDown = false;
+    bool active = false;
+    bool exhausted = false;
+    float speedMultiplier = 1.0f;
+    float stamina = 100.0f;
+    float staminaMax = 100.0f;
+    float recoveryDelaySeconds = 0.0f;
+    float targetSpeedMps = 0.0f;
+};
+
 struct MovementState {
     MovementLifecycleIdentity lifecycle;
     bool movementEnabled = true;
@@ -510,6 +524,7 @@ struct MovementState {
 
     MovementGroundState ground;
     MovementJumpState jump;
+    MovementSprintState sprint;
     MovementDashState dash;
     MovementDownDashState downDash;
     MovementFreezeState freeze;
@@ -669,6 +684,18 @@ struct MovementConfig {
     float jumpBufferSeconds = 0.0f;
     float coyoteSeconds = 0.0f;
     int maximumAirJumps = 0;
+
+    // Mode-owned sprint/stamina. Sprint ramps the ground speed target; stamina
+    // drains only while sprinting and moving on the ground.
+    bool sprintEnabled = false;
+    float sprintSpeedMultiplier = 1.5f;
+    float sprintRampUpSeconds = 0.35f;
+    float sprintRampDownSeconds = 0.25f;
+    float staminaCapacity = 100.0f;
+    float staminaDrainPerSecond = 18.0f;
+    float staminaRecoveryPerSecond = 12.0f;
+    float staminaRecoveryDelaySeconds = 0.5f;
+    float sprintExhaustedRecoverFraction = 0.25f;
 
     // Melee-selectable jump-input policy. `Press` keeps the existing immediate
     // behavior. `HoldScaled` starts the jump at `holdJumpMinMultiplier` strength

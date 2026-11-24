@@ -38,6 +38,8 @@ def create_parser() -> argparse.ArgumentParser:
                         help="bad-connection preset for --start-client")
     parser.add_argument("--client", default="",
                         help="client instance id for --command (default: primary client)")
+    parser.add_argument("--expected-run-id", default="",
+                        help="require this active run ID for --command; required with --client")
     parser.add_argument("--json", action="store_true", help="print control/status responses as JSON")
     parser.add_argument("--command", "--cmd", dest="command",
                         help="send one terminal command to the running daemon, wait for the result, and exit")
@@ -134,3 +136,29 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-coord", action="store_true",
                         help="suppress the coordination summary in status output")
     return parser
+
+
+def command_target_run_error(args, current: dict) -> str | None:
+    """Return a fail-closed command routing error for an unpinned client/run."""
+    if not getattr(args, "command", ""):
+        return None
+    expected = str(getattr(args, "expected_run_id", "") or "").strip()
+    if getattr(args, "client", "") and not expected:
+        return "--expected-run-id is required when --client is used with --command"
+    if not expected:
+        return None
+
+    target_run_id = str(current.get("run_id") or "")
+    runtime_id = str(getattr(args, "runtime", "") or "").strip()
+    if runtime_id:
+        runtime = next((row for row in (current.get("runtimes") or [])
+                        if str(row.get("runtime_id") or "") == runtime_id), None)
+        if runtime is None:
+            return f"runtime {runtime_id} is not present in the current run registry"
+        target_run_id = str(runtime.get("run_id") or "")
+
+    if expected != target_run_id:
+        target_label = target_run_id or "(none)"
+        return (f"refused command: expected run {expected}, "
+                f"active target run is {target_label}")
+    return None

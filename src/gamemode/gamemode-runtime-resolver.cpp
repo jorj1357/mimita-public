@@ -136,6 +136,8 @@ void applyPresentationPolicy(const Gamemode& mode)
         response.torsoResponseSeconds = p.bodycam.torsoResponseSeconds;
         response.armResponseSeconds = p.bodycam.armResponseSeconds;
         response.weaponStabilitySeconds = p.bodycam.weaponStabilitySeconds;
+        response.headFollowsBody = p.bodycam.headFollowsBody;
+        response.settleDeadbandDegrees = p.bodycam.settleDeadbandDegrees;
         AimBodyConfig::instance().setBodycamResponseOverride(response);
 
         PostFX::ModeBodycamLensOverride lens;
@@ -170,6 +172,8 @@ void applyPresentationPolicy(const Gamemode& mode)
                 {"torso_response_seconds", p.bodycam.torsoResponseSeconds},
                 {"arm_response_seconds", p.bodycam.armResponseSeconds},
                 {"weapon_stability_seconds", p.bodycam.weaponStabilitySeconds},
+                {"head_follows_body", p.bodycam.headFollowsBody},
+                {"settle_deadband_degrees", p.bodycam.settleDeadbandDegrees},
                 {"sway_scale", p.bodycam.cameraSwayScale},
                 {"wall_collision", p.bodycam.wallCollision},
                 {"wall_probe_radius_m", p.bodycam.wallProbeRadiusMeters},

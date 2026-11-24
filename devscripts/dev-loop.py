@@ -3715,6 +3715,24 @@ class DevLoop:
                 self.save_state("client_stopped")
             elif action == "command":
                 runtime_id = str(request.get("runtime_id", "") or "").strip()
+                expected_run_id = str(request.get("expected_run_id", "") or "").strip()
+                if not runtime_id and request.get("client_id") and not expected_run_id:
+                    self.last_message = (
+                        "client command rejected: expected_run_id is required "
+                        "when client_id is specified")
+                    request["results"] = []
+                    self.record_control_event(request, "rejected", self.last_message)
+                    self.save_state("command_run_identity_required")
+                    continue
+                if (not runtime_id and expected_run_id
+                        and expected_run_id != str(self.run_id or "")):
+                    self.last_message = (
+                        f"client command rejected: expected run {expected_run_id}, "
+                        f"active run is {self.run_id or '(none)'}")
+                    request["results"] = []
+                    self.record_control_event(request, "rejected", self.last_message)
+                    self.save_state("command_run_identity_mismatch")
+                    continue
                 if runtime_id:
                     try:
                         result = self.runtime_manager.queue_command(
@@ -8386,6 +8404,13 @@ def run_control_client(args: argparse.Namespace) -> int:
         print(f"[DEV CONTROL] no current run state: {STATE_PATH}", file=sys.stderr)
         return 2
 
+    if args.command:
+        from dev_loop.cli import command_target_run_error
+        routing_error = command_target_run_error(args, current)
+        if routing_error:
+            print(f"[DEV CONTROL] {routing_error}", file=sys.stderr)
+            return 2
+
     if action == "status" and args.ensure_running and not args.command \
             and not args.scenario_file and not getattr(args, "ai_match", False) \
             and not args.request:
@@ -8432,6 +8457,8 @@ def run_control_client(args: argparse.Namespace) -> int:
         request["requested_by"] = "cli"
     if args.command:
         request["command"] = args.command
+        if getattr(args, "expected_run_id", "") and not getattr(args, "runtime", ""):
+            request["expected_run_id"] = args.expected_run_id
         if getattr(args, "runtime", ""):
             request["runtime_id"] = args.runtime
         if getattr(args, "client", ""):

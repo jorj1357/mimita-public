@@ -861,7 +861,7 @@ static bool pollPendingServerRoomCode()
         return false;
 
     bool loggerReadyNow = false;
-    if (!gServerLoggerReady && !gServerEventsPath.empty())
+    if (!gServerEventsPath.empty())
     {
         std::ifstream journal(gServerEventsPath, std::ios::binary);
         if (journal.is_open())

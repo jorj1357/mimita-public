@@ -968,6 +968,10 @@ void RagdollModeSystem::applyAimMotor(RagdollBody& b, const glm::vec3& camForwar
     (void)camForward;
     (void)camUp;
     const auto& cfg = RagdollModeConfig::instance().data();
+    const AimBodyConfig::ModeResponseOverride* response =
+        AimBodyConfig::instance().bodycamResponseOverride();
+    const float settleRadians = response
+        ? glm::radians(response->settleDeadbandDegrees) : 0.0f;
 
     auto motor = [&](int idx, float weight) {
         if (idx < 0 || idx >= (int)b.parts.size()) return;
@@ -982,6 +986,17 @@ void RagdollModeSystem::applyAimMotor(RagdollBody& b, const glm::vec3& camForwar
                                   : glm::vec3(0.0f, 0.0f, 1.0f);
         glm::quat target = aimLookRotation(fwd, up)
                          * part.aimOffset;
+
+        const float orientationDot = std::fabs(glm::dot(
+            glm::normalize(body.orientation), glm::normalize(target)));
+        const float orientationAngle =
+            2.0f * std::acos(glm::clamp(orientationDot, 0.0f, 1.0f));
+        if (settleRadians > 0.0f && orientationAngle < settleRadians) {
+            body.angularVelocity *= std::exp(-dt * 14.0f);
+            if (glm::length(body.angularVelocity) < 0.01f)
+                body.angularVelocity = glm::vec3(0.0f);
+            return;
+        }
 
         if (cfg.physicalAim.damping == PhysicalAimDamping::Physical) {
             const glm::vec3 torque = computeAimTorque(
@@ -1520,18 +1535,24 @@ void RagdollModeSystem::stepAimBody(float dt, const World& world, Player& player
                     std::clamp(tau, 0.01f, 2.0f));
                 current = glm::normalize(current + (target - current) * alpha);
             };
-            stepForward(b.presentation.headForward, rawForward,
-                        response->headResponseSeconds);
             stepForward(b.presentation.torsoForward, rawForward,
                         response->torsoResponseSeconds);
-            stepForward(b.presentation.armForward, rawForward,
+            stepForward(b.presentation.headForward,
+                        response->headFollowsBody ? b.presentation.torsoForward
+                                                  : rawForward,
+                        response->headResponseSeconds);
+            stepForward(b.presentation.armForward,
+                        response->headFollowsBody ? b.presentation.headForward
+                                                  : rawForward,
                         response->armResponseSeconds);
             stepForward(b.presentation.weaponForward, rawForward,
                         response->weaponStabilitySeconds);
+            const glm::vec3 headUpTarget = response->headFollowsBody
+                ? glm::vec3(0.0f, 0.0f, 1.0f) : rawUp;
             const float upAlpha = 1.0f - std::exp(-safeDt /
                 std::clamp(response->headResponseSeconds, 0.01f, 2.0f));
             b.presentation.headUp = glm::normalize(
-                b.presentation.headUp + (rawUp - b.presentation.headUp) * upAlpha);
+                b.presentation.headUp + (headUpTarget - b.presentation.headUp) * upAlpha);
             glm::vec3 right = glm::cross(b.presentation.headForward,
                                          b.presentation.headUp);
             if (glm::length(right) > 1e-4f) {
@@ -1572,8 +1593,10 @@ void RagdollModeSystem::stepAimBody(float dt, const World& world, Player& player
     }
     applyAimMotor(b, aimForward, aimUp, dt);
     if (hybrid) applyHybridSprings(b, dt);
-    applyRightArmPointMotor(b, player, aimForward, aimPosition, dt);
-    applyLeftArmPointMotor(b, aimForward, dt);
+    const glm::vec3 armAimForward = glm::length(b.presentation.headForward) > 1e-5f
+        ? glm::normalize(b.presentation.headForward) : aimForward;
+    applyRightArmPointMotor(b, player, armAimForward, aimPosition, dt);
+    applyLeftArmPointMotor(b, armAimForward, dt);
 
     glm::vec3 gravity(0.0f, 0.0f, -GRAVITY * cfg.gravityScale);
     for (auto& part : b.parts) integrate(part.body, gravity, dt);

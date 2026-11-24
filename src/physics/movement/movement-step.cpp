@@ -1870,14 +1870,85 @@ MovementStepResult applyPostCollisionMovementWithSpecials(
         state, command, config, collision, fixedDt, true, preCollisionEvents);
 }
 
+MovementConfig applySprintToMovementConfig(MovementState& state,
+                                                 const MovementCommand& command,
+                                                 const MovementConfig& config,
+                                                 float fixedDt)
+{
+    MovementConfig effective = config;
+    MovementSprintState& sprint = state.sprint;
+    sprint.inputDown = command.sprintHeld;
+    if (!config.sprintEnabled) {
+        sprint.active = false;
+        sprint.exhausted = false;
+        sprint.speedMultiplier = 1.0f;
+        sprint.staminaMax = std::max(1.0f, config.staminaCapacity);
+        sprint.stamina = sprint.staminaMax;
+        sprint.recoveryDelaySeconds = 0.0f;
+        sprint.targetSpeedMps = config.groundSpeed;
+        return effective;
+    }
+
+    if (sprint.staminaMax != config.staminaCapacity &&
+        sprint.stamina >= sprint.staminaMax) {
+        sprint.stamina = config.staminaCapacity;
+    }
+    sprint.staminaMax = std::max(1.0f, config.staminaCapacity);
+    sprint.stamina = std::clamp(sprint.stamina, 0.0f, sprint.staminaMax);
+
+    const bool moving = glm::length(command.moveAxes) > 0.01f;
+    const bool canSprint = command.sprintHeld && !sprint.exhausted;
+    const float targetMultiplier = canSprint ? config.sprintSpeedMultiplier : 1.0f;
+    const float tau = targetMultiplier > sprint.speedMultiplier
+        ? config.sprintRampUpSeconds : config.sprintRampDownSeconds;
+    const float alpha = 1.0f - std::exp(-std::max(0.0f, fixedDt) /
+        std::clamp(tau, 0.01f, 5.0f));
+    sprint.speedMultiplier += (targetMultiplier - sprint.speedMultiplier) * alpha;
+    sprint.speedMultiplier = std::clamp(sprint.speedMultiplier, 1.0f,
+        std::max(1.0f, config.sprintSpeedMultiplier));
+    sprint.active = sprint.speedMultiplier > 1.001f && command.sprintHeld;
+
+    const bool draining = canSprint && moving && state.ground.onGround;
+    if (draining) {
+        sprint.stamina = std::max(0.0f,
+            sprint.stamina - config.staminaDrainPerSecond * std::max(0.0f, fixedDt));
+        sprint.recoveryDelaySeconds = config.staminaRecoveryDelaySeconds;
+        if (sprint.stamina <= 0.0f) {
+            sprint.stamina = 0.0f;
+            sprint.exhausted = true;
+        }
+    } else {
+        if (sprint.recoveryDelaySeconds > 0.0f) {
+            sprint.recoveryDelaySeconds = std::max(0.0f,
+                sprint.recoveryDelaySeconds - std::max(0.0f, fixedDt));
+        } else {
+            sprint.stamina = std::min(sprint.staminaMax,
+                sprint.stamina + config.staminaRecoveryPerSecond * std::max(0.0f, fixedDt));
+        }
+        if (sprint.exhausted &&
+            sprint.stamina >= sprint.staminaMax * config.sprintExhaustedRecoverFraction) {
+            sprint.exhausted = false;
+        }
+    }
+
+    effective.groundSpeed *= sprint.speedMultiplier;
+    if (effective.sourceMaxSpeed > 0.0f)
+        effective.sourceMaxSpeed *= sprint.speedMultiplier;
+    sprint.targetSpeedMps = effective.sourceMaxSpeed > 0.0f
+        ? effective.sourceMaxSpeed : effective.groundSpeed;
+    return effective;
+}
+
 MovementStepResult simulateBasicMovementStep(MovementState& state,
                                              const MovementCommand& command,
                                              const MovementConfig& config,
                                              const MovementCollisionFeedback& collision,
                                              float fixedDt)
 {
-    applyPreCollisionBasicMovement(state, command, config, fixedDt);
-    return applyPostCollisionBasicMovement(state, command, config, collision, fixedDt);
+    const MovementConfig effective = applySprintToMovementConfig(
+        state, command, config, fixedDt);
+    applyPreCollisionBasicMovement(state, command, effective, fixedDt);
+    return applyPostCollisionBasicMovement(state, command, effective, collision, fixedDt);
 }
 
 MovementStepResult simulateMovementStepWithSpecials(MovementState& state,
@@ -1886,9 +1957,11 @@ MovementStepResult simulateMovementStepWithSpecials(MovementState& state,
                                                     const MovementCollisionFeedback& collision,
                                                     float fixedDt)
 {
-    applyPreCollisionBasicMovement(state, command, config, fixedDt);
+    const MovementConfig effective = applySprintToMovementConfig(
+        state, command, config, fixedDt);
+    applyPreCollisionBasicMovement(state, command, effective, fixedDt);
     MovementStepEvents preCollisionEvents;
-    applySpecialMovementPreCollision(state, command, config, fixedDt, preCollisionEvents);
+    applySpecialMovementPreCollision(state, command, effective, fixedDt, preCollisionEvents);
     return applyPostCollisionMovementWithSpecials(
-        state, command, config, collision, fixedDt, preCollisionEvents);
+        state, command, effective, collision, fixedDt, preCollisionEvents);
 }

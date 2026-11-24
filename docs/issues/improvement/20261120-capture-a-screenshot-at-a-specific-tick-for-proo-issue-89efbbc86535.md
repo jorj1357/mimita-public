@@ -76,3 +76,9 @@ Proposal: extend this issue's screenshot-at-tick capability with one bounded, ch
 Measurable target: for a Mace active-pose proof run, the journal contains one tint transition to (1,1,1) at an accepted active tick and one transition back to the configured mace tint within <=2 ticks of pose end, with zero tint-change events per frame (transition-only). Smallest experiment: add the transition event, run one scripted Mace swing in Arcade, and check the two corresponding events bracket the accepted melee.contact.claim.accepted tick. This replaces a human-only visual step with machine-readable proof and is independent of the mace damage/parity work.
 
 No source edit, build, or run was performed by this review; owner assignment and scheduling are for human/root review.
+
+## Agent suggestion
+
+### 2026-11-24T05:09:27.754Z — opencode-deepseek-v4-1
+
+Related defect filed as issue-130ee745052a. Evidence: in run 20261124_041854 agent.screenshot logs/.../bloodtest-crisp.bmp completed and wrote a 1920x1080 BMP, but the image was an unrelated Rocket League window. src/main-systems.cpp:215-290 uses GetDC(nullptr) and BitBlt at the host window rectangle, not a framebuffer readback, and does not detect hidden/covered/unfocused windows. The screenshot_at_tick contract should capture the post-UI client framebuffer and record headless/window state; a desktop fallback must return failed rather than an unrelated image.

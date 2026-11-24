@@ -197,3 +197,88 @@ phase 2) and measured the elite profile:
   near-wall/blocked motion increased. These are Phase 3 targets.
 - Defuse starts still restart repeatedly (18 starts, 15 interruptions, 3
   completions); reducing that churn remains open.
+
+### Phase 3 trial status (2026-11-23/24)
+
+- Measurement gold-behavior doc added:
+  `docs/workflows/measurement-hypothesis-driven-improvement.md`.
+- Phase 3B stuck gate: an episode now requires a static side-world contact.
+  Gen572 reduced `npc.stuck-episode` 1,372→553 in a comparable early window,
+  but the definition changed; real `npc.stuck-recovery` events stayed around
+  31. Treat 553 as a cleaner wall-block signal, not a direct win.
+- Phase 3A defuse churn trials:
+  - Hold at 6 m (gen572): 41 starts / 38 interruptions / 2 completions.
+  - Hold at 3 m (gen573): 19 starts / 19 interruptions in the sampled round.
+  - Hysteresis latch (gen574): still 43 starts / 43 interruptions and an
+    explosion.
+  - Final source attempt: defuse travel lock in `src/npc/npc.cpp` — the
+    designated defuser follows the navigation direction toward the bomb, stops
+    inside 2.5 m, and suppresses jump/dash/down-dash/freeze.
+- Gen574 movement metrics under load: CT 18.62 m/s, dash 266.97/min, bhop
+  15.63/min, air 44.0%, stuck 10.26/min; T 18.25 m/s, dash 255.64/min, bhop
+  13.65/min, air 40.2%, stuck 10.20/min. Not accepted as balance targets.
+- Shared build blocker: `src/network/multiplayer-projectiles.cpp` uses
+  `projectileTrailConfigFor` at :443 before its definition at :513. Build
+  attempt `game-dll-20261123T234301570308Z-6c7a9c` failed there. The cross-agent
+  signal tool (`devscripts/agent-signal.py`) found `melee-parity`, sent the
+  question, and `hot-reload-latency-root` was told our files are READY but the
+  shared batch is not.
+- No gen575 runtime proof exists yet. Next: owner fixes the shared compile
+  failure, root seals one Mode 3 batch with `src/npc/npc.cpp` and
+  `src/network/server-gamemode.cpp`, then run pinned gen575 and measure defuse
+  starts per plant, stuck, speed, dash/bhop/air, and TTK.
+
+### Shared-build unblock and CPU evidence (2026-11-24)
+
+- Opened `issue-d75f928fbd6f`: shared batch failed in
+  `src/network/multiplayer-projectiles.cpp` at first use `:443` before the
+  definition at `:513`; `melee-parity` did not reply.
+- User authorized the minimal unblock. Applied a declaration-order-only
+  forward declaration, build note `d57339951817`. Build attempt
+  `game-dll-20261124T003901444604Z-3c8d4e` succeeded in 949.243 s and published
+  generation 576, SHA-256
+  `06f3229efcd629dd82e0ce017bd9ef4ddaa08ae92c24cf7e6e446cbb143c9eb5`.
+- Two gen576 readiness attempts did not reach a usable proof:
+  - `20261124_005506`: client exited before active mode after reaching phase 4
+    and receiving NPC visuals.
+  - `20261124_005656`: `server_stalled` gate reported tick 308→1083 in 51.8 s,
+    max tick stall 409.3 ms, over-100 ms 5.7%. This confirms the new readiness
+    classification works, but no gameplay proof exists.
+- CPU coordination: `resource-profiler` reported on the preserved Juggernaut
+  Horde run `20261123_195307` (67 NPC/1 player, server PID 22184):
+  `performance.server-tick-window` sample 15, total avg 59.232 ms,
+  p95/p99/max 131.759 ms, NPC avg 53.901 ms/max 129.369 ms, 26.7% of sampled
+  ticks over 100 ms; `npc.phase-window` 1,027 updates, total 459.736 ms,
+  physics 239.569 ms, collision 141.699 ms, decision 39.155 ms. Callsite
+  estimates: `updateOneNpc` at `src/npc/npc.cpp:1580` 12.40% server CPU
+  (~3.043% host); `doCollisions` at
+  `src/physics/movement/physics-collision-dispatch.cpp:181` 5.33% (~1.308%
+  host). These are partial 1/64 estimates, not full attribution. See
+  `issue-be1adb51b6ac` and `issue-ed3ac775283d`.
+- Cross-agent signal: `devscripts/agent-signal.py` and the protocol in
+  `AGENTS.md`/`agent-coordination.md` were added so this kind of ownership
+  question is automatic rather than guessed.
+
+Additional gen576 attempt `20261124_010043`: client connected and received NPC
+snapshots but stopped at `network.mode.start` phase 4; server reached
+`round.active` at t=24.13. The runner reached 2407 ticks and reported the
+client never observed active mode (max stall 781.6 ms). Opened
+`issue-d2a8614db704` and signaled `melee-parity`, `hot-reload-latency-root`,
+and `damage-lightning-backlog`. This is a shared network-mode replication
+blocker.
+
+Next: resolve the client phase-application blocker, then retry gen576 and
+measure defuse starts per plant, stuck, speed, dash/bhop/air, TTK, and compare
+to gen571.
+
+### Human acceptance: Juggernaut Horde felt overwhelming (2026-11-24)
+
+The user played against the NPCs in Juggernaut Horde and reported it was
+overwhelming and “gold behavior.” This is positive human acceptance of elite
+NPC pressure, not a numeric proof. Candidate pinned runtime:
+`20261123_195307` (Juggernaut Horde, 67 NPC/1 player, server PID 22184,
+`logs/2026-11-23/20261123_195307/server-01/events.jsonl`). See
+`docs/gold/2026-11-24-juggernaut-horde-overwhelming-human-evidence.md`.
+
+This becomes the positive baseline to preserve: future tuning must not make
+Juggernaut Horde passive or easy again.

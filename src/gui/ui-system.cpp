@@ -73,7 +73,8 @@ void uiInit(GLFWwindow* win)
     ensureProgram();
 }
 
-void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
+void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput,
+                  bool useOutputFramebuffer)
 {
     static bool mouseEdgeLossReportedForPress = false;
     gWindow = win;
@@ -81,7 +82,7 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
     int framebufferWidth = 0;
     int framebufferHeight = 0;
     mimita::game::hostFramebufferSize(framebufferWidth, framebufferHeight);
-    if (gRenderer && gRenderer->stretchesWholeFrame()) {
+    if (gRenderer && gRenderer->stretchesWholeFrame() && !useOutputFramebuffer) {
         framebufferWidth = gRenderer->sceneWidth;
         framebufferHeight = gRenderer->sceneHeight;
     }
@@ -89,6 +90,23 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
     if (framebufferHeight <= 0 && gRenderer) framebufferHeight = gRenderer->height;
     gFbW = framebufferWidth > 0 ? framebufferWidth : 1;
     gFbH = framebufferHeight > 0 ? framebufferHeight : 1;
+    if (useOutputFramebuffer && passName &&
+        std::strcmp(passName, "game-debug-overlay") == 0) {
+        static bool postFxPresentationLogged = false;
+        if (!postFxPresentationLogged) {
+            postFxPresentationLogged = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Gui, StructuredLevel::Important,
+                "ui.postfx.presentation", "UI",
+                "HUD drawn after PostFX at output resolution",
+                0,
+                nlohmann::json{{"pass_name", passName},
+                               {"framebuffer_width", gFbW},
+                               {"framebuffer_height", gFbH},
+                               {"use_output_framebuffer", true}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
     {
         static std::uint64_t lastFbLogMs = 0;
         static int lastFbW = -1;

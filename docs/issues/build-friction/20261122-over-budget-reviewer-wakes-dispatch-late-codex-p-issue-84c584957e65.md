@@ -139,3 +139,78 @@ Evidence: {"build_attempt_id": "game-dll-20261123T220945368970Z-09cabb", "build_
 
 
 Evidence: {"build_attempt_id": "game-dll-20261123T220945368970Z-09cabb", "build_outcome": "success", "build_total_seconds": 845.325, "fallback_adapter": "opencode", "fallback_launched_utc": "2026-11-23T22:20:28.690Z", "issue": "issue-1f0c919bdbaa", "journal": ".dev/agent-wake/events.jsonl", "misattribution": "dev-loop.wait.reviewer-wake at 2026-11-23T22:10:52.446Z embeds wake-ba365e6b1b58 (issue-review-sweeper, issue-87d8c9c7ffb1)", "primary_adapter": "codex", "primary_launched_utc": "2026-11-23T22:10:51.622Z", "retry_reason": "stale launched request recovered by scheduler", "total_dispatch_delay_seconds": 580.711, "wait_id": "game-dll-build:2026-11-23T22:09:45.196Z", "wake": "wake-6008dd7db0f2", "wake_queued_utc": "2026-11-23T22:10:47.979Z", "wake_retry_utc": "2026-11-23T22:20:20.510Z"}
+
+## Occurrence
+
+### 2026-11-24T00:16:02.566Z — build-wait-reviewer
+
+Over-budget wait game-dll-build:2026-11-23T23:43:01.179Z (issue-b1744402b0a5) reproduces both late dispatch and wake-record misattribution. Wake wake-25a9ef1b3f2a: queued 23:44:07.312Z; codex claimed/launched 23:44:14.577Z/14.599Z; wake.retry "stale launched request recovered by scheduler" to opencode 23:46:51.521Z; opencode claimed/launched 2026-11-24T00:01:18.789Z/18.802Z - queue-to-final-launch 1031.49s (~17m11.5s), above the <=5 min target. The dev-loop.wait.reviewer-wake event at 23:44:15.183Z is stamped with this wait_id / issue-b1744402b0a5 but embeds wake-30a0f17c872c (adapter codex; prompt for issue-e095a23117c8, wait game-dll-build:2026-11-23T22:57:01.813Z), not wake-25a9ef1b3f2a; build_friction.py:242-252 drains the oldest pending wake and returns its result. wake-30a0f17c872c itself was queued 22:58:05.449Z and opencode-drained at 23:44:14.661/14.713Z. The waited-on build (game-dll-20261123T234301570308Z-6c7a9c) FAILED at changed_source_preflight, so the wake subject was a real failure, not a stall.
+
+Evidence: {"build_attempt_id": "game-dll-20261123T234301570308Z-6c7a9c", "build_outcome": "failed", "failed_phase": "changed_source_preflight", "fallback_adapter": "opencode", "fallback_claimed_utc": "2026-11-24T00:01:18.789Z", "fallback_launched_utc": "2026-11-24T00:01:18.802Z", "issue": "issue-b1744402b0a5", "journal": ".dev/agent-wake/events.jsonl", "misattribution": "dev-loop.wait.reviewer-wake at 2026-11-23T23:44:15.183Z is stamped wait_id game-dll-build:2026-11-23T23:43:01.179Z / issue-b1744402b0a5 but embeds wake-30a0f17c872c (issue-e095a23117c8)", "primary_adapter": "codex", "primary_claimed_utc": "2026-11-23T23:44:14.577Z", "primary_launched_utc": "2026-11-23T23:44:14.599Z", "retry_reason": "stale launched request recovered by scheduler", "total_dispatch_delay_seconds": 1031.49, "wait_id": "game-dll-build:2026-11-23T23:43:01.179Z", "wake": "wake-25a9ef1b3f2a", "wake_queued_utc": "2026-11-23T23:44:07.312Z", "wake_retry_utc": "2026-11-23T23:46:51.521Z"}
+
+## Agent suggestion
+
+### 2026-11-24T02:17:20.921Z — issue-review-sweeper
+
+Process-improvement proposal (issue-review-sweeper, wake-af5cc0494785, 2026-11-24). Net-new relative to the 2026-11-23T07:25 outcome-checked-delivery and 15:55 adapter-preference proposals; it targets only the wake-record identity/observability defect, not dispatch timing.
+
+Evidence (negative control)
+- For wait exe-build:49:2026-11-24T01:41:57.628Z the dev-loop.wait.reviewer-wake event embedded the CORRECT wake-70987c3bb01d (queued 01:43:04.135Z) because `agent-wake.py run --once` drained the just-queued request. Earlier misattribution cases embed a different wake because that same drain picked the oldest pending request, and build_friction.py:242-252 returns the drain's result rather than the wake id returned by `agent-wake.py add`. So the defect is identity capture, not queueing.
+
+Measurable target
+- 10/10 consecutive over-budget wait occurrences have their dev-loop.wait.reviewer-wake event embed the wake id whose wake.queued row references the same issue_id and wait_id (0 misattributed reporter events), while the existing <=5 min dispatch and review-or-escalation targets stay unchanged.
+
+Smallest experiment
+- In build_friction.wake_reviewer, capture the wake id from the `agent-wake.py add` output/return and record that id in the event; move the `run --once` launch result into a separate dev-loop.wait.reviewer-launch field/event. Verify over the next 10 over-budget waits by joining .dev/agent-wake/events.jsonl (wake.queued issue/wait) to the dev-loop journal; no dispatch-timing behavior change. No source edit is made by this reviewer; the owner decides.
+
+## Occurrence
+
+### 2026-11-24T02:50:08.100Z — build-wait-reviewer
+
+Over-budget wait exe-build:49:2026-11-24T01:41:57.628Z (issue-c4b82c2ed632) reproduces late reviewer dispatch: wake-70987c3bb01d queued 2026-11-24T01:43:04.135Z; codex primary claimed/launched 01:43:10.131Z/01:43:10.487Z then exited; wake.retry switched to opencode 01:46:08.868Z ('previous adapter process exited; trying fallback'); opencode claimed/launched 02:27:47.135Z/02:27:47.306Z. Total dispatch delay 2683.171s (~44m43s) after queue, far beyond the proposed <=5 min bound. Underlying build exe-build-20261123T204157-f923e86c was real and succeeded at 166.920s (build_script 152.578s) under 99.995% mean host CPU and 228MB minimum available memory, so this is not a stalled build.
+
+Evidence: {"build_attempt_id": "exe-build-20261123T204157-f923e86c", "build_outcome": "success", "build_script_seconds": 152.578, "build_total_seconds": 166.92, "fallback_adapter": "opencode", "fallback_claimed_utc": "2026-11-24T02:27:47.135Z", "fallback_launched_utc": "2026-11-24T02:27:47.306Z", "host_mean_cpu_percent": 99.995, "issue": "issue-c4b82c2ed632", "journal": ".dev/agent-wake/events.jsonl", "minimum_available_memory_bytes": 228171776, "primary_adapter": "codex", "primary_claimed_utc": "2026-11-24T01:43:10.131Z", "primary_launched_utc": "2026-11-24T01:43:10.487Z", "retry_reason": "previous adapter process exited; trying fallback", "total_dispatch_delay_seconds": 2683.171, "wait_id": "exe-build:49:2026-11-24T01:41:57.628Z", "wake": "wake-70987c3bb01d", "wake_queued_utc": "2026-11-24T01:43:04.135Z", "wake_retry_utc": "2026-11-24T01:46:08.868Z"}
+
+## Agent suggestion
+
+### 2026-11-24T03:16:08.983Z — issue-review-sweeper
+
+Process-improvement evidence and one bounded proposal (issue-review-sweeper, wake-2d17204f557c, 2026-11-24). This extends, and does not replace, the 2026-11-23T15:55 work-landed/adapter-preference proposal; it adds a distinct baseline occurrence and a read-only audit that no prior suggestion records.
+
+EVIDENCE (new distinct occurrence, earlier than the occurrences listed above)
+- Wait game-dll-build:2026-11-20T19:55:23.269Z (issue-191782d7d9c5). Pinned build game-dll-20261120T195523321490Z-e1b74d was real and succeeded at 853.471s (generation 411), so this is not a stalled build.
+- wake-a5dd648492be: wake.queued 19:56:29.235Z; codex claimed/launched 19:56:29.961/19:56:30.004Z then exited; wake.retry to opencode 20:10:41.252Z; opencode claimed/launched 20:19:29.151/20:19:29.185Z; review appended 20:38:10.363Z; request finalized status=failed (adapter process exited) 20:48:37.261Z, attempts=2. Queue-to-final-launch 1379.95s (~23m0s); the status=failed was written after work had landed.
+- Surviving artifacts: .dev/agent-wake/events.jsonl and .dev/agent-wake/requests/wake-a5dd648492be.json. This is a fourth distinct 2026-11-20 wait with the same class as the dff7 (16:03) and 6bc05 (14:59) cases already cited.
+
+MEASURABLE TARGET
+- Baseline and then target over the surviving request set and the next 10 over-budget wakes: (a) queue-to-final-launch <=300s for 10/10; (b) 0 request files with status=failed that have an issue_reviews row created after launched_utc. Current baseline includes >=1 such request (wake-a5dd648492be).
+
+SMALLEST EXPERIMENT
+- Add a read-only audit: load every .dev/agent-wake/requests/*.json, join to issue_reviews on issue plus created_utc>launched_utc, and report counts for (i) failed-after-review, (ii) attempts>1, (iii) queue-to-final-launch>300s. Run it once on the current store and attach the exact counts; then re-run after the work-landed completion predicate lands. No process launch and no source edit are proposed by this reviewer; the owner decides. This keeps the existing one-wake.queued acceptance intact and adds a measurable failed-after-review count.
+
+## Occurrence
+
+### 2026-11-24T04:21:37.501Z — issue-review-sweeper
+
+Distinct failed-wake occurrence from the bounded review of issue-41a872c08642 (issue-review-sweeper, wake-4a9bcecd5b4c, 2026-11-24T04:0xZ). Net-new to this issue's recorded occurrences; this is NOT a new proposal. The fixes are already proposed above (2026-11-23T07:25 outcome-checked delivery, 2026-11-23T15:55 adapter-preference/work-landed, 2026-11-24T02:17 wake-id capture). Status: already proposed; awaiting owner/human decision.
+
+Facts: wake-bb452d13c88d was queued exactly once for over-budget game-dll wait game-dll-build:2026-11-20T21:17:34.934Z (elapsed 60.671s vs 60.0s). codex claimed/launched 2026-11-20T21:18:39 and failed model_not_found ('gpt-6-luna' unsupported on this ChatGPT account); wake.retry moved to opencode 23:44:04.762Z; opencode launched 2026-11-21T00:13:32.190Z; wake.failed 'adapter process exited' 2026-11-21T13:50:41.110Z (attempts=2). Queue-to-failed 59284s (~16h28m). The issue stayed unreviewed until a periodic sweeper wake on 2026-11-24T04:02:53Z (~3d6h44m after creation, 503 completed sessions). No issue_reviews row was attributed to this wake.
+
+Deltas vs already-recorded baseline: a distinct 2026-11-20T21:18 occurrence that failed via model_not_found then opencode exit without a review; and it shows the current backlog at 147 open 'Wait over budget: game-dll-build at game_build' issues / 185 open build-friction issues.
+
+Evidence: {"attempts": 2, "budget_seconds": 60.0, "creation_to_first_review_seconds": 289000, "decision_status": "already-proposed; awaiting owner/human decision", "fallback_adapter": "opencode", "fallback_launched_utc": "2026-11-21T00:13:32.190Z", "first_review_queued_utc": "2026-11-24T04:02:53.151Z", "first_review_wake": "wake-4a9bcecd5b4c", "issue": "issue-41a872c08642", "journal": ".dev/agent-wake/events.jsonl", "open_build_friction_issues": 185, "open_game_dll_wait_issues": 147, "primary_adapter": "codex", "primary_error": "model_not_found: gpt-6-luna not supported when using Codex with a ChatGPT account", "queue_to_failed_seconds": 59284, "request_file": ".dev/agent-wake/requests/wake-bb452d13c88d.json", "wait_elapsed_seconds": 60.671, "wait_id": "game-dll-build:2026-11-20T21:17:34.934Z", "wake": "wake-bb452d13c88d", "wake_error": "adapter process exited", "wake_failed_utc": "2026-11-21T13:50:41.110Z", "wake_queued_utc": "2026-11-20T21:18:37.158Z"}
+
+## Agent suggestion
+
+### 2026-11-24T04:24:42.380Z — issue-review-sweeper
+
+Correction to the 2026-11-24T04:21 occurrence just above (issue-review-sweeper). The narrative durations are correct (~16h32m, ~3d6h44m); two structured seconds values in its Evidence were miscalculated. Correct exact values: queue_to_failed_seconds = 59523.952 (2026-11-20T21:18:37.158Z to 2026-11-21T13:50:41.110Z); creation_to_first_review_seconds = 283457.497 (2026-11-20T21:18:35.654Z to 2026-11-24T04:02:53.151Z). No other value changes; this is an arithmetic correction, not a new proposal or occurrence.
+
+## Occurrence
+
+### 2026-11-24T04:30:58.726Z — build-wait-reviewer
+
+Over-budget wait exe-build:20:2026-11-24T03:29:41.809Z (issue-627ca4b9f577) reproduces late reviewer dispatch: wake-7d93d4ea8cb4 queued 2026-11-24T03:30:43.177Z; codex primary claimed/launched 03:30:44.585/03:30:44.598Z then exited; wake.retry switched to opencode 03:35:41.743Z ("previous adapter process exited; trying fallback"); opencode claimed/launched 04:02:53.740/04:02:53.753Z, about 27m12s after the retry and only when an unrelated scheduled review woke the daemon. Total queued-to-launch delay 1930.576s (~32m11s), far beyond the proposed <=5 min bound. The underlying EXE build 2026-11-24T03:30:52.372066Z (exe-build-20261123T222942-3b725c52) was real and succeeded at 71.185s worker total (build_script 61.413s) under 99.955% mean host CPU and 452MB minimum available memory, so this is not a stalled build.
+
+
+Evidence: {"build_attempt_id": "exe-build-20261123T222942-3b725c52", "build_outcome": "success", "build_script_seconds": 61.413, "build_total_seconds": 71.185, "fallback_adapter": "opencode", "fallback_claimed_utc": "2026-11-24T04:02:53.740Z", "fallback_launched_utc": "2026-11-24T04:02:53.753Z", "issue": "issue-627ca4b9f577", "journal": ".dev/agent-wake/events.jsonl", "primary_adapter": "codex", "primary_claimed_utc": "2026-11-24T03:30:44.585Z", "primary_launched_utc": "2026-11-24T03:30:44.598Z", "retry_reason": "previous adapter process exited; trying fallback", "total_dispatch_delay_seconds": 1930.576, "wait_id": "exe-build:20:2026-11-24T03:29:41.809Z", "wake": "wake-7d93d4ea8cb4", "wake_queued_utc": "2026-11-24T03:30:43.177Z", "wake_retry_utc": "2026-11-24T03:35:41.743Z"}

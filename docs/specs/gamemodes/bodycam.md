@@ -40,6 +40,19 @@ settings, not camera-only effects.
   camera position/rotation smoothing, and camera sway. Values must be bounded
   and validated. Smoothing must be time-step aware and must never snap when a
   valid value changes.
+- Body-led look is the Bloodtest default: mouse look is the torso wish
+  direction, the torso turns toward it, and the head follows the torso. The
+  camera stays attached to the head, so the player sees the body lead and the
+  head settle rather than an independently mouse-driven head that drags the
+  torso. `head_follows_body` selects this behavior; when false the previous
+  head-led response remains available for other modes.
+- A small `settle_deadband_degrees` suppresses aim-motor torque and bleeds
+  angular velocity when the body is already within that angle of its target.
+  This removes standing-still jitter without changing large turns or movement.
+- The HUD is drawn after PostFX by default and stays crisp. The optional
+  `ui_in_scene_target` horror path is documented in
+  `docs/specs/graphics/graphics-post-processing.md`; it is not required for
+  bodycam and must not be enabled to hide a camera bug.
 - Separate local presentation smoothing from multiplayer state. Interpolate
   replicated remote actor poses using the shared snapshot path, then render the
   camera/arms smoothly from those poses. Do not smooth or rewrite authoritative
@@ -106,10 +119,12 @@ contains the complete block. An initial shape is:
       "head_eye_offset_m": [0.0, 0.0, 0.0],
       "position_response_seconds": 0.12,
       "rotation_response_seconds": 0.10,
-      "head_response_seconds": 0.12,
-      "torso_response_seconds": 0.18,
+      "head_response_seconds": 0.10,
+      "torso_response_seconds": 0.22,
       "arm_response_seconds": 0.14,
       "weapon_stability_seconds": 0.10,
+      "head_follows_body": true,
+      "settle_deadband_degrees": 0.35,
       "camera_sway_scale": 1.0,
       "lens": {
         "chromatic_aberration": 0.0,
@@ -132,6 +147,15 @@ without snapping the current camera/head/arm state. Smoothing is split by
 camera position, camera rotation, head, torso, arms, and held weapon so each
 can be adjusted independently. Physical aim continues to use the shared
 aim-body owner; its weapon muzzle and damage contacts remain authoritative.
+
+## Quick runtime check
+
+Run `python devscripts/bloodtest-quick.py` from the repository root. It requests
+launch mode 51 through the root dev loop, starts the second client, assigns the
+two teams, and waits for `network.mode.start` with `stage=active`. It does not
+start a second dev loop or bypass the build authority; if the published build is
+stale it waits for the root loop to finish the requested build. Use
+`--replace` only when the existing run is yours and can be stopped.
 
 ## Resolution and live edit workflow
 
@@ -199,11 +223,16 @@ reduced-motion settings, weapon aiming, weapon contact, sound, and replay export
 separately. Keep the screenshots, sidecars, and exact run/build identity with
 the visual review. Human gameplay/visual acceptance remains required.
 
-The repository has a run-local `agent.screenshot` command, but it captures the
-visible window as BMP. Exact-tick `screenshot_at_tick` capture and
-provider/model-agnostic comparison against saved references are separate
-tooling capabilities; a screenshot or model-generated comparison cannot prove
+The repository has a run-local `agent.screenshot` command, but it currently
+copies the desktop rectangle at the visible window position as BMP; it is not a
+framebuffer capture and is not valid proof when the window is hidden, covered,
+minimized, or headless. Exact-tick `screenshot_at_tick` capture must read the
+post-UI client framebuffer and record headless/window state; see
+`docs/specs/dev-loop/visual-proof-screenshots.md` and
+`issue-130ee745052a`. A screenshot or model-generated comparison cannot prove
 server-authoritative hit behavior and does not replace human visual acceptance.
+When event proof exists but visual acceptance is not yet observed, keep the
+bodycam task or issue open with an explicit visual residual.
 
 ## Related specifications
 

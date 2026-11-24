@@ -667,3 +667,37 @@ Observed: issue-1d1b9c62ac08 has now had three scheduled bounded reviews (2026-1
 Recurrence target (extends the existing proposal): by the next sweep, 0 issues have >=3 identical review-only next checks without either an open runnable task (method = the check) or a recorded defer reason; for issue-1d1b9c62ac08 specifically, the next wake either starts a pinned funworld3+payload run or records the concrete blocker. Count 'identical next-check hash, no runnable task' issues before/after: this instance 1 -> 0, and 0 across the next 5 sweeps.
 
 Smallest experiment (same mechanism as the 18:28 proposal, applied here): when appending a review whose NEXT DISCRIMINATING CHECK section normalizes to the same hash as that issue's previous review, call the existing task-add path with that check as method and queue one bounded message to the owner; if no owner is active, expose it through next --mode waiting. Verify on issue-1d1b9c62ac08's next scheduled review that it produces a task or a recorded defer instead of another identical review, and that no duplicate task/wake is created. Read-only review; no source, build, or runtime change performed.
+
+## Agent suggestion
+
+### 2026-11-24T00:15:42.845Z — resource-profiler
+
+Human-action attribution follow-up, evidence from run 20261124_001051: current dev-loop journal records dashboard request_id=dashboard-5ebc4e99, requested_by=dashboard, launch mode 44, map dust2cyberiav4, exact PIDs, and later client exit with crash artifacts; this lets us correlate a GUI launch to outcome but does not identify which human or explain an in-game mode switch. Extend the existing event chain (not a separate log) to record semantic user actions at each owner boundary: actor_type human/agent/watchdog/system/unknown, origin dashboard/in-game/CLI/API, stable action_id/request_id, requested operation and target, before/effective state, result/rejection, build/run/PID/generation. For in-game mode changes, record prior and effective mode plus requester/player and server session; for source changes, record watcher-detected path/hash and actor=unknown unless an editor/control integration supplies identity; never infer a human. Keep raw keystrokes/screen capture off by default; use the existing opt-in scenario recorder for input detail. Acceptance: perform one dashboard launch, one in-game mode switch, one source edit and one observed crash/restart; each has correlated entry and completion/failure events in canonical events.jsonl, and every unavailable actor is explicitly unknown. Related: performance issue issue-ed3ac775283d; sample run/dev-loop journal logs/2026-11-24/20261124_001051/dev-loop/events.jsonl.
+
+## Agent suggestion
+
+### 2026-11-24T00:28:34.261Z — issue-review-sweeper
+
+Evidence update and measurable extension for the 2026-11-23T18:28:36Z review-to-execution proposal (issue-review-sweeper, wake-ffc09301fa95, 2026-11-24T00:2xZ, from the bounded review of issue-3f776ce60511). Read-only; no source, build, or runtime change.
+
+NEW EVIDENCE: issue-3f776ce60511 received three reviewer proposals (2026-11-22T08:38:20Z, 12:02:38Z, 22:03:01Z) that each name concrete code paths and a reference-protected prune experiment. None was converted to a task, decision, or recorded defer. The issue's only task (storage-audit-v1) is the broad inventory, still state=open with empty evidence and no task_proofs row. Direct cost at review time: 11 run dirs cited in non-closed issues' structured evidence are already missing, and the single surviving cited run (logs/2026-11-22/20261122_210058, referenced by open issue-cf0cb7818822) sits in the oldest currently kept root, so the next prune will delete an open issue's only journal.
+
+EXTENSION (same escalation mechanism as the 18:28 proposal, distinct trigger): include reviewer suggestions that name a code path, not only repeated NEXT CHECK text, in the repeat hash and escalation. Measurable target: by the next sweep, 0 open issues have >=2 reviewer proposals naming a code path but no linked task/decision/defer older than 48h; each escalation emits coord.issue_review.escalated with issue id, normalized suggestion hash, and task id or recorded decision. Current instance: 1 (issue-3f776ce60511, 3 proposals in about one day).
+
+Smallest experiment: in agent_coord.issue_review, normalize the body of agent suggestion entries that contain a repo path (for example devscripts/*.py) and count per-issue repeats; on the second repeat, call the existing task-add path using the most recent proposal's smallest experiment as the method and notify the owner once; if the owner is inactive, expose it via next --mode waiting. Verify on issue-3f776ce60511's next scheduled review that it produces a task/decision/defer instead of a fourth proposal, with no duplicate task or wake. Do not auto-implement or self-approve behavior proof.
+
+## Agent suggestion
+
+### 2026-11-24T00:55:12.549Z — issue-review-sweeper
+
+Sweep finding from issue-af958c3e10eb (build-friction reviewer wake, 2026-11-20): a real reviewer wake (wake-020bc6842761, queued once for wait_id exe-build-queue:105972.877) was delivered with "This is a bounded test activation" and the woken build-wait-reviewer correctly did no work ("No issue claimed — this is a no-work test activation"); the request ended status=failed ("adapter process exited") with no effective review, and the issue stayed state=new for ~3.3 days / 475 completed sessions until the periodic sweep. The prompt mislabel itself is now fixed in source (devscripts/quality/test_agent_wake.py asserts the phrase is absent and passes 3/3), but nothing verifies that a real reviewer wake ends in an issue review.
+
+Proposal (workflow-capability gap): add a cheap completion assertion for bounded reviewer wakes so a failed or no-work wake is visible and retried rather than silently leaving an issue `new`.
+Measurable target: 0 build-friction reviewer wakes that end failed/no-work with no appended issue review and no retry within one daemon cycle; over a 7-day window, >=95% of build-friction reviewer wakes produce an issue review or an explicit reasoned decline.
+Smallest experiment (read-only, no source edit in this review): owner enqueues 5 synthetic reviewer wakes against one scratch issue, simulates one adapter failure, and counts (a) reviews appended, (b) retries/fallbacks attempted, (c) scratch issues still `new` after the cycle; record the counts and journal paths. Owner to claim; do not close on the unit test alone.
+
+## Agent suggestion
+
+### 2026-11-24T00:57:48.292Z — codex-server-startup
+
+User feedback 2026-11-23: goal setting should give each agent a clear return point—the user's main goal—and after coordination or evidence collection the agent should ask whether the current action advances that goal efficiently, then return to it. Track time spent on coordination/waits separately and report the next action that directly moves the goal. Suggested metric: intent-to-evidence elapsed, time in tool/build waits vs useful investigation, and explicit current-goal/next-step in activity; avoid claiming model-thought time without measurement.

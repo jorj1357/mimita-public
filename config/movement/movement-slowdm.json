@@ -25,12 +25,12 @@
     // Bloodtest sprint/stamina. Sprint ramps speed smoothly; stamina drains
     // only while sprinting and moving on the ground and recovers after a delay.
     "sprint_enabled": true,
-    "sprint_speed_multiplier": 1.55,
+    "sprint_speed_multiplier": 1.35,
     "sprint_ramp_up_seconds": 0.35,
     "sprint_ramp_down_seconds": 0.25,
     "stamina_capacity": 100.0,
-    "stamina_drain_per_second": 18.0,
-    "stamina_recovery_per_second": 12.0,
+    "stamina_drain_per_second": 20.0,
+    "stamina_recovery_per_second": 10.0,
     "stamina_recovery_delay_seconds": 0.5,
     "sprint_exhausted_recover_fraction": 0.25,
 
@@ -51,11 +51,11 @@
     // FAST SOURCE PRESET VALUE:
     // 20 MiMITA units/sec.
     // "max_speed": 30.0,
-    "max_speed": 15.0,
+    "max_speed": 9.0,
 
     // Keep server-side ground movement validation at the same speed.
     // "ground_speed": 30.0,
-    "ground_speed": 15.0,
+    "ground_speed": 9.0,
 
     // Extremely high ground acceleration from the fast Source preset.
     //
@@ -144,7 +144,7 @@
     // Matches the fast Source preset.
     // "jump_velocity": 9.0,
     // "jump_velocity": 13.0,
-    "jump_velocity": 18.0,
+    "jump_velocity": 14.0,
     // "jump_velocity": 10.0,
 
     // Add the jump impulse to the current vertical velocity. This preserves

@@ -35,6 +35,12 @@ public:
         float torsoResponseSeconds = 0.18f;
         float armResponseSeconds = 0.14f;
         float weaponStabilitySeconds = 0.10f;
+        // Body-led camera: the torso turns toward the wish direction and the
+        // head follows the torso instead of chasing the mouse independently.
+        bool headFollowsBody = false;
+        // Suppress aim-motor torque and bleed angular velocity when the body is
+        // within this angular distance of its target. Stops standing jitter.
+        float settleDeadbandDegrees = 0.0f;
     };
     void setBodycamResponseOverride(const ModeResponseOverride& value) {
         mBodycamResponseOverride = value;

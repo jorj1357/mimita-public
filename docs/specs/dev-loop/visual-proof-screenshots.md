@@ -54,6 +54,27 @@ The sidecar JSON contains:
   run as the 240 FPS frame-consistency benchmark.
 - Paths must be inside the run directory; no arbitrary filesystem path.
 
+## Framebuffer capture, not desktop capture
+
+The proof image must be read from the client's rendered framebuffer after the
+UI pass. It must not be a copy of the desktop rectangle at the window position.
+
+- Capture must work when the game window is hidden, minimized, covered by
+  another window, unfocused, or running under a headless/offscreen surface.
+  Focus and visibility are not prerequisites for proof capture.
+- The sidecar names the capture backend (`framebuffer`, not `desktop`),
+  `headless`, and the observed window visibility/focus/occlusion state when
+  known.
+- If the framebuffer is unavailable, write `result=failed` or
+  `result=missed` with the reason. Never write an unrelated desktop image and
+  report success.
+- `agent.screenshot` currently uses a GDI desktop copy and is not the
+  framebuffer contract; it must not be used as proof while the window may be
+  hidden or covered. See `issue-130ee745052a` and `issue-89efbbc86535`.
+- A capture is rejected as visual proof when it contains another application,
+  a desktop composite, or content that cannot be tied to the exact run, build,
+  process, and tick.
+
 ## Evidence rules
 
 A screenshot proves only what is visibly present in the image at the recorded
@@ -66,17 +87,24 @@ run.
 
 - Add the terminal/agent command and scenario step.
 - Reuse the existing render framebuffer readback path; do not create a second
-  renderer.
+  renderer and do not use a desktop/window BitBlt fallback.
 - Add bounded capture queue and a single in-flight screenshot.
 - Write UTF-8 JSON sidecar and PNG atomically; preserve the last image on
   failure.
 - Add `screenshot_at_tick` to the proof ledger as visual evidence.
-- Test exact tick, missed tick, invalid path, headless, and UI-visible modes.
+- Test exact tick, missed tick, invalid path, headless, hidden/covered window,
+  and UI-visible modes. A hidden-window capture must match the visible capture
+  of the same scene apart from normal frame variation.
 
 ## Acceptance
 
 - An agent can request a screenshot at tick N and gets an identity-matched
   image or a truthful `missed` result.
-- The sidecar and journal prove the tick/build/run identity.
+- The sidecar and journal prove the tick/build/run identity and the capture
+  backend.
+- A hidden, covered, minimized, unfocused, or headless client captures the
+  same MiMITA framebuffer content without requiring the window to be visible.
+- A desktop/window capture or unrelated application image is rejected as
+  visual evidence, not accepted with a warning.
 - A screenshot is never accepted as the sole proof of server or gameplay
   behavior.

@@ -238,6 +238,7 @@ struct ServerInput
     bool downDashPressed = false;
     bool attackPressed = false;
     bool freezeHeld = false;
+    bool sprintHeld = false;
     // Melee: Q held shield and E grab held intent, carried in stateFlags bits
     // that are otherwise free (see NetworkPlayerStateFlags).
     bool shieldHeld = false;

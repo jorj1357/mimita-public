@@ -444,6 +444,26 @@ void applyPresetOverrides(const json& root, MovementConfig& config)
 
     if (root.contains("max_air_jumps") && root["max_air_jumps"].is_number())
         config.maximumAirJumps = std::max(0, root["max_air_jumps"].get<int>());
+
+    readBool("sprint_enabled", config.sprintEnabled);
+    readFloat("sprint_speed_multiplier", config.sprintSpeedMultiplier);
+    config.sprintSpeedMultiplier = std::clamp(config.sprintSpeedMultiplier, 1.0f, 4.0f);
+    readFloat("sprint_ramp_up_seconds", config.sprintRampUpSeconds);
+    readFloat("sprint_ramp_down_seconds", config.sprintRampDownSeconds);
+    config.sprintRampUpSeconds = std::clamp(config.sprintRampUpSeconds, 0.01f, 5.0f);
+    config.sprintRampDownSeconds = std::clamp(config.sprintRampDownSeconds, 0.01f, 5.0f);
+    readFloat("stamina_capacity", config.staminaCapacity);
+    readFloat("stamina_drain_per_second", config.staminaDrainPerSecond);
+    readFloat("stamina_recovery_per_second", config.staminaRecoveryPerSecond);
+    readFloat("stamina_recovery_delay_seconds", config.staminaRecoveryDelaySeconds);
+    readFloat("sprint_exhausted_recover_fraction", config.sprintExhaustedRecoverFraction);
+    config.staminaCapacity = std::clamp(config.staminaCapacity, 1.0f, 1000.0f);
+    config.staminaDrainPerSecond = std::max(0.0f, config.staminaDrainPerSecond);
+    config.staminaRecoveryPerSecond = std::max(0.0f, config.staminaRecoveryPerSecond);
+    config.staminaRecoveryDelaySeconds = std::clamp(
+        config.staminaRecoveryDelaySeconds, 0.0f, 10.0f);
+    config.sprintExhaustedRecoverFraction = std::clamp(
+        config.sprintExhaustedRecoverFraction, 0.01f, 1.0f);
 }
 
 // Parses a preset file into `out` without touching any global state.

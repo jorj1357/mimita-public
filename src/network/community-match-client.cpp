@@ -479,6 +479,21 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
             }
             MovementJsonConfig::instance().applyRuntimeConfig(movement, modeConfig.movementPreset);
             mModeMovementPresetApplied = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "client.movement.profile.applied", mMode,
+                "applied mode movement preset for local prediction",
+                packet.serverTick,
+                nlohmann::json{
+                    {"mode", mMode},
+                    {"preset", modeConfig.movementPreset},
+                    {"source_max_speed", movement.sourceMaxSpeed},
+                    {"ground_speed", movement.groundSpeed},
+                    {"jump_vertical_speed", movement.jumpVerticalSpeed},
+                    {"sprint_enabled", movement.sprintEnabled},
+                    {"sprint_speed_multiplier", movement.sprintSpeedMultiplier},
+                    {"stamina_drain_per_second", movement.staminaDrainPerSecond},
+                    {"stamina_recovery_per_second", movement.staminaRecoveryPerSecond}});
         }
     }
     if (mForceFirstPerson && !mFirstPersonApplied) {

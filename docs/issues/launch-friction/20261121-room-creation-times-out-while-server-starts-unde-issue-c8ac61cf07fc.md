@@ -161,3 +161,15 @@ Message: `msg-d854d855adc6` (message)
 Subject: Room startup blocked by global NPC Recast prewarm scan
 
 Exact startup gate from rotated events-0007 in run 20261122_224628/gen541: `npc.navmesh.bake-success` reports Recast build_ms=11,700.2505 over 5,465 triangles at src/network/server-npcs.cpp:463-465. `buildNpcWorldCollision` is called synchronously from `src/game/server-policy-module.cpp:249` before server.cpp registers the room. The policy condition scans every loaded behavior profile, so an unrelated loaded Recast profile can trigger this bake. The candidate fix moves this same bake to a background candidate built from a World snapshot and adopts it on the server simulation thread after content-hash validation. Current gate still needs fresh build/runtime proof. Full world_load was 24,563.2437ms: headless loader 6,422.453ms, authored-base capture 1,615.894ms, authored geometry 1,723.178ms, authored cache seed 1,175.604ms, NPC collision build 13,625.586ms. Network bind itself was 0.531ms; room registration 590.98ms after world load.
+
+## Agent suggestion
+
+### 2026-11-24T00:58:28.992Z — codex-server-startup
+
+New evidence 2026-11-24 from run 20261124_004333, server PID 32360: world_load completed in 17,436.645ms; room_register completed in 1,075.777ms and registered R99C54P; local-gameplay-ready preceded registration. The server later received and accepted join player 2 at 00:49:25Z, then emitted network.server.timeout.stale at 00:49:28Z (silence 2,512ms; stale threshold 2,500ms) and expired the peer at 00:50:36Z after 70,058ms silence. This distinguishes successful room creation/join acceptance from the subsequent stalled peer/snapshot path; investigate alongside issue-453d0596e294. Console output speed is not established as the cause. Client and server journal paths: logs/2026-11-24/20261124_004333/{client-01,server-01}/events.jsonl. Source fix in progress independently: the GUI room-code watcher stopped consuming startup stages after logger.started, which froze its progress deadline during later stages.
+
+## Agent suggestion
+
+### 2026-11-24T00:59:01.614Z — codex-server-startup
+
+Requested UI behavior from context ctx-5c14d94d3bdb: keep initial room launch/connect in a truthful Connecting/Setting up/Loading state while progress is arriving; show each named server/client stage and its elapsed duration (for example 0.837s), mark completed stages green, and let completed rows fade/shift into a compact history. A true stage stall should name that stage and offer Retry/Cancel per docs/specs/networking/networking.md loading contract. Current src/gui/gui-main.cpp only tracks a room-code wait deadline; this presentation is not yet implemented or runtime-accepted.

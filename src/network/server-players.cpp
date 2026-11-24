@@ -695,6 +695,7 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     player.maxHealth = maxHp;
     player.health = maxHp;
     player.body.reset();
+    player.movement.sprint = MovementSprintState{};
     if (!profile.avatarName.empty())
         player.avatarName = profile.avatarName;
     // The active mode's allow-list is authoritative for players as well as
@@ -730,32 +731,41 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     player.movementProfileId = profile.movementPreset;
     player.actorPresetId = profile.actorPresetId;
     {
-        const MovementConfig& movementCfg = MovementJsonConfig::instance().config();
+        const MovementConfig* resolvedMove =
+            RoleMovementCache::instance().get(profile.movementPreset);
+        const MovementConfig& movementCfg = resolvedMove
+            ? *resolvedMove : MovementJsonConfig::instance().config();
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Network, StructuredLevel::Important,
             "bloodtest.collision.profile.applied", std::to_string(player.id),
             "authoritative living-actor capsule profile applied at spawn",
-            player.movementSimulationTick,
+            player.spawnGeneration,
             {{"actor_id", player.id},
              {"role_id", profile.roleId},
              {"profile_id", profile.movementPreset},
              {"proxy_kind", "capsule"},
              {"capsule_count", 1},
              {"capsule_dimensions", {
-                 {"radius_m", player.movementCapsule.radius},
-                 {"height_m", player.movementCapsule.height}}},
+                 {"radius_m", PLAYER_RADIUS * player.sizeScale},
+                 {"height_m", PLAYER_HEIGHT * player.sizeScale}}},
              {"fixed_tick", true}},
             __FILE__, __LINE__, __FUNCTION__);
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Network, StructuredLevel::Important,
             "bloodtest.movement.profile.applied", std::to_string(player.id),
             "authoritative movement profile applied at spawn",
-            player.movementSimulationTick,
+            player.spawnGeneration,
             {{"actor_id", player.id},
              {"role_id", profile.roleId},
              {"movement_preset", profile.movementPreset},
              {"speed_mps", movementCfg.groundSpeed},
              {"jump_impulse", movementCfg.jumpVerticalSpeed},
+             {"sprint_enabled", movementCfg.sprintEnabled},
+             {"sprint_speed_multiplier", movementCfg.sprintSpeedMultiplier},
+             {"sprint_ramp_ticks", movementCfg.sprintRampUpSeconds * 60.0f},
+             {"stamina_capacity", movementCfg.staminaCapacity},
+             {"stamina_drain_per_second", movementCfg.staminaDrainPerSecond},
+             {"stamina_recovery_per_second", movementCfg.staminaRecoveryPerSecond},
              {"max_health", maxHp},
              {"fixed_tick", true}},
             __FILE__, __LINE__, __FUNCTION__);
@@ -1562,11 +1572,13 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             ? applyRuntimeMovementTuning(*roleMove)
             : makeCurrentRuntimeMovementConfig();
         MovementState state = movementStateFromServerPlayer(p);
+        const MovementConfig effectiveCfg =
+            applySprintToMovementConfig(state, cmd, cfg, SERVER_DT);
 
         // Phase 1: Pre-collision movement (gravity, walk, jump, dash)
-        applyPreCollisionBasicMovement(state, cmd, cfg, SERVER_DT);
+        applyPreCollisionBasicMovement(state, cmd, effectiveCfg, SERVER_DT);
         MovementStepEvents preEvents;
-        applySpecialMovementPreCollision(state, cmd, cfg, SERVER_DT, preEvents);
+        applySpecialMovementPreCollision(state, cmd, effectiveCfg, SERVER_DT, preEvents);
         applyMovementStateToServerPlayer(state, p);
 
         // Phase 2: World collision resolve
@@ -1582,7 +1594,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         collision.simulationTick = cmd.clientSimulationTick;
 
         MovementStepResult stepResult = applyPostCollisionMovementWithSpecials(
-            state, cmd, cfg, collision, SERVER_DT, preEvents);
+            state, cmd, effectiveCfg, collision, SERVER_DT, preEvents);
         applyMovementStateToServerPlayer(stepResult.state, p);
         p.clientStateUpdated = false;
 

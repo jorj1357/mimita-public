@@ -22,6 +22,8 @@ struct InputState {
     bool downDashPressed = false;
     bool freezeHeld = false;
     bool freezePressed = false;
+    // Mode-owned sprint input (LeftAlt by default; dash remains LeftShift).
+    bool sprintHeld = false;
     // Melee: Left Ctrl held — crouch on the ground, faster descent in the air.
     bool crouchHeld = false;
     bool reviveHeld = false;

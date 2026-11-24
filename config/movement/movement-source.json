@@ -333,7 +333,7 @@
     //
     // Irrelevant while speed_limit_enabled is false.
     // "speed_limit_mode": "fixed",
-    "speed_limit_mode": "clamped",
+    "speed_limit_mode": "clamp",
 
     "tuning_notes": {
         "comment": "Source/GoldSrc-family movement equations with the fast MiMITA source preset values. Ground: max_speed=20, acceleration=999.5, friction=5.25, stopspeed=0.01. Air: gain=2, airaccelerate=12, projection cap=1.1, Valve bug compatibility enabled. Jump=15.1, gravity=-40, auto-bhop enabled. Dash=100 ground / 50 air, down-dash=-100. Global 50-unit speed limit disabled so it does not artificially suppress the faster Source preset behavior."

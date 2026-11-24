@@ -71,3 +71,40 @@ Fix candidate remains as reported by the first review (cross-build worker arbitr
 Recurrence 2026-11-22T01:47:30.748Z (issue-17abc587c89a): exe-build generation 6 at stage setup exceeded the 60s budget at 61.375s (reason 'preparing build'). Request bc836913 had already produced queue issue-4891874dd02b and entered setup 244ms after game-DLL generation 440 published. The EXE build subprocess (pid 33160) then ran about 150s of setup and completed at 2026-11-22T01:53:27.861Z (root build/progress.json: elapsed_s 346.097, compile_s 190.844, link_s 6.578), but it was never published because the dev-loop daemon restarted (dev-loop.watcher.restarted daemon-not-alive at 02:01:23.908Z). Same flat-60s-budget root cause as this issue; recorded as an occurrence rather than a duplicate analysis. Reviewer build-wait-reviewer, wake-ff9869ed026f.
 
 Evidence: {"budget_seconds": 60.0, "daemon_restart_reason": "daemon-not-alive", "daemon_restart_utc": "2026-11-22T02:01:23.908Z", "elapsed_seconds": 61.375, "exe_build_compile_s": 190.844, "exe_build_completed_utc": "2026-11-22T01:53:27.861Z", "exe_build_elapsed_s": 346.097, "exe_build_link_s": 6.578, "exe_build_subprocess_pid": 33160, "generation": 6, "journal_path": "logs/2026-11-22/20261122_011031/dev-loop/events.jsonl", "kind": "exe-build", "recurrence_issue": "issue-17abc587c89a", "request_ids": ["2026-11-22T01:33:57.208Z-bc836913"], "source_generation": 6, "stage": "setup", "wait_id": "exe-build:6:2026-11-22T01:47:30.748Z"}
+
+## Scheduled independent review
+
+### 2026-11-24T01:16:06.034Z — resource-profiler
+
+A bounded independent review was queued as wake wake-aca5a63477a9 after 487 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (confirmed-recurring-class; root-fix-not-landed; journal-gap-persists; no-fix-claimed)
+
+### 2026-11-24T01:38:33.251Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (issue-review-sweeper, wake-aca5a63477a9, 2026-11-24T01:2xZ). Read-only: no source edit, no build request, no compiler, no second dev-loop, no close, no fix claim. Prior text preserved.
+
+OBSERVED FACTS
+1. Brief/readiness: kind=build-friction, state=in_review before this append, owner empty, 0 tasks, readiness ready=true missing=[] score=8. Two prior reviews exist (build-wait-reviewer, ids 18 and 20, 2026-11-20T20:08Z/20:14Z).
+2. Exact-journal gap persists: Test-Path logs/2026-11-20/20261120_170259/dev-loop/events.jsonl = False on 2026-11-24T01:2xZ. The original 60.298s wait still cannot be re-derived from its own dev-loop journal; the prior reviews' fallback evidence remains the only 11-20 record. I did not re-open those 11-20 artifacts this sweep.
+3. The same wait class recurs. The store holds 7 issues titled "Wait over budget: exe-build at compiling": this one (2026-11-20T19:43:23Z), issue-693e63059a7c (11-20 20:19), issue-4d9eb4b1a8ad (11-22 04:04), issue-727472d32238 (11-22 07:59), issue-74e7906c7f52 (11-22 19:50), issue-266ae06d18d0 (11-22 19:52), issue-3e601947fc16 (11-23 19:22).
+4. Aggregate wait noise (live store, 2026-11-24T01:2xZ): 168 open "Wait over budget:*" build-friction issues: 145 game-dll-build at game_build, 7 exe-build at compiling, 7 exe-build at setup, 6 exe-build-queue at build_pending, plus 1 starting / 1 presentation_dll / 1 staging. States: 151 in_review, 16 new, 1 assigned. A prior independent measurement on issue-9a4503f6ed68 recorded 127 game-dll / 149 total at 2026-11-22T22:25Z, so the backlog grew about 19 in about 27h.
+5. Flat budget fires on healthy builds (direct journal, logs/2026-11-23/20261123_192224/dev-loop/events.jsonl): over_budget at 21:52:16.574Z for wait game-dll-build:2026-11-23T21:51:15.080Z elapsed 60.37s, while the same attempt game-dll-20261123T215115211280Z-e6886c succeeded at 21:52:26.188Z total 70.85s. Same journal: 61.659s for attempt ...7401c3 (gen571, ok 827.407s), 60.745s for gen573 (ok 845.325s), 61.168s for gen574 (ok 1285.484s), and 61.338s for attempt ...6c7a9c which genuinely failed at changed_source_preflight. The 60s signal is therefore non-specific: it fires on normal 70-1285s builds and on a real failure alike.
+6. Prior fix candidates have not landed. build.py:125-136 still defaults BUILD_JOBS to os.cpu_count() (12 here) with no cross-build arbitration/headroom; the latest EXE metrics entry (2026-11-23T19:22:12Z) is elapsed 70.314s, compile 44.143s, jobs 12. devscripts/build_friction.py was last committed d651e133 on 2026-11-20T18:25:38-0500, before this issue was created at 19:43Z, and still dedupes only on exact wait_id (_wait_issue / record_wait_incident, lines about 131-169).
+7. Wake-status discrepancy on a newer same-automation occurrence: .dev/agent-wake/requests/wake-c4a5d204a3c9.json (issue-ecdc697b2415) shows created 2026-11-24T00:40:03Z, claimed/launched 00:59:44Z (about 19.7 min later), attempts=2, status="failed", error "adapter process exited; reconciled by scheduler". Yet a completed build-wait-reviewer review for that issue exists at 2026-11-24T01:05:55Z. Direct observation: queued-once is true, but request status and actual completion disagree.
+
+INFERENCE / UNCERTAINTY
+- The original exe-build-at-compiling wait is still best explained as EXE compile latency under concurrent 12-job game-DLL work (prior review: one TU 130-172s busy vs 19.3s idle). I did not independently re-measure 11-20 because that journal is gone; confidence stays medium-high on persistence of the class, not on the exact 11-20 ratio.
+- Most of the 168 wait issues are a policy artifact (flat 60s + per-attempt minting), not 168 distinct defects; I did not individually triage all 168.
+- The status=failed wake that nonetheless produced a review may be a reconciler naming/timing defect rather than non-delivery. Unknown; I did not read the reconciler.
+
+CONTRARY EVIDENCE
+- The automation is not dead: run 20261123_192224 recorded durable dev-loop.wait.over_budget / dev-loop.wait.reviewer-wake events for real waits, and the newest game DLL (gen577, 2026-11-24T01:05:45.955Z -> 01:06:33Z, about 47s) finished under budget with no wait issue. Not every build trips it.
+- This issue's own acceptance was met for the original occurrence (record carries wait_id/stage/reason/elapsed/build identity; one reviewer wake), per the two prior reviews.
+
+NEXT DISCRIMINATING CHECK (one)
+- On the next 3 EXE builds with a 1-TU change, record build-metrics phase_seconds.compile_s and jobs plus whether a game-DLL build was in flight (dev-loop.game-build.started/result in the same window), then test: (a) if contention is the cause, concurrent-vs-idle 1-TU compile ratio should fall from the prior about 7-9x toward <2x after a worker cap, with 0 exe-build-at-compiling waits across those 3 builds; (b) if the flat budget is the cause, no exe-build wait should fire for builds that succeed within 2x budget (<=120s) across the same 3 builds. Either outcome is measurable from existing journals without new instrumentation.
+
+Verdict: confirmed-recurring-class / root-fix-not-landed / journal-gap-persists / no-fix-claimed.

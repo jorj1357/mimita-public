@@ -152,6 +152,7 @@ void InputCommandSystem::setupDefaultBinds() {
     bindAction("dash", GLFW_KEY_LEFT_SHIFT);
     bindAction("down_dash", GLFW_KEY_Q);
     bindAction("freeze", GLFW_KEY_E);
+    bindAction("sprint", GLFW_KEY_LEFT_ALT);
     bindAction("crouch", GLFW_KEY_LEFT_CONTROL);
     bindAction("reload", GLFW_KEY_R);
 
@@ -163,6 +164,7 @@ void InputCommandSystem::setupDefaultBinds() {
     mActionStates["dash"] = {};
     mActionStates["down_dash"] = {};
     mActionStates["freeze"] = {};
+    mActionStates["sprint"] = {};
     mActionStates["crouch"] = {};
     mActionStates["reload"] = {};
 }

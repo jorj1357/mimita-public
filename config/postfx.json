@@ -14,6 +14,11 @@
     "pixelation": 0.0,
     "posterize": 0.0,
 
+    // Horror/bodycam option: draw HUD inside the scene target so lens
+    // distortion, chromatic aberration, and vignette also affect it.
+    // Default false keeps the HUD crisp by drawing it after PostFX.
+    "ui_in_scene_target": false,
+
     "guiBrightness": 1.0,
     "guiContrast": 1.0,
     "guiSaturation": 1.0,

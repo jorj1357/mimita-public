@@ -229,6 +229,14 @@ MovementStepResult applyPostCollisionMovementWithSpecials(
     float fixedDt,
     MovementStepEvents& preCollisionEvents);
 
+// Applies one tick of mode-owned sprint/stamina state and returns the config
+// with the ramped ground/source speed multiplier applied. Call exactly once per
+// fixed tick; pre- and post-collision phases must share the returned config.
+MovementConfig applySprintToMovementConfig(MovementState& state,
+                                           const MovementCommand& command,
+                                           const MovementConfig& config,
+                                           float fixedDt);
+
 MovementStepResult simulateBasicMovementStep(MovementState& state,
                                              const MovementCommand& command,
                                              const MovementConfig& config,

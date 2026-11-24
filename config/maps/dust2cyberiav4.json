@@ -1,4 +1,5 @@
 {
+  "attachments": [],
   "blocks": [],
   "bomb": {
     "defuse_seconds": 5.0,
@@ -8,6 +9,7 @@
   "bomb_sites": [
     {
       "id": "A",
+      "name": "",
       "position": [
         -902.107421875,
         149.3358917236328,
@@ -18,6 +20,7 @@
     },
     {
       "id": "B",
+      "name": "",
       "position": [
         -912.2757568359375,
         -95.6591567993164,
@@ -43,6 +46,7 @@
       "interactionId": "",
       "maxAlive": 1,
       "monsterPool": "default",
+      "name": "",
       "oneShot": false,
       "order": 0,
       "pickupId": "",
@@ -81,6 +85,7 @@
       "interactionId": "",
       "maxAlive": 1,
       "monsterPool": "default",
+      "name": "",
       "oneShot": false,
       "order": 0,
       "pickupId": "",
@@ -111,44 +116,139 @@
   "generation_zones": [],
   "glb_objects": [
     {
+      "clone": false,
+      "collision": true,
+      "deleted": false,
       "id": "node:310",
+      "instance_id": "",
+      "material": "",
       "name": "Cube.1157",
       "position": [
         -853.0,
         -28.0,
         2357.0
-      ]
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source": "",
+      "visible": true
     },
     {
+      "clone": false,
+      "collision": true,
+      "deleted": false,
       "id": "node:309",
+      "instance_id": "",
+      "material": "",
       "name": "Cube.1156",
       "position": [
         -868.0,
         -30.135000228881836,
         2358.0
-      ]
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source": "",
+      "visible": true
     },
     {
+      "clone": false,
+      "collision": true,
+      "deleted": false,
       "id": "node:134",
+      "instance_id": "",
+      "material": "",
       "name": "Cube.958",
       "position": [
         -773.7100219726563,
         150.0,
         2361.31201171875
-      ]
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source": "",
+      "visible": true
     },
     {
+      "clone": false,
+      "collision": true,
+      "deleted": false,
       "id": "node:333",
+      "instance_id": "",
+      "material": "",
       "name": "Cube.1180",
       "position": [
         -715.140869140625,
         147.9079132080078,
         2359.076171875
-      ]
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source": "",
+      "visible": true
+    },
+    {
+      "clone": false,
+      "collision": true,
+      "deleted": false,
+      "id": "node:422",
+      "instance_id": "",
+      "material": "",
+      "name": "Cylinder.071",
+      "position": [
+        -661.5326538085938,
+        146.87014770507813,
+        2352.320556640625
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source": "",
+      "visible": true
     }
   ],
   "interactions": [],
   "npc_presets": [],
   "vehicles": [],
-  "weapon_overrides": []
+  "weapon_overrides": [],
+  "world_mode": "static"
 }

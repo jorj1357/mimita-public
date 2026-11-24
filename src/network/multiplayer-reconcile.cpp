@@ -293,6 +293,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         player.netPredictedDead = false;
         player.networkDeathPresented = false;
         player.proceduralFrozen = false;
+        player.sprint = MovementSprintState{};
         player.deathAnim = Player::DeathAnimState{};
         player.respawnTimer = 0.0f;
         player.killedBy.clear();

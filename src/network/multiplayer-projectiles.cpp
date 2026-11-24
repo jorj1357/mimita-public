@@ -434,6 +434,11 @@ bool playerSplashBodyPoint(const Player& p, const glm::vec3& blast, glm::vec3& o
     return splashNearestBodyPartPoint(blast, boxes, count, outPoint);
 }
 
+// Declaration-order unblock for issue-d75f928fbd6f. Definition follows below.
+const WeaponProjectileTrailConfig& projectileTrailConfigFor(const WeaponDefinition* def);
+
+const WeaponProjectileTrailConfig& projectileTrailConfigFor(const WeaponDefinition* def);
+
 void spawnProjectileTrail(NetworkProjectile& projectile, float dt)
 {
     const bool rocket = projectile.weaponType == NETWORK_WEAPON_ROCKET_LAUNCHER;

@@ -880,11 +880,11 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
 
 
 def start_second_client(run_id: str, client_name: str = "") -> dict:
-    """Add a second client to an online isolated run for PvP evidence."""
+    """Add a second client to a starting or online isolated run for PvP evidence."""
     layout = _run_layout(run_id)
     manifest = read_run_manifest(layout)
-    if manifest.get("status") != "online":
-        raise RuntimeError(f"test run {run_id} is not online")
+    if manifest.get("status") not in ("starting", "online"):
+        raise RuntimeError(f"test run {run_id} is not online or starting")
     server = next((item for item in manifest.get("instances", [])
                    if item.get("instance_id") == "server-01" and item.get("role") == "server"), None)
     if not server or not pid_alive(int(server.get("pid") or 0)):
@@ -1011,8 +1011,8 @@ def queue_parallel_command(run_id: str, client_id: str, command: str) -> dict:
         raise RuntimeError("command is empty")
     layout = _run_layout(run_id)
     manifest = read_run_manifest(layout)
-    if manifest.get("status") != "online":
-        raise RuntimeError(f"test run {run_id} is not online")
+    if manifest.get("status") not in ("starting", "online"):
+        raise RuntimeError(f"test run {run_id} is not online or starting")
     row = next((item for item in manifest.get("instances", [])
                 if item.get("instance_id") == client_id and item.get("role") == "client"), None)
     if not row or not pid_alive(int(row.get("pid") or 0)):

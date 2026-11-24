@@ -128,10 +128,12 @@
       ],
       "position_response_seconds": 0.12,
       "rotation_response_seconds": 0.1,
-      "head_response_seconds": 0.12,
-      "torso_response_seconds": 0.18,
+      "head_response_seconds": 0.10,
+      "torso_response_seconds": 0.22,
       "arm_response_seconds": 0.14,
       "weapon_stability_seconds": 0.1,
+      "head_follows_body": true,
+      "settle_deadband_degrees": 0.35,
       "camera_sway_scale": 1.0,
       "lens": {
         "chromatic_aberration": 0.22,
@@ -140,7 +142,7 @@
         "curve": 2.2,
         "zoom": 1.55,
         "edge_mode": "vignette",
-        "edge_radius": 0.0,
+        "edge_radius": 0.05,
         "edge_softness": 0.55,
         "edge_darkness": 0.9,
         "peripheral_blur": 1.4,
@@ -268,13 +270,13 @@
   "vehicle_profile": "",
   "npc_behavior_profile": "beginner",
   "npc_targeting": {
-    "enabled": true,
+    "enabled": false,
     "mode": "closest",
     "include_players": true,
     "include_npcs": true
   },
   "npc_travel": {
-    "enabled": true,
+    "enabled": false,
     "objective_bias": 1.0,
     "hunt_bias": 0.0,
     "explore_bias": 1.0

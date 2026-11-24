@@ -186,6 +186,8 @@ struct GamemodeBodycam {
     float torsoResponseSeconds = 0.18f;
     float armResponseSeconds = 0.14f;
     float weaponStabilitySeconds = 0.10f;
+    bool headFollowsBody = false;
+    float settleDeadbandDegrees = 0.0f;
     float cameraSwayScale = 1.0f;
     float chromaticAberration = 0.12f;
     float vignette = 0.18f;

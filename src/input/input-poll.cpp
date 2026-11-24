@@ -352,6 +352,7 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     in.downDashPressed = cmd.isDownDashPressed();
     in.freezeHeld = cmd.isFreezeHeld();
     in.freezePressed = cmd.getState("freeze").pressed;
+    in.sprintHeld = cmd.getState("sprint").held;
     in.crouchHeld = cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld();
     const bool vehicleInteraction =
         InteractionSystem::instance().handleKey(win, cam);
@@ -461,6 +462,7 @@ InputFrame buildInputFrame(GLFWwindow* win, Camera& cam)
     frame.downDashPressed = cmd.isDownDashPressed() || gTerminalInputOverride.downDashPressed;
     frame.freezeHeld = cmd.isFreezeHeld() || gTerminalInputOverride.freezeHeld;
     frame.freezePressed = cmd.getState("freeze").pressed || gTerminalInputOverride.freezePressed;
+    frame.sprintHeld = cmd.getState("sprint").held;
     frame.crouchHeld = cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld() ||
         gTerminalInputOverride.crouchHeld;
     frame.interactHeld = InputRouter::keyDown(GLFW_KEY_F) ||

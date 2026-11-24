@@ -29,6 +29,7 @@ struct InputFrame {
     bool downDashPressed = false;
     bool freezeHeld = false;
     bool freezePressed = false;
+    bool sprintHeld = false;
     bool crouchHeld = false;
     // Held objective interaction input (F). The authoritative packet counts
     // press edges from this field.

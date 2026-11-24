@@ -165,3 +165,36 @@ Config A/B confirms a large journal/write-volume lever on the server only. Same 
 ### 2026-11-24T00:01:18.490Z — build-wait-reviewer
 
 A bounded independent review was queued as wake wake-ffc09301fa95 after 470 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (needs-evidence: inventory artifact and proof absent; retention misses live MM-DD-YYYY logs and next prune risks an open issue's only journal)
+
+### 2026-11-24T00:27:27.226Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+INDEPENDENT BOUNDED REVIEW (issue-review-sweeper, wake wake-ffc09301fa95, 2026-11-24T00:02-00:20Z). Read-only: no source edit, build, run, lease, close, proof claim, or owner change.
+
+OBSERVED FACTS
+- Readiness/proof: ready=true, missing=[], 1 task (storage-audit-v1) state=open with empty evidence, no task_proofs row for it (DB query returned 0), and 0 prior issue_reviews in the coordination DB; the only prior review text is the 2026-11-24T00:01:18Z scheduling note. The acceptance ("repeatable read-only inventory ... every byte assigned") has no recorded inventory artifact or proof; it is not met by current records.
+- Read-only inventory snapshot (PowerShell recursive file sizes; no build/run): logs 15,670.2 MiB / 463 files; build 9,143.4 MiB / 48,784 files; .dev 7,622.1 MiB / 38,279 files. Largest measured categories: build/game/objects 4,656.8; .dev/ccache 2,341.4; .dev/perf-captures 2,342.2; logs/2026-11-23 6,373.9 (6,504.6 at 00:19Z); logs/2026-11-22 5,530.1; logs/11-23-2026 3,198.4 (3,270.5 at 00:19Z); logs/11-22-2026 559.1; build/ccache 831.8; build/modules 604.8; build/out 526.4; build/obj-debug 512.6; .dev/host 463.8; .dev/.current-* 432.6; .dev/agent-wake 250.5; build/game generations 570-574 ~216.6-217.2 each; build/game/client-swap-probe.dll and conn-swap-probe.dll 226.5 MB each.
+- Retention as implemented: `devscripts/prune-builds.py --logs-only --dry-run` (2026-11-24T00:1xZ) kept 2026-11-22, 2026-11-23, 2026-11-24, removed 0, freed 0.00 GB. `devscripts/dev_loop/game_build.py::_prune_logs` (lines 897-908) has the same date logic, is called at 1304 and 1312 with keep_days 3/2, and discards its removed count; neither path reports removed bytes nor checks active runs or open-issue references.
+- Format blind spot: both prune paths use `_looks_like_date` (prune-builds.py:114-117; game_build.py:240) which accepts only YYYY-MM-DD. Current source still writes logs/<MM-DD-YYYY>/: src/debug/log-manager.cpp:25-56 (`%m-%d-%Y`, managedFilePath `logs/<date>/<Type>_log_<HHMMSS>.txt`), src/debug/structured-log.cpp:909 fallback, src/terminal/weapon-bench-commands.cpp:32, src/replay/replay-io.cpp:277, src/replay/replay-export-json.cpp:292. Evidence: logs/11-23-2026 held 3,198.4 -> 3,270.5 MiB and 71 -> 78 files in ~10 min; newest Server_log_191924.txt mtime 2026-11-23T19:19:24 local. So this legacy family is live, not just archive, and is never a prune candidate. Non-live legacy bytes: logs/11-22-2026 559.1 MiB, logs/11-12-2026 7.4 MiB, logs/11-13-2026 0.5 MiB. 43 other legacy/non-date dirs (including 11-20-2026, ecs-live-test, six segment-selftest-*, shared-log-selftest, graph-smoke, shared-path-check) contain 0 files.
+- Owner-side rotation for that family is absent: `rg rotateLogs|cleanupOldFormat|rotate|cleanup src/debug/log-manager.cpp src/debug/log-manager.h` returns nothing, consistent with the 2026-11-22T17:20:12Z removal note already on this issue.
+- Open-evidence coupling: structured evidence fields (issues.evidence/related_run) of non-closed issues name 12 distinct logs/<YYYY-MM-DD>/<run> dirs. 11 are missing (2026-11-20: 040807, 071757, 072010, 232155, 232200; 2026-11-21: 144350; 2026-11-22: 011031, 024031, 032953, 081330_fcs-route-proof-applied-fallback, 141131). One exists: logs/2026-11-22/20261122_210058 (client-01/events.jsonl 96,393,364 B; server-01/events.jsonl 33,091,130 B plus events-0006.jsonl 99,999,466 B; dev-loop/events.jsonl 7,437 B), referenced by open issue-cf0cb7818822 and deferred issue-3af14875ae8c. 2026-11-22 is now the oldest of the three kept recognized roots, so the next recognized date root (2026-11-25) makes it expire and the next prune would delete that open issue's only journal. Prediction, not yet observed.
+- No bulky tracker added: .dev/agent-coord/brain.db is 15,073,280 B plus WAL 5,920,472 B (~20 MiB), consistent with the acceptance constraint.
+- Growth continues: logs/2026-11-24 (active run 20261124_001051) went 48.8 -> 143.3 MiB and 12 -> 17 files in ~10 min.
+
+INFERENCE / UNCERTAINTY
+- The legacy-format family escapes retention because of its date format and the removed LogManager cleanup, not because an owner protects the bytes. Which of its files are still needed is unknown.
+- The 11 missing referenced runs cannot all be attributed to `_prune_logs` from this evidence: it deletes whole date roots, yet 20261122_011031 is missing inside a root that still exists. Manual cleanup, relocation, or another owner is equally possible; unknown.
+- "0 wasted bytes" is not measurable from current records: no artifact classifies every byte as active, evidence, cache, generated, or unresolved. The largest caches (build/game/objects 4.6 GiB; ccache ~3.2 GiB combined; perf-captures 2.3 GiB) have no recorded retention owner.
+
+CONTRARY EVIDENCE
+- The 3-newest policy does work for recognized roots: 2026-11-20 and 2026-11-21 are gone, and today's dry-run removes 0 because only 3 recognized roots exist. This is not a general failure of the prune loop.
+- 43 of the 57 logs subdirectories are empty, so the unpruned-directory count overstates byte waste; only about 4 legacy roots hold bytes.
+- No evidence that automatic pruning would delete an active run: the active run is in the newest recognized root, which is always kept.
+
+NEXT DISCRIMINATING CHECK (smallest, read-only)
+- Extend `prune-builds.py --logs-only --dry-run` to print (a) candidates in all observed layouts (YYYY-MM-DD, MM-DD-YYYY, non-date dirs) with bytes, and (b) their intersection with structured evidence run dirs of non-closed issues; run it once and delete nothing. Expected discriminators: logs/2026-11-22/20261122_210058 appears as protected; logs/11-22-2026, logs/11-12-2026, logs/11-13-2026 appear as removable ~567 MiB; logs/11-23-2026 appears as active/current-day and is not removable. Only with owner approval, run one real prune of expired legacy roots excluding the local current date and record exact bytes removed plus verification that active and newest roots remain.
+
+No source, build, runtime behavior, or fix is claimed. Owner remains codex-log-space-efficiency for the inventory tool and retention change.

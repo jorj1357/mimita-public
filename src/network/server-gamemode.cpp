@@ -9729,6 +9729,7 @@ void serverGamemodeTick(SOCKET sock,
     // Any mode with a generic win condition (e.g. last_team_standing) uses the
     // same lifecycle instead of requiring a mode-specific branch.
     if (d.npcWaves || d.persistentNpcSpawns || d.matchMode == "ffa" || d.matchMode == "tdm" ||
+        d.matchMode == "bloodtest" ||
         d.winCondition == "first_to_score" ||
         d.winCondition == "last_team_standing" ||
         d.winCondition == "last_actor_alive")

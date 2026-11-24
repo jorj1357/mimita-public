@@ -618,6 +618,28 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
     }
 
+    // ── Sprint stamina (mode-owned) ──────────────────────
+    if (player.sprint.staminaMax > 0.0f &&
+        (player.sprint.active ||
+         player.sprint.stamina < player.sprint.staminaMax - 0.01f))
+    {
+        const float barW = 220.0f;
+        const float barH = 6.0f;
+        const float x = uiScreenW() * 0.5f - barW * 0.5f;
+        const float y = uiScreenH() - 92.0f;
+        const float t = std::clamp(
+            player.sprint.stamina / std::max(0.01f, player.sprint.staminaMax),
+            0.0f, 1.0f);
+        uiDrawRect({x, y, barW, barH}, {0.03f, 0.03f, 0.03f, 0.72f},
+                   "stamina-bg");
+        const glm::vec4 fill = player.sprint.exhausted
+            ? glm::vec4(0.7f, 0.18f, 0.08f, 0.9f)
+            : glm::vec4(0.92f, 0.72f, 0.18f, 0.9f);
+        uiDrawRect({x, y, barW * t, barH}, fill, "stamina-fill");
+        uiDrawRectOutline({x, y, barW, barH}, {0.85f, 0.85f, 0.85f, 0.55f},
+                          "stamina-border");
+    }
+
     // ── Chat Window ─────────────────────────────────────
     Debug::logThrottled(Debug::Category::Chat, "chat-trace-render-before", 1.0f,
                         "[CHAT TRACE 3 BEFORE HUD GATE] mimita::game::chatHistoryPtr()=%p chatOpen=%d\n",

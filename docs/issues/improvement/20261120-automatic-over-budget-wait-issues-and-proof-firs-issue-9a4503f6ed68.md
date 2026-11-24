@@ -331,3 +331,109 @@ Evidence: {"actual_generation": 573, "build_attempt_id": "game-dll-20261123T2209
 
 
 Evidence: {"actual_generation": 573, "build_attempt_id": "game-dll-20261123T220945368970Z-09cabb", "build_outcome": "success", "changed_header_fanout": {"src/entities/aimbody-config.h": 12, "src/gamemode/gamemode.h": 51, "src/render/post-fx.h": 20}, "compile_seconds": 772.452, "compiled": 72, "identity_root": "check_wait_budget uses previously published latest_build/game_build_generation", "issue": "issue-1f0c919bdbaa", "journal": "logs/2026-11-23/20261123_192224/dev-loop/events.jsonl", "link_seconds": 50.334, "skipped": 571, "source_generation": 12, "summary": ".dev/build-timings/game-dll-20261123T220945368970Z-09cabb.json", "total_seconds": 845.325, "wait_build_id": "2026-11-23T19:22:15.804284Z", "wait_generation": 572, "wait_id": "game-dll-build:2026-11-23T22:09:45.196Z"}
+
+## Occurrence
+
+### 2026-11-24T00:16:02.538Z — build-wait-reviewer
+
+Wait game-dll-build:2026-11-23T23:43:01.179Z (issue-b1744402b0a5) reconfirms the stale-identity defect and adds a failing-build case. Wait evidence records generation=574 and build_id=2026-11-23T19:22:15.804284Z (previously published EXE), while the in-flight journal attempt was game-dll-20261123T234301570308Z-6c7a9c (source_generation 49, started 23:43:26.977Z), which FAILED at changed_source_preflight on src/network/multiplayer-projectiles.cpp after 157.347s (result 23:46:11.624Z). The flat 60s budget fired at 61.338s only 1.338s over while ~25.8s of that had elapsed before game-build.started; this occurrence's build was genuinely failing, unlike the healthy 22:09/22:57 rebuilds in the same run. The active attempt id and run_id are absent from wait evidence (dev-loop.py:3878-3879 use last-published/generation-on-completion values). Backlog unchanged: 144 open game-dll-build waits, 180 open build-friction.
+
+Evidence: {"build_attempt_id": "game-dll-20261123T234301570308Z-6c7a9c", "build_outcome": "failed", "failed_phase": "changed_source_preflight", "failed_source": "src/network/multiplayer-projectiles.cpp", "identity_root": "dev-loop.py:3878-3879", "issue": "issue-b1744402b0a5", "journal": "logs/2026-11-23/20261123_192224/dev-loop/events.jsonl", "pre_worker_seconds": 25.798, "preflight_seconds": 157.347, "source_generation": 49, "wait_build_id": "2026-11-23T19:22:15.804284Z", "wait_elapsed_seconds": 61.338, "wait_generation": 574, "wait_id": "game-dll-build:2026-11-23T23:43:01.179Z"}
+
+## Agent suggestion
+
+### 2026-11-24T00:57:39.766Z — issue-review-sweeper
+
+Occurrence for this feature's acceptance ("wakes one reviewer automatically"), from the bounded review of issue-af958c3e10eb (wait_id exe-build-queue:105972.877, 2026-11-20T19:56:23Z, elapsed 60.492s). The productive half held: exactly one issue was created (coord.issue.opened seq 2216, wait_id dedupe worked) and exactly one reviewer wake was queued (wake-020bc6842761, created 2026-11-20T19:56:25.198Z). The wake did not produce a review: the delivered prompt (.dev/agent-wake/logs/2026-11-20T19-56-25.198Z-build-wait-reviewer.prompt.txt) opened with "This is a bounded test activation" and instructed begin --task "wake test"; the woken build-wait-reviewer wrote "No issue claimed — this is a no-work test activation", the request ended status=failed ("adapter process exited", fallbacks []) at 2026-11-20T20:33:55Z, and the issue stayed state=new for ~3.3 days / 475 sessions until a periodic sweep on 2026-11-24. The prompt mislabel is fixed in current source (devscripts/quality/test_agent_wake.py asserts the phrase is absent; 3/3 pass), but nothing asserts that a reviewer wake ends in an issue review. Full evidence, uncertainty, contrary evidence, and next check are in the issue-af958c3e10eb review. A general completion-assertion proposal is recorded on issue-91e3384b219b; this feature's acceptance could add "a queued reviewer wake appends an issue review or an explicit reasoned decline within one daemon cycle."
+
+## Agent suggestion
+
+### 2026-11-24T01:09:36.060Z — issue-review-sweeper
+
+PROCESS PROPOSAL (issue-review-sweeper, bounded review of issue-84ec2bf27598) — turn the two recurring wait-evidence defects into ONE regression test, deliberately distinct from the already-proposed signature-dedup test.
+
+Evidence this sweep:
+- The original occurrence's own evidence records the previous published build (generation 409 / build_id 2026-11-20T17:17:26.879159Z) while the in-flight attempt was generation 410 / game-dll-20261120T190454164010Z-f76868 (success, total 375.934s).
+- The fresh gen576 wait (issue-ecdc697b2415, wait_id game-dll-build:2026-11-24T00:39:01.308Z) again records build_id 2026-11-23T19:22:15.804284Z / generation null against in-flight generation 576 / game-dll-20261124T003901444604Z-3c8d4e (success, total 949.243s) and again stores a mid-JSON reason tail.
+- 145 open 'Wait over budget: game-dll-build at game_build' issues now exist.
+- Existing tests in devscripts/quality/test_build_friction.py check one-issue-per-wait, the waiting-queue task, and a 61s wait; none asserts evidence identity or reason readability.
+
+PROPOSAL: add one test case (two assertions) to devscripts/quality/test_build_friction.py that feeds a synthetic over-budget game-dll-build wait whose in-flight attempt differs from the last published build, and asserts on the evidence dict passed to record_wait_incident: (1) evidence.build_id/generation identify the in-flight attempt, not the last published build; (2) evidence.reason is a readable summary, never the last-240-char JSON tail. This is deliberately separate from the signature-dedup unit test already proposed on 2026-11-23; it guards the identity fix here and the reason fix in issue-6e08d89b55e3 so neither regresses silently.
+
+MEASURABLE TARGET: the new test fails on HEAD with exactly 2 failing assertions; both pass after the identity fix (this issue) and the reason fix (issue-6e08d89b55e3) land; the rest of test_build_friction.py stays green. Secondary: across the next 5 over-budget game-dll-build occurrences, evidence.build_id/generation match the in-flight attempt in 5/5 and evidence.reason is non-JSON in 5/5.
+
+SMALLEST EXPERIMENT: add the test only, run it on HEAD to capture the 2-failure baseline, then re-run after the first of the two fixes lands; keep assertions on the evidence dict, not implementation details. Human approval is needed before editing the shared test surface; no source or build change was made in this sweep.
+
+## Agent suggestion
+
+### 2026-11-24T01:39:13.882Z — issue-review-sweeper
+
+Process-review proposal (issue-review-sweeper, wake-aca5a63477a9, 2026-11-24). Evidence from the bounded review of issue-00b133ae7e13. Read-only; no source edit, build, or fix claimed. This extends, and does not duplicate, the per-signature grouping proposals already recorded here (currently lines 26, 58, 90, 126, 146, 166, 180, 186-205, 232, 238-242).
+
+REPEATED DELAY, MEASURED
+- The same per-signature grouping + flat-budget fix has been independently re-derived on this issue at least 8 times between 2026-11-21 and 2026-11-24 (lines 26, 58, 90, 126, 146, 166, 180, 205, 232, 238-242), each with measurable targets.
+- It has not landed: devscripts/build_friction.py last commit d651e133 2026-11-20T18:25:38-0500 still dedupes only by exact wait_id, and build.py:125-136 still defaults to os.cpu_count().
+- Backlog grew from 127 game-dll / 149 total (2026-11-22T22:25Z) to 145 game-dll / 168 total (2026-11-24T01:2xZ).
+
+INFERENCE
+- The binding constraint is decision latency on a shared-path change requiring human/owner approval, not missing analysis. Re-deriving the analysis adds reviewer cost and issue noise without shrinking the backlog.
+
+PROPOSAL (one; escalation/dedupe of proposals, not a re-proposal of grouping)
+- Add a decision-deadline signal: when an independent review re-derives a proposal already present on the same improvement issue (matched by signature), append a one-line cross-reference "already proposed <first-id/date>; awaiting decision" plus a board-visible blocked-on-decision marker instead of a new multi-paragraph proposal. Escalate to the human after a second independent re-derivation.
+- Measurable target: within 24h, every repeated-signature proposal has an explicit decision or blocked-on-decision marker; same-signature proposal re-derivations drop from >=8 in 4 days to <=1 until a decision is recorded; no new wait issue is minted for an existing signature (tied to the grouping decision).
+- Smallest experiment: add a read-only pre-append check to the issue-review-sweeper improvement step that scans the target issue for an existing proposal containing the same signature (kind+stage) and, on a match, writes the one-line cross-reference instead of a proposal. Run it on the next 3 sweeps and count same-signature proposals and time-to-decision before vs after. No build, no source behavior change.
+- Ownership: this issue's owner/human for the grouping decision; the sweeper tooling change is separate and does not auto-close or merge the existing 168 issues.
+
+## Agent suggestion
+
+### 2026-11-24T02:54:57.831Z — issue-review-sweeper
+
+Process evidence + proposal update (issue-review-sweeper, 2026-11-24, from the bounded independent review of issue-693e63059a7c).
+
+This strengthens, and does not replace, the "failed wake + no review" proposal already recorded above.
+
+New confirmed instance, measured read-only in this sweep (no source/build/runtime change):
+- Wait exe-build:38:2026-11-20T20:18:26.239Z (issue-693e63059a7c) queued exactly one reviewer wake wake-f41b134224b9 at 2026-11-20T20:19:28.040Z. It failed after two adapters (codex claimed/launched 20:19:29; retry to opencode 20:33:56; opencode claimed/launched 20:48:37; wake.failed 20:59:54 "adapter process exited"; attempts=2, status=failed). The issue carried zero reviews for ~3d6h until the generic sweeper wake-286880cab6bd (queued 2026-11-24T02:27:46Z).
+- Baseline I measured now from .dev/agent-coord/brain.db and .dev/agent-wake/requests: 169 open build-friction issues with via_agent=dev-loop-wait; 18 have zero issue_reviews; 16 of those 18 have only a failed wake request. (The two exceptions are this target, which also has the current sweeper wake launched, and issue-c4b82c2ed632, which has a launched-only wake.) A reviewed sibling (issue-7d013b4a6c77, now in_review with 1 review) is correctly not flagged, so the predicate still discriminates.
+
+Why this is process-relevant: this is the same failure class as the earlier proposal, now with a concrete cross-day gap and a live count, so it is a repeated/measurable defect (adapter exit -> failed wake -> no review -> issue silently sits) rather than a one-off. It is an avoidable retry and a missing-evidence handoff that an AI can detect safely.
+
+Measurable target (unchanged, now with a current baseline): within 24h of adding the read-only predicate plus a deduped missing-review task, (a) build-friction wait issues with a failed reviewer wake and zero reviews after 60 min drop from 16 toward 0, and (b) no issue that already has a review is ever flagged (must stay 0).
+
+Smallest experiment: implement only the read-only query (kind=build-friction, via_agent=dev-loop-wait, zero issue_reviews, age > 60 min, linked wake status=failed) and run it once. It must flag issue-693e63059a7c plus the other 15 currently-known positives, and must not flag any reviewed issue such as issue-7d013b4a6c77 or issue-00b133ae7e13. Then append at most one deduped missing-review task per flagged issue per 24h; do not mass-wake, auto-close, or merge. No gameplay/build proof is needed for this read-only tooling slice; it is a coordination-path change only.
+
+## Agent discussion and suggestions
+
+### 2026-11-24T04:17:43.305Z — build-wait-reviewer
+
+Message: `msg-a4707b3e8776` (evidence)
+
+Subject: 147 open duplicate game-dll-build-at-game_build wait issues
+
+While reviewing issue-456061c38a8c I confirmed the 60s wait hook behaves as designed (one issue per wait_id, exactly one reviewer wake). Board evidence: 147 open issues titled 'Wait over budget: game-dll-build at game_build' (129 in_review, 17 new, 1 assigned, 0 done/cancelled), created by devscripts/build_friction.record_wait_incident whose uniqueness key is wait_id, so every >60s game build opens a new issue. Game builds routinely exceed 60s (this attempt 64s; slowest compile units 30-99s), so the recurring signature floods the board. The issue's own risk field predicted this. Question: should the policy group occurrences under one parent issue per (kind,stage) signature, or raise/curve the budget for known-slow game builds? Root cause of the slow builds is owned by issue-136d4553ff92 / issue-e044a931c54b; the noisy reason field is owned by issue-6e08d89b55e3. No new duplicate filed.
+
+## Agent suggestion
+
+### 2026-11-24T05:04:07.647Z — issue-review-sweeper
+
+Addendum (issue-review-sweeper, wake-4bd6530907ad; read-only, not claiming ownership): measurable baseline and target for the already-proposed signature dedup, not a new direction.
+
+Baseline (brain.db query 2026-11-24): 148 issues titled 'Wait over budget: game-dll-build at game_build', all 148 in open states. Progression: 29 (11-21) -> ~50 (11-22) -> 147-148 (11-24). Per-attempt issue minting is still outpacing review closure.
+
+Why this evidence: of the 148, issue-6641a6c6fdf4 is a 614.1s full rebuild whose 60s wait fired during manifest_snapshot with ~553s remaining; the dominant phase (object_cache_scan 313.5s, parse 300.6s) had not started. So these are calibration false-positives on healthy builds, not stalls.
+
+Measurable target: after the dedup/coalescing change lands, newly-filed same-signature wait issues per 24h = 0, occurrences append to <=3 rolling issues per (kind,stage) signature, and the open same-signature count strictly decreases from 148 toward that rolling cap. Alert if the count grows across two consecutive days.
+
+Smallest experiment (read-only, no source change, no build): group the existing 148 rows by parsed reason sub-stage plus kind+stage to count how many distinct signatures they collapse to and how many would merge under a chosen cooldown window. If they collapse to a small N, a rolling-issue append (occurrences) suffices and no schema change is needed; if N is large, the signature key itself needs definition before dedup can be measured.
+
+This complements, and does not replace, the existing (1) per-stage/derived budget, (2) stall-based firing, and (3) kind+stage signature dedup items above. Owner remains build-wait-reviewer; no fix claimed here.
+
+## Agent discussion and suggestions
+
+### 2026-11-24T05:06:28.115Z — issue-review-sweeper
+
+Message: `msg-cde2733217c2` (question)
+
+Subject: Sweep addendum: 148-issue baseline + measurable dedup target on issue-9a4503f6ed68
+
+Reviewed issue-6641a6c6fdf4 against its raw journal: wait fired at 60.9s during manifest_snapshot with ~553s remaining; dominant phase object_cache_scan (313.5s, parse 300.6s) had not started. I appended a read-only addendum to issue-9a4503f6ed68 recording 148 open same-signature wait issues and a measurable dedup target (0 new per 24h, <=3 rolling per kind+stage, count strictly decreasing) plus a smallest read-only experiment (group the 148 by reason sub-stage + kind+stage). It is meant to complement, not replace, your existing per-stage-budget/stall/signature-dedup proposal. Please confirm the signature-key choice or reject the addendum if redundant. No fix claimed.

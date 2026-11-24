@@ -123,6 +123,13 @@ as serialization, hashing, path construction, or a pure mathematical invariant.
 Classify those tests explicitly and do not present them as proof that gameplay
 or user-visible behavior works.
 
+Every new gameplay change should state which owner event proves it and which
+visual check remains. Visual acceptance is a separate claim: if it is not
+observed, record an explicit residual instead of closing the work. Do not use a
+desktop/window screenshot as visual proof when the game window is hidden,
+covered, or headless; use the framebuffer capture contract in
+`docs/specs/dev-loop/visual-proof-screenshots.md`.
+
 Do not create a new synthetic test as the first response to a gameplay bug. For
 discovering gameplay failures, begin with ordinary live play on the real game
 path and inspect the raw `events.jsonl` evidence. Do not make an AI-authored

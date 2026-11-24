@@ -66,6 +66,7 @@ MovementCommand movementCommandFromInput(const InputFrame& frame,
     command.groundReturnPressed = input.groundReturnPressed || frame.groundReturnPressed;
     command.freezeHeld = input.freezeHeld || frame.freezeHeld;
     command.freezePressed = input.freezePressed || frame.freezePressed;
+    command.sprintHeld = input.sprintHeld || frame.sprintHeld;
     command.crouchHeld = input.crouchHeld || frame.crouchHeld;
 
     command.movementDirectionPressed =
@@ -96,6 +97,7 @@ MovementCommand movementCommandFromServerInput(const MimitaNet::ServerInput& inp
     command.dashPressed = input.dashPressed;
     command.downDashPressed = input.downDashPressed;
     command.freezeHeld = input.freezeHeld;
+    command.sprintHeld = input.sprintHeld;
     command.crouchHeld = input.crouchHeld;
     command.movementDirectionPressed =
         command.moveAxes.x != 0.0f || command.moveAxes.y != 0.0f;
@@ -172,6 +174,7 @@ MovementState movementStateFromPlayer(const Player& player,
     state.groundReturn.available = player.groundReturn.available;
     state.groundReturn.charges = player.groundReturn.charges;
     state.groundReturn.rechargeTimerSeconds = player.groundReturn.rechargeTimer;
+    state.sprint = player.sprint;
     state.contactHistory = player.movementContactHistory;
     return state;
 }
@@ -242,6 +245,7 @@ void applyMovementStateToPlayer(const MovementState& state, Player& player)
     player.groundReturn.available = state.groundReturn.available;
     player.groundReturn.charges = state.groundReturn.charges;
     player.groundReturn.rechargeTimer = state.groundReturn.rechargeTimerSeconds;
+    player.sprint = state.sprint;
     player.movementContactHistory = state.contactHistory;
     player.syncLegacyStateToLayers();
 }

@@ -29,6 +29,9 @@ enum NetworkPlayerStateFlags : uint16_t
     // Input-only held interaction intent (F). It is not a visual flag and is
     // not copied into broadcast snapshot flags.
     NET_STATE_INTERACTING  = 1 << 14,
+    // Mode-owned held sprint input. Uses the remaining free stateFlags bit so
+    // the input packet stays byte-compatible.
+    NET_STATE_SPRINTING    = 1 << 15,
 
     NET_STATE_ACTOR_COLLISION = 1 << 12,
     // The server corrected a movement report. The owning client must apply

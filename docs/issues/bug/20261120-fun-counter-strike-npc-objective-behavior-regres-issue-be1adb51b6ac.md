@@ -454,3 +454,21 @@ Readiness and header-latency progress. Source now emits canonical client network
 Reviewer: npc-elite-fcs-2
 
 Generation 571 Phase 2 measurement. Run 20261123_205333, FCS/dust2cyberiav4, game DLL generation 571 sha256 11c1f7b7af6b1df5577246877de9f23efb96deca02850032aeb0d63271271005, EXE 2e24d312603e4135cdd9be0d870a11ce4be98042e253296de6ca16ca189d512b. Client journal logs/2026-11-23/20261123_205333/client-01/events.jsonl contains network.mode.active phase=2 (3 events); the new readiness path worked. Server journal logs/2026-11-23/20261123_205333/server-01/events.jsonl. 256.2 s, 3 completed rounds, 3/3 T plants defused by CT NPCs; round winners CT 3/3. Metrics versus gen564 baseline: TTK mean 2.40 -> 1.08 s, median 0.84 -> 0.45 s, p90 11.35 -> 3.25 s; kills/round 4.33 -> 5.00; CT dash 17.52 -> 25.43/min, T 10.85 -> 22.04/min; CT bhop 2.03 -> 3.76/min, T 1.30 -> 3.21/min; CT air 24.8 -> 26.1%, T 17.0 -> 22.8%; CT down-dash 9.15 -> 8.45/min, T 6.22 -> 7.45/min. Remaining: air% below 30% target; CT stuck 21.90 -> 21.42/min (flat), T 15.46 -> 18.89/min (worse); CT near-wall avoidance 11.6 -> 15.4%, blocked 1.1 -> 3.8%; T near-wall 9.5 -> 7.9%. Defuse starts still restart 18 times with 15 interruptions before 3 completions. This proves Phase 2 lethality/movement use and readiness, not wall/stuck reduction. Run stopped by its own stop-test-run request, failures=[].
+
+## Agent discussion and suggestions
+
+### 2026-11-24T00:36:55.507Z — npc-elite-fcs-5
+
+Message: `msg-3231a631f8b8` (message)
+
+Subject: NPC behavior + CPU evidence sync
+
+We are coordinating NPC behavior with your CPU work. Please link any NPC tick/callsite measurements (updateOneNpc, collision, decide/nav, animation) to issue issue-be1adb51b6ac and issue-d75f928fbd6f, or reply with the exact journal/run IDs. After the shared compile blocker is fixed I will run gen575 and publish movement/TTK/stuck before/after; your CPU evidence will go into docs/features/npc-behavior.md. Current blocker is only src/network/multiplayer-projectiles.cpp:443/513, not NPC code.
+
+## Review (human-accepted)
+
+### 2026-11-24T02:29:43.997Z — evidence-time-arch
+
+Reviewer: evidence-time-arch
+
+Human acceptance: the user played Juggernaut Horde against the NPCs and reported it was overwhelming and gold behavior. Gold record docs/gold/2026-11-24-juggernaut-horde-overwhelming-human-evidence.md. Candidate pinned runtime 20261123_195307 (67 NPC/1 player, server PID 22184, logs/2026-11-23/20261123_195307/server-01/events.jsonl); confirm exact session if needed. This is positive human evidence for elite pressure, not a numeric difficulty or performance proof. Preserve it as a positive baseline: future NPC tuning must not make Juggernaut Horde passive.
