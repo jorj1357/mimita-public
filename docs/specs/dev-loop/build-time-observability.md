@@ -124,15 +124,21 @@ incremental or cached build, not another full cold build.
 
 ### Changed-source preflight and cache-scan budgets
 
-When the source-generation report names changed or added game `.cpp` files,
-compile those translation units before scanning the full object cache. A
-compiler failure in one of those files must stop the attempt immediately and
-record the path, compiler output, preflight duration, attempt ID, and source
-revision. A successful preflight object is reused by the normal cache scan.
+For a report that proves the change is strictly to existing `.cpp` files, the
+worker may compile those changed translation units first and reuse the objects
+with the complete-cache marker. This keeps the source-only fast path while
+letting a direct compiler diagnostic fail immediately.
+
+For mixed source/header changes, scan the dependency cache first, then compile
+all stale translation units—including directly changed sources and header
+dependents—in one bounded worker wave. Do not serialize a changed-source
+compile wave ahead of its stale dependents: a successful build would pay for
+two separate waves. GCC hard-error diagnostics terminate the failing compiler
+and cancel its sibling compile processes as soon as the error is emitted.
+Record the failed path, compiler output, phase, attempt ID, and source revision.
 Header-only changes still require dependency discovery to identify affected
-translation units; a preflight cannot promise to detect those compiler errors
-before that discovery. Linker and final source-coherence failures likewise
-remain failures of later phases.
+translation units. Linker and final source-coherence failures remain failures
+of later phases.
 
 After the dependency scan for a header change, schedule stale translation
 units whose cached depfiles name one of the changed headers before unrelated
@@ -144,8 +150,9 @@ count, changed-header count, prioritized count and paths, and ordering cost in
 the attempt. This improves time-to-first-relevant-error when a dependent fails;
 it cannot guarantee a fixed failure deadline for arbitrary errors, compiler
 resource contention, or errors that are not represented by changed-header
-dependencies. Directly changed `.cpp` files continue to use the earlier
-changed-source preflight.
+dependencies. Directly changed `.cpp` files use the early preflight only when
+the report proves there is no header or source-set fan-out; in a mixed batch
+they join the unified stale-translation-unit wave.
 
 For every attempt, distinguish per-translation-unit dependency-check time from
 the wall time spent scanning all depfiles, cache-result recording, worker

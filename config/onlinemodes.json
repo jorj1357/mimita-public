@@ -1,6 +1,14 @@
 {
   "modes": [
     {
+      "id": "vehicle_freeplay",
+      "gamemode_id": "vehicle_freeplay",
+      "name": "Vehicle Free Play",
+      "description": "Drive, jump, air roll and hit the ball. No match end, unlimited boost.",
+      "teams": 0,
+      "score_limit": 0
+    },
+    {
       "id": "sandbox",
       "gamemode_id": "sandbox",
       "name": "Sandbox",

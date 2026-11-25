@@ -1,0 +1,13 @@
+// Client-predicted chassis reconciliation. Tunable without a build.
+// The client owns its car's pose; these thresholds decide when a server
+// snapshot is treated as a correction instead of being ignored.
+{
+  // Below this error the prediction keeps its own pose.
+  "blendDistanceM": 0.20,
+  // Above this error the pose is snapped to the server (visible, last resort).
+  "snapDistanceM": 1.50,
+  // Fraction of the remaining error applied per snapshot in the blend band.
+  "blendFraction": 0.18,
+  // Minimum ticks between vehicle.prediction.correction events.
+  "logIntervalTicks": 30
+}

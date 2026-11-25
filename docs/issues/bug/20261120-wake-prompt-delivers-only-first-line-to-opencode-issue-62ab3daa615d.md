@@ -253,3 +253,9 @@ Fresh recurrence 2026-11-23, wake-2540a9bffc1b (agent issue-review-sweeper, adap
 Proposal (measurable target): over the next 5 consecutive fresh opencode wakes, the first user message must contain every section that exists in the on-disk prompt file (Wake request, Issue, First run, Requested work), byte-equal after whitespace normalization, and the woken agent must be able to restate its assigned issue id without reading .dev/agent-wake. Record pass/fail per wake; target 5/5.
 
 Smallest experiment: enqueue one wake whose prompt has 3 short sections and an explicit issue id; capture the child session's first user message from the existing adapter log; normalize whitespace; diff it against the .prompt.txt file; repeat 5 times. Reuse the existing wake queue and adapter log (no new harness). If fewer than 5/5 pass, keep this issue open.
+
+## Scheduled independent review
+
+### 2026-11-25T02:21:11.712Z — cpu-goal-loop
+
+A bounded independent review was queued as wake wake-e134482a28eb after 675 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.

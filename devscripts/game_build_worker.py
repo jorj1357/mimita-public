@@ -63,6 +63,61 @@ IDENTITY_ONLY_SOURCES = {
 }
 IDENTITY_SOURCE_PATHS = set(FOLDED_MODULE_SYMBOLS) | IDENTITY_ONLY_SOURCES
 
+_GCC_LOCATION_ERROR = re.compile(
+    r"^\s*(?:[A-Za-z]:)?(?:[^:\r\n]+[\\/])*[^:\r\n]+:"
+    r"\d+(?::\d+)?:\s*(?:fatal\s+)?error:")
+_GCC_FATAL_ERROR = re.compile(r"^\s*[^\r\n]+:\s*fatal\s+error:")
+
+
+def _is_gcc_compile_error_diagnostic(line: str) -> bool:
+    """Return true only for a compiler diagnostic that makes this TU fail.
+
+    Matching is deliberately limited to GCC/MinGW's location-prefixed errors
+    (or location-free fatal errors) so notes and source snippets mentioning
+    the word "error" do not cancel a valid compile wave.
+    """
+    return bool(_GCC_LOCATION_ERROR.match(line) or _GCC_FATAL_ERROR.match(line))
+
+
+def _run_tracked_compile_process(command, kwargs, *, active_processes,
+                                active_lock, stop_event, terminate_process):
+    """Run a tracked compiler and stop it as soon as GCC reports a hard error."""
+    process = subprocess.Popen(command, **kwargs)
+    with active_lock:
+        already_stopping = stop_event.is_set()
+        if not already_stopping:
+            active_processes[process.pid] = process
+    if already_stopping:
+        terminate_process(process.pid, process)
+
+    output_lines: list[str] = []
+    diagnostic_abort = False
+    try:
+        if process.stdout is None:
+            output, _ = process.communicate()
+            output_lines.append(output or "")
+        else:
+            for line in process.stdout:
+                output_lines.append(line)
+                if (not diagnostic_abort
+                        and _is_gcc_compile_error_diagnostic(line)):
+                    # GCC has established that this translation unit cannot
+                    # compile. Stop remaining parse/codegen work now;
+                    # compile_one will cancel sibling TUs on the nonzero exit.
+                    diagnostic_abort = True
+                    terminate_process(process.pid, process)
+            process.wait()
+    finally:
+        if process.stdout is not None:
+            process.stdout.close()
+        with active_lock:
+            active_processes.pop(process.pid, None)
+    return_code = process.returncode
+    if diagnostic_abort and return_code == 0:
+        return_code = 1
+    return subprocess.CompletedProcess(command, return_code,
+                                        "".join(output_lines), None)
+
 # This narrow adapter has a deliberately small include surface. Loading the
 # full game PCH costs more than parsing its own headers, so benchmark it without
 # the PCH while keeping the opt-out isolated to this source and cache key.
@@ -823,6 +878,15 @@ def source_only_changed_paths(change_report: dict | None) -> set[str] | None:
     return paths or None
 
 
+def source_only_preflight_eligible(
+        change_report: dict | None, changed_cpp_paths: set[str]) -> bool:
+    """Keep the early compile wave only when the report proves no fan-out."""
+    reported = source_only_changed_paths(change_report)
+    normalized_paths = {str(path).replace("\\", "/")
+                        for path in changed_cpp_paths}
+    return bool(normalized_paths) and reported == normalized_paths
+
+
 def source_uses_pch(path: str, enabled: bool) -> bool:
     normalized_path = str(path).replace("\\", "/")
     return enabled and normalized_path not in PCH_EXCLUDED_SOURCES
@@ -1185,37 +1249,55 @@ def dependency_relative(token: str) -> str:
 def prioritize_changed_header_dependents(
         work: list[tuple[dict, Path, Path]],
         dependent_headers: dict[str, list[str]],
-        changed_headers: set[str]) -> tuple[list[tuple[dict, Path, Path]], dict]:
-    """Move known changed-header dependents ahead of unrelated stale units.
+        changed_headers: set[str],
+        changed_sources: set[str] | None = None
+        ) -> tuple[list[tuple[dict, Path, Path]], dict]:
+    """Prioritize directly edited sources, then changed-header dependents.
 
     The depfile is the authoritative transitive include list. This is only a
     scheduling hint: it never changes which objects are stale or compiled.
-    Python's stable sort preserves manifest order within each priority group.
+    Directly edited translation units run first so their diagnostics surface
+    before unrelated stale work. Changed-header dependents run next. Python's
+    stable sort preserves manifest order within each priority group.
     """
-    if not changed_headers or not work:
+    changed_source_paths = {
+        str(path).replace("\\", "/") for path in (changed_sources or set())}
+    if (not changed_headers and not changed_source_paths) or not work:
         return work, {
             "enabled": False,
             "candidate_count": len(work),
             "prioritized_count": 0,
             "changed_header_count": len(changed_headers),
+            "direct_changed_source_count": 0,
+            "direct_changed_sources": [],
             "prioritized_sources": [],
         }
+
+    def is_directly_changed(entry: tuple[dict, Path, Path]) -> bool:
+        source_path = str(entry[0]["path"]).replace("\\", "/")
+        return source_path in changed_source_paths
 
     def has_changed_header(entry: tuple[dict, Path, Path]) -> bool:
         source_path = str(entry[0]["path"]).replace("\\", "/")
         return any(header in changed_headers
                    for header in dependent_headers.get(source_path, ()))
 
-    matched = [entry for entry in work if has_changed_header(entry)]
+    direct_matches = [entry for entry in work if is_directly_changed(entry)]
+    header_matches = [entry for entry in work if has_changed_header(entry)]
     ordered = sorted(
         work,
-        key=lambda entry: 0 if has_changed_header(entry) else 1)
+        key=lambda entry: (0 if is_directly_changed(entry)
+                           else 1 if has_changed_header(entry) else 2))
     return ordered, {
         "enabled": True,
         "candidate_count": len(work),
-        "prioritized_count": len(matched),
+        "prioritized_count": len(header_matches),
         "changed_header_count": len(changed_headers),
-        "prioritized_sources": [entry[0]["path"] for entry in matched[:20]],
+        "direct_changed_source_count": len(direct_matches),
+        "direct_changed_sources": [
+            entry[0]["path"] for entry in direct_matches[:20]],
+        "prioritized_sources": [
+            entry[0]["path"] for entry in header_matches[:20]],
     }
 
 
@@ -1572,21 +1654,10 @@ def build(args: argparse.Namespace) -> int:
             kwargs["creationflags"] = compiler_creationflags
         if not tracked_compile:
             return run_tool(command, **kwargs)
-
-        process = subprocess.Popen(command, **kwargs)
-        with active_compile_lock:
-            already_stopping = stop_event.is_set()
-            if not already_stopping:
-                active_compile_processes[process.pid] = process
-        if already_stopping:
-            terminate_compile_process(process.pid, process)
-        try:
-            output, _ = process.communicate()
-        finally:
-            with active_compile_lock:
-                active_compile_processes.pop(process.pid, None)
-        return subprocess.CompletedProcess(command, process.returncode,
-                                            output, None)
+        return _run_tracked_compile_process(
+            command, kwargs, active_processes=active_compile_processes,
+            active_lock=active_compile_lock, stop_event=stop_event,
+            terminate_process=terminate_compile_process)
 
     setup_started = time.monotonic()
     jobs = args.jobs if args.jobs > 0 else (os.cpu_count() or 1)
@@ -2144,8 +2215,12 @@ def build(args: argparse.Namespace) -> int:
     changed_entries = [entry for entry in entries
                        if normalized(entry[0]["path"]) in changed_paths
                        and str(entry[0]["path"]).endswith(".cpp")]
-    preflight_seconds = 0.0
+    changed_cpp_paths = {
+        normalized(entry[0]["path"]) for entry in changed_entries}
     preflight_handled: set[str] = set()
+    source_only_preflight = source_only_preflight_eligible(
+        change_report, changed_cpp_paths)
+    preflight_seconds = 0.0
 
     def next_generation() -> int:
         existing = [int(path.name.split("-")[-1])
@@ -2299,7 +2374,9 @@ def build(args: argparse.Namespace) -> int:
         source_bytes=len(identity_provider_contents.encode("utf-8")),
         generation=generation, revision=revision)
 
-    if changed_entries:
+    if source_only_preflight:
+        # Keep the fast source-only cache-marker path: these directly changed
+        # TUs can be validated before reusing the unchanged object set.
         to_build = [entry for entry in changed_entries
                     if args.force or dep_is_stale(
                         entry[1], entry[2],
@@ -2342,6 +2419,10 @@ def build(args: argparse.Namespace) -> int:
             print(message, file=sys.stderr, flush=True)
             return 1
         stop_event.clear()
+    # Mixed source/header changes must discover header dependents before
+    # compiling. Put directly changed TUs and stale header dependents into the
+    # same bounded compile wave to avoid a serial compile barrier. Hard GCC
+    # diagnostics cancel the wave immediately.
 
     if probe_scan is None:
         progress.set_phase("object_cache_scan", cache_candidates=len(entries))
@@ -2493,7 +2574,8 @@ def build(args: argparse.Namespace) -> int:
     work, compile_priority = prioritize_changed_header_dependents(
         work,
         scan.get("stale_changed_header_dependencies", {}),
-        set(changed_header_paths.values()))
+        set(changed_header_paths.values()),
+        set(changed_sources))
     compile_priority["ordering_ms"] = round(
         (time.perf_counter() - priority_started) * 1000.0, 3)
     progress.subphase_end(

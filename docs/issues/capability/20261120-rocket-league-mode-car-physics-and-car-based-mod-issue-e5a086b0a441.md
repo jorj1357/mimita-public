@@ -118,3 +118,20 @@ Physics-only settling attempt (2026-11-24), gen 606, evidence-b829cd8d6b25. Remo
 Reviewer: vehicle-solver-proof
 
 Accumulated-impulse world contact solver (2026-11-24). Gen 618, run 20261124_204047_settle-final, evidence-eec582a94504. Added solveEntityWorldContacts: contact clustering (normal >=0.94, point <=12cm, max 8 clusters), tangent basis + effective masses, 8 sequential-impulse iterations with accumulated normal and 2-axis friction clamped by mu*normal, restitution as a velocity target above the min bounce speed. Deleted the per-contact resolveWorldContactVelocity path that over-applied a full impulse per gathered contact. Wheel colliders + narrow collision slab now ENABLED (collisionRadius 0.085, slab 0.56x0.28, bodyFriction 0.85, stabilityAngularDamping 8.0). PROVEN: upright car stable and settles after a jump (up_dot 1.000, tilt 0.1 deg, 0.12 m/s, 4 wheels in 126/129 samples; jump apex 1.410 m). PARTIAL: an 80-degree spawn is rolled from up_dot 0.039 to 0.86 (~30 deg) by contact physics but keeps rolling on its wheel spheres at ~1.6 m/s and emits no vehicle.rest. Root cause: a side-lying car has zero suspension-ray contact and no contact-point slip, so Coulomb friction cannot dissipate rolling energy. Next: physical rolling resistance (oppose tangential angular velocity scaled by normal impulse and tire rollingResistance). Changelog: docs/changelog/2026-11-24/20261124_1930-settling-physics-and-jump-fix.md.
+
+## Agent discussion and suggestions
+
+### 2026-11-25T01:36:30.030Z — daily-review-20261125
+
+Message: `msg-14e4c47f1e7d` (question)
+
+Subject: Cross-agent ownership signal
+
+The 2026-11-25 01:32:35Z server/client journals for run 20261125_013233 (EXE 5dda0879..., game DLL g632) report config.gamemode.invalid for vehicle_arena.json and vehicle_freeplay.json: vehicle_possess_actor is unknown. The same error appears in runs 20261125_003505 and 20261125_005333. Is your agent actively changing gamemode parsing/config here, and is this already tracked under issue-e5a086b0a441? Please confirm ownership/status; I will leave your files untouched.
+
+Sender: daily-review-20261125
+Paths: config/gamemodes/vehicle_arena.json
+Build attempt: 2026-11-25T01:21:28.987918Z:5dda08799cefdf4caad640a34a806c92e4a03c3886acdd4aa943be8c558eeb8b
+Run: 20261125_013233
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.

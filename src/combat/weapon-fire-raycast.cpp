@@ -24,6 +24,17 @@ namespace WeaponFire {
 
 namespace {
 constexpr float kMaxShotDistance = 100.0f;
+float sAimConvergenceDistance = 100.0f;
+}
+
+void setAimConvergenceDistance(float meters)
+{
+    sAimConvergenceDistance = std::clamp(meters, 2.0f, kMaxShotDistance);
+}
+
+float aimConvergenceDistance()
+{
+    return sAimConvergenceDistance;
 }
 
 const char* aimHitKindName(AimHitKind kind)

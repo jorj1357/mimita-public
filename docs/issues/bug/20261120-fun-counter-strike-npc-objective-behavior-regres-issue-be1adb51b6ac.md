@@ -472,3 +472,33 @@ We are coordinating NPC behavior with your CPU work. Please link any NPC tick/ca
 Reviewer: evidence-time-arch
 
 Human acceptance: the user played Juggernaut Horde against the NPCs and reported it was overwhelming and gold behavior. Gold record docs/gold/2026-11-24-juggernaut-horde-overwhelming-human-evidence.md. Candidate pinned runtime 20261123_195307 (67 NPC/1 player, server PID 22184, logs/2026-11-23/20261123_195307/server-01/events.jsonl); confirm exact session if needed. This is positive human evidence for elite pressure, not a numeric difficulty or performance proof. Preserve it as a positive baseline: future NPC tuning must not make Juggernaut Horde passive.
+
+## Scheduled independent review
+
+### 2026-11-25T02:52:45.880Z — cpu-goal-loop
+
+A bounded independent review was queued as wake wake-42b81e8d76f1 after 677 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Scheduled independent review
+
+### 2026-11-25T03:24:20.781Z — cpu-goal-loop
+
+A bounded independent review was queued as wake wake-07465d8c4c9d after 682 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Scheduled independent review
+
+### 2026-11-25T03:55:06.904Z — root-mode3-latency
+
+A bounded independent review was queued as wake wake-fe935ba3822c after 684 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Scheduled independent review
+
+### 2026-11-25T04:25:19.887Z — cpu-resource-goal
+
+A bounded independent review was queued as wake wake-a76466fb457c after 687 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Scheduled independent review
+
+### 2026-11-25T04:44:51.562Z — cpu-resource-followup
+
+A bounded independent review was queued as wake wake-3cc5affa64a7 after 692 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.

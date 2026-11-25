@@ -64,7 +64,7 @@
       "defenders_per_site": 0,
       "one_rotator": null,
       "players": true,
-      "npcs": false,
+      "npcs": true,
       "prefer_humans": true
     }
   ],
@@ -306,5 +306,6 @@
     "enabled": true,
     "group": "competitive_no_headless",
     "spawn_policy": "keep_per_npc"
-  }
+  },
+  "vehicle_possess_actor": true
 }

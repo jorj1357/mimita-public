@@ -35,6 +35,16 @@ class SourceOnlyCacheMarkerTests(unittest.TestCase):
         self.assertEqual(game_build_worker.source_only_changed_paths(report),
                          {"src/gui/ui.cpp"})
 
+    def test_preflight_is_limited_to_exact_source_only_batches(self) -> None:
+        self.assertTrue(game_build_worker.source_only_preflight_eligible(
+            _change_report(), {"src/a.cpp"}))
+        self.assertFalse(game_build_worker.source_only_preflight_eligible(
+            _change_report(), {"src/a.cpp", "src/b.cpp"}))
+        mixed = _change_report()
+        mixed["changed_headers"] = ["src/shared.h"]
+        self.assertFalse(game_build_worker.source_only_preflight_eligible(
+            mixed, {"src/a.cpp"}))
+
     def test_rejects_incomplete_or_non_source_only_reports(self) -> None:
         hazards = (
             ("added", ["src/new.cpp"]),

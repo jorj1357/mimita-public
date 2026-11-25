@@ -116,3 +116,40 @@ CONTRARY EVIDENCE
 
 NEXT DISCRIMINATING CHECK
 - Through the root dev-loop, launch an isolated Payload Arcade run (map funworld3 or payload1/payload2, whatever the scene actually uses) pinned to generation 571 (or a generation whose snapshot matches sweep-slide=6b5fd3ce... / physics-types=f3f5ca67...), with a player, and drive the root capsule into cart entity id 1. In that exact journal require: game.host.probe.started generation 570/571; >=1 collision.arcade_entity.sweep with entity_id=1 and actor=<player>; no capsule/cart penetration across contact; unchanged static-world Arcade contact. Report pinned run_id, generation, DLL hash, and journal path. Keep the issue open and the proof unproven until that journal exists or an explicit exemption is recorded. A user-owned run can satisfy this only if it is Payload/Arcade on a matching generation.
+
+## Scheduled independent review
+
+### 2026-11-25T00:34:28.711Z — cpu-optimization-loop
+
+A bounded independent review was queued as wake wake-302e2d4f63c4 after 660 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (unproven)
+
+### 2026-11-25T00:42:55.262Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review 2026-11-25T00:4xZ (issue-review-sweeper), fourth review of this issue. Scope: brief/readiness, proof status, linked artifacts, latest journals. No source edits, build, restart, or fix claimed.
+
+OBSERVED FACTS
+- Readiness: ready=true, score 8, state=in_review, missing=[]. One open task payload-cart-arcade-contact, owner payload-arcade-collision-fix (still inactive; last activity 2026-11-21T15:55:08Z, ~81h). No linked build/run records.
+- Source identity: live sha256(physics-collision-glb-sweep-slide.cpp)=6b5fd3cec1d3deab... and sha256(physics-types.h)=f3f5ca679e7e59c3..., equal to proof task-proof-7d953b610754 source hashes. Every 2026-11-24 game-DLL snapshot checked (36 dirs, 00:39Z-23:09Z) carries these exact hashes, including the gen-627 source root .dev/build-snapshots/game-dll-20261124T222855538088Z-1d20e7.
+- Build: build/game/current.json generation 627, status ok, published 2026-11-24T22:33:56Z, revision 7092860..., dll build\game\generation-627\game-g627.dll. dev-loop reports a later gen-627 attempt failed changed_source_preflight at 23:09 (src/engine/engine-tick-camera.cpp:1186 glm::remainder), so build=published_stale; that failure is outside this issue's paths.
+- NEW EVIDENCE: the required event now exists at runtime. Run 20261124_150432 (client-01 segment events-0018.jsonl, lines ~35650-44330) contains 12 collision.arcade_entity.sweep events from doGLBSweepSlide (source src/physics/movement/physics-collision-glb-sweep-slide.cpp:847, reason "Arcade root capsule swept against moving physical box"). That run loaded build\game\generation-595\game-g595.dll (game.host.probe.started, client pid 36216, launch_id 2026-11-24T15:04:32.689Z); dev-loop launch configuration was map=slaughterhouse1, launch_mode=59, mode "Bloodtest - Slaughterhouse 1 with NPC". All 12 events have actor=NPC-1000; entity_id=2 (2 events) and entity_id=3 (10 events). No player actor, no cart entity.
+- No Payload cart runtime evidence: payload.cart-spawned exists only under logs/11-12-2026 and logs/11-13-2026 (pre-fix), and no post-fix run loads funworld3/Payload. Current shared live run 20261124_221014 (RUNNING, server PID 27372, uptime ~2h26m at review) loaded generation 625 map=dust2cyberiav4 mode=funcounterstrike; it is not Payload, so per the user "live game should count" rule it does not count here.
+- Proof record task-proof-7d953b610754 remains result=unproven with empty build_id/run_id/journal_path/game_generation/verified_utc, event=collision.arcade_entity.sweep, field_predicate=entity_id; the board lists the task unproven. The status/result mismatch persists across all four reviews.
+
+INFERENCE / UNCERTAINTY
+- This corrects the prior three reviews' "zero occurrences anywhere under logs/" statement: the dynamic physical-box sweep path is now confirmed to execute and emit in a real pinned post-fix generation (gen 595). That is runtime evidence that the code path runs, not evidence of the reported behavior.
+- Acceptance is still unmet: the events are NPC-vs-moving-box in Bloodtest/Slaughterhouse 1, not player-vs-Payload-cart. There is no player contact, no cart entity, and no measurement of no capsule/cart penetration or unchanged static-world Arcade contact. The proof predicate (event + entity_id field) is satisfied by this unrelated scenario, so it does not by itself validate the fix.
+- Entity ids 2/3 are not established to be the Payload cart; in this map/mode they are generic moving physical boxes. Whether they share the cart's physics archetype is unknown.
+- The gen-595 DLL file is no longer on disk (build/game/generation-595 absent), so I could not hash the exact binary; identity rests on the event's source:line plus all same-day snapshots carrying the fix hash.
+
+CONTRARY EVIDENCE
+- No post-fix run event matches the acceptance scenario (player actor + Payload cart). The 12 NPC contacts in 20261124_150432 are contrary to treating the existing event predicate as sufficient proof.
+- No Payload/funworld3 run exists after 2026-11-13.
+
+NEXT DISCRIMINATING CHECK
+- Through the root dev-loop, start an isolated Payload/funworld3 Arcade run (do not disturb shared run 20261124_221014) pinned to a generation whose snapshot carries sweep-slide=6b5fd3ce... / physics-types=f3f5ca67... (gen 595-627), with a player. Drive the player root capsule into the cart entity (previously id 1). In that exact run journal require all of: game.host.probe.started dll generation in 595-627; at least one collision.arcade_entity.sweep with actor=<player> and entity_id=<cart id>; player/cart separation stays >= capsule radius across contact (no penetration); static-world Arcade contact unchanged. Report run_id, generation, DLL hash/path, and journal path. Keep the issue open and the proof unproven until that journal exists or an explicit exemption is recorded.
+
+VERDICT: unproven.

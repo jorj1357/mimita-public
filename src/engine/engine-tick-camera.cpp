@@ -11,6 +11,76 @@
 #include "camera.h"
 #include "input/scenario-input.h"
 #include "input/input-poll.h"
+#include "input/gamepad-input.h"
+
+#include <fstream>
+#include <nlohmann/json.hpp>
+#include "utils/json-comments.h"
+
+namespace {
+
+// Rocket League vehicle camera tuning, read once from
+// config/cameras/vehicle-camera.json. Presentation only.
+struct VehicleCameraSettings
+{
+    float ballCamSnap = 0.5f;
+    float momentumRate = 4.0f;
+    float ballCamMinRate = 1.2f;
+    float ballCamMaxRate = 16.0f;
+    float swivelReturnRate = 2.5f;
+    float swivelMaxYawDeg = 110.0f;
+    float swivelMaxPitchDeg = 55.0f;
+    float swivelYawRateDeg = 120.0f;
+    float swivelPitchRateDeg = 80.0f;
+    float lookBehindYawDeg = 180.0f;
+};
+
+const VehicleCameraSettings& vehicleCameraSettings()
+{
+    static VehicleCameraSettings settings;
+    static bool loaded = false;
+    if (!loaded)
+    {
+        loaded = true;
+        std::ifstream file("config/cameras/vehicle-camera.json");
+        if (file.is_open())
+        {
+            try
+            {
+                const nlohmann::json root = parseJsonConfig(file);
+                if (root.is_object())
+                {
+                    settings.ballCamSnap =
+                        root.value("ballCamSnap", settings.ballCamSnap);
+                    settings.momentumRate =
+                        root.value("momentumRate", settings.momentumRate);
+                    settings.ballCamMinRate =
+                        root.value("ballCamMinRate", settings.ballCamMinRate);
+                    settings.ballCamMaxRate =
+                        root.value("ballCamMaxRate", settings.ballCamMaxRate);
+                    settings.swivelReturnRate = root.value(
+                        "swivelReturnRate", settings.swivelReturnRate);
+                    settings.swivelMaxYawDeg = root.value(
+                        "swivelMaxYawDeg", settings.swivelMaxYawDeg);
+                    settings.swivelMaxPitchDeg = root.value(
+                        "swivelMaxPitchDeg", settings.swivelMaxPitchDeg);
+                    settings.swivelYawRateDeg = root.value(
+                        "swivelYawRateDeg", settings.swivelYawRateDeg);
+                    settings.swivelPitchRateDeg = root.value(
+                        "swivelPitchRateDeg", settings.swivelPitchRateDeg);
+                    settings.lookBehindYawDeg = root.value(
+                        "lookBehindYawDeg", settings.lookBehindYawDeg);
+                }
+            }
+            catch (...)
+            {
+            }
+        }
+    }
+    return settings;
+}
+
+} // namespace
 #include "world/world.h"
 #include "entities/player.h"
 #include "entities/aimbody-config.h"
@@ -1085,29 +1155,107 @@ void engineTickCamera(Engine& engine, float dt)
         if (VehicleSystem::instance().localSeatWorld(seatPosition, seatForward)) {
             VehicleState* localVehicle = VehicleSystem::instance().find(
                 VehicleSystem::instance().localVehicleId());
-            if (localVehicle && localVehicle->ballCam) {
-                const PhysicalEntity* ball = nullptr;
-                for (const PhysicalEntity& entity :
-                     PhysicalEntitySystem::instance().entities())
-                    if (entity.persistenceId == "arena-ball") {
-                        ball = &entity;
-                        break;
-                    }
-                if (ball) {
-                    const glm::vec3 target =
-                        VehicleSystem::instance().localVehiclePosition();
-                    const glm::vec3 toBall =
-                        glm::vec3(ball->transform[3]) - target;
-                    const float length = glm::length(toBall);
-                    if (length > 0.01f) {
-                        camera.yaw = glm::degrees(
-                            std::atan2(toBall.y, toBall.x));
-                        camera.pitch = glm::degrees(
-                            std::asin(std::clamp(toBall.z / length,
-                                                 -0.99f, 0.99f)));
-                        camera.updateVectors();
-                    }
+            if (localVehicle) {
+                // Vehicle camera owner. Presentation only: it never feeds back
+                // into the car controls, which stay car-local. Ball cam eases
+                // toward the ball, off-ball follows momentum rather than the
+                // nose, the right stick swivels with a slow return, and R3
+                // snaps 180 degrees behind.
+                struct VehicleCameraState {
+                    bool initialised = false;
+                    float baseYaw = 0.0f;
+                    float basePitch = 0.0f;
+                    float swivelYaw = 0.0f;
+                    float swivelPitch = 0.0f;
+                };
+                static VehicleCameraState sVehicleCamera;
+                const GamepadInput& pad = GamepadInput::instance();
+                const VehicleCameraSettings& cam = vehicleCameraSettings();
+
+                if (!sVehicleCamera.initialised) {
+                    sVehicleCamera.initialised = true;
+                    sVehicleCamera.baseYaw = camera.yaw;
+                    sVehicleCamera.basePitch = camera.pitch;
                 }
+
+                const float ballCamRate = cam.ballCamMinRate +
+                    (cam.ballCamMaxRate - cam.ballCamMinRate) * cam.ballCamSnap;
+                const glm::vec3 target =
+                    VehicleSystem::instance().localVehiclePosition();
+                float targetYaw = sVehicleCamera.baseYaw;
+                float targetPitch = sVehicleCamera.basePitch;
+                float rate = cam.momentumRate;
+
+                if (localVehicle->ballCam) {
+                    const PhysicalEntity* ball = nullptr;
+                    for (const PhysicalEntity& entity :
+                         PhysicalEntitySystem::instance().entities())
+                        if (entity.persistenceId == "arena-ball") {
+                            ball = &entity;
+                            break;
+                        }
+                    if (ball) {
+                        const glm::vec3 toBall =
+                            glm::vec3(ball->transform[3]) - target;
+                        const float length = glm::length(toBall);
+                        if (length > 0.01f) {
+                            targetYaw = glm::degrees(
+                                std::atan2(toBall.y, toBall.x));
+                            targetPitch = glm::degrees(
+                                std::asin(std::clamp(toBall.z / length,
+                                                     -0.99f, 0.99f)));
+                            rate = ballCamRate;
+                        }
+                    }
+                } else {
+                    const glm::vec3 velocity = localVehicle->originVelocity;
+                    const float speed = glm::length(
+                        glm::vec2(velocity.x, velocity.y));
+                    const glm::vec3 carForward = localVehicle->orientation *
+                                                 glm::vec3(1.0f, 0.0f, 0.0f);
+                    glm::vec3 direction = carForward;
+                    if (speed > 1.5f) {
+                        const glm::vec3 travel =
+                            glm::normalize(glm::vec3(velocity.x, velocity.y, 0.0f));
+                        direction = glm::normalize(
+                            glm::mix(carForward, travel,
+                                     std::clamp(speed / 12.0f, 0.0f, 1.0f)));
+                    }
+                    targetYaw = glm::degrees(std::atan2(direction.y,
+                                                        direction.x));
+                    targetPitch = glm::degrees(
+                        std::asin(std::clamp(direction.z, -0.99f, 0.99f)));
+                    rate = cam.momentumRate;
+                }
+                if (pad.lookBehind())
+                    targetYaw += cam.lookBehindYawDeg;
+
+                const float swivelX = pad.swivelX();
+                const float swivelY = pad.swivelY();
+                if (std::fabs(swivelX) > 0.01f || std::fabs(swivelY) > 0.01f) {
+                    sVehicleCamera.swivelYaw = std::clamp(
+                        sVehicleCamera.swivelYaw + swivelX * cam.swivelYawRateDeg * dt,
+                        -cam.swivelMaxYawDeg, cam.swivelMaxYawDeg);
+                    sVehicleCamera.swivelPitch = std::clamp(
+                        sVehicleCamera.swivelPitch + swivelY * cam.swivelPitchRateDeg * dt,
+                        -cam.swivelMaxPitchDeg, cam.swivelMaxPitchDeg);
+                } else {
+                    const float decay = std::exp(-cam.swivelReturnRate * dt);
+                    sVehicleCamera.swivelYaw *= decay;
+                    sVehicleCamera.swivelPitch *= decay;
+                }
+
+                const float ease = 1.0f - std::exp(-rate * dt);
+                const float yawDelta = std::remainder(
+                    targetYaw - sVehicleCamera.baseYaw, 360.0f);
+                sVehicleCamera.baseYaw += yawDelta * ease;
+                sVehicleCamera.basePitch +=
+                    (targetPitch - sVehicleCamera.basePitch) * ease;
+                camera.yaw = sVehicleCamera.baseYaw + sVehicleCamera.swivelYaw;
+                camera.pitch = std::clamp(
+                    sVehicleCamera.basePitch + sVehicleCamera.swivelPitch,
+                    -85.0f, 85.0f);
+                camera.updateVectors();
             }
             if (!camera.thirdPerson) {
                 camera.fov = CamConfig::instance().effectiveData().fov;

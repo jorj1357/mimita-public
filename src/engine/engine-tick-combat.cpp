@@ -136,8 +136,12 @@ void engineTickCombat(Engine& engine, float dt)
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
 
+    // Possession mode: the player is the car, so no weapon may be fired or
+    // drawn from the seated body.
+    const bool possessionNoWeapons =
+        player.hideBodyWhileSeated && player.seatedVehicleId != 0;
     { MIMITA_PERF_SCOPE("Combat::HitResolve");
-    if (!replayPlaybackActive)
+    if (!replayPlaybackActive && !possessionNoWeapons)
         weapons.update(camera, player, npcSystem, world,
                        &mpContext.remotePlayers,
                        &mpContext.remoteNpcs, dt);

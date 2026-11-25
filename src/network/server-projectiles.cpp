@@ -910,6 +910,20 @@ void explodeProjectile(SOCKET sock,
                                {"damage", damageValue},
                                {"shot_distance_m", shotDistance},
                                {"impact_speed_mps", impactSpeed},
+                               {"def_damage", def ? def->damage : 0.0f},
+                               {"def_damage_scale", def ? def->damageScale : 0.0f},
+                               {"def_headshot", def ? def->headshotMultiplier : 0.0f},
+                               {"limb_multiplier", def ? WeaponExecution::paramOr(
+                                    *def, "limbDamageMultiplier", 0.75f) : 0.0f},
+                               {"curve_close", def ? WeaponExecution::paramOr(
+                                    *def, "damage_close", 0.0f) : 0.0f},
+                               {"curve_far", def ? WeaponExecution::paramOr(
+                                    *def, "damage_far", 0.0f) : 0.0f},
+                               {"curve_start", def ? WeaponExecution::paramOr(
+                                    *def, "damage_falloff_start_m", 0.0f) : 0.0f},
+                               {"curve_end", def ? WeaponExecution::paramOr(
+                                    *def, "damage_falloff_end_m", 0.0f) : 0.0f},
+                               {"energy_scale", energyScale},
                                {"aim_direction", {shotDir.x, shotDir.y, shotDir.z}},
                                {"impact_position", {position.x, position.y, position.z}}});
             const bool killed = contactResult.damage.killed;
@@ -932,7 +946,10 @@ void explodeProjectile(SOCKET sock,
             broadcastNpcDamageEvent(
                 sock, players, tick, totalPacketsOut, projectile.ownerPlayerId,
                 npc, damageValue, killed, position, npc.pos,
-                shotDir, -shotDir, projectile.weaponType);
+                shotDir, -shotDir, projectile.weaponType, ENTITY_PLAYER,
+                (float)damageValue, (uint8_t)bodyPart,
+                bodyPart == ActorBodyPart::Torso &&
+                    (damageValue >= 60 || killed));
         }
         else if (directTargetId != 0 && !directNpcTarget)
         {
@@ -991,6 +1008,20 @@ void explodeProjectile(SOCKET sock,
                                    {"damage", damageValue},
                                    {"shot_distance_m", shotDistance},
                                    {"impact_speed_mps", impactSpeed},
+                                   {"def_damage", def ? def->damage : 0.0f},
+                                   {"def_damage_scale", def ? def->damageScale : 0.0f},
+                                   {"def_headshot", def ? def->headshotMultiplier : 0.0f},
+                                   {"limb_multiplier", def ? WeaponExecution::paramOr(
+                                        *def, "limbDamageMultiplier", 0.75f) : 0.0f},
+                                   {"curve_close", def ? WeaponExecution::paramOr(
+                                        *def, "damage_close", 0.0f) : 0.0f},
+                                   {"curve_far", def ? WeaponExecution::paramOr(
+                                        *def, "damage_far", 0.0f) : 0.0f},
+                                   {"curve_start", def ? WeaponExecution::paramOr(
+                                        *def, "damage_falloff_start_m", 0.0f) : 0.0f},
+                                   {"curve_end", def ? WeaponExecution::paramOr(
+                                        *def, "damage_falloff_end_m", 0.0f) : 0.0f},
+                                   {"energy_scale", energyScale},
                                    {"aim_direction", {shotDir.x, shotDir.y, shotDir.z}},
                                    {"impact_position", {position.x, position.y, position.z}}});
                 queueServerDamageConfirmedEvent(
@@ -1596,6 +1627,9 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
                  {"weapon", networkWeaponTypeName(projectile.weaponType)},
                  {"weapon_def_network_id", projectile.weaponDefNetworkId},
                  {"speed_mps", projectile.velocity.length()},
+                 {"configured_speed_mps", cfg.speed},
+                 {"definition_speed_mps", definition.projectileSpeed},
+                 {"definition_id", definition.id},
                  {"position", {projectile.position.x, projectile.position.y,
                                projectile.position.z}},
                  {"gravity_mps2", projectile.gravity}},

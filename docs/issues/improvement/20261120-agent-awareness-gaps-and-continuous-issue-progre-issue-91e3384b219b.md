@@ -828,3 +828,49 @@ Cold handoff should preserve the same task ID, linked full user context, issue o
 Via bloodtest-quality-triage; supports unspecified:
 
 > and need better comunciationbetween &#x20;`ndeepseek in opencode adn chatgpt
+
+## Agent suggestion
+
+### 2026-11-25T00:43:18.784Z — issue-review-sweeper
+
+Process proposal from issue-review-sweeper (2026-11-25, fourth bounded review of issue-87d8c9c7ffb1). Read-only; no source, build, runtime, or proof-state change claimed.
+
+NEW EVIDENCE: proof task payload-cart-arcade-contact uses event=collision.arcade_entity.sweep with field_predicate=entity_id, and its acceptance requires a PLAYER driving the root capsule into the Payload CART with no penetration. Run 20261124_150432 (generation 595, post-fix source hash) now emits 12 such events, but every one is actor=NPC-1000 against entity_id 2/3 in Bloodtest/Slaughterhouse 1; there is no player actor and no cart. So the bare event+field predicate is already satisfied by an unrelated scenario while the reported behavior (player-vs-cart contact, no penetration, unchanged static-world contact) is still unproven. The 2026-11-21/22/23 reviews correctly said zero such events existed; that statement is now stale.
+
+GAP: proof verification accepts an event based only on event name plus one field, with no binding to the map/mode, actor/role, or scene entity that the acceptance criterion actually names. A behavior task can therefore look "event-present" because an unrelated mode emits the same event.
+
+PROPOSAL (coordinator/proof-tooling, optionally read-only first): allow a proof task to carry optional scope constraints (map/mode tag from the run/launch identity, actor selector, entity/role selector) and have verify reject events outside them, reporting "predicate matched N events, 0 in scope" instead of unproven-with-no-distinction. Do not auto-close or invent causes.
+
+MEASURABLE TARGET: 0 scenario-bound behavior proofs are satisfied by events from a different map/mode/actor; for the next 10 scenario-bound proof tasks, each verify result is either a matching in-scope run or an explicit no-in-scope-events result; re-verifying payload-cart-arcade-contact against run 20261124_150432 must yield no-in-scope (Bloodtest, NPC-1000, entity 2/3), not a pass.
+
+SMALLEST EXPERIMENT: add the optional scope fields to the proof record and a verify-time filter on fields.actor plus a map/mode tag recorded on the run; run verification for payload-cart-arcade-contact over run 20261124_150432 (expected: no-in-scope) and over a future Payload run where a player contacts the cart (expected: match). Record both results. Human decides; no gameplay source or build authority changes.
+
+## Agent suggestion
+
+### 2026-11-25T01:17:00.458Z — issue-review-sweeper
+
+Process finding from issue-review-sweeper (2026-11-25, bounded review of issue-1d1b9c62ac08). Read-only; no source, build, or proof change.
+
+Observed evidence: issue-1d1b9c62ac08 received four independent reviews (2026-11-21, 11-22, 11-23, 11-25) and all four ended with the same runtime next check: an isolated Payload/funworld3 arcade run with fresh NPCs pinned to the published generation. A case-insensitive scan of every retained run.json under logs/ still finds no funworld3/payload/arcade run; proof list --issue for it is still empty; its task is still open. The 11-25 review did find gen-627 slaughterhouse1 bloodtest NPC journals with positive npc.trace grounding and episodic below-floor respawns, i.e. usable evidence exists but is not the named check. So the loop keeps re-reviewing while its one blocking evidence item stays unexecuted. This is a repeated delay and an avoidable retry: 4 reviews, 0 named-check runs, about 4 days.
+
+Distinct from prior proposals on this issue: the 2026-11-24T14:28 proposal adds review metadata/verdict/cooldown and metrics; the 2026-11-24T15:05 proposal covers reviewed-but-unowned issues needing an owned implementation task. This case already has an owner task; the gap is that a review's next step is a runtime run and prose does not create anything a waiting agent can claim or execute.
+
+Proposal (no new authority): when a review's next discriminating step is a runtime/dev-loop run (journal, generation, world evidence) and no retained run matches it, the reviewer must (a) attach one concrete claimable task to the issue naming the exact run (map, mode, generation pin, expected/forbidden events) and (b) record a consecutive-unchanged-next-check count. Surface that count in brain_check and do not re-schedule a full same-issue review while the run task is open. The next waiting activation should pick the run task via next --claim, execute it through the root dev-loop, and attach the pinned journal.
+
+Measurable target: for the next 10 reviews whose next step is a runtime run, at least 8 have either a matching pinned run or a claimable run task within 2 sweeps; consecutive reviews with an unchanged unexecuted next-check fall from the current 4 (issue-1d1b9c62ac08) to at most 1; zero issues reviewed a 3rd time with an identical next check and no new evidence.
+
+Smallest experiment: apply to issue-1d1b9c62ac08. Create the claimable task 'pin one funworld3/payload fresh-NPC run on the published generation and attach the journal', have the next waiting activation claim and execute it via the root dev-loop, and append the resulting run_id, EXE sha256, game_generation, game_dll_sha256 and journal path. Falsifiable: if the task is claimed and a matching run appears within 2 sweeps, the prose-only loop was the bottleneck; if the task stays unclaimed while reviews keep firing, the blocker is routing/capacity rather than task shape.
+
+## Agent suggestion
+
+### 2026-11-25T01:40:10.910Z — issue-review-sweeper
+
+Process proposal from issue-review-sweeper (wake wake-944cad622566, 2026-11-25), bounded review of issue-7ee67a85a40c. Read-only; no source, build, or proof-state change claimed. This is a measured instance of the existing 2026-11-24T15:05 reviewed-but-unowned handoff proposal on this issue, not a new mechanism.
+
+OBSERVED: a safe, behavior-preserving telemetry fix was proposed on issue-7ee67a85a40c on 2026-11-22T13:29Z (emit one categorized dashboard.process_scan event per completed scan; the emitter log_dashboard_event already exists at devscripts/dev_loop/gui.py:823). As of 2026-11-25 that issue is still owner-empty with tasks=0 and no proof record, and the scan/apply path (gui.py:2367-2415) still emits no outcome event. The scheduler then spent a further independent review wake re-deriving the same next step. So a concrete, low-risk, AI-executable step sat about 3 days while review capacity was spent re-deriving it. This is a repeated delay plus an avoidable review retry, and the step needs no human-only decision.
+
+REFINEMENT PROPOSAL (no new authority): mark review-originated changes that are behavior-preserving telemetry/observability only (no gameplay, config, or build-authority change) as `safe` when the review names them, and let a waiting activation surface them through `next --mode waiting` as claimable. Do not auto-apply anything; execution still follows normal ownership, edit-lease, and build rules and still requires runtime evidence.
+
+MEASURABLE TARGET: 0 safe, review-originated observability tasks older than 72h remain unowned/unimplemented; specifically, issue-7ee67a85a40c's scan-outcome event is either implemented with one pinned dashboard.process_scan event or explicitly deferred by a named owner with a reason before the next 2 sweeps; and no issue receives a 3rd identical independent review while its safe next step is claimable.
+
+SMALLEST EXPERIMENT: label the existing 2026-11-22 scan-event step `safe` on issue-7ee67a85a40c, have the next waiting activation claim it via `next --claim`, add the single log_dashboard_event line, run one real Windows dashboard window, and append the resulting event. Falsifiable: if a waiting activation claims and implements it within 2 sweeps, the blocker was surfacing; if it stays unclaimed, the blocker is capacity/routing and the `safe` label alone is insufficient.

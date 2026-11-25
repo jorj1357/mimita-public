@@ -20,6 +20,7 @@
 #include "entities/player.h"
 #include "entities/aimbody-config.h"
 #include "combat/weapon-registry.h"
+#include "combat/weapon-fire.h"
 #include "npc/npc.h"
 #include "render/render-player.h"
 #include "input/input-state.h"
@@ -1092,7 +1093,9 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
         if (glm::length(localMuzzle) > 1e-4f)
             muzzleWorld = glm::vec3(player.weaponModelTransform *
                                     glm::vec4(localMuzzle, 1.0f));
-        const glm::vec3 cameraRayPoint = camPosition + targetForward * 100.0f;
+        const float convergence = glm::clamp(
+            WeaponFire::aimConvergenceDistance(), 5.0f, 100.0f);
+        const glm::vec3 cameraRayPoint = camPosition + targetForward * convergence;
         const glm::vec3 toTarget = cameraRayPoint - muzzleWorld;
         if (glm::length(toTarget) > 1e-4f)
             targetForward = glm::normalize(toTarget);

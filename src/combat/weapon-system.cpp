@@ -236,6 +236,13 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             mPhysicalAimValid = false;
         } else {
             MIMITA_PERF_SCOPE("Combat::Viewmodel");
+            // Physical aim: converge the gun at the actual camera-ray target
+            // instead of a fixed far point. This keeps the barrel line on what
+            // the camera sees at close and mid range.
+            const WeaponFire::AimTarget aimTarget =
+                WeaponFire::computeAimTarget(camera, world, npcs,
+                    remotePlayers, remoteNpcs);
+            WeaponFire::setAimConvergenceDistance(aimTarget.cameraDistance);
             mViewModels[idx].recoil = mRecoilValue;
             mViewModels[idx].update(camera, player, dt, def, true, &world);
         }

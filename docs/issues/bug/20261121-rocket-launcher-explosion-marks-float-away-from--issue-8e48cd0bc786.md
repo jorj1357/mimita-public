@@ -167,3 +167,49 @@ Message: `msg-b2c8db342b1e` (message)
 Subject: Agree on one hitfx-traced gen-571 rocket run for issue-8e48cd0bc786
 
 Independent review id 301 appended to issue-8e48cd0bc786. New evidence: run 20261123_205333 on generation 571 already gives 57 rocket WorldImpact, 22 PlayerImpact and 2 lifetime terminals, with 81 matching client rocket shockwaves, but zero impact_decal.spawn/render_submitted because hitfx_trace was never enabled (0 of 271 stored journals). Cheapest next check: repeat a mode-45 networking-validation run like 205333 with hitfx_trace 1 in the client agent-command queue, then require explosion_mark spawn+render for WorldImpact and none for PlayerImpact/Lifetime. Please review and agree on this single check; do not repair task-proof-9d05ae9ca4ff until that pinned journal exists.
+
+## Scheduled independent review
+
+### 2026-11-24T23:15:48.272Z — root-mode3-latency
+
+A bounded independent review was queued as wake wake-f370c84b5d4f after 658 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive - gate present in gen 627; no trace-enabled runtime evidence and prior base journals pruned)
+
+### 2026-11-25T00:30:19.305Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review by issue-review-sweeper (read-only; no source edit, build, run, lease, closure, or fix claimed). Reviewer wake wake-f370c84b5d4f, 2026-11-24T23:15Z. Prior reviews: issue_reviews id 57, 211, 301; prior text is preserved (append-only).
+
+## Observed facts
+
+- Readiness complete: missing=[], ready=true, 1 active task rocket-impact-placement-proof, issue state in_review. No fix is proven.
+- Proof record task-proof-9d05ae9ca4ff is unchanged and still self-contradictory: status=runtime_proven, result=unproven, verified_utc="", build_id="", game_generation=0, run_id=20261121_000922, journal_path=logs/2026-11-21/20261121_000922/client-01/events.jsonl. Test-Path on logs/2026-11-21 is False; the cited journal does not exist. It is not evidence.
+- Current build at review time: build/game/current.json generation=627, status=ok, dll=build\game\generation-627\game-g627.dll, code_hash=cb87962e328830ebd689745d5ba558c502945ad728afc50329d53ad30af9026a, revision=7092860..., generated 2026-11-24T22:33:49Z; ready.json published 22:33:56Z. No generation-628 DLL exists.
+- The world-only gate is present in the generation-627 snapshot .dev/build-snapshots/game-dll-20261124T230934953855Z-9ace92/source: server-projectiles.cpp:741 `packet.reserved[0] = std::strcmp(impactType, "world") == 0 ? 1 : 0;`; multiplayer-projectiles.cpp:1270/1299/1305 pass `event->reserved[0] != 0`, and hasWorldImpactAnchor at 2480-2484.
+- Mark tracing is still gated: effect-part.cpp:447 emits impact_decal.spawn; effect-part-render.cpp:906 emits impact_decal.render_submitted; hit-effects.cpp:34 `bool gHitFxTraceEnabled = false;` with uses at 174/239.
+- No surviving journal has ever enabled tracing. `rg --no-ignore` for `impact_decal.spawn`, `impact_decal.render_submitted`, or `hitfx_trace` across logs/ returns zero matches.
+- Log retention has removed the prior bases: only the date root logs/2026-11-24 remains. logs/2026-11-21, logs/2026-11-23, and run logs/2026-11-23/20261123_205333/client-01/events.jsonl (the strongest base from review 301) are all absent. No journal from reviews 57/211/301 can be re-inspected.
+- The surviving 2026-11-24 runs are not rocket-launcher impact runs: the newest are vehicle_arena (Rocket League) physics (rl-physics-*, ball-proof, settle-proof/solver-proof) and Bloodtest. In them `rocket_launcher` appears only in actor loadouts/presentation (for example rl-physics-1 server loadout lists it); the only projectile-policy events found in 20261124_150432 are `weapon=projectile_rifle`, not rocket launcher.
+- config/impact_decals.json still has enabled:true and explosionMarks.enabled:true.
+- The working tree has an uncommitted change to src/network/server-projectiles.cpp (3 added diagnostic fields: configured_speed_mps, definition_speed_mps, definition_id at ~line 1596+). It does not modify the world/actor gate.
+
+## Inference / uncertainty
+
+- Source containment is solid for generation 627: the network path suppresses marks for non-world terminal impacts and requests one for a world impact. That is consistent with no floating mark, but remains unproven at runtime.
+- Because no trace-enabled journal exists and all older bases are pruned, there is currently no runtime evidence for or against the fix. Absence of decal events is explained by the default-off tracer, not by correct or missing marks.
+- The local player's own predicted-rocket case (the user's report) is still not covered by any existing run; the 205333-class base was NPC/replicated rockets.
+
+## Contrary evidence / scope risks
+
+- src/pobjects/persistent-physics.cpp:403 doExplosion still calls spawnExplosionFx(pos, weaponId, ownerName) with default spawnMark=true and default +Z normal; the grenade/persistent path is outside this gate and can still create an in-air mark.
+- Offline src/combat/weapon-rocket-launcher.cpp still derives a mark from the nearest world triangle for actor impacts, while the network path suppresses actor marks; the modes differ. Acceptance should state whether suppression is intended.
+
+## Next discriminating check (cold handoff)
+
+1. Fresh pinned run at generation >=627 with `hitfx_trace 1` in the client command queue (mode 45 networking-validation like the pruned 205333, or mode 43 rocket duel). Because prior journals are gone, this must be produced new.
+2. In that exact client journal require: each WorldImpact (stepType=2) yields impact_decal.spawn (kind=explosion_mark) plus impact_decal.render_submitted with the same decal_id; PlayerImpact/EntityImpact/LifetimeExpired yield no explosion-mark decal id and no render submission; finite position/normal and world-hit normal not the +Z default.
+3. For the user's case, have the local player fire at a wall, at an actor, and into open air and repeat those checks.
+4. Capture multi-angle visuals. Record run_id, game_generation 627, DLL sha256, and event line numbers. Then repair task-proof-9d05ae9ca4ff only from that pinned, non-zero-generation, trace-enabled journal; otherwise leave it unproven.
+5. Preserve the pinned journal (or a copy) against log rotation so the next reviewer can re-inspect it.

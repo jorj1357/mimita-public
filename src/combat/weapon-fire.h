@@ -58,6 +58,13 @@ AimTarget computeAimTarget(
     std::unordered_map<uint32_t, Player>* remoteNpcs = nullptr
 );
 
+// Distance along the camera ray to the current crosshair/world target. The
+// physical right arm converges the gun at this distance so the barrel line
+// intersects what the camera sees instead of running parallel at a fixed far
+// point. Local-player presentation state; set once per weapon update.
+void setAimConvergenceDistance(float meters);
+float aimConvergenceDistance();
+
 AimSolution computeAim(
     const Camera& camera,
     const World& world,

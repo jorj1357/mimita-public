@@ -11,6 +11,43 @@ def _entry(path: str) -> tuple[dict, Path, Path]:
 
 
 class ChangedHeaderPriorityTests(unittest.TestCase):
+    def test_prioritizes_directly_changed_sources_before_header_dependents(self):
+        work = [
+            _entry("src/unrelated.cpp"),
+            _entry("src/dependent.cpp"),
+            _entry("src/changed.cpp"),
+            _entry("src/changed-and-dependent.cpp"),
+        ]
+        changed = {"src/shared.h"}
+        dependencies = {
+            "src/dependent.cpp": ["src/shared.h"],
+            "src/changed-and-dependent.cpp": ["src/shared.h"],
+        }
+
+        ordered, metrics = game_build_worker.prioritize_changed_header_dependents(
+            work, dependencies, changed,
+            {"src/changed.cpp", "src/changed-and-dependent.cpp"})
+
+        self.assertEqual(
+            [item[0]["path"] for item in ordered],
+            ["src/changed.cpp", "src/changed-and-dependent.cpp",
+             "src/dependent.cpp", "src/unrelated.cpp"])
+        self.assertEqual(len(ordered), len(work))
+        self.assertEqual(metrics["direct_changed_source_count"], 2)
+        self.assertEqual(metrics["prioritized_count"], 2)
+
+    def test_prioritizes_direct_changed_sources_without_header_changes(self):
+        work = [_entry("src/unrelated.cpp"), _entry("src/changed.cpp")]
+
+        ordered, metrics = game_build_worker.prioritize_changed_header_dependents(
+            work, {}, set(), {"src/changed.cpp"})
+
+        self.assertEqual([item[0]["path"] for item in ordered],
+                         ["src/changed.cpp", "src/unrelated.cpp"])
+        self.assertTrue(metrics["enabled"])
+        self.assertEqual(metrics["direct_changed_source_count"], 1)
+        self.assertEqual(metrics["prioritized_count"], 0)
+
     def test_prioritizes_direct_and_transitive_depfile_matches_stably(self) -> None:
         work = [
             _entry("src/unrelated.cpp"),

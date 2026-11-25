@@ -449,6 +449,9 @@ struct Gamemode {
     // Optional named vehicle control profile from config/vehicle-profiles/.
     // Empty keeps the standard vehicle controls; vehicle physics stays shared.
     std::string vehicleProfile;
+    // Possession mode: the seated player is the car. The player body is not
+    // rendered and the mode is expected to disable weapons.
+    bool vehiclePossessActor = false;
     // Optional NPC-only combat profile used when an NPC has no role-specific
     // behavior profile. Humans are never affected by this setting.
     std::string npcBehaviorProfile;

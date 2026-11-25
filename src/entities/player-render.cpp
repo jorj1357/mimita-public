@@ -265,6 +265,10 @@ void Player::renderCurrentPose(mimita::game::render::ShaderProgram& shader,
                                const glm::vec4& outlineColor,
                                const glm::vec3& playerTint) const
 {
+    // Possession mode: the player is the car, so the actor body must not be
+    // drawn. The vehicle renderer draws the car.
+    if (hideBodyWhileSeated && seatedVehicleId != 0 && !outlinePass)
+        return;
     auto logRagdollPath = [&](uint32_t stage, const char* event,
                               const char* reason, const nlohmann::json& fields) {
         if (!dead || !ragdollModeActive) return;

@@ -144,3 +144,46 @@ NEXT DISCRIMINATING CHECK (pinned)
 
 CONFIDENCE
 - Facts (readiness, proof, hashes, counts, retained-run scan, generation-field semantics): high. Gen-573 no-fall-through on dust2cyberiav4: high for that run. Reported Payload/funworld3 bug: still unproven. Candidate-gathering hypothesis: medium-low.
+
+## Scheduled independent review
+
+### 2026-11-25T01:04:42.354Z — cpu-optimization-loop
+
+A bounded independent review was queued as wake wake-e1a545e9c746 after 664 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (unverified)
+
+### 2026-11-25T01:16:12.667Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (issue-review-sweeper, wake-e1a545e9c746, 2026-11-25). Read-only: no source edit, build, run, close, or fix claim. Prior review text is preserved.
+
+OBSERVED FACTS
+- Readiness: ready=true, score 8/8, missing=[], state=in_review; one open task payload-arcade-npc-grounding (owner payload-arcade-collision-fix). proof list --issue issue-1d1b9c62ac08 returns zero records; the task has no accepted runtime proof (build_id/run_id/journal empty).
+- Published generation 627: build/game/generation-627/game-g627.dll, code hash cb87962e328830ebd689745d5ba558c502945ad728afc50329d53ad30af9026a, revision 709286005d1c..., published 2026-11-24T22:33:56.053Z, built from .dev/build-snapshots/game-dll-20261124T222855538088Z-1d20e7/source. That snapshot AND the current worktree both hash: physics-collision-glb-main.cpp 0abedb32ac21..., physics-collision-glb-sweep-slide.cpp 6b5fd3cec1d3..., server-npcs.cpp 031beb667daf.... So the candidate collision code under test is compiled unchanged into gen 627; the gen-627 change report was only main-systems.cpp + physical-entity.cpp.
+- Fresh gen-627 NPC journals ARE retained (this differs from the 2026-11-21/22/23 reviews): logs/2026-11-24/20261124_224314 plus logs/2026-11-25/20261125_003505, _004049, _004550, _005333, _005609. All are test_run_kind=parallel_agent_test, profile=npc-navigation, map=slaughterhouse1, mode=bloodtest, --npcs 1 (1-2 live NPCs), and run.json build_identity.game_generation=627 with game_dll_sha256=cb87962e... = published gen 627. None is Payload/funworld3/arcade.
+- Newest run logs/2026-11-25/20261125_005609/server-01/events.jsonl: npc.spawn.resolved at t=1.93s (safe z=732.326, raw_inside_solid=false, safe_inside_solid=false); npc.collision-world.summary at t=1.69s headless_triangles=npc_triangles=9816, removed=0, solid_ids_aligned=true, unknown_solid_triangles=1479; 147 npc.trace records = 276 NPC entries with grounded=true and world_contact=true in 272/276; last trace t=306.85 NPC-1001 grounded=true/world_contact=true/inside_solid=false.
+- Same run also has 24 npc.collision.fall-sample (candidate_count=0 in about 13; max 5; world_contact=true in exactly 1) and 2 npc.below-map.respawned for NPC-1001: t=291.75 from z=674.788 and t=303.41 from z=674.579, map_floor_z=679.2557, respawn to z=732.326. Code: below-map fires when pos.z < collisionMesh.boundsMin.z - 2.0 at src/network/server-npcs.cpp:2967-2999; fall-sample only emits while not grounded and vel.z < -5.0 at src/physics/movement/physics-collision-glb-main.cpp:615-646.
+- Across the six gen-627 runs, npc.below-map.respawned counts are 16, 4, 0, 0, 0, 2 and fall-sample counts are 421, 104, 46, 10, 4, 24. So a real below-floor excursion occurs on the current generation, albeit episodically and auto-respawned.
+- Map collision pipeline for that map: map.collision.static-solid-union falls back (union_fallback=true, reason=solid_count_cap, 723 solids, 12117 triangles); map.collision.static-face-removal removes 2301 of 12117 triangles (output 9816, 3541 plane groups); raw GLB had 16737 triangles. unknown_solid_triangles=1479 (15.1 percent of the NPC world).
+
+INFERENCE / UNCERTAINTY
+- Gen-627 evidence is mixed, not a pass: NPCs are held by the floor most of the time (272/276 trace entries grounded/world_contact) but one actor still reached z below collisionMesh.boundsMin.z twice in the newest run. A blanket claim that current gen never falls through is not safe.
+- The fast-descent fall samples for NPC-1001 (velocity z -40.8, -75.8, -77.3 m/s) have candidate_count 0 or 4 with no world_contact. That is consistent with (not proof of) a gatherGLBTriangles/broadphase coverage gap, but it is equally consistent with the NPC walking off an upper-platform edge where no authored floor exists at those x,y until below z 679. The journals do not log the triangle/bounds sample at the descent x,y, so the first divergence (broadphase miss vs missing authored floor) cannot be assigned yet.
+- npc.trace is a usable positive grounding/contact signal (grounded, world_contact, inside_solid) and can satisfy the acceptance phrase that npc.collision.fall-sample cannot (fall-sample exists only while not grounded). This is the main forward step over the prior reviews.
+- The reported reproduction (Payload/funworld3 arcade, issue evidence headless_triangles=31270, much larger than 9816) is still unrun. Dust2/slaughterhouse results do not transfer.
+
+CONTRARY EVIDENCE
+- On the tested slaughterhouse1 map, most samples are grounded and the below-map excursions are 2 for a single actor in about 5 minutes, auto-respawned, not a sustained all-NPC fall.
+- Some fall samples have candidate_count=0 but a few have candidate_count>0 and one has world_contact=true, so the world query is not uniformly empty.
+- There is no proof record at all for this issue now (proof list --issue = []), unlike earlier reviews citing proof 41; nothing proves or disproves the fix.
+
+NEXT DISCRIMINATING CHECK (pinned)
+1. Root dev-loop isolated run: map funworld3, gamemode payload (payload.json arcade_collision=true), small fresh NPC count, pinned to published gen 627 (or newer); record run_id, EXE sha256, run.json build_identity.game_generation and game_dll_sha256.
+2. In that exact journal require: npc.spawn.resolved after start; npc.collision-world.summary; and positive npc.trace grounded/world_contact. Pass only if fresh-spawn NPCs show grounded=true and world_contact=true with final z stable above authored floor and no below-map respawn. Fail if z descends monotonically below collisionMesh.boundsMin.z or npc.below-map.respawned fires, or if candidate_count stays 0 with world_contact=false across consecutive samples for an actor standing on authored floor.
+3. If it fails, capture the descent x,y, capsule_feet_z, candidate_count, solid_bounds and unknown_solid_triangles for funworld3, and classify the first divergence as broadphase/gather vs missing authored floor geometry. Do not attribute it to spawn validation; gen-627 spawns already resolved with inside_solid=false.
+4. Cheap available discriminator (not performed here): re-run the same slaughterhouse1 --npcs run and log the collisionMesh triangle count and bounds at NPC-1001 descent x,y, to separate no-floor-there from floor-not-gathered. Also consider capturing map.collision.static-face-removal output triangle ranges so a removed seam near the descent can be checked.
+
+CONFIDENCE
+- Facts (readiness, no proof record, gen-627 hashes/snapshot equality, run identities, counts, below-map/fall counts): high. Gen-627 slaughterhouse1 positive grounding: high for that run. Reported Payload bug: unproven. Candidate-gathering hypothesis: medium-low, because the below-floor excursion could be an off-edge walk into unauthored space.

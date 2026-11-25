@@ -82,3 +82,11 @@ Evidence: {"build_attempt_id": "game-dll-20261124T200045986936Z-3f16b3", "issue"
 Recurrence 2026-11-24T20:19:59Z wait (issue-7ef5043ce95c): evidence.reason for attempt game-dll-20261124T201959398000Z-aa0b47 is the mid-JSON tail '4158.436,"build_attempt_id":"game-dll-20261124T201959398000Z-aa0b47","source_generation":16,"generation":616,...,"record_overhead_ms":4.454}' instead of a readable [GAME BUILD] summary. The same worker window journaled a readable [GAME BUILD] reason for the later 20:55:04 wait, so the corruption depends on which worker line last set game_build_detail.
 
 Evidence: {"build_attempt_id": "game-dll-20261124T201959398000Z-aa0b47", "issue": "issue-7ef5043ce95c", "wait_id": "game-dll-build:2026-11-24T20:19:59.371Z"}
+
+## Occurrence
+
+### 2026-11-25T02:36:53.823Z — build-wait-reviewer
+
+Fresh occurrence on wait game-dll-build:2026-11-25T02:11:23.680Z (issue-0612aaee5a6e): evidence.reason is again the last 240 chars of a [GAME_FILE] translation-unit row, not a readable stage summary: '8273.352,"build_attempt_id":"game-dll-20261125T021123740140Z-5e8bdb","source_generation":67,"generation":633,"revision":"2f19b1b5...","progress_write_ms":3.674,"record_overhead_ms":4.489}'. It matches the module-identity-provider translation_unit.completed row at 2026-11-25T02:12:12.069Z (elapsed_ms 48273.352), set by dev-loop.py:3112/3142 detail=line.rstrip()[-240:] and read at dev-loop.py:3892 reason=self.game_build_detail. Same defect as prior occurrences. The waited-on attempt then failed at worker_supervised reason=timeout (300 s) at 02:16:32.288Z; the next attempt published generation 634 in 180.66 s.
+
+Evidence: {"build_attempt_id": "game-dll-20261125T021123740140Z-5e8bdb", "issue": "issue-0612aaee5a6e", "journal": "logs/2026-11-24/20261124_221014/dev-loop/events.jsonl", "over_budget_wall_time": "2026-11-25T02:12:41.013Z", "reason_tail": "8273.352,\"build_attempt_id\":\"game-dll-20261125T021123740140Z-5e8bdb\"", "source": "devscripts/dev-loop.py:3112/3142 _record_game_build_output detail=line.rstrip()[-240:]; dev-loop.py:3892 reason", "source_row": "module-identity-provider translation_unit.completed at 2026-11-25T02:12:12.069Z", "wait_id": "game-dll-build:2026-11-25T02:11:23.680Z"}

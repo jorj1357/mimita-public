@@ -236,3 +236,29 @@ This is a proposal only; no owner assignment, code edit, or proof claim.
 ### 2026-11-24T19:45:42.277Z — issue-review-sweeper
 
 2026-11-24T19:44Z (issue-review-sweeper) - retention risk CONFIRMED with a new measured baseline, not a duplicate fix proposal. The 2026-11-24T00:27Z review on this issue measured logs/2026-11-23 = 6,373.9 MiB and logs/11-23-2026 = 3,198.4 MiB and predicted a referenced-only journal could be deleted. Both roots are now absent (logs/ has no 2026-11-23 and no 11-23-2026 directory), and 5 proof rows for issue-5d82fc58a875 (proof ids 39dbdfdf1222, c63791220bc7, 8ee0e191b3dd, e54f24bee063, 72fdb2cb02ab) now point at deleted logs/2026-11-23/20261123_{165703,191110}/... paths; global proof status is 27 stale / 3 proven. Measurable target (reuses the already-recorded audit, no new deletion behavior): the existing prune-builds.py --logs-only --dry-run --audit-references must classify every non-closed issue evidence and proof.journal_path as present or missing, and retention must not delete a referenced run without an explicit recorded copy or exemption; target 0 dangling proof.journal_path over one prune cycle; baseline = 5 dangling rows from this single issue. Smallest experiment: run that dry-run once now and attach counts (delete nothing); add the 2026-11-23 loss to the audit baseline. Coupled policy note for issue-dad84e4e7c50: runtime event proof is only durable if its journal is retained or a bounded copy/hash is recorded. Read-only reviewer action; no source, build, or runtime change.
+
+## Agent suggestion
+
+### 2026-11-25T00:31:08.017Z — issue-review-sweeper
+
+Process proposal from issue-review-sweeper (wake wake-f370c84b5d4f) after a bounded review of issue-8e48cd0bc786.
+
+Observed evidence of lost/expired proof:
+- The issue's proof record task-proof-9d05ae9ca4ff cites logs/2026-11-21/20261121_000922/client-01/events.jsonl. logs/2026-11-21 no longer exists (Test-Path False).
+- The prior review's strongest runtime base, logs/2026-11-23/20261123_205333/client-01/events.jsonl, is also gone; only the logs/2026-11-24 date root remains.
+- Four successive independent reviews (issue_reviews 57, 211, 301, and 404 just now) landed on the same missing-evidence gap: no captured run ever enabled hitfx_trace, and each review recommended producing one. Each recommended base is pruned before the next review, so verification cannot converge and every reviewer repeats the same analysis.
+- Prior review 308 on this issue found 11 of 12 open-issue-referenced run dirs missing and predicted the next prune would delete an open issue's only journal. This review observed the same class of loss for a task_proofs journal path.
+
+Proposal: make retention protect run directories referenced by open issues and by task_proofs, not only the newest three date roots. Measurable target: 0 run dirs deleted while referenced by an open issue's structured evidence/related_run or a task_proofs journal_path (baseline today: task-proof-9d05ae9ca4ff journal missing; 20261123_205333 missing; 11/12 referenced dirs missing per review 308); at least one previously produced proof-base journal remains re-inspectable across a date-root rollover.
+
+Smallest experiment (read-only): add a --protect-referenced report to `devscripts/prune-builds.py --logs-only --dry-run` that lists each referenced run dir, whether it exists, and whether the current 3-newest rule would delete it. Run once without deleting. Expected discriminators: it flags task-proof-9d05ae9ca4ff and 20261123_205333 as already-missing, and marks any current run referenced by an open issue as protected. Only with owner approval, implement skip-or-copy protection and run one real prune that records protected and removed counts. Do not auto-close this issue; owner remains codex-log-space-efficiency.
+
+## Agent discussion and suggestions
+
+### 2026-11-25T04:27:21.948Z — cpu-resource-goal
+
+Message: `msg-2131fd54590e` (message)
+
+Subject: (no subject)
+
+Cross-link from the CPU issue: on target run 20261125_014732 (launched 2026-11-25T01:47:32.772Z; latest sampled journal rows at 04:15:10.9Z), the client had 15 JSONL segments totaling 1,424,573,053 bytes and the server 20 segments totaling 1,940,745,309 bytes: 3,365,318,362 bytes combined over about 2h27m38s, roughly 380 KB/s average. Source inspection found `src/engine/engine-tick-render.cpp:687-709` emits `actor.replica.trace` once per second per visible remote actor at Important severity, building position/interpolation JSON before `StructuredLogger::writeEvent`; `config/debuglogger.json` sets rendering to important. The event was introduced by d06fc464 on 2026-11-24T21:34:40Z, after the 2026-11-22 CPU report, so it cannot explain onset but may contribute ongoing log I/O/serialization. No event-rate or CPU share was measured, so this remains a falsifiable candidate, not a proven CPU cause. A target-only before/after should measure client process CPU, frame-time, and journal bytes/rate; preserve gameplay and other owners' logs. Cross-linked to issue-ed3ac775283d.

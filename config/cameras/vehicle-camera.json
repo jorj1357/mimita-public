@@ -1,0 +1,21 @@
+// Rocket League vehicle camera tuning. Presentation only: none of these
+// values feed back into car controls.
+{
+  // Ball cam avoidance speed. 0.0 = slowest ease, 1.0 = fastest, 0.5 default.
+  "ballCamSnap": 0.5,
+  // Ease rate used when ball cam is off (momentum camera), radians/second.
+  "momentumRate": 4.0,
+  // Ball cam ease rate range mapped from ballCamSnap.
+  "ballCamMinRate": 1.2,
+  "ballCamMaxRate": 16.0,
+  // How fast the right-stick swivel returns to centre, 1/second.
+  "swivelReturnRate": 2.5,
+  // Swivel travel limits.
+  "swivelMaxYawDeg": 110.0,
+  "swivelMaxPitchDeg": 55.0,
+  // Swivel speed at full right-stick deflection, degrees/second.
+  "swivelYawRateDeg": 120.0,
+  "swivelPitchRateDeg": 80.0,
+  // Instant look-behind offset (R3).
+  "lookBehindYawDeg": 180.0
+}

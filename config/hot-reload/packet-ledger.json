@@ -243,7 +243,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 584,
+      "client_line": 600,
       "client_owner": "game",
       "client_source": "src/network/multiplayer-shots.cpp",
       "id": 14,
@@ -447,7 +447,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 989,
+      "client_line": 990,
       "client_owner": "game",
       "client_source": "src/engine/engine-tick-net.cpp",
       "id": 26,
@@ -549,7 +549,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 646,
+      "client_line": 662,
       "client_owner": "game",
       "client_source": "src/network/multiplayer-shots.cpp",
       "id": 34,
@@ -719,7 +719,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 763,
+      "client_line": 764,
       "client_owner": "game",
       "client_source": "src/engine/engine-tick-net.cpp",
       "id": 44,
@@ -1346,5 +1346,5 @@
   ],
   "protocol_version": 52,
   "schema_version": 1,
-  "source_sha256": "695d7eb915b76bd462f84988a9c976eb4b51a5e1a2c8832ebf2809820383fe05"
+  "source_sha256": "3ea22b7c5847dd405b345151f8318fdb258165d1489feca4e2bbad4e6821dc5f"
 }

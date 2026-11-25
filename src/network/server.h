@@ -1175,7 +1175,9 @@ void broadcastNpcDamageEvent(
     const glm::vec3& normal,
     uint8_t weapon,
     uint8_t attackerEntityType = ENTITY_PLAYER,
-    float contactForce = -1.0f);
+    float contactForce = -1.0f,
+    uint8_t bodyPart = 0,
+    bool punchThrough = false);
 
 // Raycast
 bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,

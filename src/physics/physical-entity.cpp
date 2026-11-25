@@ -10,6 +10,7 @@
 #include "physics/physical-entity.h"
 #include "game/gl-resource-bridge-module.h"
 #include "physics/constraints/constraint-system.h"
+#include "physics/ray-utils.h"
 
 #include <algorithm>
 #include <chrono>
@@ -295,6 +296,35 @@ int solveEntityWorldContacts(PhysicalEntity& e,
         }
     }
     (void)dt;
+
+    // Rolling resistance. Coulomb friction drives the contact *point* velocity
+    // to zero, which a rolling wheel already satisfies, so it cannot stop a
+    // rolling body. Opposing the tangential angular velocity, limited by the
+    // accumulated normal impulse, is the physical term that does.
+    for (int i = 0; i < clusterCount; ++i)
+    {
+        WorldContactConstraint& c = clusters[i];
+        if (c.accumulatedNormal <= 0.0f)
+            continue;
+        const glm::vec3 tangential = e.angularVelocity -
+            c.normal * glm::dot(e.angularVelocity, c.normal);
+        const float tangentialSpeed = glm::length(tangential);
+        if (tangentialSpeed <= 1e-4f)
+            continue;
+        const glm::vec3 axis = tangential / tangentialSpeed;
+        const float inverseAxisInertia =
+            glm::dot(axis, inverseInertiaWorld(e, axis));
+        if (inverseAxisInertia <= 1e-6f)
+            continue;
+        const float lever = std::max(glm::length(c.r), 0.02f);
+        const float desired =
+            e.rollingResistance * c.accumulatedNormal * lever;
+        const float maximum = tangentialSpeed / inverseAxisInertia;
+        const float lambda = std::min(desired, maximum);
+        if (lambda > 0.0f)
+            e.angularVelocity -=
+                axis * (lambda * inverseAxisInertia);
+    }
     return clusterCount;
 }
 
@@ -519,7 +549,7 @@ PhysicalEntity* PhysicalEntitySystem::findByNetworkId(uint32_t networkId)
     if (networkId == 0)
         return nullptr;
     for (PhysicalEntity& e : mEntities)
-        if (e.serverDriven && e.networkId == networkId)
+        if ((e.serverDriven || e.clientPredicted) && e.networkId == networkId)
             return &e;
     return nullptr;
 }
@@ -638,8 +668,67 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
                 updateSettling(e, objectPhysics, 0.0f);
                 continue;
             }
+            // ── Swept-sphere guard ─────────────────────────────────────────
+            // A fast sphere can move further than its radius in one fixed tick
+            // and pass through a wall between samples. Cast the centre along the
+            // motion and stop just before the first surface.
+            glm::vec3 linearAdvance = e.velocity * (float)kFixedDt;
+            if (e.motion == PhysicalEntityMotion::Dynamic &&
+                e.shape == PhysicalEntityShape::Sphere)
+            {
+                const float radius = std::max(e.halfExtents.x, 0.01f);
+                const float travel = glm::length(linearAdvance);
+                if (travel > radius * 0.5f)
+                {
+                    const glm::vec3 direction = linearAdvance / travel;
+                    const glm::vec3 start =
+                        glm::vec3(e.transform[3]) - direction * radius;
+                    const float maxDistance = travel + radius;
+                    AABB sweepBox;
+                    const glm::vec3 end = start + direction * maxDistance;
+                    sweepBox.min = glm::min(start, end) - glm::vec3(radius);
+                    sweepBox.max = glm::max(start, end) + glm::vec3(radius);
+                    static thread_local std::vector<int> s_ccdCandidates;
+                    s_ccdCandidates.clear();
+                    appendChunkTrianglesForAABB(world, sweepBox, 0.05f,
+                                                s_ccdCandidates, "sphereCcd",
+                                                false);
+                    float nearest = maxDistance;
+                    int nearestIndex = -1;
+                    for (int index : s_ccdCandidates)
+                    {
+                        if (index < 0 ||
+                            index >= static_cast<int>(
+                                         world.collisionMesh.triangles.size()))
+                            continue;
+                        float distance = nearest;
+                        if (!rayTriangle(start, direction,
+                                         world.collisionMesh.triangles[index],
+                                         distance))
+                            continue;
+                        if (distance < nearest)
+                        {
+                            nearest = distance;
+                            nearestIndex = index;
+                        }
+                    }
+                    if (nearestIndex >= 0)
+                    {
+                        const float allowed = std::max(0.0f, nearest - radius);
+                        if (allowed < travel)
+                        {
+                            linearAdvance = direction * allowed;
+                            const glm::vec3 normal =
+                                world.collisionMesh.triangles[nearestIndex].normal;
+                            const float into = glm::dot(e.velocity, normal);
+                            if (into < 0.0f)
+                                e.velocity -= normal * into;
+                        }
+                    }
+                }
+            }
             e.previousTransform = e.transform;
-            e.transform[3] += glm::vec4(e.velocity * (float)kFixedDt, 0.0f);
+            e.transform[3] += glm::vec4(linearAdvance, 0.0f);
             rebuildTransformFromPose(e);
 
             // First Phase 3 slice: kinematic objects sweep their authored

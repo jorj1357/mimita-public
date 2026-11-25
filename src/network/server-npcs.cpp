@@ -224,7 +224,9 @@ void broadcastNpcDamageEvent(
     const glm::vec3& normal,
     uint8_t weapon,
     uint8_t attackerEntityType,
-    float contactForce)
+    float contactForce,
+    uint8_t bodyPart,
+    bool punchThrough)
 {
     NpcDamageEventPacket ev{};
     ev.header.type = PACKET_NPC_DAMAGE_EVENT;
@@ -245,6 +247,8 @@ void broadcastNpcDamageEvent(
     ev.normalX = normal.x; ev.normalY = normal.y; ev.normalZ = normal.z;
     ev.weapon = weapon;
     ev.impactType = SHOT_IMPACT_ENTITY;
+    ev.bodyPart = bodyPart;
+    ev.punchThrough = punchThrough ? 1 : 0;
 
     // NPC damage/kill is reliable: it carries the kill-heal and killfeed, so it
     // must not be lost under packet loss. Retransmits until every client ACKs.

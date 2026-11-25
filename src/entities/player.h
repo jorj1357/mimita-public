@@ -601,6 +601,9 @@ public:
     // player pushes are skipped for this entity so the seated player cannot
     // fight the chassis or eject themselves.
     uint32_t seatedVehicleId = 0;
+    // Possession mode: while seated the actor body is the car, so its own
+    // render pass is skipped. Set by the seated branch from the gamemode.
+    bool hideBodyWhileSeated = false;
     bool netPredictedDead = false;  // local client prediction; server confirm clears/rolls back
     // Animation state inputs for optional per-state clips (crouch/jump/fall/land).
     bool crouching = false;

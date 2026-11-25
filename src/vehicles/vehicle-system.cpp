@@ -556,6 +556,7 @@ uint32_t VehicleSystem::spawnInternal(const std::string& templateId,
     entity->restitution = spec->bodyRestitution;
     entity->linearDamping = spec->linearDamping;
     entity->angularDamping = spec->angularDamping;
+    entity->rollingResistance = spec->tire.rollingResistance;
     entity->maxAngularSpeed = spec->maxAngularSpeed;
     entity->sleepLinearThreshold = spec->sleepLinearThreshold;
     entity->sleepAngularThreshold = spec->sleepAngularThreshold;
@@ -864,6 +865,30 @@ bool VehicleSystem::enterLocalDriver(uint32_t vehicleId, int seat,
     state->driverSeat = seat;
     state->driverActorId = static_cast<int>(actorId);
     state->inputOverride = false;
+    // Client-side prediction: when this client owns the car, it simulates the
+    // chassis locally so throttle/steer/jump respond on the input tick instead
+    // of after a server round trip. Server snapshots become corrections.
+    if (MP_CONTEXT.active && !state->serverAuthoritative)
+    {
+        PhysicalEntity* chassis =
+            PhysicalEntitySystem::instance().find(state->entityId);
+        if (chassis && chassis->serverDriven)
+        {
+            chassis->serverDriven = false;
+            chassis->clientPredicted = true;
+            chassis->sleeping = false;
+            state->serverMirror = false;
+            state->clientPredicted = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "vehicle.prediction.enabled", std::to_string(vehicleId),
+                "local client now predicts its own chassis", 0,
+                {{"vehicle_id", vehicleId},
+                 {"chassis_entity", chassis->id},
+                 {"chassis_network_id", chassis->networkId}},
+                __FILE__, __LINE__, __func__);
+        }
+    }
     if (seat >= 0 && seat < static_cast<int>(state->seatOccupants.size()))
         state->seatOccupants[seat] = static_cast<int>(actorId);
     mLocalVehicleId = vehicleId;
@@ -1124,7 +1149,7 @@ bool VehicleSystem::activateVehicleInteraction(uint32_t vehicleId,
     // A vehicle created by the local `vehicle_spawn` test command has no server
     // record, so requesting that id is always rejected; it must use the local
     // seat path instead.
-    if (MP_CONTEXT.active && state->serverMirror)
+    if (MP_CONTEXT.active && (state->serverMirror || state->clientPredicted))
     {
         if (state->localDriver)
         {
@@ -1914,6 +1939,7 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
             state.jumpCount = 0;
             state.flipTimer = 0.0f;
             state.jumpTimer = 0.0f;
+            state.jumpHoldLatched = false;
             state.airTimeSinceJump = 0.0f;
             // Keep the apex of the jump we just finished until it has been
             // reported, otherwise the landing tick overwrites it with 0.
@@ -1970,6 +1996,7 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
             state.hasJumped = true;
             state.isJumping = true;
             state.jumpTimer = 0.0f;
+            state.jumpHoldLatched = false;
             state.airTimeSinceJump = 0.0f;
             state.takeoffHeightM = entity.transform[3].z;
             state.apexHeightM = state.takeoffHeightM;
@@ -2102,9 +2129,12 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
     // target pose.
     if (state.isJumping)
     {
+        if (state.jumpTimer >= profile.jump.minSustainSeconds &&
+            state.jumpHeld)
+            state.jumpHoldLatched = true;
         const bool sustain =
             state.jumpTimer < profile.jump.minSustainSeconds ||
-            (state.jumpHeld &&
+            ((state.jumpHeld || state.jumpHoldLatched) &&
              state.jumpTimer < profile.jump.sustainedWindowSeconds);
         if (sustain)
         {
@@ -2453,6 +2483,10 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
              {"distance_travelled_m", state.distanceTravelled},
              {"apex_height_m", state.apexHeightM},
              {"flip_resets", state.flipResetCount},
+             {"jump_timer", state.jumpTimer},
+             {"is_jumping", state.isJumping},
+             {"jump_held", state.jumpHeld},
+             {"jump_count", state.jumpCount},
              {"ballcam", state.ballCam}},
             __FILE__, __LINE__, __func__);
 
@@ -2475,6 +2509,38 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                 __FILE__, __LINE__, __func__);
             state.takeoffHeightM = entity.transform[3].z;
             state.apexHeightM = state.takeoffHeightM;
+        }
+    }
+
+    // ── Heading diagnostic ──────────────────────────────────────────────
+    // Bounded sample of chassis heading against planar velocity. The car has
+    // been observed sliding at very large slip with no steering input; this
+    // pins whether the forward convention or the spawn orientation is at fault.
+    {
+        const float planarSpeed =
+            glm::length(glm::vec2(entity.velocity.x, entity.velocity.y));
+        if (planarSpeed > 2.0f && tick - state.lastHeadingTick >= 60)
+        {
+            state.lastHeadingTick = tick;
+            glm::vec3 forward2D(forward.x, forward.y, 0.0f);
+            if (glm::dot(forward2D, forward2D) > 1e-6f)
+                forward2D = glm::normalize(forward2D);
+            const glm::vec3 velocity2D = glm::normalize(
+                glm::vec3(entity.velocity.x, entity.velocity.y, 0.0f));
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.heading", std::to_string(state.id),
+                "chassis forward against planar velocity", tick,
+                {{"vehicle_id", state.id},
+                 {"forward", {forward.x, forward.y, forward.z}},
+                 {"velocity2d", {velocity2D.x, velocity2D.y}},
+                 {"slip_deg",
+                  glm::degrees(std::acos(std::clamp(
+                      glm::dot(forward2D, velocity2D), -1.0f, 1.0f)))},
+                 {"speed_mps", planarSpeed},
+                 {"steer", state.steer},
+                 {"up_dot", state.upDotWorldUp}},
+                __FILE__, __LINE__, __func__);
         }
     }
 
@@ -2530,7 +2596,7 @@ void VehicleSystem::update(float dt, const World& world)
                 spec->interactionRadius, true);
         }
 
-        if (state.serverMirror)
+        if (state.serverMirror && !state.clientPredicted)
         {
             // Chassis motion and wheel presentation come from the server.
             // Never apply suspension/tire/engine forces to a mirror.

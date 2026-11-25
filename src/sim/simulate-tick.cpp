@@ -344,6 +344,12 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 // origin remains the actor's collision root; the seat owner
                 // supplies the upward riderOffset.
                 sim.player->crouching = true;
+                // Possession mode: the actor body is the car. The render pass
+                // skips it while this is set and the seat is occupied.
+                sim.player->hideBodyWhileSeated =
+                    GamemodeRegistry::instance()
+                        .get(MimitaNet::CommunityMatchClient::instance().mode())
+                        .vehiclePossessActor;
                 sim.player->ground.onGround = true;
                 sim.player->ground.stableOnGround = true;
             }

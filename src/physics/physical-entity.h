@@ -90,6 +90,13 @@ struct PhysicalEntity {
     float gravityScale = 1.0f;
     float linearDamping = 0.15f;
     float angularDamping = 2.0f;
+    // The owning client simulates this body locally; the server transform is a
+    // correction, not authority. Set only on a client for its own chassis.
+    bool clientPredicted = false;
+    // Rolling resistance coefficient applied at world contacts. It opposes the
+    // tangential angular velocity, which is what lets a body resting on round
+    // wheel colliders stop rolling and settle. 0 disables it.
+    float rollingResistance = 0.0f;
     float maxAngularSpeed = 8.0f;
     float rightingStrength = 18.0f;
     float restingUprightDot = 0.985f;

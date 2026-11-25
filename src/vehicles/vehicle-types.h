@@ -255,6 +255,9 @@ struct VehicleState {
     // True on a client mirror. Mirrors never apply suspension/tire/engine
     // forces and never run the drivetrain locally.
     bool serverMirror = false;
+    // True when this client simulates its own chassis (prediction). Snapshots
+    // then act as corrections instead of authority.
+    bool clientPredicted = false;
     // Audio/interaction presentation is disabled for the dedicated server.
     bool presentationEnabled = true;
     // Actor id (server player/NPC id) per seat, or 0 when empty.
@@ -277,6 +280,9 @@ struct VehicleState {
     bool jumpHeld = false;
     bool jumpHeldPrev = false;
     bool jumpPressed = false;
+    // Latches a hold that outlived the minimum jump, so the sustained force is
+    // not cancelled by a late or dropped held-state packet.
+    bool jumpHoldLatched = false;
     // Rocket League aerial/dodge state. All timing is seconds, all lengths are
     // meters. The dodge is a finite torque + impulse program; stall, flip
     // cancel and flip reset emerge from these rules (no dedicated mechanics).
@@ -307,6 +313,7 @@ struct VehicleState {
     uint64_t airborneSinceTick = 0;
     bool airborneLogged = false;
     uint64_t lastTelemetryTick = 0;
+    uint64_t lastHeadingTick = 0;
     float boostInput = 0.0f;
     bool powerslide = false;
     bool boostActive = false;

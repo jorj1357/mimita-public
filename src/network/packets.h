@@ -224,8 +224,11 @@ struct NpcDamageEventPacket
     int32_t npcHealth = 0;
     uint8_t killed = 0;
     uint8_t attackerEntityType = ENTITY_PLAYER;
-    uint8_t reserved1 = 0;
-    uint8_t reserved2 = 0;
+    // Reused without growing the packet: the confirmed body part (ActorBodyPart)
+    // and whether the projectile punched through the part. Remote clients use
+    // these to apply the local per-part damage hole on the NPC.
+    uint8_t bodyPart = 0;
+    uint8_t punchThrough = 0;
     float originX = 0.0f;
     float originY = 0.0f;
     float originZ = 0.0f;

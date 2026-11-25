@@ -10,9 +10,14 @@
 
 #include "network/multiplayer-context.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+
+#include <nlohmann/json.hpp>
+#include "utils/json-comments.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
@@ -36,6 +41,50 @@ namespace {
 bool allFinite(const glm::vec3& v)
 {
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+// Client-predicted chassis reconciliation thresholds. Read once from
+// config/netcode/vehicle-prediction.json so they can be tuned without a build.
+struct VehiclePredictionSettings
+{
+    float blendDistanceM = 0.20f;
+    float snapDistanceM = 1.50f;
+    float blendFraction = 0.18f;
+    uint64_t logIntervalTicks = 30;
+};
+
+const VehiclePredictionSettings& vehiclePredictionSettings()
+{
+    static VehiclePredictionSettings settings;
+    static bool loaded = false;
+    if (!loaded)
+    {
+        loaded = true;
+        std::ifstream file("config/netcode/vehicle-prediction.json");
+        if (file.is_open())
+        {
+            try
+            {
+                const nlohmann::json root = parseJsonConfig(file);
+                if (root.is_object())
+                {
+                    settings.blendDistanceM = root.value(
+                        "blendDistanceM", settings.blendDistanceM);
+                    settings.snapDistanceM = root.value(
+                        "snapDistanceM", settings.snapDistanceM);
+                    settings.blendFraction = std::clamp(
+                        root.value("blendFraction", settings.blendFraction),
+                        0.01f, 1.0f);
+                    settings.logIntervalTicks = root.value(
+                        "logIntervalTicks", settings.logIntervalTicks);
+                }
+            }
+            catch (...)
+            {
+            }
+        }
+    }
+    return settings;
 }
 
 } // namespace
@@ -237,15 +286,69 @@ void mpProcessPhysicalEntityStatePacket(MultiplayerContext&,
 
         const glm::quat orientation(entry.orientation[0], entry.orientation[1],
                                     entry.orientation[2], entry.orientation[3]);
+        const glm::vec3 serverPosition(entry.position[0], entry.position[1],
+                                       entry.position[2]);
+        const glm::vec3 serverVelocity(entry.velocity[0], entry.velocity[1],
+                                       entry.velocity[2]);
+        if (e->clientPredicted)
+        {
+            // Prediction owns the pose. Only correct genuine divergence, and
+            // blend instead of snapping below the hard threshold.
+            const VehiclePredictionSettings& pred =
+                vehiclePredictionSettings();
+            const float error =
+                glm::length(serverPosition - glm::vec3(e->transform[3]));
+            static uint64_t sLastPredictionLogTick = 0;
+            const uint64_t nowTick =
+                PhysicalEntitySystem::instance().simulationTick();
+            if (error > pred.blendDistanceM &&
+                nowTick > sLastPredictionLogTick + pred.logIntervalTicks)
+            {
+                sLastPredictionLogTick = nowTick;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "vehicle.prediction.correction",
+                    std::to_string(e->networkId),
+                    "server correction applied to a predicted chassis", 0,
+                    {{"network_id", e->networkId},
+                     {"error_m", error},
+                     {"snapped", error > pred.snapDistanceM}},
+                    __FILE__, __LINE__, __func__);
+            }
+            if (error > pred.snapDistanceM)
+            {
+                e->previousTransform = e->transform;
+                e->transform = glm::mat4_cast(glm::normalize(orientation));
+                e->transform[3] = glm::vec4(serverPosition, 1.0f);
+                e->orientation = glm::normalize(orientation);
+                e->velocity = serverVelocity;
+                e->angularVelocity = glm::vec3(entry.angularVelocity[0],
+                                               entry.angularVelocity[1],
+                                               entry.angularVelocity[2]);
+                e->sleeping = false;
+                e->sleepTicks = 0;
+            }
+            else if (error > pred.blendDistanceM)
+            {
+                // Soft correction: nudge position and velocity toward the
+                // server without a visible snap or a control discontinuity.
+                e->previousTransform = e->transform;
+                const glm::vec3 blended = glm::mix(
+                    glm::vec3(e->transform[3]), serverPosition,
+                    pred.blendFraction);
+                e->transform[3] = glm::vec4(blended, 1.0f);
+                e->velocity = glm::mix(e->velocity, serverVelocity,
+                                       pred.blendFraction);
+            }
+            continue;
+        }
         // The interpolated render pose uses previousTransform -> transform, so
         // keep the last pose as previous before writing the new one.
         e->previousTransform = e->transform;
         e->transform = glm::mat4_cast(glm::normalize(orientation));
-        e->transform[3] = glm::vec4(entry.position[0], entry.position[1],
-                                    entry.position[2], 1.0f);
+        e->transform[3] = glm::vec4(serverPosition, 1.0f);
         e->orientation = glm::normalize(orientation);
-        e->velocity = glm::vec3(entry.velocity[0], entry.velocity[1],
-                                entry.velocity[2]);
+        e->velocity = serverVelocity;
         e->angularVelocity = glm::vec3(entry.angularVelocity[0],
                                        entry.angularVelocity[1],
                                        entry.angularVelocity[2]);

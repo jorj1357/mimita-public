@@ -294,6 +294,22 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
     const glm::vec3 hitDir(event->dirX, event->dirY, event->dirZ);
     const char* weaponId = networkWeaponTypeName(event->weapon);
 
+    // Every client that receives the confirmed NPC damage applies the same
+    // per-part local hole. This is visual state only; the server owns health.
+    // The shooter is included here, so a confirmed projectile hit shows the
+    // hole on the NPC instead of only the blood/gore effects.
+    if (npcPtr && event->damage > 0)
+    {
+        const ActorBodyPart part = event->bodyPart < (uint8_t)ActorBodyPart::Count
+            ? (ActorBodyPart)event->bodyPart : ActorBodyPart::Torso;
+        const float force = event->contactForce > 0.0f
+            ? glm::clamp(event->contactForce / 60.0f, 0.0f, 1.0f)
+            : glm::clamp((float)event->damage / 65.0f, 0.0f, 1.0f);
+        npcPtr->addPartDamageHole(
+            part, hitPos, hitDir, 0.04f + 0.10f * force,
+            event->punchThrough != 0 || event->killed != 0);
+    }
+
     // ── Predicted local-shooter feedback ─────────────────────────────
     // The instant hitmarker/blood were shown when the local ray connected.
     // The server confirm is authoritative for health and reconciles the

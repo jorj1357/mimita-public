@@ -95,7 +95,7 @@ glm::mat4 settleVehicleSpawnTransform(const World& world,
         found = true;
     }
     if (found)
-        transform[3].z = bestOriginZ + 0.03f;
+        transform[3].z = bestOriginZ + 0.005f;
     return transform;
 }
 
@@ -107,6 +107,14 @@ const PhysicalEntity* findArenaBall()
     return nullptr;
 }
 
+// Free play shares the arena rules and the arena car, so both modes take the
+// arena path. Kept in one place so a future arena variant does not need a new
+// comparison at every call site.
+bool isVehicleArenaMode(const std::string& modeId)
+{
+    return modeId == "vehicle_arena" || modeId == "vehicle_freeplay";
+}
+
 bool gamemodeAllowsScoreNpc(const std::string& modeId)
 {
     const Gamemode& gm = GamemodeRegistry::instance().get(modeId);
@@ -116,7 +124,8 @@ bool gamemodeAllowsScoreNpc(const std::string& modeId)
     return false;
 }
 
-void driveArenaNpcCar(VehicleState& vehicle, const PhysicalEntity& ball)
+void driveArenaNpcCar(VehicleState& vehicle, const PhysicalEntity& ball,
+                      const glm::vec3& targetGoal)
 {
     const PhysicalEntity* chassis =
         PhysicalEntitySystem::instance().find(vehicle.entityId);
@@ -124,22 +133,44 @@ void driveArenaNpcCar(VehicleState& vehicle, const PhysicalEntity& ball)
         return;
     const glm::vec3 carPosition(chassis->transform[3]);
     const glm::vec3 ballPosition(ball.transform[3]);
-    glm::vec3 toBall = ballPosition - carPosition;
-    toBall.z = 0.0f;
-    const float distance = glm::length(toBall);
+
+    // Approach from the side of the ball that faces the driver's own goal, so
+    // driving through the ball sends it toward the opponent net instead of
+    // nudging it back. This is the same input surface a human uses.
+    glm::vec3 ownGoalToBall = ballPosition - targetGoal;
+    ownGoalToBall.z = 0.0f;
+    if (glm::dot(ownGoalToBall, ownGoalToBall) <= 1e-4f)
+        ownGoalToBall = glm::vec3(1.0f, 0.0f, 0.0f);
+    const glm::vec3 approachDir = glm::normalize(-ownGoalToBall);
+    glm::vec3 aimPoint = ballPosition + approachDir * 1.2f;
+    aimPoint.z = carPosition.z;
+
+    glm::vec3 toAim = aimPoint - carPosition;
+    toAim.z = 0.0f;
+    const float distance = glm::length(toAim);
     if (distance <= 1e-4f)
         return;
     const glm::vec3 forward = chassis->orientation * glm::vec3(1.0f, 0.0f, 0.0f);
     const float currentYaw = std::atan2(forward.y, forward.x);
-    const float desiredYaw = std::atan2(toBall.y, toBall.x);
+    const float desiredYaw = std::atan2(toAim.y, toAim.x);
     const float yawError = std::remainder(desiredYaw - currentYaw,
                                           glm::two_pi<float>());
+
     VehicleInput input;
     input.steer = std::clamp(yawError * 2.5f, -1.0f, 1.0f);
-    input.throttle = distance > 2.5f ? 1.0f : 0.35f;
+    input.throttle = 1.0f;
     input.brake = 0.0f;
     input.clutch = 0.0f;
     input.handbrake = 0.0f;
+    // Boost when pointed at the ball and still some distance out.
+    const float goalDistance = glm::length(ballPosition - targetGoal);
+    input.boost = (std::fabs(yawError) < 0.35f && goalDistance > 4.0f &&
+                   vehicle.boostCharge > 5.0f)
+                      ? 1.0f
+                      : 0.0f;
+    // Jump when the ball is close and above the chassis, so the NPC can head it.
+    const float ballHeight = ballPosition.z - carPosition.z;
+    input.jumpHeld = (goalDistance < 2.2f && ballHeight > 0.9f) ? true : false;
     VehicleSystem::instance().setInput(vehicle.id, input);
 }
 
@@ -604,14 +635,26 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
                      {"template", spawn.templateId},
                      {"chassis_network_id", chassisNetworkId},
                      {"map", mapId},
+                     {"yaw", spawn.yaw},
+                     {"pitch", spawn.pitch},
+                     {"roll", spawn.roll},
+                     {"chassis_forward_yaw_deg", [&]() {
+                          const PhysicalEntity* chassis =
+                              PhysicalEntitySystem::instance().findByNetworkId(
+                                  chassisNetworkId);
+                          if (!chassis)
+                              return 0.0f;
+                          const glm::vec3 forward =
+                              chassis->orientation * glm::vec3(1.0f, 0.0f, 0.0f);
+                          return glm::degrees(std::atan2(forward.y, forward.x));
+                      }()},
                      {"position", {spawn.position.x, spawn.position.y,
-                                    spawn.position.z}},
-                     {"yaw", spawn.yaw}});
+                                    spawn.position.z}}});
             }
         }
     }
 
-    if (serverGamemodeState().matchMode == "vehicle_arena")
+    if (isVehicleArenaMode(serverGamemodeState().matchMode))
     {
         tickArenaGoals(vehicleState, players, map, tick);
         tickArenaBoostPads(vehicleState, map, tick);
@@ -620,9 +663,18 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
     // Vehicle Arena NPC car: one NPC-driven car uses the same VehicleInput
     // surface as a human driver. The mode's team data is the roster owner, so a
     // 0-NPC practice run does not spawn an invisible synthetic driver.
-    if (serverGamemodeState().matchMode == "vehicle_arena" &&
+    if (isVehicleArenaMode(serverGamemodeState().matchMode) &&
         gamemodeAllowsScoreNpc(serverGamemodeState().matchMode))
     {
+        // Seat human players before NPCs. Otherwise an NPC can claim the car
+        // nearest the human spawn and starve the joining player.
+        bool humanWaitingForCar = false;
+        for (const auto& [playerId, player] : players)
+            if (!player.dead && player.seatedVehicleId == 0 &&
+                player.spawnState == ServerPlayer::Active)
+                humanWaitingForCar = true;
+        if (!humanWaitingForCar)
+        {
         bool npcVehicleAlive = false;
         for (const VehicleState& vehicle : VehicleSystem::instance().vehicles())
             if (vehicle.id == vehicleState.npcVehicleId)
@@ -645,11 +697,26 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
                 }
             VehicleState* best = nullptr;
             float bestDistance = std::numeric_limits<float>::max();
+            const ArenaKickoffConfig* blueKickoff =
+                arenaKickoffForTeam(map, arenaTeamIndex("blue"), 0);
+            const ArenaKickoffConfig* orangeKickoff =
+                arenaKickoffForTeam(map, arenaTeamIndex("orange"), 0);
             for (VehicleState& vehicle : VehicleSystem::instance().vehiclesMutable())
             {
                 if (!vehicle.serverAuthoritative || vehicle.serverMirror ||
                     vehicle.seatOccupants.empty() || vehicle.seatOccupants[0] != 0)
                     continue;
+                // Team-aware: an NPC on the orange team must not take the car
+                // that sits on the blue kickoff.
+                if (blueKickoff && orangeKickoff)
+                {
+                    const float toBlue =
+                        glm::length(vehicle.origin - blueKickoff->position);
+                    const float toOrange =
+                        glm::length(vehicle.origin - orangeKickoff->position);
+                    if (toBlue < toOrange)
+                        continue;
+                }
                 const glm::vec3 anchor = hasTarget ? target : vehicle.origin;
                 const float distance = glm::length(vehicle.origin - anchor);
                 if (distance < bestDistance)
@@ -683,13 +750,21 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
         if (vehicleState.npcVehicleId != 0)
         {
             const PhysicalEntity* ball = findArenaBall();
+            glm::vec3 npcTargetGoal(0.0f);
+            for (const ArenaGoalConfig& goal : map.arena.goals)
+                if (goal.enabled && goal.team == "blue")
+                {
+                    npcTargetGoal = goal.center;
+                    break;
+                }
             if (ball)
                 for (VehicleState& vehicle : VehicleSystem::instance().vehiclesMutable())
                     if (vehicle.id == vehicleState.npcVehicleId)
                     {
-                        driveArenaNpcCar(vehicle, *ball);
+                        driveArenaNpcCar(vehicle, *ball, npcTargetGoal);
                         break;
                     }
+        }
         }
     }
 
@@ -723,7 +798,7 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
     // Vehicle Arena players spawn as their car. Seat an active, unseated player
     // into the nearest free authoritative car without adding a second vehicle
     // or a mode-specific physics path.
-    if (serverGamemodeState().matchMode == "vehicle_arena")
+    if (isVehicleArenaMode(serverGamemodeState().matchMode))
     {
         for (auto& [playerId, player] : players)
         {
@@ -1423,7 +1498,7 @@ void mpSendVehicleInput(MultiplayerContext& ctx, uint32_t currentMs)
         return;
     const uint32_t vehicleId = vehicles.localVehicleId();
     VehicleState* state = vehicles.find(vehicleId);
-    if (!state || !state->serverMirror)
+    if (!state || (!state->serverMirror && !state->clientPredicted))
         return;
     const VehicleInput input = vehicles.sampleLocalInput();
     static uint32_t sLastLocalInputLogMs = 0;

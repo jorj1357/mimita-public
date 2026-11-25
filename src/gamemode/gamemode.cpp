@@ -1034,6 +1034,8 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.actorPresetId = optString(root, "actor_preset", next.actorPresetId);
         next.movementPreset = optString(root, "movement_preset", next.movementPreset);
         next.vehicleProfile = optString(root, "vehicle_profile", next.vehicleProfile);
+        next.vehiclePossessActor = optBool(root, "vehicle_possess_actor",
+                                           next.vehiclePossessActor);
         next.npcBehaviorProfile = optString(
             root, "npc_behavior_profile", next.npcBehaviorProfile);
 
