@@ -1,3 +1,4 @@
+// Bloodtest presentation fade pass 2026-11-25
 #include "player.h"
 #include <cstdint>
 
@@ -359,7 +360,7 @@ void Player::renderCurrentPose(mimita::game::render::ShaderProgram& shader,
 
         MIMITA_GL_CLEAR_STAGE("Player::render body parts");
         r::useProgram(shader.program());
-        const CameraConfigData& cameraConfig = CamConfig::instance().data();
+        const CameraConfigData cameraConfig = CamConfig::instance().effectiveData();
         const glm::vec3 cameraPosition = glm::vec3(glm::inverse(view)[3]);
         if (uCameraFadeEnabledLoc >= 0)
             r::uniform1i(uCameraFadeEnabledLoc, cameraConfig.proximityFadeEnabled ? 1 : 0);

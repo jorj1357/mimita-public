@@ -32,6 +32,11 @@ void renderNetworkPlayer(
 // 2 = wireframe only, 3 = body only. Debug logging is off by default.
 void setPlayerVisualDebugEnabled(bool enabled);
 bool playerVisualDebugEnabled();
+// Local first-person presentation only. When true, the local head and all
+// attached cosmetics are hidden; remote actors and third-person views are
+// unaffected.
+void setFirstPersonHideCosmetics(bool enabled);
+bool firstPersonHideCosmetics();
 void setPlayerVisualLayerFilter(int filter);
 int playerVisualLayerFilter();
 void requestPlayerVisualDump();

@@ -34,6 +34,13 @@ struct CameraConfigData {
     float hitFlinchRandomness = 0.0f;
     float hitFlinchDistance = 30.0f;
     float hitFlinchDistanceExponent = 1.0f;
+    // Bodycam presentation spring. Critical damping is approximately
+    // 2 * sqrt(stiffness); higher stiffness follows the head faster.
+    float bodycamSpringStiffness = 200.0f;
+    float bodycamSpringDamping = 28.0f;
+    float bodycamPositionSpringStiffness = 120.0f;
+    float bodycamPositionSpringDamping = 22.0f;
+    float bodycamMaxAngularSpeedDegreesPerSecond = 1200.0f;
     float positionStiffness = 1.0f;
     float rotationStiffness = 1.0f;
     bool stiffnessEnabled = true;
@@ -61,6 +68,8 @@ public:
 
     void setHitFlinchOverride(bool enabled) { mHitFlinchOverride = enabled; }
     void clearHitFlinchOverride() { mHitFlinchOverride.reset(); }
+    void setProximityFadeOverride(bool enabled) { mProximityFadeOverride = enabled; }
+    void clearProximityFadeOverride() { mProximityFadeOverride.reset(); }
     struct ModeBodycamOverride {
         std::string orientationMode = "head_world";
         glm::vec3 eyeOffsetMeters{0.0f};
@@ -93,6 +102,7 @@ private:
     std::filesystem::file_time_type mLastWrite{};
     bool mWatchLogged = false;
     std::optional<bool> mHitFlinchOverride;
+    std::optional<bool> mProximityFadeOverride;
     std::optional<ModeBodycamOverride> mBodycamOverride;
 };
 

@@ -794,6 +794,27 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             readFlag("blood_client_feedback",
                      next.presentation.hasBloodClientFeedback,
                      next.presentation.bloodClientFeedback);
+            if (p.contains("proximity_fade") && p["proximity_fade"].is_string()) {
+                const std::string value = p["proximity_fade"].get<std::string>();
+                if (value == "on") {
+                    next.presentation.hasProximityFade = true;
+                    next.presentation.proximityFade = true;
+                } else if (value == "off") {
+                    next.presentation.hasProximityFade = true;
+                    next.presentation.proximityFade = false;
+                } else {
+                    next.presentation.hasProximityFade = false;
+                }
+            }
+            if (p.contains("first_person") && p["first_person"].is_object()) {
+                const auto& fp = p["first_person"];
+                if (fp.contains("hide_head_cosmetics") &&
+                    fp["hide_head_cosmetics"].is_boolean()) {
+                    next.presentation.hasFirstPersonHide = true;
+                    next.presentation.firstPersonHide =
+                        fp["hide_head_cosmetics"].get<bool>();
+                }
+            }
             readFlag("killfeed", next.presentation.hasKillfeed, next.presentation.killfeed);
             readFlag("ragdolls", next.presentation.hasRagdolls, next.presentation.ragdolls);
             readFlag("enemy_healthbars", next.presentation.hasEnemyHealthbars, next.presentation.enemyHealthbars);

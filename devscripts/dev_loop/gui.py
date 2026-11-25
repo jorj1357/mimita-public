@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import colorsys
 import ctypes
 import json
 import os
@@ -20,6 +19,7 @@ from typing import Callable
 BLACK = "#000000"
 RED = "#ff0000"
 GREEN = "#00ff00"
+ACCENT = "#00aaff"
 WHITE = "#ffffff"
 FONT_PATH = Path(r"C:\important\mingliu-font\mingliu.ttf")
 MIN_WIDTH = 500
@@ -740,7 +740,6 @@ def run(status_provider: Callable[[], dict],
         "last_reflow_size": None,
         "last_reflow_wrap": None,
         "closing": False,
-        "hue_started": time.monotonic(),
         "maximized": False,
         "restore_geometry": None,
         "window_geometry": saved_geometry,
@@ -750,10 +749,7 @@ def run(status_provider: Callable[[], dict],
         "resize": None,
         "compact": None,
         "wide": None,
-        "identity_match": False,
         "app_id_error": app_id_error,
-        "phase_color_mode": "rainbow",
-        "animation_id": None,
         "minimized": False,
         "pending_request_id": "",
         "pending_checkout_id": "main",
@@ -778,8 +774,6 @@ def run(status_provider: Callable[[], dict],
         "status_refresh_last_started": 0.0,
         "status_refresh_error": "",
         "provider_control_lock": threading.RLock(),
-        "last_ui_heartbeat": None,
-        "last_ui_stall_log": 0.0,
         "last_slow_refresh_log": 0.0,
         "processes": [],
         "live_output": deque(maxlen=300),
@@ -1167,8 +1161,7 @@ def run(status_provider: Callable[[], dict],
             except tk.TclError:
                 pass
         for key in ("after_id", "refresh_after_id", "reflow_after_id",
-                    "coordination_render_after_id", "checkout_render_after_id",
-                    "animation_id"):
+                    "coordination_render_after_id", "checkout_render_after_id"):
             pending = state.get(key)
             if pending:
                 try:
@@ -2268,11 +2261,6 @@ def run(status_provider: Callable[[], dict],
         options_menu.tk_popup(options_button.winfo_rootx(),
                               options_button.winfo_rooty() + options_button.winfo_height())
 
-    def rainbow_color() -> str:
-        hue = ((time.monotonic() - state["hue_started"]) / 4.0) % 1.0
-        r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
-        return f"#{round(r * 255):02x}{round(g * 255):02x}{round(b * 255):02x}"
-
     def copy_build_identity(event, artifact, digest):
         text = f"{artifact}  SHA-256 {digest}"
         root.clipboard_clear()
@@ -3019,52 +3007,45 @@ def run(status_provider: Callable[[], dict],
                                     copy_build_identity(event, a, h))
                 latest_detail.bind("<Button-1>", lambda event, a=artifact, h=latest_hash:
                                    copy_build_identity(event, a, h))
-                match_color = GREEN if same_build else rainbow_color()
+                match_color = GREEN if same_build else ACCENT
                 running_value.configure(fg=match_color)
                 latest_value.configure(fg=match_color)
                 running_detail.configure(fg=match_color)
                 latest_detail.configure(fg=match_color)
-                state["identity_match"] = same_build
 
                 phase = str(model.get("phase") or "unknown").lower()
                 if model.get("stale") and phase == "published_current":
                     phase_text = "SOURCE CHANGED · BUILD NEEDED"
                     phase_detail.configure(text=model.get("phase_detail") or "Current source is newer than the published build")
-                    phase_color = rainbow_color()
-                    state["phase_color_mode"] = "rainbow"
+                    phase_color = ACCENT
                 elif phase == "published_current" and not model.get("identity_valid", True):
                     phase_text = "BUILD IDENTITY INVALID"
                     phase_detail.configure(text=model.get("phase_detail") or
                                            "The latest artifact identity could not be verified")
                     phase_color = RED
-                    state["phase_color_mode"] = "red"
                 elif phase == "published_current":
                     phase_text = "UP TO DATE"
                     phase_detail.configure(text=f"Most recent build: {artifact}")
                     phase_color = GREEN
-                    state["phase_color_mode"] = "green"
                 elif phase in ("building", "pending", "queued"):
                     phase_text = f"{phase.upper()}  ·  {model.get('elapsed') or '00:00:00'}"
                     phase_detail.configure(text=model.get("phase_detail") or "Build is active")
-                    phase_color = rainbow_color()
-                    state["phase_color_mode"] = "rainbow"
+                    phase_color = ACCENT
                 elif "fail" in phase or "error" in phase:
                     phase_text = phase.upper()
                     phase_detail.configure(text=model.get("phase_detail") or "Build failed")
                     phase_color = RED
-                    state["phase_color_mode"] = "red"
                 else:
                     phase_text = phase.replace("_", " ").upper()
                     phase_detail.configure(text=model.get("phase_detail") or "Waiting for build activity")
-                    phase_color = rainbow_color()
-                    state["phase_color_mode"] = "rainbow"
+                    phase_color = ACCENT
                 phase_value.configure(text=phase_text, fg=phase_color)
 
                 measure_ui_stage("game_queue_panel",
                                  lambda: update_game_queue_panel(model))
 
                 runtime_value.configure(text=model.get("runtime", "Not running"),
-                                         fg=GREEN if same_build else rainbow_color())
+                                         fg=GREEN if same_build else ACCENT)
                 instance_lines = []
                 for inst in model.get("instances", []) or []:
                     age = inst.get("snapshot_age_ms")
@@ -3082,13 +3063,13 @@ def run(status_provider: Callable[[], dict],
                 measure_ui_stage("process_rows", lambda: render_process_rows(model))
                 mode = str(model.get("mode") or "—")
                 map_name = str(model.get("map") or "—")
-                mode_value.configure(text=mode, fg=rainbow_color())
-                map_value.configure(text=map_name, fg=rainbow_color())
+                mode_value.configure(text=mode, fg=ACCENT)
+                map_value.configure(text=map_name, fg=ACCENT)
 
                 scenario = model.get("scenario") or {}
                 scenario_value.configure(
                     text=f"{scenario.get('verdict', '—')}  ·  {scenario.get('id', '—')}",
-                    fg=rainbow_color())
+                    fg=ACCENT)
                 scenario_detail.configure(text=(
                     f"{scenario.get('state', 'No scenario recorded')}  ·  "
                     f"frame {scenario.get('frame', '—')}  ·  tick {scenario.get('tick', '—')}  ·  "
@@ -3177,35 +3158,6 @@ def run(status_provider: Callable[[], dict],
         if not state["closing"]:
             state["after_id"] = root.after(1000, refresh)
 
-    def animate_values():
-        if state["closing"]:
-            return
-        now = time.monotonic()
-        previous = state["last_ui_heartbeat"]
-        state["last_ui_heartbeat"] = now
-        if previous is not None:
-            gap_ms = round(max(0.0, now - previous - 0.06) * 1000.0, 1)
-            if gap_ms >= 250.0:
-                log_dashboard_event(
-                    "dashboard.ui.stall", {"event_loop_gap_ms": gap_ms},
-                    cooldown_key="last_ui_stall_log")
-        if not state["frozen"] and not state["minimized"]:
-            color = rainbow_color()
-            identity_color = GREEN if state["identity_match"] else color
-            running_value.configure(fg=identity_color)
-            latest_value.configure(fg=identity_color)
-            running_detail.configure(fg=identity_color)
-            latest_detail.configure(fg=identity_color)
-            phase_mode = state["phase_color_mode"]
-            phase_value.configure(fg=(GREEN if phase_mode == "green" else
-                                      RED if phase_mode == "red" else color))
-            runtime_value.configure(fg=identity_color)
-            mode_value.configure(fg=color)
-            map_value.configure(fg=color)
-            scenario_value.configure(fg=color)
-        if not state["closing"]:
-            state["animation_id"] = root.after(120, animate_values)
-
     mode_map = tk.Frame(runtime_card, bg=BLACK)
     mode_map.grid(row=3, column=0, sticky="ew")
     label(mode_map, "Mode:", size=10).grid(row=0, column=0, sticky="w")
@@ -3230,7 +3182,7 @@ def run(status_provider: Callable[[], dict],
     root.bind("<Key-x>", lambda _event: close_view())
 
     def cleanup():
-        for key in ("after_id", "animation_id"):
+        for key in ("after_id",):
             if state[key] is not None:
                 try:
                     root.after_cancel(state[key])
@@ -3257,6 +3209,5 @@ def run(status_provider: Callable[[], dict],
     root.bind("<Destroy>", lambda event: cleanup() if event.widget is root else None, add="+")
     schedule_reflow()
     state["refresh_after_id"] = root.after(0, refresh)
-    animate_values()
     root.mainloop()
     return 0

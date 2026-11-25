@@ -24,7 +24,7 @@
     "airRollLeft": { "button": 2 },
     "airRollRight": { "button": 1 },
     "lookBehind": { "button": 10 },
-    "swivelX": { "axis": 2, "deadzone": 0.12 },
+    "swivelX": { "axis": 2, "invert": true, "deadzone": 0.12 },
     "swivelY": { "axis": 3, "invert": true, "deadzone": 0.12 }
   }
 }

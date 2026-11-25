@@ -3,6 +3,7 @@
 #include "input/gamepad-input.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -153,6 +154,8 @@ bool GamepadInput::reloadConfig()
                     node.value("deadzone", defaultDeadzone);
                 binding.upperDeadzone =
                     node.value("upperDeadzone", binding.upperDeadzone);
+                binding.mode = node.value("mode", binding.mode);
+                binding.sign = node.value("sign", binding.sign);
             }
         }
         loadMappings();
@@ -391,12 +394,13 @@ void GamepadInput::poll()
         if (!glfwGetGamepadState(device, &state))
             return;
         mStandardMapping = true;
-        mAxisCount = GLFW_GAMEPAD_AXIS_LAST;
-        mButtonCount = GLFW_GAMEPAD_BUTTON_LAST;
+        mAxisCount = GLFW_GAMEPAD_AXIS_LAST + 1;
+        mButtonCount = GLFW_GAMEPAD_BUTTON_LAST + 1;
         for (int i = 0; i < mAxisCount && i < 16; ++i)
             mAxes[i] = state.axes[i];
         for (int i = 0; i < mButtonCount && i < 32; ++i)
             mButtons[i] = state.buttons[i];
+        logAxes();
         return;
     }
 
@@ -412,10 +416,12 @@ void GamepadInput::poll()
     mButtonCount = std::clamp(count, 0, 32);
     for (int i = 0; i < mButtonCount; ++i)
         mButtons[i] = buttons ? buttons[i] : 0;
+    logAxes();
 }
 
 float GamepadInput::axisValue(int axis, bool trigger, bool invert,
-                              float deadzone, float upperDeadzone) const
+                              float deadzone, float upperDeadzone,
+                              const std::string& mode, float sign) const
 {
     if (axis < 0 || axis >= mAxisCount || axis >= 16)
         return 0.0f;
@@ -424,19 +430,85 @@ float GamepadInput::axisValue(int axis, bool trigger, bool invert,
         return 0.0f;
     if (invert)
         value = -value;
-    if (trigger)
-    {
-        // Raw trigger range is 0..1 for GLFW gamepads. Remap lower/upper
-        // deadzones so a configurable travel reaches 100% early and the scale
-        // stays linear in between.
-        const float raw = std::clamp((value + 1.0f) * 0.5f, 0.0f, 1.0f);
+
+    const auto remap01 = [&](float raw) {
         if (raw <= deadzone)
             return 0.0f;
         const float span = std::max(
-            std::clamp(upperDeadzone, deadzone + 0.01f, 1.0f) - deadzone, 0.01f);
+            std::clamp(upperDeadzone, deadzone + 0.01f, 1.0f) - deadzone,
+            0.01f);
         return std::clamp((raw - deadzone) / span, 0.0f, 1.0f);
+    };
+
+    // "axis01": the device already reports a 0..1 axis (a DS4 over Bluetooth
+    // does; treating that as -1..1 put both triggers at 0.5 at rest, which made
+    // drive = throttle - brake cancel out).
+    if (mode == "axis01")
+        return remap01(std::clamp(value, 0.0f, 1.0f));
+
+    // "combined": both triggers on one axis, one half each.
+    if (mode == "combined")
+    {
+        const float raw = std::clamp(value * sign, 0.0f, 1.0f);
+        return remap01(raw);
+    }
+
+    if (trigger)
+    {
+        // Legacy: signed axis where -1 is released.
+        const float raw = std::clamp((value + 1.0f) * 0.5f, 0.0f, 1.0f);
+        return remap01(raw);
     }
     return applyDeadzone(value, deadzone, upperDeadzone);
+}
+
+void GamepadInput::logAxes()
+{
+    // Bounded capture of raw device state. This is the only way to tell a
+    // mis-decoded trigger from a missing device, and it needs no build.
+    static uint64_t sLastCaptureMs = 0;
+    static float sPrevAxes[16] = {};
+    static unsigned char sPrevButtons[32] = {};
+    const uint64_t nowMs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+    bool changed = false;
+    for (int i = 0; i < mAxisCount && i < 16; ++i)
+        if (std::fabs(mAxes[i] - sPrevAxes[i]) > 0.15f)
+            changed = true;
+    for (int i = 0; i < mButtonCount && i < 32; ++i)
+        if (mButtons[i] != sPrevButtons[i])
+            changed = true;
+    if (!changed || nowMs - sLastCaptureMs < 250)
+        return;
+    sLastCaptureMs = nowMs;
+    for (int i = 0; i < 16; ++i)
+        sPrevAxes[i] = mAxes[i];
+    for (int i = 0; i < 32; ++i)
+        sPrevButtons[i] = mButtons[i];
+
+    nlohmann::json axes = nlohmann::json::array();
+    for (int i = 0; i < mAxisCount && i < 16; ++i)
+        axes.push_back(mAxes[i]);
+    unsigned int buttonBits = 0;
+    for (int i = 0; i < mButtonCount && i < 32; ++i)
+        if (mButtons[i])
+            buttonBits |= (1u << i);
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "input.gamepad.axes", "gamepad",
+        "raw gamepad axes changed", 0,
+        {{"device", mName},
+         {"standard_mapping", mStandardMapping},
+         {"raw_only", mRawOnly},
+         {"axis_count", mAxisCount},
+         {"axes", axes},
+         {"buttons", buttonBits},
+         {"throttle", throttle()},
+         {"brake", brake()},
+         {"steer", steer()}});
 }
 
 bool GamepadInput::buttonValue(int button) const
@@ -469,7 +541,8 @@ bool GamepadInput::held(const std::string& action) const
         return buttonValue(binding.button);
     if (binding.axis >= 0)
         return axisValue(binding.axis, binding.trigger, binding.invert,
-                         binding.deadzone, binding.upperDeadzone) > 0.35f;
+                         binding.deadzone, binding.upperDeadzone,
+                         binding.mode, binding.sign) > 0.35f;
     return false;
 }
 
@@ -500,7 +573,8 @@ float GamepadInput::value(const std::string& action) const
     const GamepadBinding& binding = it->second;
     if (binding.axis >= 0)
         return axisValue(binding.axis, binding.trigger, binding.invert,
-                         binding.deadzone, binding.upperDeadzone);
+                         binding.deadzone, binding.upperDeadzone,
+                         binding.mode, binding.sign);
     if (binding.button >= 0)
         return buttonValue(binding.button) ? 1.0f : 0.0f;
     return 0.0f;

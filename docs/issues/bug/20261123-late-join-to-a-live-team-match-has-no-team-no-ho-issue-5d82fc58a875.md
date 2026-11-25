@@ -142,3 +142,38 @@ NEXT DISCRIMINATING CHECK (smallest)
 - Do not close this issue on existing records. Owner remains latejoin-team-identity.
 
 VERDICT: needs-evidence (runtime proof is stale and its journals are purged; no current-generation late-join run exists).
+
+## Scheduled independent review
+
+### 2026-11-25T20:16:07.392Z — opencode-deepseek-v4-1
+
+A bounded independent review was queued as wake wake-9ffc449833bc after 728 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (needs-evidence)
+
+### 2026-11-25T20:20:00.700Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+INDEPENDENT BOUNDED REVIEW (issue-review-sweeper; wake wake-9ffc449833bc; read-only: no source edit, build, run, lease, close, or fix claim; 2026-11-25T20:2xZ).
+
+OBSERVED FACTS
+- Readiness unchanged: ready=true, score 8/8, state=in_review, owner latejoin-team-identity, 3 tasks open (latejoin-team-capacity-spawn, latejoin-team-identity-server, latejoin-team-outlines) with empty task evidence.
+- Proof rows for this issue are still not verified: id74 proof-39dbdfdf1222 result=unproven ("journal event predicate not found"); id75 proof-c63791220bc7 unproven; id76 proof-8ee0e191b3dd stale ("source changed: src/network/server-gamemode.cpp"); id77 proof-e54f24bee063 stale; id78 proof-72fdb2cb02ab stale. Global proof status still proven=3, stale=27; no row changed since the 2026-11-24 review.
+- Current source hashes are byte-identical to the 2026-11-24 review: src/network/server-gamemode.cpp 13ef9af0c349f115f6e0d140172b00d7898f99593d613ea83b10d8ede450f6c8 (proof-recorded adf0ae64...), src/render/render-player.cpp bdead54b030222acf08b7df52fd8d5c5b960053da56ece9e4ca0f7ac30723fba (proof-recorded e49a16f7...), src/network/server-gamemode.h 00eeddc1610eb940e01edb1ca6f3941b6689755779fd36401ea403041abf8630, src/network/server-npcs.cpp 2e37709f8e52be222595155e79c0e76883937c95e56feed83917b8824787c7d5. `git status --porcelain` is empty for these paths, and the last commit touching server-gamemode.cpp is still 51306c08 (2026-11-24T05:22Z).
+- Intended behavior is still present in source: rg finds match.actor.late-join-spawn at src/network/server-gamemode.cpp:2841,2852,2857; match.actor.late-join-assigned at :2874; gamemode.spawn-new-actor at :2934; gamemode.team-roster-npc.replaced at :5438.
+- No new evidence exists anywhere in retained logs: `rg -l "late-join-assigned|late-join-spawn|team-roster-npc.replaced" C:\mimita-v9\logs` returns no files. The three retained 2026-11-25 runs (20261125_152203, 20261125_175329, 20261125_184820) have server/client journals, but their network.mode.start entries are funcounterstrike participant_count=20, not a two-client TDM late join; logs/11-25-2026 contains 0 events*.jsonl. The 2026-11-23 journals cited by the gen565/gen569 review remain absent.
+
+INFERENCE / UNCERTAINTY
+- No change from the prior verdict: implemented but unproven at the current generation. Missing retained samples are unknown, not zero.
+- The prior "Final runtime proof" (review id 290) still cannot be independently re-verified because its pinned journals are purged and its proof rows are stale against current sources.
+- A regression from the unrelated 2026-11-24 commits cannot be excluded from records alone, but nothing observed indicates one.
+
+CONTRARY EVIDENCE
+- The gen565/gen569 review recorded concrete values (team=1, role=elite_fighter, roster [5,5], npc.target-changed, server.damage.applied, client identity found=true, teammate true/false outlines). That remains credible contemporaneous evidence but no longer satisfies proof-first verification at the current source/generation.
+
+NEXT DISCRIMINATING CHECK (smallest; unchanged and still unrun)
+- On the current dev-loop generation, run one isolated TDM two-client late join (test profile tdm-validation, launch mode 41; second client after network.mode.start stage=active). Copy and SHA-256 the server-01 and client-02 events*.jsonl into a retained proof artifact before rotation. Verify match.actor.late-join-assigned team>0; match.actor.late-join-spawn; gamemode.spawn-new-actor; gamemode.team-roster-npc.replaced; gamemode.team-roster.resolved [5,5]; npc.target-changed target=<joiner>; server.damage.applied target=<joiner>; client.gamemode.local-actor-identity found=true team; player_visuals.outline team_identity_known=true for a teammate and an enemy. Then record fresh proof rows against the current hashes. Also run one FFA/teamless late join to confirm no assignment. Human outline/visual confirmation remains separate.
+- Do not close this issue on existing records and do not reuse the purged gen565/gen569 journals as current proof. Owner remains latejoin-team-identity.
+
+VERDICT: needs-evidence — no new late-join evidence since 2026-11-24; proof still stale/unproven and no current-generation two-client TDM late-join run exists.

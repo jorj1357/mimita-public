@@ -241,6 +241,11 @@ struct GamemodePresentation {
     bool hasHitFlinch = false;            bool hitFlinch = true;
     bool hasBlood = false;               bool blood = true;
     bool hasBloodClientFeedback = false; bool bloodClientFeedback = true;
+    // Per-mode camera proximity fade. "inherit" leaves the shared camconfig
+    // value; on/off overrides it for this mode.
+    bool hasProximityFade = false;       bool proximityFade = true;
+    // Local first-person only: hide the head and all attached cosmetics.
+    bool hasFirstPersonHide = false;     bool firstPersonHide = true;
     bool hasKillfeed = false;            bool killfeed = true;
     bool hasRagdolls = false;            bool ragdolls = true;
     bool hasEnemyHealthbars = false;     bool enemyHealthbars = true;
@@ -250,8 +255,10 @@ struct GamemodePresentation {
     bool hasPlayerWireframes = false;     bool playerWireframes = false;
     bool hasFriendlyWireframes = false;   bool friendlyWireframes = false;
     bool hasEnemyOutlineAlpha = false;   float enemyOutlineAlpha = 0.25f;
-    float bloodScale = 1.0f;
-    float bloodLifetimeScale = 1.0f;
+    // Modes without an explicit gore profile use minimal blood; Bloodtest
+    // overrides these back to 1.0 for its max-gore sandbox.
+    float bloodScale = 0.35f;
+    float bloodLifetimeScale = 0.5f;
     float worldImpactDecalScale = 1.0f;
     float worldImpactDecalLifetimeScale = 1.0f;
     float worldImpactDecalAlphaScale = 1.0f;

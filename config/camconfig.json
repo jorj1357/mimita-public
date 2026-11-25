@@ -13,6 +13,15 @@
     "endDistanceMeters": 3.0
   //  "endDistanceMeters": 4.0
   },
+  // Bodycam presentation spring. Critical damping is about 2*sqrt(stiffness).
+  // These are presentation-only; the fixed-tick aim target is unchanged.
+  "bodycamSpring": {
+    "stiffness": 200.0,
+    "damping": 28.0,
+    "positionStiffness": 120.0,
+    "positionDamping": 22.0,
+    "maxAngularSpeedDegreesPerSecond": 1200.0
+  },
   // No 100 ceiling: 0 = neutral, 30 = noticeable, 359 = extreme.
   // Curve/zoom shape where and how strongly the warp appears.
   "lensDistortion": 0.0,

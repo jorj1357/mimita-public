@@ -180,6 +180,18 @@ Read these gates before doing anything else:
    as serialization, hashing, or a pure mathematical invariant; never treat a
    self-test as proof of runtime or user-visible behavior.
 
+   LIVE GAME ON ISSUE INTAKE: When a user reports MiMITA gameplay, rendering,
+   UI, networking, or other behavior that could be observed in a running game,
+   first discover matching checkout processes with
+   `python devscripts/evidence-watch.py list --json`. If a relevant live run is
+   present, inspect its exact PID/run, executable and build identity, mode/map,
+   and journal with `evidence-watch show`/`tail` before asking the user to
+   relaunch or treating the report as source-only. Record the observed event
+   and any identity gaps in the existing issue. This is read-only discovery:
+   do not adopt, stop, restart, or otherwise control a human- or other-agent-
+   owned process. If no relevant game is running, record that and continue the
+   routed source/log investigation; do not claim runtime proof.
+
 5. DEV LOOP IS THE LIVE BUILD/RUN AUTHORITY: For live gameplay or debugging
    fixes, run `python devscripts/dev-loop.py` from the repository root using
    the appropriate profile. Use its status/control path to reuse an existing

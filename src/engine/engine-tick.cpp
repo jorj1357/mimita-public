@@ -262,6 +262,10 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
                 MIMITA_PERF_PROGRESS("UI");
                 MIMITA_PERF_SCOPE("UI");
                 engineTickUI(engine, dt, worldPassRan);
+                // Whole-frame modes draw the console into the same stretched
+                // scene target as the world and HUD. Drawing it again after
+                // PostFX produced a second, differently-sized console.
+                Terminal::instance().render();
                 HEARTBEAT("after ui");
             }
         }
@@ -439,8 +443,12 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
     }
 
     HEARTBEAT("before terminal");
-    { MIMITA_PERF_PROGRESS("Terminal");
-      MIMITA_PERF_SCOPE("Terminal"); Terminal::instance().render(); }
+    if (!(engine.renderer && engine.renderer->stretchesWholeFrame() &&
+          uiHudSceneLayer())) {
+        MIMITA_PERF_PROGRESS("Terminal");
+        MIMITA_PERF_SCOPE("Terminal");
+        Terminal::instance().render();
+    }
     { Perf::ScopedTimer _t("Diag"); diagRenderStage(8); }
 
     if (engine.renderer && engine.renderer->stretchesWholeFrame()) {

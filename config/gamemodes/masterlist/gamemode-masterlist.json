@@ -793,6 +793,28 @@
           "nullable": true,
           "description": "Victim-screen blood particles. null inherits config/impact_decals.json blood.clientFeedback.enabled. Does not control world blood."
         },
+        "proximity_fade": {
+          "type": "string",
+          "required": false,
+          "default": "inherit",
+          "enum": ["inherit", "on", "off"],
+          "description": "Per-mode world proximity fade policy. inherit uses config/camconfig.json; on/off override it for this mode."
+        },
+        "first_person": {
+          "type": "object",
+          "required": false,
+          "default": null,
+          "nullable": true,
+          "description": "Per-mode local first-person visibility policy.",
+          "fields": {
+            "hide_head_cosmetics": {
+              "type": "boolean",
+              "required": false,
+              "default": true,
+              "description": "Hide the local player's head and attached cosmetics in first person without changing other clients."
+            }
+          }
+        },
         "killfeed": {
           "type": "boolean",
           "required": false,

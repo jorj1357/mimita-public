@@ -320,6 +320,48 @@ movement, projectile, damage, camera, or match owners.
   `weapon.reload.mode.changed` are the acceptance stream in the per-instance
   `events.jsonl`.
 
+## 2026-11-25 presentation and gore lock
+
+- **Mode 6 HUD:** fullscreen mode 6 composes the world, game GUI, HUD, and
+  developer console in the 1024x768 scene target and stretches the whole frame
+  together. A crisp/output-resolution HUD is an explicit opt-in mode, disabled
+  by default. Only one HUD path may draw per frame; the console must not be
+  drawn once in-scene and again after PostFX.
+- **Proximity fade:** every mode inherits a master `presentation.proximity_fade`
+  value of `inherit|on|off`. Bloodtest is `off`. The held weapon never inherits
+  a proximity-fade discard from the player/world pass.
+- **First person:** the local client hides its head and all attached cosmetics
+  for first-person views. Remote clients always see the normal head and
+  cosmetics. This is local presentation only and is not proximity fade.
+- **Weapon origin:** Bloodtest keeps the physical muzzle as the authoritative
+  bullet origin. A camera-origin mode may exist for other modes, but it is not
+  the Bloodtest default. Weapon size, grip, stock, arm placement, and pose are
+  the alignment controls.
+- **Weapon pose:** the AK uses the `rifle` pose (right hand on the grip, left
+  hand on the handguard, stock at the shoulder), not the revolver pose. Pose
+  values live in `config/animations.json` and are hot-reloadable.
+- **Gore mode 2:** actor life HP is 100 for lethality; each body part has a
+  separate 1000-point gore health for layers. A part exposes meat at 250
+  cumulative gore damage, bone at 500, and explodes at 1000. Mode 1 remains the
+  current 100-point part model. An AK headshot can kill through actor HP while
+  showing little or no meat/bone; a point-blank grenade at 2500 damage
+  explodes the body.
+- **Gore scope:** Bloodtest uses the maximum blood/gore profile. Modes without
+  an explicit profile inherit the default minimal profile. Reuse the existing
+  `blood_scale`, `blood_lifetime_scale`, impact-decal, and hit-effect owners;
+  do not add a second gore system.
+- **Camera:** mouse look stores a wish direction. A critically damped spring
+  advances it at the fixed tick and the render interpolates the spring state.
+  The spring stiffness, damping, maximum angular speed/acceleration, settle
+  deadband, head amplitude, arm response, weapon stability, and force
+  multipliers are JSON-tunable. The 0.01 s feel must not be implemented as a
+  per-frame snap that jitters.
+- **Evidence:** acceptance uses bounded `events.jsonl` records plus deterministic
+  pixel probes. Required probes include opaque-black quad readback, held-weapon
+  alpha/coverage, console/HUD draw count and stretch ratio, camera wish/current
+  jitter, meat/bone AABB alignment, and corpse-hit position. A human visual
+  review remains separate.
+
 ## Acceptance
 
 1. Multiple human clients can join the arena and damage one another.

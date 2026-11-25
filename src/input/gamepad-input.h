@@ -20,6 +20,13 @@ struct GamepadBinding {
     // Value at which the axis reports full travel. < 1.0 makes a trigger reach
     // 100% before it is physically fully pressed, with a linear ramp below.
     float upperDeadzone = 1.0f;
+    // How the raw axis is interpreted. "auto" keeps the legacy behaviour
+    // (signed stick or trigger normalised from -1..1); "axis01" treats the
+    // value as already 0..1; "combined" reads one half of a shared trigger
+    // axis; "signed" forces the -1..1 interpretation.
+    std::string mode = "auto";
+    // Sign for "combined" mode: -1 selects the negative half, +1 the positive.
+    float sign = 1.0f;
 };
 
 class GamepadInput {
@@ -71,8 +78,11 @@ private:
     void applyDefaultBindings();
     void loadMappings();
     void pollState();
+    void logAxes();
     float axisValue(int axis, bool trigger, bool invert, float deadzone,
-                    float upperDeadzone = 1.0f) const;
+                    float upperDeadzone = 1.0f,
+                    const std::string& mode = "auto",
+                    float sign = 1.0f) const;
     bool buttonValue(int button) const;
 
     std::unordered_map<std::string, GamepadBinding> mBindings;

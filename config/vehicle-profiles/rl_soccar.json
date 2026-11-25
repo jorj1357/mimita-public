@@ -128,9 +128,9 @@
 
   "steering": {
     // STEER_ANGLE_FROM_SPEED_CURVE at 0 m/s is 0.53356 rad = 30.57 degrees.
-    "maxAngleDeg": 30.57,
-    "speedFalloff": 0.55,
-    "returnRate": 6.0
+    "maxAngleDeg": 36.0,
+    "speedFalloff": 0.42,
+    "returnRate": 8.0
   },
 
   "powerslide": {

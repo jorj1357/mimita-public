@@ -573,6 +573,10 @@ uint32_t VehicleSystem::spawnInternal(const std::string& templateId,
     entity->centerOfMass = spec->centerOfMass;
     entity->sleeping = false;
     entity->sleepTicks = 0;
+    // Spawn at rest: a chassis that starts with angular velocity spins during the
+    // drop and lands crooked, which looked like "rotates for no reason".
+    entity->velocity = glm::vec3(0.0f);
+    entity->angularVelocity = glm::vec3(0.0f);
 
     VehicleState state;
     state.id = mNextId++;
@@ -1897,9 +1901,12 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
         setPhysicalEntityBallHitParams(hitParams);
     }
 
-    const bool onGround =
-        grounded > 0 && grounded >= 3;
+    // Grounded means every wheel is touching. Any wheel off the surface puts the
+    // car in its air-control state, which is what makes air roll respond the
+    // moment the car leaves the ground instead of only after a long hop.
     const int wheelCount = static_cast<int>(state.wheels.size());
+    const bool onGround =
+        wheelCount > 0 && grounded == wheelCount;
 
     // ── Flip-reset surface ──────────────────────────────────────────────
     // All four wheels touching any surface restores the aerial flip. The ball
@@ -2002,7 +2009,27 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
 
     if (jumpPressed)
     {
-        if (onGround && state.jumpCount == 0)
+        if (!onGround && state.upDotWorldUp < 0.20f)
+        {
+            // Rocket League auto-flip: pressing jump while resting on the roof
+            // rolls the car back onto its wheels. Impulse plus torque, no pose
+            // set, so it can still be interrupted by physics.
+            const glm::vec3 rollAxis =
+                glm::normalize(glm::cross(glm::vec3(0.0f, 0.0f, 1.0f), up));
+            applyPhysicalEntityImpulse(entity, up * (2.0f * mass), com);
+            entity.angularVelocity += rollAxis * 4.8f;
+            state.jumpCount = 2;
+            state.isJumping = false;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.autoflip", std::to_string(state.id),
+                "auto-flip from an inverted rest", tick,
+                {{"vehicle_id", state.id},
+                 {"up_dot", state.upDotWorldUp}},
+                __FILE__, __LINE__, __func__);
+            state.jumpHeldPrev = state.jumpHeld;
+        }
+        else if (onGround && state.jumpCount == 0)
         {
             state.jumpCount = 1;
             state.jumpStartedTick = tick;
@@ -2338,6 +2365,17 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
         else if (!active)
         {
             state.airRollActive = false;
+            // No rotational input and not flipping: bleed the last of any
+            // residual angular velocity so the car does not keep turning in the
+            // air for no reason. This is a deadzone on leftover spin, not a
+            // control behaviour.
+            if (!state.isFlipping)
+            {
+                if (glm::length(entity.angularVelocity) < 0.30f)
+                    entity.angularVelocity = glm::vec3(0.0f);
+                else
+                    entity.angularVelocity *= std::max(0.0f, 1.0f - 6.0f * dt);
+            }
         }
     }
     else
@@ -2352,7 +2390,10 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
         entity.angularVelocity *= profile.airControl.maxAngularVelocity / omega;
 
     // ── Ground drive: throttle / brake / coast curves ───────────────────
-    if (onGround)
+    // Any wheel with contact can drive the car. Requiring all four meant that a
+    // front wheel lifting under reverse braked the rear wheels too, so R2 did
+    // nothing. Rocket League drives through whichever wheels are touching.
+    if (grounded > 0)
     {
         // Drive along the surface the wheels are on: horizontal on the floor,
         // projected onto the contact plane on walls and the ceiling.

@@ -15,6 +15,14 @@
 #include "world/world.h"
 #include "debug/structured-log.h"
 
+namespace {
+// The local camera is a single presentation object; keeping the bodycam
+// spring velocity here avoids adding presentation state to camera.h and
+// triggering a large header rebuild.
+glm::vec3 sBodycamAngularVelocity{0.0f};
+glm::vec3 sBodycamPositionVelocity{0.0f};
+}
+
 void Camera::updateMouse(double xpos, double ypos) {
     if (ignoreHostMouse) {
         firstMouse = true;
@@ -245,10 +253,9 @@ void Camera::applyBodycamPose(const glm::vec3& targetPosition,
                               bool allowSettle,
                               bool wallCollision, float probeRadiusMeters)
 {
-    const float posAlpha = 1.0f - std::exp(-std::max(0.0f, dt) /
-        std::clamp(positionResponseSeconds, 0.01f, 2.0f));
-    const float rotAlpha = 1.0f - std::exp(-std::max(0.0f, dt) /
-        std::clamp(rotationResponseSeconds, 0.01f, 2.0f));
+    const CameraConfigData& springCfg = CamConfig::instance().effectiveData();
+    const float safeDt = std::clamp(dt, 0.0f, 0.1f);
+    glm::quat targetRotationForTrace = mBodycamRotation;
     if (!mBodycamPoseInitialized) {
         pos = targetPosition;
         front = glm::normalize(targetFront);
@@ -272,6 +279,7 @@ void Camera::applyBodycamPose(const glm::vec3& targetPosition,
         targetBasis[1] = glm::vec4(safeTargetFront, 0.0f);
         targetBasis[2] = glm::vec4(safeTargetUp, 0.0f);
         const glm::quat targetRotation = glm::quat_cast(targetBasis);
+        targetRotationForTrace = targetRotation;
         const float rotationDot = std::fabs(glm::dot(
             glm::normalize(mBodycamRotation), glm::normalize(targetRotation)));
         const float rotationDelta = 2.0f * std::acos(
@@ -304,6 +312,8 @@ void Camera::applyBodycamPose(const glm::vec3& targetPosition,
             }
             // Keep the last rendered pose. This removes residual head/rigid-body
             // micro-motion when the player is not actually aiming or moving.
+            sBodycamAngularVelocity = glm::vec3(0.0f);
+            sBodycamPositionVelocity = glm::vec3(0.0f);
         } else {
             if (mBodycamSettled) {
                 mBodycamSettled = false;
@@ -316,14 +326,44 @@ void Camera::applyBodycamPose(const glm::vec3& targetPosition,
                         {"position_delta_meters", positionDelta}},
                     __FILE__, __LINE__, __FUNCTION__);
             }
-            pos = glm::mix(pos, targetPosition, posAlpha);
-            glm::vec3 currentRight = glm::normalize(glm::cross(front, up));
-            glm::mat4 currentBasis(1.0f);
-            currentBasis[0] = glm::vec4(currentRight, 0.0f);
-            currentBasis[1] = glm::vec4(glm::normalize(front), 0.0f);
-            currentBasis[2] = glm::vec4(glm::normalize(up), 0.0f);
-            mBodycamRotation = glm::slerp(glm::quat_cast(currentBasis),
-                targetRotation, rotAlpha);
+            // Critically damped presentation spring. This follows the head
+            // without the per-frame snap of a 0.01 s exponential lerp.
+            const float rotK = std::max(1.0f, springCfg.bodycamSpringStiffness);
+            const float rotC = std::max(0.1f, springCfg.bodycamSpringDamping);
+            const float posK = std::max(1.0f, springCfg.bodycamPositionSpringStiffness);
+            const float posC = std::max(0.1f, springCfg.bodycamPositionSpringDamping);
+            const float maxAngularSpeed = glm::radians(std::max(
+                10.0f, springCfg.bodycamMaxAngularSpeedDegreesPerSecond));
+
+            const glm::vec3 posError = targetPosition - pos;
+            sBodycamPositionVelocity +=
+                (posError * posK - sBodycamPositionVelocity * posC) * safeDt;
+            const float posSpeed = glm::length(sBodycamPositionVelocity);
+            if (posSpeed > 30.0f)
+                sBodycamPositionVelocity *= 30.0f / posSpeed;
+            pos += sBodycamPositionVelocity * safeDt;
+
+            glm::quat error = targetRotation * glm::inverse(mBodycamRotation);
+            if (error.w < 0.0f)
+                error = -error;
+            const glm::vec3 errorXyz(error.x, error.y, error.z);
+            const float sinHalf = glm::length(errorXyz);
+            const float angle = 2.0f * std::atan2(sinHalf, error.w);
+            const glm::vec3 axis = sinHalf > 1e-6f
+                ? errorXyz / sinHalf : glm::vec3(0.0f, 0.0f, 1.0f);
+            const glm::vec3 errorVector = axis * angle;
+            sBodycamAngularVelocity +=
+                (errorVector * rotK - sBodycamAngularVelocity * rotC) * safeDt;
+            const float angularSpeed = glm::length(sBodycamAngularVelocity);
+            if (angularSpeed > maxAngularSpeed)
+                sBodycamAngularVelocity *= maxAngularSpeed / angularSpeed;
+            const float stepAngle = glm::length(sBodycamAngularVelocity) * safeDt;
+            if (stepAngle > 1e-6f) {
+                mBodycamRotation = glm::normalize(
+                    glm::angleAxis(stepAngle,
+                        glm::normalize(sBodycamAngularVelocity)) *
+                    mBodycamRotation);
+            }
             right = glm::normalize(mBodycamRotation * glm::vec3(1, 0, 0));
             front = glm::normalize(mBodycamRotation * glm::vec3(0, 1, 0));
             up = glm::normalize(mBodycamRotation * glm::vec3(0, 0, 1));
@@ -341,6 +381,33 @@ void Camera::applyBodycamPose(const glm::vec3& targetPosition,
                 pos = collisionOrigin + ray * std::max(0.02f,
                     hitDistance - std::clamp(probeRadiusMeters, 0.02f, 0.5f));
             }
+        }
+    }
+
+    // Bounded presentation evidence: current camera error and spring speed.
+    {
+        static double lastLookTrace = -1.0;
+        const double now = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count() / 1000.0;
+        if (lastLookTrace < 0.0 || now - lastLookTrace >= 1.0) {
+            lastLookTrace = now;
+            glm::quat error = targetRotationForTrace * glm::inverse(mBodycamRotation);
+            if (error.w < 0.0f) error = -error;
+            const float sinHalf = glm::length(glm::vec3(error.x, error.y, error.z));
+            const float errorDegrees = glm::degrees(
+                2.0f * std::atan2(sinHalf, error.w));
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Camera, StructuredLevel::Important,
+                "camera.look.trace", "bodycam",
+                "bodycam spring orientation and jitter evidence", 0,
+                nlohmann::json{
+                    {"rotation_error_degrees", errorDegrees},
+                    {"angular_speed_deg_s", glm::degrees(
+                        glm::length(sBodycamAngularVelocity))},
+                    {"position_error_m", glm::length(targetPosition - pos)},
+                    {"settled", mBodycamSettled},
+                    {"stiffness", springCfg.bodycamSpringStiffness},
+                    {"damping", springCfg.bodycamSpringDamping}});
         }
     }
 }

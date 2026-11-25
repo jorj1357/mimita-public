@@ -173,3 +173,9 @@ New evidence 2026-11-24 from run 20261124_004333, server PID 32360: world_load c
 ### 2026-11-24T00:59:01.614Z — codex-server-startup
 
 Requested UI behavior from context ctx-5c14d94d3bdb: keep initial room launch/connect in a truthful Connecting/Setting up/Loading state while progress is arriving; show each named server/client stage and its elapsed duration (for example 0.837s), mark completed stages green, and let completed rows fade/shift into a compact history. A true stage stall should name that stage and offer Retry/Cancel per docs/specs/networking/networking.md loading contract. Current src/gui/gui-main.cpp only tracks a room-code wait deadline; this presentation is not yet implemented or runtime-accepted.
+
+## Agent suggestion
+
+### 2026-11-25T21:07:10.549Z — dashboard-fps-relaunch
+
+Code/source evidence for the 2026-11-25 follow-up: root launch uses subprocess.Popen without redirecting stdout, so slow console output is not a pipe backpressure path in this launch function. Readiness is event/file based: wait_for_logger_started has a fixed 20s deadline, wait_for_server_local_gameplay a fixed 60s deadline with 50ms polls, and wait_for_room_code a fixed 60s deadline. The first two reopen and rescan their journal files from the beginning on each poll; that repeated-read cost is a candidate under large journals, not a proven timeout cause. Proposed direction: advance readiness on exact server startup-stage events with incremental journal offsets; use bounded per-stage no-progress deadlines plus a hard maximum; keep CLI acceptance/request output separate from readiness and console text; report the exact first failed stage. The live run 20261125_210344 started at 21:03:44Z after DLL build attempt game-dll-20261125T210055875592Z-33009d finished at 21:02:21Z, so it does not prove server startup under concurrent compilation. Concurrent-build timeout remains unverified.

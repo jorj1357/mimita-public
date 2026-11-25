@@ -46,21 +46,36 @@ struct ActorBodyConfig
     // Extra blood presentation when the last hit destroys the part.
     float destroyedBloodScale = 2.5f;
 
+    // Gore mode 2 separates actor lethality (actor HP) from per-part gore.
+    // A part accumulates gore damage and exposes meat at 250, bone at 500,
+    // and is destroyed at 1000. Mode 1 keeps the original 100-point model.
+    int goreMode = 1;
+    int gorePartMaxHealth = 1000;
+    int goreMeatDamage = 250;
+    int goreBoneDamage = 500;
+
     static ActorBodyConfig& instance();
+    void setGoreMode(int mode);
+    bool goreMode2() const { return goreMode == 2; }
 };
 
 struct ActorBodyState
 {
+    // Mode 1 stores remaining part health. Mode 2 stores the replicated layer
+    // stage (100 skin, 66 meat, 33 bone, 0 destroyed) while partGoreDamage
+    // carries the authoritative cumulative gore damage.
     std::array<uint8_t, kActorBodyPartCount> partHealth{};
+    std::array<uint16_t, kActorBodyPartCount> partGoreDamage{};
 
     ActorBodyState() { reset(); }
 
     void reset();
-    // Applies damage to one part. Returns true when the part reaches zero.
+    // Applies damage to one part. Returns true when the part is destroyed.
     bool applyDamage(ActorBodyPart part, int damage);
     bool destroyed(ActorBodyPart part) const;
     bool lethalPartDestroyed() const;
     uint8_t health(ActorBodyPart part) const;
+    uint16_t goreDamage(ActorBodyPart part) const;
     ActorBodyLayer layer(ActorBodyPart part) const;
 };
 

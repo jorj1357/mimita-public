@@ -611,6 +611,31 @@ void WeaponViewModel::render(const Camera& camera, const Player& player, int equ
     glm::mat4 view = camera.getView();
     glm::mat4 projection = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
     r::useProgram(shader.program());
+    // The viewmodel shares the world shader with the player/world pass. Reset
+    // every state that can discard or fade an opaque held weapon, and restore
+    // GL state afterward. Without this the local body's proximity fade or a
+    // previous alpha-cutoff pass can dissolve the gun.
+    const auto setIntIfPresent = [&](const char* name, int value) {
+        const auto loc = shader.uniform(name);
+        if (loc >= 0) r::uniform1i(loc, value);
+    };
+    const auto setFloatIfPresent = [&](const char* name, float value) {
+        const auto loc = shader.uniform(name);
+        if (loc >= 0) r::uniform1f(loc, value);
+    };
+    setIntIfPresent("uCameraProximityFadeEnabled", 0);
+    setFloatIfPresent("uAlphaCutoff", 0.0f);
+    setIntIfPresent("uOpacityEnabled", 1);
+    setFloatIfPresent("uOpacity", 1.0f);
+    setFloatIfPresent("uCosmeticOpacity", 1.0f);
+    setIntIfPresent("uUsePartModels", 0);
+    setIntIfPresent("uUseInstanceModel", 0);
+    setIntIfPresent("uOutlinePass", 0);
+    setIntIfPresent("uDebugView", 0);
+    r::pushState();
+    r::disable(r::Capability::Blend);
+    r::enable(r::Capability::DepthTest);
+    r::depthMask(true);
     r::uniformMatrix4fv(shader.uniform("view"), 1, &view[0][0]);
     r::uniformMatrix4fv(shader.uniform("projection"), 1, &projection[0][0]);
     r::uniformMatrix4fv(shader.uniform("model"), 1, &weaponTransform[0][0]);
@@ -641,4 +666,5 @@ void WeaponViewModel::render(const Camera& camera, const Player& player, int equ
         diagRenderCountWeaponDraw();
     }
     r::bindVertexArray(0);
+    r::popState();
 }

@@ -928,3 +928,21 @@ Observed: the same verbatim human quote created two bug issues 16 s apart (2026-
 Measurable target: 0 unlinked exact-duplicate `human_quote` hashes among non-deferred issues, and the review scheduler never picks a duplicate when a canonical issue with the same quote hash exists.
 
 Smallest experiment: extend `issue lint` to compute a normalized `human_quote` hash and report `(id, canonical_id)` pairs without auto-merging; run it over the current issue set, record the pair count, and add one test with two identical quotes plus one distinct quote. Review-only; no behavior, state, or merge change without human approval.
+
+## Agent suggestion
+
+### 2026-11-25T20:20:13.807Z — issue-review-sweeper
+
+Recurrence evidence for the 2026-11-23T18:28:36Z repeated-next-check proposal (issue-review-sweeper, wake wake-9ffc449833bc, 2026-11-25). Not a new proposal; it adds a behavior-proof instance and a current count.
+
+Observed: issue-5d82fc58a875 now has two scheduled bounded reviews with the same executable next check. Review id 378 (2026-11-24T19:42Z) ended with "re-pin on the current dev-loop generation: one isolated TDM two-client late-join run (tdm-validation, launch mode 41), copy/hash journals, verify late-join-assigned/spawn/roster/target/damage/client-identity/outline". Review id 436 (2026-11-25T20:20Z) found no new evidence - proof id74/75 still unproven, id76/77/78 still stale, source hashes byte-identical, and `rg -l "late-join-assigned|late-join-spawn|team-roster-npc.replaced"` across all retained logs returns 0 files - and had to repeat the identical check. So ~24h and one full scheduler interval passed with no runnable task created. The check is within AI capability through the root dev-loop isolated-run path (no compiler, no second dev-loop, no human-only step), matching the earlier issue-0cdac76fb006 and issue-1d1b9c62ac08 instances.
+
+Target (extends the same proposal): 0 behavior issues have >=2 identical review-only next checks without either an open runnable task (method = the check) or a recorded defer reason; for issue-5d82fc58a875 specifically, 1 -> 0 by the next scheduler tick, either as a runnable "pinned TDM two-client late-join proof" task for latejoin-team-identity or an explicit defer with cause.
+
+Smallest experiment: reuse the existing escalation mechanism - when a review's NEXT DISCRIMINATING CHECK hash equals the prior review's hash for the same issue, call the existing task-add path with that check as method and queue one bounded notification to the owner (or expose it via next --mode waiting), and emit coord.issue_review.escalated with issue id, hash, and task id. Verify on issue-5d82fc58a875's next scheduled review that it produces a task or a recorded defer instead of a third identical review, with no duplicate task and no duplicate wake. Read-only sweep; no source, build, run, close, or fix was performed.
+
+## Agent suggestion
+
+### 2026-11-25T21:07:09.536Z — dashboard-fps-relaunch
+
+Proposal from the user report and read-only investigation: for any user-reported MiMITA behavior issue with a plausible live-game manifestation, first use evidence-watch list, then show/tail the matching process journal before source-only diagnosis or asking the user to relaunch. Record PID, role, exact run/build, mode/map, journal and limits. Never take over or control a human/other-agent runtime. The user asked to make this routine for every relevant issue; the root instruction patch is prepared but its AGENTS.md lease commit recorded conflict-0e9e7b0e07dc, so durable completion is pending owner reconciliation. Current example: at 2026-11-25T21:04Z, evidence-watch found client PID36380 and server PID23536 in run 20261125_210344, mode Vehicle Arena - Rocket League Free Play, map arena1, build 2026-11-25T20:35:21.601166Z:ff20ae8525ee2afc5727a0ca055796369445e697123df0bef8bb4d5b46422764. This demonstrates the workflow; it is not NPC-behavior proof because the live mode is vehicle free play and the server has --no-npcs.

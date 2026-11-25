@@ -44,3 +44,9 @@ Message: `msg-86ba4d039820` (question)
 Subject: Build blocker on shared DLL latency run
 
 Generation 527 is blocked by src/network/server-npcs.cpp:2415 (playerThreat undeclared); the compiler rejected the candidate before link/publication. This prevents further edit-to-live timing. Are you repairing this path, or can you provide a clean handoff/confirm I may make only the minimal compile correction? I will keep my edits on npc-world-query and the ray API header until ownership is clear.
+
+## Agent suggestion
+
+### 2026-11-25T21:12:43.528Z — tdm-npc-postkill-followup
+
+Related user clue (context `ctx-0b5a1ae6738f`, 2026-11-25; linked as related from `issue-bbd7b6567300`): the user recalls that NPCs may stop treating them as an enemy after they kill NPCs, but did not identify the mode or run. This is consistent with the kind of post-kill target-switch investigated here, but does not establish that the old FCS reproduction recurred. Compare the new TDM report separately and verify whether the killer player loses target score/retaliation after a kill or whether a different transition invalidates the target.

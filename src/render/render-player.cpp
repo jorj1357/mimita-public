@@ -1,3 +1,4 @@
+// Bloodtest presentation fade pass 2026-11-25
 // C:\important\quiet\n\mimita-priv-v7\src\render\render-player.cpp
 // feb 10 2026
 /**
@@ -70,6 +71,7 @@ std::unordered_map<uint32_t, PlayerTrailHistory> gTrailHistories;
 std::vector<TrailVertex> gTrailBatch;
 
 bool gPlayerVisualDebug = false;
+bool gFirstPersonHideCosmetics = false;
 int gPlayerVisualLayerFilter = 0;
 uint64_t gPlayerVisualDumpGeneration = 0;
 
@@ -771,19 +773,20 @@ void renderPlayerInternal(
         }
     }
     const bool hideHead = isLocal && !cam.thirdPerson;
+    const CameraConfigData fadeData = CamConfig::instance().effectiveData();
     r::pushState();
-    if (CamConfig::instance().data().proximityFadeEnabled) {
+    if (fadeData.proximityFadeEnabled) {
         r::enable(r::Capability::Blend);
         r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
     }
     { MIMITA_PERF_SCOPE("Rendering::Actors::PlayerBody");
       player.render(r::worldShader().programObject(), view, proj, hideHead, playerTint); }
-    if (isLocal && CamConfig::instance().data().proximityFadeEnabled) {
+    if (isLocal && fadeData.proximityFadeEnabled) {
         static double lastLocalFadeDiag = -1.0;
         const double now = glfwGetTime();
         if (lastLocalFadeDiag < 0.0 || now - lastLocalFadeDiag >= 1.0) {
             lastLocalFadeDiag = now;
-            const CameraConfigData& fadeConfig = CamConfig::instance().data();
+            const CameraConfigData& fadeConfig = fadeData;
             const float rootDistance = glm::length(player.pos - cam.pos);
             const float rootAlpha = std::clamp(
                 (rootDistance - fadeConfig.proximityFadeStartDistanceMeters) /
@@ -1064,9 +1067,13 @@ void renderPlayerInternal(
         for (const char* name : {"trail", "capsule", "outline", "wireframe"}) drawLayer(name);
     }
 
-    // Render attached cosmetic meshes (hats etc.) on top of the body.
-    { MIMITA_PERF_SCOPE("Rendering::Actors::Cosmetics");
-      CosmeticSystem::instance().renderCosmetics(player, view, proj); }
+    // Render attached cosmetic meshes (hats etc.) on top of the body. Local
+    // first person may hide the head and all attached cosmetics; remote actors
+    // and third-person views keep them.
+    if (!(hideHead && gFirstPersonHideCosmetics)) {
+        MIMITA_PERF_SCOPE("Rendering::Actors::Cosmetics");
+        CosmeticSystem::instance().renderCosmetics(player, view, proj);
+    }
 
     // Reset ghost color
     if (player.renderGhost)
@@ -1082,6 +1089,8 @@ void renderPlayerInternal(
 
 void setPlayerVisualDebugEnabled(bool enabled) { gPlayerVisualDebug = enabled; }
 bool playerVisualDebugEnabled() { return gPlayerVisualDebug; }
+void setFirstPersonHideCosmetics(bool enabled) { gFirstPersonHideCosmetics = enabled; }
+bool firstPersonHideCosmetics() { return gFirstPersonHideCosmetics; }
 void setPlayerVisualLayerFilter(int filter)
 {
     gPlayerVisualLayerFilter = std::clamp(filter, 0, 3);

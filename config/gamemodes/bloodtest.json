@@ -120,7 +120,7 @@
   "presentation": {
     "hud": {
       "enabled": true,
-      "layer": "normal",
+      "layer": "scene",
       "show_chat": true,
       "show_hotbar": true,
       "show_crosshair": false,
@@ -178,6 +178,10 @@
     "hit_flinch": true,
     "blood": true,
     "blood_client_feedback": true,
+    "proximity_fade": "off",
+    "first_person": {
+      "hide_head_cosmetics": true
+    },
     "killfeed": null,
     "ragdolls": null,
     "enemy_healthbars": false,

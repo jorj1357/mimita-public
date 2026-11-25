@@ -87,7 +87,7 @@
 "pellet_count": null,
 "penetration_count": 2,
 "penetration_scale": 1.0,
-"pose_id": "revolver",
+"pose_id": "rifle",
 "projectile_base_radius": 0.018,
 "projectile_density": 7800.0,
 "projectile_lifetime": 3.0,

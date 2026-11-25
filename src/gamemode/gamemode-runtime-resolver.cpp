@@ -8,6 +8,7 @@
 #include "config/player-visuals-config.h"
 #include "config/camera-config.h"
 #include "render/post-fx.h"
+#include "render/render-player.h"
 #include "entities/aimbody-config.h"
 #include "combat/actor-preset-weapons.h"
 #include "gui/hud/healthbar-config.h"
@@ -121,6 +122,13 @@ void applyPresentationPolicy(const Gamemode& mode)
         CamConfig::instance().setHitFlinchOverride(p.hitFlinch);
     else
         CamConfig::instance().clearHitFlinchOverride();
+
+    if (p.hasProximityFade)
+        CamConfig::instance().setProximityFadeOverride(p.proximityFade);
+    else
+        CamConfig::instance().clearProximityFadeOverride();
+    setFirstPersonHideCosmetics(
+        p.hasFirstPersonHide ? p.firstPersonHide : false);
 
     if (p.hasBloodClientFeedback)
         ImpactDecalsConfig::instance().setRuntimeClientFeedbackEnabled(

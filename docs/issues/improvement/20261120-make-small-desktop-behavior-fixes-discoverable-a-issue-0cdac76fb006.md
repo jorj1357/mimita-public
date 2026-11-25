@@ -209,3 +209,54 @@ Independent review of issue-0cdac76fb006 (review id 372, 2026-11-24, read-only) 
 ### 2026-11-25T19:24:54.207Z — gameplay-report-intake
 
 A bounded independent review was queued as wake wake-9746dc6759a2 after 726 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive)
+
+### 2026-11-25T19:32:26.127Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Bounded independent sweep 2026-11-25 (read-only for source/issue state; no source edit, build, close, or fix claim). This sweep additionally executed the documented single-shot keepalive check `python devscripts/dashboard-keepalive.py --once` (no --focus), which samples and does not restart or close the dashboard.
+
+SCOPE
+Re-checked readiness, the small-desktop standard task and proof, the exemplar dashboard monitor-retention proof, current dashboard live/saved state, the keepalive journal, source/doc hashes, and one direct live keepalive sample.
+
+OBSERVED
+1. Readiness unchanged: issue brief issue-0cdac76fb006 still scores 1/8, ready=false, missing reproduction, expected_behavior, acceptance, paths, evidence, proof_expectation, risk. State=in_review; owner=dashboard-position-proof; the only linked task small-desktop-state-evidence-standard is still state=open.
+2. Deliverable still absent: docs search for "persistent desktop|small desktop|before/after state|repeat count|restart/recovery" returns no reusable standard; the generic intake/proof docs remain the only related guidance. The issue doc changed only by scheduled-review text.
+3. task-proof-bac2b095c7af is still result=unproven, verified_utc empty, evidence empty. Pinned hashes remain stale: issue-intake-and-triage.md recorded 56d48ea9... vs current f3d370b5...; agent-proof-and-verification.md recorded 9d2eaefb... vs current eaef36e8.... Both current values are unchanged from the 11-24 sweep (no new doc drift).
+4. Exemplar proof task-proof-ed45c1b9e923 is still result=proven in the store but dynamically stale for devscripts/dev_loop/gui.py: recorded 20fac330... vs current 267e69ea...; devscripts/dashboard-keepalive.py still matches recorded d3cc3e94.... gui.py current hash is unchanged from 11-22/11-23/11-24. The latest build (generation 642, 2026-11-25T08:43Z) changed only src/npc/npc-combat.cpp, so it introduced no new staleness.
+5. NEW — dashboard process restarted: current dashboard is PID 4460 (`dev-loop.py --dev-loop-role=dashboard --profile npc-navigation --no-terminal-relaunch --visible`, started 2026-11-25 00:16:55 local), replacing PID 16864 which the 11-24 sweep saw running since 2026-11-23 00:56:56. The live window handle also changed: hwnd 67656 now vs hwnd 67644 on 11-24, which corroborates a real process/window restart.
+6. NEW — live state: hwnd 67656 is visible, not minimized, rect [384,20,1156,779] (primary display, x=384). `.dev/dashboard-ui.json` (mtime 2026-11-25 14:05:22 local / 19:05Z; geometry "772x759+384+20") matches the live rect exactly.
+7. NEW — first keepalive sample since 2026-11-21: `dashboard-keepalive.py --once` exited 0 and appended dashboard.healthy at 2026-11-25T19:31:01.311Z for pid 4460, hwnd 67656, visible, minimized=false, rect [384,20,1156,779]. `.dev/dashboard-keepalive/events.jsonl` previously last wrote 2026-11-21T22:28:36Z (rect [-986,40,-200,788]); there were zero samples on 11-22, 11-23, 11-24, and 11-25 before this run, and no persistent keepalive process exists.
+
+INFERENCE / UNCERTAINTY
+- A restart genuinely occurred at 00:16:55 while the last known saved position was x=-1525 (secondary, 2026-11-24T18:42:50Z). Whether the restart restored x=-1525 or snapped to primary is still NOT recorded: there is no keepalive sample at/around 00:16:55, and the persisted file's only later write is the 19:05:22Z save.
+- Because gui.py persists geometry 400 ms after any <Configure> (persist_window_geometry/queue_geometry_save, gui.py 925-958), the 19:05:22Z save reflects a window configuration at ~19:05Z, not the 00:16:55 startup. Whether that 19:05Z move was human, automated, or a Windows repositioning is unrecorded. A human move to primary is fully consistent with the current x=384.
+- The absence of any persisted write between 11-24 18:42:50Z and 11-25 19:05:22Z is *consistent with* a successful restart restore of x=-1525 (then a later move), but is not proof: startup geometry applied before the window is mapped may not emit <Configure>.
+- The `--once` sample proves the keepalive tool can observe the live dashboard today and that current state is healthy; it does not prove position retention across restart, which is the behavior under test.
+- close_view() in current gui.py (lines 1160-1184) sets state["closing"]=True, calls persist_window_geometry(), then root.destroy(); this remains the region that the 11-23 sweep found differs from proven commit d3368058, and it is unchanged this sweep.
+
+CONTRARY EVIDENCE
+- No snap is demonstrated: the current primary x=384 may be a user/agent move at 19:05Z, and the dashboard is currently healthy and visible.
+- docs/regressions/dev-loop/dashboard-monitor-snap-REG-2026-11-20.md is FIXED with three restart cycles and no newer snapping report.
+- The 11-24 saved x=-1525 survived until the 19:05Z write despite an intervening restart, which weakly favors a successful restore rather than a startup snap.
+- The single `--once` check worked in seconds, so the remaining gap is continuous/inline sampling through a restart, not broken tooling.
+
+NEXT DISCRIMINATING CHECK
+Capture the next restart *inline*: run `python devscripts/dashboard-keepalive.py --interval 5` (no --focus) persistently, then let the next natural dev-loop dashboard restart occur (or, with owner/human consent, perform exactly one close/reopen). Compare the first dashboard.healthy rect after the new PID to the pre-restart rect, and confirm exactly one dashboard PID (no duplicate) with geometry written before exit. Expected: same monitor and x-sign after restart. If it moves to primary with no human move, retention regressed; if it stays, retention holds and only the standard remains. In parallel, re-pin task-proof-bac2b095c7af to current f3d370b5.../eaef36e8... and re-verify task-proof-ed45c1b9e923 by the named geometry+close_view region rather than whole-file hash. This sweep did not start a persistent monitor or perform close/reopen.
+
+PROCESS REVIEW
+No new distinct proposal found. New evidence: a single documented `--once` sample took under a few seconds and produced the first live keepalive sample in four days, demonstrating that the 2026-11-23 escalation idea on issue-91e3384b219b (turn an unexecuted repeated next-check into a runnable task) is feasible; this sweep executed only the cheap single-sample part. Continuous dashboard window health is already proposed on this issue (2026-11-21), and region-scoped staleness on issue-37a27bfdc575. The remaining work (persistent monitor plus restart-inline capture) still needs an owner; no duplicate proposal appended.
+
+NO NEW EVIDENCE that the deliverable (the reusable small-desktop/persistent-desktop standard) is implemented; nothing is claimed fixed or closed.
+
+## Agent discussion and suggestions
+
+### 2026-11-25T19:33:06.480Z — issue-review-sweeper
+
+Message: `msg-fc4f6d3cff2e` (message)
+
+Subject: issue-0cdac76fb006: 11-25 review - restart occurred, first keepalive sample captured
+
+Independent review 2026-11-25 (id 435, read-only, inconclusive) found new evidence. The dashboard restarted: PID 4460 started 2026-11-25 00:16:55 local (11-24 saw PID 16864 since 11-23 00:56:56); live hwnd changed 67644 -> 67656. Current live window is visible on primary rect [384,20,1156,779], matching .dev/dashboard-ui.json (772x759+384+20, saved at 19:05Z). I executed the documented single-shot check `python devscripts/dashboard-keepalive.py --once` (no --focus, exit 0); it appended dashboard.healthy at 2026-11-25T19:31:01.311Z, pid 4460, rect [384,20,1156,779] - the first keepalive sample since 2026-11-21. Restart retention is still unproven: no sample exists at the 00:16:55 restart and the 19:05Z save is a later <Configure>, so whether the restart restored x=-1525 or snapped to primary is unrecorded. Next check: run keepalive --interval 5 (no --focus) across the next natural dashboard restart (or one owner/human-approved close/reopen), then compare the first post-restart dashboard.healthy rect to the pre-restart rect and confirm one dashboard PID. Also please re-pin task-proof-bac2b095c7af to current f3d370b5.../eaef36e8... and re-verify task-proof-ed45c1b9e923 by the named geometry+close_view region. No source/build/close/fix was performed.

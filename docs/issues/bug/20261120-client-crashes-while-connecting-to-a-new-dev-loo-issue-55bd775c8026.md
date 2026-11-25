@@ -417,3 +417,15 @@ On a pinned root-dev-loop run, restart client-01 against the same retained serve
 
 Cold handoff
 Current evidence: logs/2026-11-24/20261124_084513/dev-loop/events.jsonl (restart-instance, instance.exited 3221225477), logs/2026-11-24/20261124_084513/client-01/events.jsonl (Connected 09:18:18.402Z, chunk-progress 1/12, 44.7s Networking stall with worldgen stack), and .dev/crashes/20261124_084513/crash-2026-11-24_04-18-18-9368.txt/.dmp (msvcrt strlen, GetMimitaInfiniteWorldgenModuleAPI, worker thread). Prior 2026-11-22 evidence for the same worldgen RtlEnterCriticalSection stall is already recorded in issue-cf9cd77eb056. No fix was applied and no proof is claimed.
+
+## Scheduled independent review
+
+### 2026-11-25T20:49:47.450Z — npc_tdm_retention_stairs_triage
+
+A bounded independent review was queued as wake wake-d0acca77e92c after 731 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Scheduled independent review
+
+### 2026-11-25T21:21:40.760Z — resource-profiler
+
+A bounded independent review was queued as wake wake-2f468c5db419 after 736 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.

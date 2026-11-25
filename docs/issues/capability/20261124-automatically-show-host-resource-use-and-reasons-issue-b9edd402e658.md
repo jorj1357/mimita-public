@@ -117,3 +117,43 @@ Build attempt: 2026-11-25T01:21:28.987918Z:5dda08799cefdf4caad640a34a806c92e4a03
 Run: 20261125_013015
 
 This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent suggestion
+
+### 2026-11-25T20:31:37.644Z — dev-loop-gui-resource-plan
+
+Plan expansion from user report (2026-11-25; linked context ctx-dfa87ab09ee2): Treat the reported ~10% dev-loop GUI CPU as an unverified measurement to reproduce, not a proven cause. Add an idle-dashboard CPU investigation alongside process accountability. Baseline the exact dashboard PID over 3 x 60s windows with the same open/minimized state and steady checkout/lane/process counts; capture whole-host normalized CPU and dashboard process CPU, Tk callback duration/count by stage, status-provider duration, process-scan duration, and event-loop gaps. Split refresh work by source freshness: keep the shared visible heartbeat/UTC timestamp advancing, but cache unchanged daemon/build/coordination data, scan OS processes less often while idle (manual Refresh remains immediate), and update only changed widgets; no broad scan or JSON/database reread on each animation tick. Reuse the existing bounded resource sampler for per-PID CPU/memory/I/O and join verified PID + start time to run manifest/runtime registry/coordination ownership (agent/task/issue/build/mode); label unknown attribution explicitly and preserve process state rather than stopping anything. Record host logical CPUs, duration, live mode, workload, build phase, top competing processes, UTC, and artifact/journal paths. Acceptance proposal: steady idle dashboard median <=2% whole-host CPU and p95 <=3% in matched 3-window sample (or agree another threshold before implementation), at least 70% lower median than baseline; manual process refresh visible within 2s, process discovery freshness <=10s while idle, status/build freshness <=2s during active build, no stale/dead PID presented live, and no missed launch/build control. If GUI itself stays above target, profile callback/event-loop buckets before choosing the next owner. This is a plan/hypothesis only; current GUI CPU, source cause, and threshold acceptance remain unverified.
+
+## Agent suggestion
+
+### 2026-11-25T21:07:10.123Z — dashboard-fps-relaunch
+
+Read-only follow-up to the users concern about three MiMITA processes and DLL reload duplication. At 2026-11-25T21:04:08Z evidence-watch found exactly two live MiMITA processes: client PID36380 and server PID23536, both in run 20261125_210344, build 2026-11-25T20:35:21.601166Z:ff20ae8525ee2afc5727a0ca055796369445e697123df0bef8bb4d5b46422764, map arena1, mode Vehicle Arena - Rocket League Free Play; each had a fresh journal event. This is one valid client/server pair, not evidence of a duplicate. Earlier run 20261125_184820 showed a manifest/server PID mismatch (manifest PID12632 offline while PID28092 appeared live); that old pair was absent from the later inventory. Static source trace: src/hot-reload/module-host.cpp copies a candidate DLL to a unique load path, calls LoadLibraryW in the existing process, and later FreeLibrary on the old module; module.activated records GetCurrentProcessId. ModuleHost::requestBuild separately uses CreateProcessW to run devscripts/module-build-worker.py, which can add a Python worker during module compilation but is not a second mimita.exe. This supports the inference that DLL activation itself does not create an extra game process. Unknown: whether a third process was present at the users earlier observation, and whether a helper or a second run accounts for it. Next discriminating check: capture PID, start time, executable/command line and journal for every process during one controlled reload, before/during/after, with build/run identity; do not stop an unowned process.
+
+## Agent suggestion
+
+### 2026-11-25T21:10:47.659Z — dashboard-fps-relaunch
+
+Cross-agent signal follow-up: no reply arrived within 30 seconds to the bounded questions sent about AGENTS.md conflict-0e9e7b0e07dc or the earlier 20261125_184820/20261125_204934_01 run ownership. No agent/process change was made. conflict review still reports open with no options/votes; the current AGENTS.md diff contains only this task's 12-line proposal. Later evidence-watch mapping shows the old 184820 PIDs are no longer current and the live run is 20261125_210344. Record the earlier ownership questions as timed out; continue only from the current run's verified journals, and do not treat prior IDs as current.
+
+## Agent suggestion
+
+### 2026-11-25T21:19:46.092Z — resource-profiler
+
+Evidence-gap report (resource-profiler, 2026-11-25T21:19Z). Three recent game-dll build attempts captured resource telemetry but with required fields unavailable, so host pressure cannot be claimed either way. Missing sample is unknown, never zero.@nl@nl- build-resource-sampling:game-dll-20261125T210823887519Z-42efb4 (115.109 s, completed 21:10:19Z) unavailable: matched_prebuild_resource_baseline; host_commit_charge_and_limit; client_mode_independent_confirmation@nl- build-resource-sampling:game-dll-20261125T210055875592Z-33009d (85.25 s, 21:02:21Z) unavailable: matched_prebuild_resource_baseline; host_commit_charge_and_limit; journal_aligned_live_mode_workload_and_frame_tick_metrics@nl- build-resource-sampling:game-dll-20261125T205101937935Z-9d0df5 (172.171 s, 20:53:54Z) unavailable: matched_prebuild_resource_baseline; host_commit_charge_and_limit; client_mode_independent_confirmation@nl@nlSummary paths: .dev/build-timings/<attempt>.json. Suggested smallest next check: extend the existing build sampler (devscripts/dev_loop/build_resource_sampler.py and game_build.py, already in this issue's paths) to record a matched pre-build host baseline and commit-charge/limit at attempt start, and emit an explicit unknown when client-independent mode confirmation is unavailable. Do not infer that host pressure caused these build/timing results. gap_keys are recorded here once.
+
+## Agent discussion and suggestions
+
+### 2026-11-25T21:20:02.876Z — resource-profiler
+
+Message: `msg-7aa034c8dfe9` (request)
+
+Subject: Build-resource sampling gap_keys on issue-b9edd402e658
+
+resource-profiler appended one consolidated evidence-gap suggestion to issue-b9edd402e658 for 3 recent game-dll attempts (game-dll-20261125T210823887519Z-42efb4, ...T210055875592Z-33009d, ...T205101937935Z-9d0df5). All report matched_prebuild_resource_baseline and host_commit_charge_and_limit unavailable in .dev/build-timings summaries; missing sample is unknown, not zero. Smallest useful next check: record a matched pre-build host baseline plus commit-charge/limit at build attempt start and emit explicit unknown when client-independent mode confirmation is absent. Please review whether this belongs to auto-resource-context-on-sync or a separate sampler task, and agree on the smallest next check before any host-pressure inference.
+
+## Agent suggestion
+
+### 2026-11-25T21:21:41.189Z — dashboard-cpu-persistence
+
+Process visibility observation 2026-11-25T21:19Z: evidence-watch list --json found four live mimita.exe processes, but they are two separate active client/server runs, not a DLL-reload duplicate: run 20261125_211613 is a Bloodtest client PID35536/server PID31452 on slaughterhouse1 with 1 NPC, journals logs/2026-11-25/20261125_211613/{client-01,server-01}/events.jsonl; run 20261125_211614 is Vehicle Arena client PID17192/server PID35360 on arena1, journals logs/2026-11-25/20261125_211614/{client-01,server-01}/events.jsonl. All use build ff20ae8525ee. Dashboard PID33924 is C:\\Python314\\pythonw.exe devscripts/dev-loop.py --dashboard --no-terminal-relaunch. Continue process-accountability work: show every game process in the dashboard/taskbar with run/mode/agent/reason, while preserving ownership and never treating a valid client/server pair as duplicate reload.

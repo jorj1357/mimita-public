@@ -1,3 +1,4 @@
+// Bloodtest presentation fade pass 2026-11-25
 #include "render-world.h"
 #include "game/resident-state-module.h"
 #include "render/render-command.h"
@@ -61,7 +62,7 @@ void renderWorld(const World& world, const Camera& cam)
     uploadMeshIfNeeded(world);
 
     r::pushState();
-    if (CamConfig::instance().data().proximityFadeEnabled) {
+    if (CamConfig::instance().effectiveData().proximityFadeEnabled) {
         r::enable(r::Capability::Blend);
         r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
     }

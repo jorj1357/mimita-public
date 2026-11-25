@@ -1,3 +1,4 @@
+// Bloodtest presentation fade pass 2026-11-25
 #include "config/camera-config.h"
 
 #include <filesystem>
@@ -37,6 +38,8 @@ CamConfig& CamConfig::instance()
 CameraConfigData CamConfig::effectiveData() const
 {
     CameraConfigData out = mData;
+    if (mProximityFadeOverride)
+        out.proximityFadeEnabled = *mProximityFadeOverride;
     if (!mBodycamOverride) return out;
     const ModeBodycamOverride& mode = *mBodycamOverride;
     out.orientationMode = mode.orientationMode;
@@ -91,6 +94,32 @@ bool CamConfig::load(const std::string& path)
                 next.proximityFadeEndDistanceMeters <= next.proximityFadeStartDistanceMeters)
                 throw std::runtime_error("proximityFade distances must be finite, nonnegative, and endDistanceMeters > startDistanceMeters");
         }
+        if (root.contains("bodycamSpring")) {
+            const auto& spring = root["bodycamSpring"];
+            if (spring.is_object()) {
+                next.bodycamSpringStiffness = spring.value(
+                    "stiffness", next.bodycamSpringStiffness);
+                next.bodycamSpringDamping = spring.value(
+                    "damping", next.bodycamSpringDamping);
+                next.bodycamPositionSpringStiffness = spring.value(
+                    "positionStiffness", next.bodycamPositionSpringStiffness);
+                next.bodycamPositionSpringDamping = spring.value(
+                    "positionDamping", next.bodycamPositionSpringDamping);
+                next.bodycamMaxAngularSpeedDegreesPerSecond = spring.value(
+                    "maxAngularSpeedDegreesPerSecond",
+                    next.bodycamMaxAngularSpeedDegreesPerSecond);
+            }
+        }
+        next.bodycamSpringStiffness = std::clamp(
+            next.bodycamSpringStiffness, 1.0f, 20000.0f);
+        next.bodycamSpringDamping = std::clamp(
+            next.bodycamSpringDamping, 0.1f, 2000.0f);
+        next.bodycamPositionSpringStiffness = std::clamp(
+            next.bodycamPositionSpringStiffness, 1.0f, 20000.0f);
+        next.bodycamPositionSpringDamping = std::clamp(
+            next.bodycamPositionSpringDamping, 0.1f, 2000.0f);
+        next.bodycamMaxAngularSpeedDegreesPerSecond = std::clamp(
+            next.bodycamMaxAngularSpeedDegreesPerSecond, 10.0f, 7200.0f);
         if (root.contains("thirdPerson")) {
             const auto& tp = root["thirdPerson"];
 

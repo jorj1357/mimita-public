@@ -174,7 +174,7 @@ void setUniforms(r::WorldShader& shader, const glm::vec3& cameraPos)
     setInt(shader, "uDebugView", DebugVis::shaderDebugView());
 
     setVec3(shader, "uTint", glm::vec3(1.0f));
-    const CameraConfigData& cameraConfig = CamConfig::instance().data();
+    const CameraConfigData cameraConfig = CamConfig::instance().effectiveData();
     setInt(shader, "uCameraProximityFadeEnabled",
            cameraConfig.proximityFadeEnabled ? 1 : 0);
     setFloat(shader, "uCameraProximityFadeStart",
@@ -333,7 +333,7 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
     auto& renderPerf = Perf::state().renderPerf;
     renderPerf.worldBatches += static_cast<uint32_t>(mesh.batches.size());
     renderPerf.worldBackfaceCulling = gRenderBackfaces ? 0u : 1u;
-    const CameraConfigData& proximityConfig = CamConfig::instance().data();
+    const CameraConfigData proximityConfig = CamConfig::instance().effectiveData();
     const double proximityDiagNow = glfwGetTime();
     static double proximityDiagLast = -1.0;
     const bool captureProximityDiag = proximityConfig.proximityFadeEnabled &&
