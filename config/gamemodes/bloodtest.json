@@ -136,7 +136,7 @@
         0.0
       ],
       "position_response_seconds": 0.01,
-      "rotation_response_seconds": 0.5,
+      "rotation_response_seconds": 0.01,
       "head_response_seconds": 0.01,
       "torso_response_seconds": 0.01,
       "arm_response_seconds": 0.01,

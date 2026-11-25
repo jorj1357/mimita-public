@@ -1873,3 +1873,41 @@ Proposal: when the root dev-loop records a nonzero/exception instance exit, emit
 Measurable target: after the next crash, a reviewer can name the faulting thread's top symbol and the last journal stage with one command, and abs(crash_file_UTC - instance_exited_UTC) <= 1s, instead of the current 4+ file manual scan. Baseline for comparison: the 2026-11-24 crash took multiple grep/open rounds (dev-loop events, client-01 events.jsonl, crash .txt, crash .dmp) and the timestamp mismatch blocked a one-step correlation.
 
 Smallest experiment: implement the event in the existing instance-exit path that already writes dev-loop.instance.exited (it already has the crash_artifacts list); no new build pipeline needed. Validate on the next 3 instance exits with nonzero codes, including one reconnect crash if available. If offset handling is non-trivial, first log raw timestamp + wall_time only; defer normalization.
+
+## Scheduled independent review
+
+### 2026-11-25T07:13:06.045Z — header-fanout-plan
+
+A bounded independent review was queued as wake wake-64e2250f7140 after 708 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (evidence-gap: gen-640 stable direct join and 63+4+1 horde, but room_code metadata empty, room_register 1.60s, --npcs 1 startup, GUI path unexercised, proof unlinked)
+
+### 2026-11-25T07:21:55.679Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (read-only) - issue-review-sweeper - 2026-11-25T07:21Z, wake-64e2250f7140. No source, config, build, stop, or runtime mutation by this reviewer. I read journals and metadata only; the root-mode3-latency run 20261125_061355 was live while I read it and I did not touch it.
+
+Scope and readiness
+- Issue state in_review, owner root-connection-reliability, readiness ready=true score=8 missing=[], 12 tasks, now 5 prior reviews.
+- python devscripts/agent-coord.py proof list --issue issue-cf9cd77eb056 returns [] on this sweep too. No proof record is linked to this issue.
+- Issue related_build still names EXE 2026-11-22T02:37:06.972018Z (game generation 446). The newest relevant pinned evidence is EXE 2026-11-25T01:21:28.987918Z sha 5dda08799cefdf4caad640a34a806c92e4a03c3886acdd4aa943be8c558eeb8b, game generation 640, so related_build does not describe current evidence.
+
+Observed facts (from journals and run manifests read this sweep)
+1. Newest relevant pinned run is 20261125_061355 (live, agent root-mode3-latency): juggernaut horde on dust2cyberiav4, EXE sha 5dda0879, game DLL build/game/generation-640/game-g640.dll sha 2ebef9fa, server pid 17988, client pid 13872, direct --connect 127.0.0.1:63684 with --room-code-file.
+2. Startup stages (server-01/events-0001.jsonl): configuration_load 212.87 ms, world_load 1159.78 ms, network_bind 0.58 ms, room_register elapsed_ms=1600.18 with room_code=55CWE6Z at 06:13:59.611Z. Server process_started_utc 06:13:56.049Z, so room registration finished about 3.56 s after process start. This OBSERVED registration latency (1.60 s) exceeds the user target of 1 sec or less for room code registration; a prior review recorded 590.8 ms on run 20261122_231658, so this is not a stable improvement.
+3. run.json for 20261125_061355 records server instance room_code empty even though logs/2026-11-25/20261125_061355/room-code.txt contains 55CWE6Z and the server journal network.room.registered reports room_code=55CWE6Z (run.json updated_utc 06:14:09.548Z, after registration). This is a concrete metadata inconsistency between the run manifest and the registration path. Inference (not proven user-visible yet): a dashboard or button path that reads run.json room_code would be unable to show a code even though the server registered; this is a candidate mechanism for the user report connect-to-this-server button but there is no room code.
+4. Horde roster on that run: gamemode.team-roster-npc.created totals 67 - team=0 count=63 (capacity 64), team=1 count=4 (capacity 4); plus 1 human = 68 participants. Server network.mode.start reached stage=countdown at 07:13:38.819Z then stage=active at 07:13:42.605Z with npc_count=67, participants=68. Client client.gamemode.local-actor-identity shows found=true, role=juggernaut_fighter, team=0. This supports the 63 Fighter + 4 Juggernaut + human identity on the server/client side, but server.policy.startup still shows npc_count=1, network.room.registered shows startup_npc_count=1, and server args include --npcs 1; the horde-effective-mode-launch acceptance (does not force a generic --npcs 1 startup) is therefore not met at startup, only populated after client connect.
+5. Client connection stability over about 59 minutes of that run: exactly 1 network.connection-state.changed (Connecting to Connected at 06:14:03.683Z); 0 network.client.reconnect.scheduled; 0 Disconnected or ConnectionFailed; server journal has 0 player.removed or timeouts. max snapshot_interarrival_ms = 1328 over 7533 samples (mean 1011). There are 9 network.client.snapshot.gap records, all reason_code=snapshot_tick_gap, result=degraded, tick_gap 2-11, interarrival about 1.0 s; these are server-tick discontinuities, not a greater-than-250 ms wall-clock client stall or a snapshot outage. The gen-583 server-hang and false-reconnect class (prior review 337) is NOT reproduced in this run.
+6. Server tick budget: 7 post-startup performance.server-tick-stall events, total_ms 103.3 to 298.5, npc_ms up to 295.8 at tick 26911 (67 NPCs, 1 player). This is a load and performance fact, not a connection failure.
+
+Contrary evidence and limits
+- The run used direct address connect plus room-code file; it did not exercise the in-game community browser or GUI JOIN path the user reports. This reviewer did not drive agent console button presses, so the acceptance clause that scanned console button action logs the same widget ID as clicked remains unproven for this artifact.
+- The client-01 command queue for 061355 contains only perf_callsite_cpu commands, no agent console button actions.
+- No visual proof of Payload cart or NPC grounding is in this sweep; payload-cart-visual-proof remains open.
+- Because proof list is empty, none of the above is linked as verified proof; it is reviewer-observed journal evidence only.
+
+Next discriminating check (smallest, bounded)
+On a fresh pinned gen-640 run, after room_register compare three values in one pass: run.json instances[server-01].room_code, room-code.txt, and the journal network.room.registered room_code. If run.json stays empty while the other two carry 55CWE6Z, that is the first concrete metadata defect to fix for the no-room-code class. In the same run, exercise the in-game GUI server-start and JOIN buttons through agent console actions and record whether the scanned widget id matches the clicked widget; then sample room_register elapsed_ms over 5 starts to test the 1 s target.
+
+Verdict: evidence-gap and partial progress - gen-640 run shows stable direct join, no false reconnect, and a correct 63+4+1 horde roster, but room code metadata is inconsistent, room registration is 1.60 s, startup still forces --npcs 1, the GUI button path is not exercised, and no proof is linked.

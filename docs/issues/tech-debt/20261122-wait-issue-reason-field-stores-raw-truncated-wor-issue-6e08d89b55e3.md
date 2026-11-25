@@ -90,3 +90,9 @@ Evidence: {"build_attempt_id": "game-dll-20261124T201959398000Z-aa0b47", "issue"
 Fresh occurrence on wait game-dll-build:2026-11-25T02:11:23.680Z (issue-0612aaee5a6e): evidence.reason is again the last 240 chars of a [GAME_FILE] translation-unit row, not a readable stage summary: '8273.352,"build_attempt_id":"game-dll-20261125T021123740140Z-5e8bdb","source_generation":67,"generation":633,"revision":"2f19b1b5...","progress_write_ms":3.674,"record_overhead_ms":4.489}'. It matches the module-identity-provider translation_unit.completed row at 2026-11-25T02:12:12.069Z (elapsed_ms 48273.352), set by dev-loop.py:3112/3142 detail=line.rstrip()[-240:] and read at dev-loop.py:3892 reason=self.game_build_detail. Same defect as prior occurrences. The waited-on attempt then failed at worker_supervised reason=timeout (300 s) at 02:16:32.288Z; the next attempt published generation 634 in 180.66 s.
 
 Evidence: {"build_attempt_id": "game-dll-20261125T021123740140Z-5e8bdb", "issue": "issue-0612aaee5a6e", "journal": "logs/2026-11-24/20261124_221014/dev-loop/events.jsonl", "over_budget_wall_time": "2026-11-25T02:12:41.013Z", "reason_tail": "8273.352,\"build_attempt_id\":\"game-dll-20261125T021123740140Z-5e8bdb\"", "source": "devscripts/dev-loop.py:3112/3142 _record_game_build_output detail=line.rstrip()[-240:]; dev-loop.py:3892 reason", "source_row": "module-identity-provider translation_unit.completed at 2026-11-25T02:12:12.069Z", "wait_id": "game-dll-build:2026-11-25T02:11:23.680Z"}
+
+## Agent suggestion
+
+### 2026-11-25T06:11:06.017Z — build-wait-reviewer
+
+Occurrence 2026-11-25T05:46:30.064Z (issue-9c1fc3e3e668, attempt game-dll-20261125T054630085917Z-48e192): evidence.reason is still an unreadable mid-JSON tail beginning 'struction... "raw":"tree CFG construction ...' and ending with "progress_write_ms":4.459,"record_overhead_ms":5.283. This is the same trailing-worker-output defect. Reviewer build-wait-reviewer; no fix claimed.

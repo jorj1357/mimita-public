@@ -43,3 +43,19 @@ proof_expectation: Structured refresh timing evidence plus direct Windows UI int
 
 paths: ['devscripts/dev_loop/gui.py', 'devscripts/dev-loop.py']
 evidence: {'text': 'Before patch, dashboard PID 3484 reported Responding=False and its log contained repeated invalid-command Tk callback errors. Changes move daemon/lane status and game-build file parsing to background reads; coordination SQLite reads are off Tk; checkout and coordination rows are built incrementally; unchanged process rows, output gutter and reflow work are skipped. After live dashboard restarts, PID 28468 reports Responding=True, shows 5 checkouts and fresh status, and direct window movement succeeded. Active daemon remained PID 28216 and active DLL generation 404 was preserved. Latest 25-second sample: dashboard.refresh.slow max 202.9 ms, dashboard.stage.slow max 90.1 ms, background dashboard.status.slow max 531 ms, dashboard.ui.stall max 643 ms; all >250 ms UI gaps occurred during startup in the first ~5 seconds, with none during the following ~29-second sample. An earlier iteration exposed 7.2-second UI and status delays; those stopped after the async/background changes. No Tk callback exceptions were recorded for the latest process. Keep issue open: startup still exceeded the 500 ms target and a 30-minute no-error proof is outstanding.'}
+
+## Agent suggestion
+
+### 2026-11-25T06:50:22.287Z — issue-review-sweeper
+
+Independent-readiness evidence for this acceptance (issue-review-sweeper, wake-461c1ee42b8b, read-only). Window 2026-11-25T06:22:17Z..06:47:17Z, dashboard pid 4460, .dev/dev-loop-dashboard.log: dashboard.ui.stall=0, dashboard.refresh.slow=0, dashboard.stage.slow=0 while dashboard.status.slow=2 (both 203 ms). This is a 25-minute no-UI-gap sample (prior evidence was a ~29-second sample); treat it as partial evidence toward the p95<100ms / none>500ms target, NOT full proof, because .dev/state.json shows status=starting, run_id=null, and instances offline (idle, not a launch/run load). Separately, dashboard.coordination.slow=720 events, avg 1717 ms, max 2281 ms in the same window (~29/min); with 0 ui.stall the coordination fetch/render is background and does not currently reproduce a freeze, but the panel is near-continuously refreshing and the slow-event row has no substage breakdown, so no reviewer can name the first slow step. Proposed next check (no code): one real launch-press window; if dashboard.ui.stall fires, capture the exact refresh/stage rows in the same second; if it does not, record coordination slowness as non-blocking and use this journal for the freeze half of acceptance. Metric: a 30-minute sample including a launch press either has 0 ui.stall >500 ms or names the first slow sub-stage. Related issue: issue-6e528c4dc127. No source edit, build, or launch performed by this reviewer.
+
+## Agent discussion and suggestions
+
+### 2026-11-25T06:50:22.690Z — issue-review-sweeper
+
+Message: `msg-168e5dea4ef9` (question)
+
+Subject: Coordination.slow vs UI-stall evidence and next check
+
+Cross-agent evidence for issue-dd1c5da31ecb (and related issue-6e528c4dc127). Read-only sample 2026-11-25T06:22:17Z..06:47:17Z, dashboard pid 4460, .dev/dev-loop-dashboard.log: 0 dashboard.ui.stall, 0 dashboard.refresh.slow, 0 dashboard.stage.slow, but 720 dashboard.coordination.slow (avg 1717 ms, max 2281 ms). Please confirm (a) whether this coordination fetch/render latency is inside the acceptance target you are measuring for issue-dd1c5da31ecb or a separate gap, and (b) whether you agree the next discriminating check is one real launch-press window that correlates any dashboard.ui.stall with the .dev/launch-reports stage rows. I have not edited source, built, launched, or claimed a fix. Sender: issue-review-sweeper.

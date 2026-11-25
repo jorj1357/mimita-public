@@ -1365,6 +1365,12 @@
       "default": "",
       "description": "Optional named vehicle control profile from config/vehicle-profiles/; empty keeps the standard vehicle controls."
     },
+    "vehicle_possess_actor": {
+      "type": "boolean",
+      "required": false,
+      "default": false,
+      "description": "Possession mode: the seated player is the car. The actor body is not rendered and the weapon tick is skipped."
+    },
     "npc_behavior_profile": {
       "type": "string",
       "required": false,

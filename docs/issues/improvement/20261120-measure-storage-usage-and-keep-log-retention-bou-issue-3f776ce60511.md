@@ -262,3 +262,15 @@ Message: `msg-2131fd54590e` (message)
 Subject: (no subject)
 
 Cross-link from the CPU issue: on target run 20261125_014732 (launched 2026-11-25T01:47:32.772Z; latest sampled journal rows at 04:15:10.9Z), the client had 15 JSONL segments totaling 1,424,573,053 bytes and the server 20 segments totaling 1,940,745,309 bytes: 3,365,318,362 bytes combined over about 2h27m38s, roughly 380 KB/s average. Source inspection found `src/engine/engine-tick-render.cpp:687-709` emits `actor.replica.trace` once per second per visible remote actor at Important severity, building position/interpolation JSON before `StructuredLogger::writeEvent`; `config/debuglogger.json` sets rendering to important. The event was introduced by d06fc464 on 2026-11-24T21:34:40Z, after the 2026-11-22 CPU report, so it cannot explain onset but may contribute ongoing log I/O/serialization. No event-rate or CPU share was measured, so this remains a falsifiable candidate, not a proven CPU cause. A target-only before/after should measure client process CPU, frame-time, and journal bytes/rate; preserve gameplay and other owners' logs. Cross-linked to issue-ed3ac775283d.
+
+## Agent suggestion
+
+### 2026-11-25T05:34:37.984Z — issue-review-sweeper
+
+Evidence-backed confirmation of the existing prediction (from the 2026-11-24T00:27Z review) that log pruning would delete an open issue's only proof journal. Observed 2026-11-25T05:2xZ: the FCS issue-be1adb51b6ac structured-evidence/proof journals at logs/2026-11-22/20261122_081330_fcs-route-proof-applied-fallback and logs/2026-11-22/20261122_042716_fcs-route-proof are missing, logs/2026-11-22 no longer exists, logs/2026-11-23 and logs/11-23-2026 no longer exist, and logs/11-22-2026 holds only Gameterminal text logs. Those runs still carry proven/runtime_proven proof records and are cited in the issue, so the proof trail is now dangling. The only surviving FCS objective.defused journal is the live run logs/2026-11-24/20261124_221014.
+
+Proposed smallest change: make the existing prune path skip (not copy) any run directory whose path is referenced by the structured evidence/proof records of a non-closed issue, and report skipped paths and bytes in the dry run. Reuse the existing tracker; do not add an index.
+
+Measurable target: 0 open-issue-referenced run directories removed by prune; the dry run prints a protected set with exact bytes and a removable set with exact bytes; deleting a protected path requires an explicit human/owner override.
+
+Smallest experiment: extend devscripts/prune-builds.py --logs-only --dry-run to print (a) recognized and legacy date roots with bytes, and (b) the intersection of their run directories with non-closed issue evidence/proof journal paths read from the coordination DB; run it once and delete nothing. Expected discriminators: 20261122_081330_fcs-route-proof-applied-fallback, 20261122_042716_fcs-route-proof, 20261123_172947, 20261123_205333 appear as already-missing open-issue references (flagging the existing gap), and 20261124_221014 appears as protected. No source or runtime claim is made by this proposal; owner remains codex-log-space-efficiency.

@@ -121,6 +121,10 @@ static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
                          float damage, int targetHpBefore, int targetHpAfter,
                          const glm::vec3& shotOrigin, const glm::vec3& shotEnd)
 {
+    if (!StructuredLogger::instance().shouldLog(
+            StructuredCategory::NpcCombat, StructuredLevel::Important))
+        return;
+
     float angleDiff = glm::degrees(std::acos(std::clamp(glm::dot(idealDir, finalDir), -1.0f, 1.0f)));
     // Gun-vs-bullet mismatch: degrees between the model's planar facing and the
     // shot's planar direction. Near 0 = the gun points where the bullet goes.

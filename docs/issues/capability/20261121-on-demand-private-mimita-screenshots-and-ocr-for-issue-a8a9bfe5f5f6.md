@@ -46,3 +46,49 @@ Priority: high
 ### 2026-11-21T15:29:01.201Z — issue-intake-20261121
 
 Cold-handoff evidence from ctx-dbb6cadeb832 (user reply to the visual/scheduler brainstorm, 2026-11-21T15:13Z): (1) screenshots should be taken only when needed, not periodically; (2) human visual/feel acceptance is the final barrier - a result must look/feel right to a human, then to multiple humans; (3) the proposed order/plan is approved and the user said 'implement'. Implication: keep screenshot/OCR strictly one-shot and on-demand (never ambient), treat OCR/image as supporting evidence only, and never claim visual correctness without human confirmation. Source: ses_e0a86d83effeAD0Ou23dgj6tB2:msg_1feab43af001VVv408eIKVuY7W.
+
+## Scheduled independent review
+
+### 2026-11-25T07:46:20.753Z — mode3-fail-fast
+
+A bounded independent review was queued as wake wake-0a7ac3d430e7 after 712 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (evidence-insufficient)
+
+### 2026-11-25T07:58:29.764Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Reviewer: issue-review-sweeper (independent read-only sweep, wake-0a7ac3d430e7)
+
+OBSERVED (read-only; no source edits, no build, no runtime run):
+1. Readiness: ready=true, score 8, state triaged, 2 open tasks (devloop-visual-ocr-fallback, mi-mita-visual-capture-privacy). Repro/expected/acceptance/proof fields present.
+2. Proof status: proof list has zero rows whose task_id is either task or whose issue is this issue. No runtime_proven or exempt record exists, so acceptance cannot be claimed.
+3. Capture path: src/main-systems.cpp:960-980 registers agent.screenshot. src/main-systems.cpp:250-256 reads pixels with GetDC(nullptr) then BitBlt from the window rectangle, and src/main-systems.cpp:270-272 errors with ensure the client is visible. That is a desktop composite contract, not the framebuffer readback required by the spec; a covering window can contribute pixels. main-systems.cpp is unchanged at HEAD (not listed by git status).
+4. Spec/implementation gap: docs/specs/dev-loop/visual-proof-screenshots.md:57-76 requires client framebuffer readback and states agent.screenshot is not the framebuffer contract. Its screenshot_at_tick command has no implementation in src; the only occurrence is a fixture string in devscripts/quality/test_agent_coord.py:569.
+5. OCR gap: no OCR adapter exists in devscripts (search for tesseract/pytesseract/easyocr/winocr/ocr over devscripts/*.py matched only that fixture). On-device OCR is unimplemented.
+6. Runtime journals: no events*.jsonl under logs/ contains agent.screenshot, so even the existing BMP path has no recorded runtime exercise.
+7. Reusable owner present: src/host/host-runtime.cpp:1495-1503 already exposes renderReadPixels -> glReadPixels on the GL thread; this is the existing framebuffer-readback surface the spec says to reuse instead of adding a second capture path.
+8. Build identity: the current ready build is generation 640 (built from src/network/multiplayer-projectiles.cpp). It is unrelated to this issue and is not evidence for it.
+
+INFERENCE / UNCERTAINTY:
+- Acceptance is unmet by absence of implementation, not by a failed test. Another agent could have uncommitted edits outside this checkout, but none appear in the relevant paths here.
+- The occluder leak is inferred from the GetDC/BitBlt source, consistent with the earlier privacy review; it was not runtime-confirmed in this sweep.
+
+CONTRARY / LIMITING EVIDENCE:
+- Partial safety work does exist: strict logs/-relative .bmp path validation (src/main-systems.cpp:200-241) and agent.screenshot.saved/failed events (:974-978) cover some path and audit requirements. They do not cover window-only/framebuffer capture, identity sidecar, OCR, or retention.
+
+NEXT DISCRIMINATING CHECK (smallest, owner visual-access-and-issue-review):
+- Reuse renderReadPixels instead of GDI. Add one explicit screenshot_at_tick command that writes PNG plus an identity sidecar (run/build/PID/tick/sha256), then run one pinned client with a synthetic opaque window covering half the client and assert the occluded region shows the game framebuffer, not the occluder. This needs a build and runtime run, which this read-only review did not perform.
+
+No fix, build, closure, or proof is claimed.
+
+## Agent discussion and suggestions
+
+### 2026-11-25T07:58:47.297Z — issue-review-sweeper
+
+Message: `msg-23b24cb6aeee` (question)
+
+Subject: Review review-430: evidence-insufficient; agree on smallest next check?
+
+Independent review id 430 appended (verdict evidence-insufficient). Observed: both tasks open with no proof records; src/main-systems.cpp:250-256 still uses GetDC(nullptr)+BitBlt desktop capture; screenshot_at_tick has no src implementation; no OCR adapter in devscripts; no agent.screenshot events in logs. Proposed smallest check: reuse the existing renderReadPixels/glReadPixels path (src/host/host-runtime.cpp:1495-1503) behind one explicit screenshot_at_tick PNG+sidecar, then a synthetic-occluder run. Do you agree this is the smallest next build/run step, or is another owner/path already in flight? No source/build/close performed.

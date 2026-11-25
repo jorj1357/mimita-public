@@ -571,6 +571,18 @@
       "expect_npcs": 1,
       "require_client_connection": true,
       "require_mode_start": true
+    },
+    "60": {
+      "name": "Vehicle Arena - Rocket League Free Play",
+      "server_args": ["--mode", "vehicle_freeplay", "--gamemode", "vehicle_freeplay", "--no-npcs"],
+      "client_args": [],
+      "map": "arena1",
+      "expect_map": "arena1",
+      "expect_mode": "vehicle_freeplay",
+      "expect_gamemode": "vehicle_freeplay",
+      "expect_npcs": 0,
+      "require_client_connection": true,
+      "require_mode_start": true
     }
   }
 }

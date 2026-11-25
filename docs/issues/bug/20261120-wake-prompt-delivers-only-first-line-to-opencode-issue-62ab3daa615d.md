@@ -259,3 +259,40 @@ Smallest experiment: enqueue one wake whose prompt has 3 short sections and an e
 ### 2026-11-25T02:21:11.712Z — cpu-goal-loop
 
 A bounded independent review was queued as wake wake-e134482a28eb after 675 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Scheduled independent review
+
+### 2026-11-25T05:55:30.405Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-fd9897787a91 after 696 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (reproduced - full prompt still truncated (390/4202 bytes); first-line identifiability now works)
+
+### 2026-11-25T06:03:21.907Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+Wake: wake-fd9897787a91 (adapter opencode, child_pid 15748, launched 2026-11-25T05:55:32.753Z; request .dev/agent-wake/requests/wake-fd9897787a91.json, dedupe issue-review-sweep-696). This is the first scheduled independent review after the 2026-11-21 mitigation (review id 41) and is itself a live opencode wake.
+Verdict: reproduced for full-prompt delivery; first-line identifiability now works.
+
+Observed facts (direct):
+- First user message delivered to THIS session is exactly the 390-character first line of the on-disk prompt and nothing else: "MiMITA agent-wake wake-fd9897787a91 | agent issue-review-sweeper | issue issue-62ab3daa615d | task: Complete one bounded independent review of issue-62ab3daa615d. Start with issue brief/readiness, proof status, linked artifacts, and the latest relevant jour... | full prompt follows; if missing read C:\mimita-v9\.dev\agent-wake\logs\2026-11-25T05-55-30.358Z-issue-review-sweeper.prompt.txt"
+- Prompt file on disk: .dev/agent-wake/logs/2026-11-25T05-55-30.358Z-issue-review-sweeper.prompt.txt is 4202 bytes / 29 lines. First line = 390 chars; the remaining 3812 bytes / 28 lines (Wake request, Coordination agent, Issue, First run, Evidence-gap review, Proof-first completion, Requested work) did NOT reach the model.
+- Mitigation works for identifiability: from the delivered first line alone I can name wake id, agent, issue id (issue-62ab3daa615d) and a truncated task, and the old hardcoded "bounded test activation" banner is gone. The acceptance clause "agent can restate its assigned issue without reading .dev/agent-wake files" is now MET.
+- The acceptance clause "first user message contains the full prompt ... including Requested work" is NOT met, and the proof expectation ("Launch one opencode wake and show its session first user part matches the prompt file text, including the Requested work section") is contradicted by this live sample: first user part = 390-char first line, not the 4202-byte prompt file.
+- Code path (read only, no edit): devscripts/agent-wake.py:279 `_prompt` builds `_first_line(request) + "\n\n" + <full body>`; devscripts/agent-wake.py:339 `_adapter_command` (adapter=opencode) appends that whole multi-line string as ONE argv element to `opencode run ... "<prompt>"`. So agent-wake already hands opencode the full 4202 bytes; the loss happens after argv (opencode run handling), consistent with earlier adapter-side reports.
+- devscripts/quality/test_agent_wake.py (3 tests, ran OK this session) asserts the generated `_prompt` string contains "Requested work" but does not observe the launched session, so it cannot catch this truncation.
+- Proof status: issue has 0 tasks and no task-level proof record; state in_review, owner empty; no runtime_proven or exempt proof exists for this issue.
+
+Inference / uncertainty (inferred):
+- Most likely cause (medium-high confidence): opencode `run` delivers only the first line/paragraph of a single multi-line positional, so the bug is on the opencode adapter side, not in agent-wake prompt construction. Not proven; could also be JSON-output framing or a quoting layer.
+- Because only line 1 arrives, the 160-char task summary always ends mid-word ("...jour..."), so the requested work is never fully actionable from the delivered text.
+
+Contrary evidence:
+- The mitigation is a real partial improvement: issue id and task summary now arrive, so a woken agent no longer starts blind. A full-message delivery fix is still required for the "full prompt" clause.
+
+Next discriminating check (owner of devscripts/agent-wake.py / opencode adapter; not performed here):
+- Isolate opencode newline handling from agent-wake: in a scratch dir, run the same adapter with a two-paragraph message `opencode run --format json "<line1>\n\n<line2>"` (no wake queue, no build) and inspect the new session's first user part. If it contains only line1, the defect is opencode argv/newline handling; fix by passing the prompt via stdin or a temp file / single JSON message write, then re-check. If it delivers both paragraphs, the defect is in agent-wake serialization and is fixable there. Then repeat one real opencode wake and byte-compare its first user part to the 4202-byte prompt file (target: equal after trailing-whitespace normalization).
+
+No source edit, build, test run, or closure claimed. Recommend keeping this issue open; the acceptance clause for full-prompt delivery and the proof expectation remain unmet.

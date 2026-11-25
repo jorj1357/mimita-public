@@ -815,6 +815,39 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.radius = event->radius;
     projectile.predicted = localOwner && preserveSim;
     projectile.exploded = false;
+
+    // Corpse feedback is visual-only. Server-authoritative bullets may arrive
+    // already terminated in the same packet batch as their spawn, so sweep the
+    // first segment now, before the terminal event can remove the projectile.
+    {
+        constexpr int kSpawnCorpseSweepSteps = 12;
+        const glm::vec3 segmentEnd = serverPosition + serverVelocity * 0.03f;
+        for (int sweep = 1; sweep <= kSpawnCorpseSweepSteps && !projectile.exploded; ++sweep)
+        {
+            const glm::vec3 point = glm::mix(serverPosition, segmentEnd,
+                (float)sweep / (float)kSpawnCorpseSweepSteps);
+            std::string corpseId;
+            if (!RagdollModeSystem::instance().queryCorpseHit(
+                    point, projectile.radius + 0.35f, corpseId))
+                continue;
+            const glm::vec3 corpseDir = glm::length(serverVelocity) > 0.001f
+                ? glm::normalize(serverVelocity) : glm::vec3(0, 0, 1);
+            EffectPartSystem::instance().spawnBloodEffect(
+                point, corpseDir, 55.0f, "projectile", corpseId,
+                1.0f, -1.0f, 1.4f);
+            EffectPartSystem::instance().spawnGoreEffect(
+                point, corpseDir, -corpseDir, 55.0f, 30.0f,
+                "torso", 55, false, corpseId);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                "corpse.hit", corpseId, "client corpse bullet feedback", 0,
+                nlohmann::json{{"position", {point.x, point.y, point.z}},
+                               {"direction", {corpseDir.x, corpseDir.y, corpseDir.z}},
+                               {"sweep_step", sweep}, {"source", "spawn_sweep"}});
+            projectile.exploded = true;
+        }
+    }
+
     configureNetworkProjectile(projectile, projectileDefinition(event->weaponDefNetworkId, event->weapon));
     const std::string* projectileWeaponId =
         weaponIdForDefNetworkId(event->weaponDefNetworkId);
@@ -2330,7 +2363,7 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                 const glm::vec3 corpsePoint = glm::length(step.hitPosition) > 0.001f
                     ? step.hitPosition : projectile.position;
                 if (RagdollModeSystem::instance().queryCorpseHit(
-                        corpsePoint, projectile.radius + 0.12f, corpseId)) {
+                        corpsePoint, projectile.radius + 0.75f, corpseId)) {
                     const glm::vec3 corpseDir = glm::length(projectile.velocity) > 0.001f
                         ? glm::normalize(projectile.velocity) : glm::vec3(0,0,1);
                     EffectPartSystem::instance().spawnBloodEffect(
@@ -2569,7 +2602,39 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
             // render-only extrapolation between server state packets; all
             // collision, splash damage, and explosions remain server-owned.
             projectile.age += dt;
+            const glm::vec3 segmentStart = projectile.position;
             projectile.position += projectile.velocity * dt;
+
+            // Corpse feedback is visual-only. Server-authoritative bullets do
+            // not stop on a dead ragdoll, so sweep the client's last render
+            // segment against the corpse parts and spray blood when it crosses
+            // one. Subdivide because a 520 m/s bullet moves ~8 m per frame.
+            constexpr int kCorpseSweepSteps = 8;
+            for (int sweep = 1; sweep <= kCorpseSweepSteps; ++sweep)
+            {
+                const glm::vec3 point = glm::mix(segmentStart, projectile.position,
+                    (float)sweep / (float)kCorpseSweepSteps);
+                std::string corpseId;
+                if (!RagdollModeSystem::instance().queryCorpseHit(
+                        point, projectile.radius + 0.75f, corpseId))
+                    continue;
+                const glm::vec3 corpseDir = glm::length(projectile.velocity) > 0.001f
+                    ? glm::normalize(projectile.velocity) : glm::vec3(0, 0, 1);
+                EffectPartSystem::instance().spawnBloodEffect(
+                    point, corpseDir, 55.0f, "projectile", corpseId,
+                    1.0f, -1.0f, 1.4f);
+                EffectPartSystem::instance().spawnGoreEffect(
+                    point, corpseDir, -corpseDir, 55.0f, 30.0f,
+                    "torso", 55, false, corpseId);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Ragdoll, StructuredLevel::Important,
+                    "corpse.hit", corpseId, "client corpse bullet feedback", 0,
+                    nlohmann::json{{"position", {point.x, point.y, point.z}},
+                                   {"direction", {corpseDir.x, corpseDir.y, corpseDir.z}},
+                                   {"sweep_step", sweep}});
+                projectile.exploded = true;
+                break;
+            }
         }
 
         if (projectile.lifetime > 0.0f && projectile.age > projectile.lifetime + 1.0f)

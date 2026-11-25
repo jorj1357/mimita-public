@@ -836,7 +836,13 @@ void explodeProjectile(SOCKET sock,
         if (def) {
             damageValue = std::max(1, WeaponExecution::computeHitscanDamage(
                 *def, bodyPartName, haveShotDistance ? shotDistance : 0.0f, 1.0f));
-            if (haveShotDistance)
+            // A weapon with an authored two-point damage curve already owns its
+            // damage. Scaling it again by physical impact energy double-counts
+            // speed/mass and turned the AK's 65 torso hit into 22.
+            const bool hasDamageCurve =
+                WeaponExecution::paramOr(*def, "damage_close", 0.0f) > 0.0f &&
+                WeaponExecution::paramOr(*def, "damage_far", 0.0f) > 0.0f;
+            if (haveShotDistance && !hasDamageCurve)
                 damageValue = std::max(1, (int)std::llround(
                     damageValue * energyScale));
         } else {

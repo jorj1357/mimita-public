@@ -76,7 +76,7 @@
 "enemy_impulse_multiplier": 0.0,
 "fire_delay": 0.1,
 "fire_mode": "automatic",
-"headshot_multiplier": 2.2,
+"headshot_multiplier": 3.0,
 "hitscan": false,
 "magazine_size": 30,
 "melee_contact": {"enabled": false, "use_weapon_collision_hitbox": false, "claim_tolerance_m": 0.75, "target_radius_m": 0.9, "max_reach_m": 0.0, "claim_batch_ticks": 6, "occlusion": true, "damage_scale": 1.0, "force_scale": 1.0},
@@ -153,8 +153,8 @@
     "volume": 2.5,
     "dry_fire": "ui/click",
     "pitch": 0.9,
-    "start_seconds": 0.0,
-    "end_seconds": 0.1,
+    "start_seconds": 0.01,
+    "end_seconds": 5.0,
     "retrigger": true
   },
 "spread": 1.0,
@@ -165,6 +165,7 @@
 "victim_knockback_vertical_fraction": 0.0,
 "viewmodel": {
     "enabled": true,
+    // leave this big - jorj1357 2026 11 25  , leave at 2x scale or whatevre it is
     "scale": [
       2.0,
       2.0,

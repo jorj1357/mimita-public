@@ -1,0 +1,18 @@
+{
+  "analytics_enabled": false,
+  "anonymous_id": "mimita-e492fc53888d45255c287675",
+  "consent_endpoint": "https://mimita.fun/api/game/analytics/consent",
+  "consent_shown": true,
+  "day_1_return_sent": false,
+  "day_30_return_sent": false,
+  "day_7_return_sent": false,
+  "deletion_endpoint": "https://mimita.fun/api/game/analytics/deletion-request",
+  "events_endpoint": "https://mimita.fun/api/game/analytics/events",
+  "first_launch_date": "2026-11-25",
+  "first_launch_sent": false,
+  "last_launch_date": "2026-11-25",
+  "last_shutdown_clean": false,
+  "launch_count": 28,
+  "permanently_disabled": true,
+  "privacy_url": "https://mimita.fun/terms/privacy"
+}

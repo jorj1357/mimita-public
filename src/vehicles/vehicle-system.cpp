@@ -868,12 +868,13 @@ bool VehicleSystem::enterLocalDriver(uint32_t vehicleId, int seat,
     // Client-side prediction: when this client owns the car, it simulates the
     // chassis locally so throttle/steer/jump respond on the input tick instead
     // of after a server round trip. Server snapshots become corrections.
-    if (MP_CONTEXT.active && !state->serverAuthoritative)
+    if (!state->serverAuthoritative)
     {
         PhysicalEntity* chassis =
             PhysicalEntitySystem::instance().find(state->entityId);
-        if (chassis && chassis->serverDriven)
+        if (chassis)
         {
+            const bool wasServerDriven = chassis->serverDriven;
             chassis->serverDriven = false;
             chassis->clientPredicted = true;
             chassis->sleeping = false;
@@ -885,7 +886,20 @@ bool VehicleSystem::enterLocalDriver(uint32_t vehicleId, int seat,
                 "local client now predicts its own chassis", 0,
                 {{"vehicle_id", vehicleId},
                  {"chassis_entity", chassis->id},
-                 {"chassis_network_id", chassis->networkId}},
+                 {"chassis_network_id", chassis->networkId},
+                 {"was_server_driven", wasServerDriven},
+                 {"mp_active", MP_CONTEXT.active}},
+                __FILE__, __LINE__, __func__);
+        }
+        else
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "vehicle.prediction.blocked", std::to_string(vehicleId),
+                "local seat has no chassis entity to predict", 0,
+                {{"vehicle_id", vehicleId},
+                 {"entity_id", state->entityId},
+                 {"mp_active", MP_CONTEXT.active}},
                 __FILE__, __LINE__, __func__);
         }
     }
@@ -2122,6 +2136,21 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                      {"delta_vel_mps", profile.jump.doubleJumpDeltaVelMps}},
                     __FILE__, __LINE__, __func__);
             }
+        }
+        else
+        {
+            // A press that produced nothing. Recorded so a test can tell an
+            // input that never arrived from a jump that was rejected.
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.jump.rejected", std::to_string(state.id),
+                "jump press rejected", tick,
+                {{"vehicle_id", state.id},
+                 {"on_ground", onGround},
+                 {"jump_count", state.jumpCount},
+                 {"air_time_since_jump", state.airTimeSinceJump},
+                 {"window_seconds", profile.jump.doubleJumpWindowSeconds}},
+                __FILE__, __LINE__, __func__);
         }
     }
 

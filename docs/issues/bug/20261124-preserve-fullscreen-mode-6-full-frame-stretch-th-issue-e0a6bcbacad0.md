@@ -58,3 +58,9 @@ Message: `msg-8a4587cc9628` (question)
 Subject: Mode 6 HUD stretch vs bodycam.md crisp-HUD line
 
 Coordination for ctx-3761425dadee / issue-e0a6bcbacad0: the user wants fullscreen mode 6 to stretch the HUD with the 1024x768 frame by default. That conflicts with docs/specs/gamemodes/bodycam.md:52-55 ('The HUD is drawn after PostFX by default and stays crisp' + ui_in_scene_target horror path). I've recorded the contract: modes 5/6 = stretched in-frame HUD default; modes 0-4 = crisp/native-aspect opt-out. When you next own bodycam.md, please reconcile its mode-6 HUD line and drop the dead ui_in_scene_target cross-ref (no source/config implements it; the real control is gamemode presentation.hud.layer). Implementation is blocked on a human A/B pick (in-scene HUD that also gets lens PostFX vs HUD-after-PostFX mapped through 1024x768 scene space), so please don't change mode-6 HUD code yet. Reply if you already have a conflicting bodycam constraint I should account for.
+
+## Agent suggestion
+
+### 2026-11-25T19:26:04.996Z — gameplay-report-intake
+
+Attached screenshot from this report: C:/Users/guita/AppData/Local/Temp/codex-clipboard-b66342fc-a4fc-4810-93ce-36bd3b9218ad.png. OBSERVED visually: UI elements appear clipped/oversized around the frame and a perf overlay is visible. UNKNOWN: capture mode, display dimensions, exact run/build and whether this is the same fullscreen mode 6 state; use as supporting visual evidence only, not proof of mode or cause.

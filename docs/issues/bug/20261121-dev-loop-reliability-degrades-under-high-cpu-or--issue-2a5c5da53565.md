@@ -125,3 +125,49 @@ Evidence: {"artifact": ".dev/build-timings/game-dll-20261124T215807388728Z-84be9
 Build-stress resource occurrence for game-dll wait issue-e6c253b2fa9f (attempt game-dll-20261125T010553542744Z-42909c, dev-loop run 20261124_221014). Direct observation from .dev/build-timings/game-dll-20261125T010553542744Z-42909c.resource.json: 264 samples @1s from 2026-11-25T01:05:53.542Z over 319.139s; mean host CPU 99.465%, peak 100.0%; minimum available memory 14,106,624 B (~13.5 MiB) of 16,802,918,400 B (~15.65 GiB); host logical CPUs 12 (current Win32_ComputerSystem query; the artifact carries no CPU-count field); provider windows_kernel32_host_and_process; no sampler errors. Workload: Mode 3 game-DLL full rebuild, jobs=10, source_count=644, seeded=0; the attempt FAILED with worker_timeout after 300s. runtime_alignment is unavailable (fresh_server_and_client_journal_evidence_not_matched), no top competing process was captured, so live-workload attribution and the cause of the ~13.5 MiB floor are unknown. Inference only: near-full CPU and very low available memory plausibly lengthened the rebuild past 300s; this sample does not prove causation. Cross-links: issue-e6c253b2fa9f (wait), issue-9a4503f6ed68 (wait aggregation), issue-136d4553ff92 (stage latency), issue-916633ab3313 (disk_low tail), issue-ca5eb16d9e21 (memory pressure).
 
 Evidence: {"agent": "build-wait-reviewer", "artifact": ".dev/build-timings/game-dll-20261125T010553542744Z-42909c.resource.json", "build_attempt_id": "game-dll-20261125T010553542744Z-42909c", "build_outcome": "failed_worker_timeout", "build_total_seconds": 319.139, "cross_links": ["issue-e6c253b2fa9f", "issue-9a4503f6ed68", "issue-136d4553ff92", "issue-916633ab3313", "issue-ca5eb16d9e21"], "dev_loop_run_id": "20261124_221014", "failed_phase": "worker_timeout", "host_logical_cpus": 12, "host_total_memory_bytes": 16802918400, "jobs": 10, "mean_host_cpu_percent": 99.465, "minimum_available_memory_bytes": 14106624, "peak_host_cpu_percent": 100.0, "related_wait_issue": "issue-e6c253b2fa9f", "runtime_alignment": "unavailable: fresh_server_and_client_journal_evidence_not_matched", "sample_count": 264, "sample_interval_seconds": 1.0, "sampled_duration_seconds": 319.139, "seeded": 0, "source_count": 644}
+
+## Scheduled independent review
+
+### 2026-11-25T08:55:30.337Z — mode3-latency-continuation
+
+A bounded independent review was queued as wake wake-e60255ff7b85 after 718 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive-evidence-gap)
+
+### 2026-11-25T09:16:28.770Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Bounded independent review (issue-review-sweeper, wake-e60255ff7b85). Read-only: no source edit, no build, no runtime command, no close, no fix claim.
+
+READINESS / PROOF
+- issue readiness: ready=true, score=8, missing=[], state=new, tasks=0, owner="", reviews=[] before this review. There is no linked task and no proof record for this issue, so no behavior proof exists; readiness is field-completeness, not evidence of the fix.
+- Acceptance is unmet as stated: I found no pressure test that identifies stage-specific degradation and thresholds, no delayed-vs-hung classification evidence, and no bounded resource-control evidence. All recorded occurrences are post-hoc resource co-occurrence, which the prior notes correctly label as correlation.
+
+OBSERVED FACTS (direct)
+1. Most recent completed build after this review was queued: game-dll-20261125T084339926983Z-be8067 (gen642), 19.781s total, one changed source src/npc/npc-combat.cpp plus the identity provider, 2 compiled / 643 skipped, mean host CPU 60.169% / peak 75.2%, min available memory 6,219,526,144 B, 13 samples, no sampler errors. Low-to-moderate pressure and a fast small build — it does not exercise the pressure acceptance matrix.
+2. Same sidecar has a confirmed evidence-composition contradiction: top-level `runtime_alignment.status=unavailable` / `pair_alignment_status=unavailable` ("fresh_server_and_client_journal_evidence_not_matched"), yet sample 1 `tracked_processes` contains server PID 10644 and client PID 7452 both exactly joined to run 20261125_082735 (instance_process_start), with client `client_frame_window`/`client_npc_view_window` fresh at 08:43:44-45Z.
+3. First divergence (sampler code): `_runtime_alignment_summary` (devscripts/dev_loop/build_resource_sampler.py:884-887) admits a server only when both `generation_npc_player` and `server_tick_window` are fresh. The sampled server context had `journal_mode`, `npc_phase_window`, and `server_tick_window`, but no `generation_npc_player`, so `servers=[]` -> `matched=None` -> unavailable. The client context also had `actual_mode=null`, so even if the pair were admitted it would correctly be `mode_unverified`, not `unavailable`.
+4. Why `generation_npc_player` was missing is not proven. The same run's rotated server journal that covers the build window (logs/2026-11-25/20261125_082735/server-01/events-0006.jsonl, 08:39:47.813-08:44:18.996Z) has 264 `game.hotness.summary` rows with pid 10644/run 20261125_082735. Candidate causes: bounded 256 KiB tail (`_tail_jsonl`, build_resource_sampler.py:30) against ~100 MB rotated journals plus bursty high-rate events, sibling/rotation selection, or refresh timing. Unknown, testable.
+5. The diagnostic instrument also degrades under the load it measures: game-dll-20261125T055256329120Z-9b2bcf is `status=partial`, error "sampler thread did not stop before timeout", 60 samples over 131.4s, `process_discovery_wall_ms_total=55,706.858` (~42% of the window), mean host CPU 95.45%, min available memory 1,836,306,432 B. This is a completed build with an incomplete sidecar.
+
+INFERENCE / UNCERTAINTY
+- Near-full CPU and low available memory plausibly lengthened compile/link in the prior occurrences, but no occurrence isolates host pressure from source cost, header fanout, or concurrent live pairs; causation stays unproven.
+- Sampler overhead is not proven to delay the build main thread. For be8067 only ~3.95s `sampler_setup_wall_ms` is synchronous on the critical path; the larger discovery cost in 9b2bcf is on the sampler thread. The observer cost is real but its effect on build wall time is unmeasured.
+- The 9b2bcf high-pressure sample was a Bloodtest live pair, not the Juggernaut 67-NPC workload, and its sidecar is partial, so it cannot serve as the acceptance pressure test.
+
+CONTRARY EVIDENCE
+- be8067 shows a non-degraded loop under a moderately loaded host (mean 60.17% CPU, 6.22 GB free): 1-TU build in ~20s. This argues against a blanket "always degraded under load" claim, but does not test the acceptance matrix.
+- The gen642 sidecar explicitly reports stale/unavailable alignment, which partially satisfies the acceptance clause "process inventory remain accurate or explicitly stale"; the contradiction in (2) is that valid same-run evidence was present but not composed, not that stale state was hidden.
+
+NEXT DISCRIMINATING CHECK (unowned)
+- Replay game-dll-20261125T084339926983Z-be8067 sample 1's `tracked_processes` through `_runtime_alignment_summary` and log which predicate fails, then add a regression fixture for this observed schema. Target: when a same-run server+client pair has fresh server tick and client frame/viewport windows, the summary must report `same_run_server_client=true` and either `observed` or an explicit `mode_unverified`, never `unavailable`.
+- Then a controlled matrix on the same one-source edit: (a) build with no live run, (b) same edit with the pinned 67-NPC Juggernaut pair at the same generation baseline; compare per-stage wall time and record whether progress is classified "delayed under load" vs "hung", with one real-hang negative control. No win from a longer flat timeout alone.
+
+OWNERSHIP / CROSS-LINKS
+- The sampler source is under an active edit lease by mode3-latency-continuation (lease-e3f099c55021/lease-19f9afdd8705, expires 2026-11-25T09:32:56Z); I did not edit it.
+- Already-recorded related evidence, not duplicated here: issue-136d4553ff92 (gen642 be8067 timing/activation + sampler critical-path proposal; 9b2bcf gap and partial-shutdown defect), issue-ed3ac775283d (sampler alignment history), issue-9a4503f6ed68 (9b2bcf wait identity), issue-35fd6df3d947 (process inventory).
+
+DEVELOPMENT-PROCESS REVIEW
+- Repeated missing evidence is demonstrated: valid same-run process evidence existed in the sidecar but the summary reported unavailable, forcing manual reconstruction from raw JSONL (be8067; earlier 84be9e/42909c unavailable). I appended one specific proposal with a measurable target and smallest experiment to the sampler alignment improvement issue-ed3ac775283d.
+- No separate general-process proposal was added: issue-91e3384b219b already owns and has implemented/proven the bounded review scheduler and stale-issue heartbeat, so a cadence proposal would duplicate it. No scheduler defect is evidenced in this sweep (the scheduled event fired: coord.issue_review.scheduled seq 18506, wake-e60255ff7b85).

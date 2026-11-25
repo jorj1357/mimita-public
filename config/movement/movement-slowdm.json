@@ -52,22 +52,24 @@
     // 20 MiMITA units/sec.
     // "max_speed": 30.0,
     // "max_speed": 20.0,
-    // "max_speed": 9.0,
-    "max_speed": 0.5,
+    "max_speed": 9.0,
+    // "max_speed": 13.0,
+    // "max_speed": 0.5,
 
     // Keep server-side ground movement validation at the same speed.
     // "ground_speed": 30.0,
     // "ground_speed": 20.0,
-    // "ground_speed": 9.0,
-    "ground_speed": 0.5,
+    "ground_speed": 9.0,
+    // "ground_speed": 13.0,
+    // "ground_speed": 0.5,
 
     // Extremely high ground acceleration from the fast Source preset.
     //
     // This makes WASD feel nearly instant instead of gradually accelerating
     // like strict CS 1.6 sv_accelerate 5.
-    "ground_acceleration": 2.0,
+    // "ground_acceleration": 2.0,
     // "ground_acceleration": 0.5,
-    // "ground_acceleration": 4.0,
+    "ground_acceleration": 4.0,
 
     // Ground friction from the fast Source preset.
     //

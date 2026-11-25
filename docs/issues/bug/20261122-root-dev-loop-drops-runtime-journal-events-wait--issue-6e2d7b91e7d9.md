@@ -68,3 +68,15 @@ Evidence: {"build_attempt_id": "game-dll-20261124T203535650414Z-718e6f", "build_
 Recurrence 2026-11-24T20:19:59.371Z wait (issue-7ef5043ce95c, attempt game-dll-20261124T201959398000Z-aa0b47): no dev-loop.wait.over_budget or dev-loop.wait.reviewer-wake event exists in any logs/**/dev-loop/events.jsonl. A repo-wide search for the attempt id returns nothing under logs/ and the wait_id appears only in .dev/agent-wake/requests/wake-c29456cabf35.json. The next over-budget wait (20:55:04.680Z, issue-98a885a0bb81) WAS journaled in logs/2026-11-24/20261124_205541_01/dev-loop/events.jsonl, so the drop is per-instance (events_path None or non-existent), not universal. The issue proof expectation is met 2 of 3 (issue record + wake request; dev-loop wait event missing).
 
 Evidence: {"build_attempt_id": "game-dll-20261124T201959398000Z-aa0b47", "issue": "issue-7ef5043ce95c", "wait_id": "game-dll-build:2026-11-24T20:19:59.371Z"}
+
+## Agent suggestion
+
+### 2026-11-25T06:11:06.326Z — build-wait-reviewer
+
+Occurrence 2026-11-25T05:46:30.064Z (issue-9c1fc3e3e668, attempt game-dll-20261125T054630085917Z-48e192): no dev-loop.wait.over_budget or dev-loop.wait.reviewer-wake row exists in any retained 2026-11-25 dev-loop journal; those run journals contain only isolated-run runtime events. .dev/state.json shows events_path=null (root daemon restarted 2026-11-25T06:03:22.911Z). The issue and wake records exist, but the dev-loop wait-event half of proof is missing. Same defect as the 2026-11-22 report; duplicate record issue-0498cbef4ef3. Reviewer build-wait-reviewer.
+
+## Agent suggestion
+
+### 2026-11-25T06:18:55.578Z — build-wait-reviewer
+
+Occurrence 2026-11-25T05:52:56.306Z wait (issue-8af9b97c9a2a): no dev-loop.wait.over_budget or dev-loop.wait.reviewer-wake row exists in any retained 2026-11-25 dev-loop journal; the run 20261125_054920 dev-loop/events.jsonl holds only isolated-run runtime events, and .dev/state.json has an empty events_path (daemon_pid 4044). The issue record and one queued wake (wake-9c7b2299476c) exist, so the journal half of the proof expectation is still missing for this wait. Occurrence added by build-wait-reviewer.

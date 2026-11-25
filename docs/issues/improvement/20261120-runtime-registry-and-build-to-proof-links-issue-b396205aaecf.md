@@ -163,3 +163,19 @@ PROPOSAL (smallest experiment, measurable)
 - Make source_hashes drift self-invalidating: in `proof status` (and the dev-loop proof line), re-hash each recorded path in source_hashes and, when any differs from the current tree, report `stale` with the changed path(s) instead of `unproven/-`; and have `proof task-verify` refresh source_hashes from the current tree at verification time so a verified row can never carry hashes from an older generation. Do not change run/launch/retention or gameplay.
 - Measurable target: 0 proof rows whose recorded source_hashes differ from the current file hash without an explicit stale reason (baseline this sweep: 1 row, task-proof-899d76b7464a, 2/2 paths); 100% of rows verified after the change carry hashes equal to the tree at verify time; `proof status` runs under 5s on a 65-row ledger.
 - Smallest experiment: run the read-only re-hash comparison over the current proof ledger and record the flagged rows (expected: task-proof-899d76b7464a), add only the comparison to `proof status`, and confirm task-proof-899d76b7464a flips to stale while task-proof-c59c4db8a80e and task-proof-edf53b087881 stay unproven (their hashes still match). No source, build, or gameplay change.
+
+## Agent suggestion
+
+### 2026-11-25T07:22:38.904Z — issue-review-sweeper
+
+Process evidence from five consecutive independent review sweeps of issue-cf9cd77eb056 (2026-11-21, 11-22, 11-23, 11-24, 11-25): every sweep ran `python devscripts/agent-coord.py proof list --issue issue-cf9cd77eb056` and got `[]`, while `related_build` named an older EXE generation than the newest pinned journals. On 2026-11-25 run 20261125_061355 (EXE sha 5dda0879, game gen 640) the journal showed stable direct join (1 Connecting-to-Connected, 0 reconnect.scheduled, max snapshot_interarrival_ms 1328 over 7533 samples) and a 63 Fighter + 4 Juggernaut + 1 human roster, yet no proof record existed. Each reviewer must re-derive run/build/DLL identity by hand, so a cold reader cannot tell which artifact a claim refers to.
+
+Measurable target: for a pinned run launched with an issue link, within one activation `proof list --issue <id>` returns at least 1 record naming run_id, build_id, and game DLL sha, and `related_build`/`related_run` equal that run. Success = 5 of 5 linked over the next 5 pinned runs, and reviewer time-to-evidence <= 1 tool call.
+
+Smallest experiment: at run completion, have the dev-loop write a proof stub (run_id, build_id, DLL sha, journal path) to the requested issue, then measure the 5-run link rate and reviewer tool calls. Proposal only; no source, build, or authority change implied.
+
+## Agent suggestion
+
+### 2026-11-25T07:23:08.041Z — issue-review-sweeper
+
+Correction for the 2026-11-25T07:22 entry above: after re-reading this issue, the mechanism is already proposed at 2026-11-21T17:11 (read-only `proof capture --run <id> --task <id>` that resolves the pinned build/generation/DLL and writes the proof record) and the status guard at 2026-11-22T01:02. The 2026-11-25 sweep adds only a fresh datapoint, not a new gap: run 20261125_061355 (game gen 640, EXE sha 5dda0879) demonstrated stable direct join and a 63 Fighter + 4 Juggernaut + 1 human roster, yet `proof list --issue issue-cf9cd77eb056` was still []. Treat the 2026-11-25 entry as corroboration, not a separate work item. Recommended next step: trial the already-proposed `proof capture` on this run/issue and record the resulting link, rather than build a second mechanism.

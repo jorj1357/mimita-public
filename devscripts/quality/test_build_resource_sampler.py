@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import tempfile
 import time
 import unittest
@@ -139,9 +140,11 @@ class BuildResourceSamplerTests(unittest.TestCase):
             samples = [row for row in records
                        if row.get("event") == "resource.sample"]
             self.assertTrue(samples)
-            self.assertEqual(samples[0]["host"]["cpu_percent"], 42.0)
+            self.assertIsNone(samples[0]["host"]["cpu_percent"])
+            self.assertEqual(samples[0]["host_cpu_rate_status"], "baseline_only")
             self.assertEqual(samples[0]["host"]["memory_available_bytes"], 4_000)
-            self.assertIsNone(samples[0]["process_discovery_age_seconds"])
+            self.assertIsNone(samples[-1]["process_discovery_age_seconds"])
+            self.assertEqual(samples[-1]["host"]["cpu_percent"], 42.0)
 
     def test_native_fallback_captures_short_attempt_and_marks_cpu_warmup(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -170,11 +173,156 @@ class BuildResourceSamplerTests(unittest.TestCase):
                            encoding="utf-8").splitlines()]
             samples = [row for row in records
                        if row.get("event") == "resource.sample"]
-            self.assertEqual(len(samples), 1)
-            self.assertEqual(samples[0]["tracked_processes"][0]["role"],
+            self.assertEqual(len(samples), 2)
+            self.assertEqual(samples[0]["process_attribution_status"],
+                             "warming_up")
+            self.assertEqual(samples[-1]["tracked_processes"][0]["role"],
                              "compiler_linker")
-            self.assertEqual(samples[0]["tracked_processes"][0]["rss_bytes"],
+            self.assertEqual(samples[-1]["tracked_processes"][0]["rss_bytes"],
                              2_000)
+
+    def test_start_keeps_initial_host_row_while_process_discovery_is_async(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sampler = BuildResourceSampler(root, "game-dll-async-discovery",
+                                            interval_seconds=0.5)
+            discovery_entered = threading.Event()
+            discovery_release = threading.Event()
+            start_returned = threading.Event()
+
+            def delayed_discovery():
+                discovery_entered.set()
+                discovery_release.wait(timeout=5.0)
+
+            sampler._refresh_processes = delayed_discovery
+            with patch(
+                    "devscripts.dev_loop.build_resource_sampler.importlib.import_module",
+                    return_value=_FakePsutil()):
+                starter = threading.Thread(
+                    target=lambda: (sampler.start(), start_returned.set()),
+                    daemon=True)
+                starter.start()
+                try:
+                    self.assertTrue(discovery_entered.wait(timeout=2.0))
+                    self.assertTrue(start_returned.wait(timeout=2.0))
+                    self.assertFalse(discovery_release.is_set())
+
+                    records = [json.loads(line) for line in
+                               sampler.jsonl_path.read_text(
+                                   encoding="utf-8").splitlines()]
+                    samples = [row for row in records
+                               if row.get("event") == "resource.sample"]
+                    self.assertEqual(len(samples), 1)
+                    self.assertEqual(samples[0]["host"]["memory_available_bytes"],
+                                     4_000)
+                    self.assertIsNone(samples[0]["host"]["cpu_percent"])
+                    self.assertEqual(samples[0]["host_cpu_rate_status"],
+                                     "baseline_only")
+                    self.assertEqual(samples[0]["process_attribution_status"],
+                                     "warming_up")
+                    sample_deadline = time.monotonic() + 1.5
+                    while (sampler._sample_count < 2 and
+                           time.monotonic() < sample_deadline):
+                        time.sleep(0.01)
+                    records = [json.loads(line) for line in
+                               sampler.jsonl_path.read_text(
+                                   encoding="utf-8").splitlines()]
+                    samples = [row for row in records
+                               if row.get("event") == "resource.sample"]
+                    self.assertGreaterEqual(len(samples), 2)
+                    self.assertTrue(
+                        samples[-1]["process_discovery_in_progress"])
+
+                    summary = sampler.stop()
+                    self.assertEqual(summary["status"], "partial")
+                    self.assertEqual(summary["final_sample_status"],
+                                     "skipped_sampler_thread_timeout")
+                finally:
+                    discovery_release.set()
+                    starter.join(timeout=2.0)
+                    if sampler._thread is not None:
+                        sampler._thread.join(timeout=2.0)
+                    if sampler._process_discovery_thread is not None:
+                        sampler._process_discovery_thread.join(timeout=2.0)
+
+            completed = [json.loads(line) for line in
+                         sampler.jsonl_path.read_text(
+                             encoding="utf-8").splitlines()]
+            self.assertEqual(completed[-1]["event"],
+                             "resource.capture_completed")
+
+    def test_failed_async_process_discovery_is_reported_as_partial(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            sampler = BuildResourceSampler(Path(temporary),
+                                            "game-dll-discovery-error",
+                                            interval_seconds=10.0)
+            discovery_attempted = threading.Event()
+
+            def failed_discovery():
+                discovery_attempted.set()
+                raise OSError("process inventory unavailable")
+
+            sampler._discover_processes = failed_discovery
+            with patch(
+                    "devscripts.dev_loop.build_resource_sampler.importlib.import_module",
+                    return_value=_FakePsutil()):
+                sampler.start()
+                try:
+                    self.assertTrue(discovery_attempted.wait(timeout=2.0))
+                    deadline = time.monotonic() + 2.0
+                    while (sampler._process_discovery_status != "partial" and
+                           time.monotonic() < deadline):
+                        time.sleep(0.01)
+                    self.assertEqual(sampler._process_discovery_status, "partial")
+                    summary = sampler.stop()
+                finally:
+                    if sampler._thread is not None:
+                        sampler._thread.join(timeout=2.0)
+
+            records = [json.loads(line) for line in
+                       (Path(temporary) / summary["jsonl_path"]).read_text(
+                           encoding="utf-8").splitlines()]
+            initialized = [row for row in records
+                           if row.get("event") ==
+                           "resource.process_attribution_initialized"]
+            self.assertEqual(initialized[-1]["status"], "partial")
+            self.assertIn("process discovery: OSError", summary["errors"][-1])
+
+    def test_runtime_context_scan_does_not_block_host_samples(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            sampler = BuildResourceSampler(Path(temporary),
+                                            "game-dll-async-runtime-context",
+                                            interval_seconds=0.5)
+            sampler._psutil = _FakePsutil()
+            sampler._started = time.monotonic()
+            sampler._last_discovery = sampler._started
+            sampler._process_discovery_status = "ready"
+            context_entered = threading.Event()
+            context_release = threading.Event()
+
+            def delayed_context_refresh():
+                context_entered.set()
+                context_release.wait(timeout=5.0)
+
+            sampler._refresh_runtime_context = delayed_context_refresh
+            try:
+                sampler._sample()
+                self.assertTrue(context_entered.wait(timeout=2.0))
+                sampler._sample()
+                self.assertEqual(sampler._sample_count, 2)
+                self.assertTrue(sampler._runtime_context_thread.is_alive())
+            finally:
+                context_release.set()
+                if sampler._runtime_context_thread is not None:
+                    sampler._runtime_context_thread.join(timeout=2.0)
+
+            records = [json.loads(line) for line in
+                       sampler.jsonl_path.read_text(
+                           encoding="utf-8").splitlines()]
+            samples = [row for row in records
+                       if row.get("event") == "resource.sample"]
+            self.assertEqual(len(samples), 2)
+            self.assertTrue(samples[-1]["runtime_context_discovery_in_progress"])
 
     def test_native_process_fallback_records_role_cpu_and_memory(self):
         with tempfile.TemporaryDirectory() as temporary:

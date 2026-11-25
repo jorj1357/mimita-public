@@ -28,6 +28,10 @@ _SNAPSHOT_CLEANUP_PENDING: set[str] = set()
 _SNAPSHOT_CLEANUP_THREAD: threading.Thread | None = None
 
 
+class _BuildAttemptDeadlineExceeded(RuntimeError):
+    """Raised when a pre-worker phase reaches the whole-attempt deadline."""
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
@@ -285,7 +289,8 @@ def _snapshot_root(root: Path, attempt_id: str) -> Path:
     return root / ".dev" / "build-snapshots" / attempt_id / "source"
 
 
-def _create_source_snapshot(root: Path, mirror: Path, attempt_id: str) -> Path:
+def _create_source_snapshot(root: Path, mirror: Path, attempt_id: str,
+                            check_deadline=None) -> Path:
     """Create an immutable per-attempt tree by hardlinking the source mirror.
 
     The mirror itself is updated with temp-file replacement, so an existing
@@ -299,6 +304,16 @@ def _create_source_snapshot(root: Path, mirror: Path, attempt_id: str) -> Path:
     file_count = directory_count = 0
     directory_seconds = link_seconds = copy_seconds = 0.0
     walk_started = time.perf_counter()
+
+    def check_snapshot_deadline() -> None:
+        if not check_deadline:
+            return
+        try:
+            check_deadline("source_snapshot")
+        except _BuildAttemptDeadlineExceeded:
+            shutil.rmtree(destination_root, ignore_errors=True)
+            raise
+
     for source_root_name in ("src", "include", "external"):
         source_root = mirror / source_root_name
         if not source_root.is_dir():
@@ -315,6 +330,8 @@ def _create_source_snapshot(root: Path, mirror: Path, attempt_id: str) -> Path:
                 source = source_directory / filename
                 destination = destination_directory / filename
                 file_count += 1
+                if check_deadline and file_count % 64 == 0:
+                    check_snapshot_deadline()
                 link_started = time.perf_counter()
                 try:
                     os.link(source, destination)
@@ -429,7 +446,8 @@ def _remove_snapshot_tree(path: Path) -> None:
 def _create_junction_overlay_snapshot(
         root: Path, base: Path, mirror: Path, replacement_paths: list[str],
         removed_paths: list[str], attempt_id: str,
-        expected_hashes: dict[str, str] | None = None) -> Path:
+        expected_hashes: dict[str, str] | None = None,
+        check_deadline=None) -> Path:
     """Share unchanged directory subtrees and materialize only edited branches."""
     if os.name != "nt":
         raise OSError("directory junction snapshots require Windows")
@@ -471,6 +489,8 @@ def _create_junction_overlay_snapshot(
     def materialize(relative: str) -> None:
         nonlocal linked, copied, removed
         nonlocal junction_seconds, hardlink_seconds, walk_seconds
+        if check_deadline:
+            check_deadline("source_snapshot")
         source_directory = base_resolved / relative
         destination_directory = destination_root / relative
         if not changed_below(relative):
@@ -521,6 +541,8 @@ def _create_junction_overlay_snapshot(
                 materialize(source_root)
         expected_hashes = expected_hashes or {}
         for relative in sorted(replacements):
+            if check_deadline:
+                check_deadline("source_snapshot")
             source = mirror / Path(relative)
             if not source.is_file():
                 raise RuntimeError(f"overlay source missing: {relative}")
@@ -677,15 +699,27 @@ def _write_snapshot_manifest(snapshot: Path, manifest: dict) -> None:
 
 
 def _create_overlay_snapshot(root: Path, base: Path, overlay_paths: list[str],
-                             attempt_id: str) -> Path:
+                             attempt_id: str, check_deadline=None) -> Path:
     destination_root = _snapshot_root(root, attempt_id)
     if not base.is_dir():
         raise RuntimeError(f"base snapshot missing: {base}")
     shutil.rmtree(destination_root, ignore_errors=True)
     linked = copied = 0
+
+    def check_snapshot_deadline() -> None:
+        if not check_deadline:
+            return
+        try:
+            check_deadline("source_snapshot")
+        except _BuildAttemptDeadlineExceeded:
+            shutil.rmtree(destination_root, ignore_errors=True)
+            raise
+
     for source in base.rglob("*"):
         if not source.is_file():
             continue
+        if check_deadline and linked % 64 == 0:
+            check_snapshot_deadline()
         relative = source.relative_to(base)
         destination = destination_root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -697,6 +731,7 @@ def _create_overlay_snapshot(root: Path, base: Path, overlay_paths: list[str],
             copied += 1
     root_resolved = root.resolve()
     for value in overlay_paths:
+        check_snapshot_deadline()
         relative = Path(str(value))
         if relative.is_absolute():
             try:
@@ -1158,6 +1193,11 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     attempt_id = attempt_id or f"game-dll-{uuid.uuid4().hex[:16]}"
     attempt_started = time.monotonic()
     attempt_started_utc = _utc_now()
+    # Bound all driver phases together, not only the worker subprocess. This
+    # guarantees a terminal result before the user's 19-minute failure limit.
+    attempt_timeout = min(
+        18 * 60.0,
+        max(1.0, _env_float("MIMITA_GAME_ATTEMPT_TIMEOUT", 18 * 60.0)))
     timing_path = root / ".dev" / "build-timings" / f"{attempt_id}.jsonl"
     summary_path = root / ".dev" / "build-timings" / f"{attempt_id}.json"
     last_attempt_path = root / "build" / "game" / "last-attempt.json"
@@ -1171,6 +1211,7 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     progress = {
         "status": "preparing", "phase": "codegen_check",
         "build_attempt_id": attempt_id,
+        "attempt_timeout_seconds": attempt_timeout,
         "source_generation": source_generation,
         "build_mode": str(mode).lower(),
         "started_utc": attempt_started_utc, "updated_utc": attempt_started_utc,
@@ -1182,9 +1223,28 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     _append_timing(timing_path, {
         "event": "build.started", "time_utc": attempt_started_utc,
         "elapsed_ms": 0, "build_attempt_id": attempt_id,
+        "attempt_timeout_seconds": attempt_timeout,
         "source_generation": source_generation, "request_ids": request_ids,
         "notes": notes,
     })
+
+    def remaining_attempt_seconds() -> float:
+        return max(0.0, attempt_timeout - (time.monotonic() - attempt_started))
+
+    def attempt_deadline_expired() -> bool:
+        return remaining_attempt_seconds() <= 0.0
+
+    def check_attempt_budget(phase: str) -> None:
+        if attempt_deadline_expired():
+            raise _BuildAttemptDeadlineExceeded(
+                f"whole DLL build attempt exceeded {attempt_timeout:.0f}s "
+                f"during {phase}")
+
+    def bounded_timeout(local_timeout: float | None) -> float:
+        remaining = remaining_attempt_seconds()
+        if local_timeout is None or float(local_timeout) <= 0.0:
+            return remaining
+        return min(float(local_timeout), remaining)
 
     def set_stage(name: str, state: str, **fields) -> None:
         now = time.monotonic()
@@ -1234,6 +1294,8 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
 
     def set_manifest_subphase(event: dict) -> None:
         """Persist bounded manifest subphase progress for the dashboard."""
+        check_attempt_budget(
+            f"manifest snapshot ({event.get('subphase') or 'unknown'})")
         now = time.monotonic()
         utc = _utc_now()
         name = str(event.get("subphase") or "unknown")
@@ -1282,10 +1344,16 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                   timeout: float | None = None) -> int:
         started = time.monotonic()
         set_stage(name, "started")
-        result = _run_checked(root, command, report_output, timeout=timeout)
+        effective_timeout = bounded_timeout(timeout)
+        if effective_timeout <= 0.0:
+            result = 124
+        else:
+            result = _run_checked(root, command, report_output,
+                                  timeout=effective_timeout)
         set_stage(name, "completed" if result == 0 else "failed",
                   duration_ms=round((time.monotonic() - started) * 1000, 3),
-                  exit_code=result)
+                  exit_code=result,
+                  attempt_timeout_seconds=attempt_timeout)
         return result
 
     def fail_attempt(error: str, **fields) -> dict:
@@ -1319,6 +1387,14 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                 "summary_json": str(summary_path.relative_to(root)),
                 "last_attempt_json": str(last_attempt_path.relative_to(root)),
                 **fields}
+
+    def fail_if_attempt_expired(phase: str) -> dict | None:
+        if not attempt_deadline_expired():
+            return None
+        return fail_attempt(
+            f"whole DLL build attempt exceeded {attempt_timeout:.0f}s",
+            failed_phase="attempt_timeout", timeout_seconds=attempt_timeout,
+            timed_out_phase=phase)
 
     worker_output_tail: list[str] = []
     first_worker_output_recorded = False
@@ -1386,6 +1462,9 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
         return fail_attempt(
             f"disk_low: {free // (1024 * 1024)} MB free, "
             f"need {min_free // (1024 * 1024)} MB after auto-prune")
+    timeout_failure = fail_if_attempt_expired("pre_manifest")
+    if timeout_failure:
+        return timeout_failure
 
     set_stage("manifest_snapshot", "started")
     manifest_started = time.monotonic()
@@ -1394,11 +1473,19 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     hash_cache_path = root / ".dev" / "source-hash-cache.json"
     hash_cache = _read_json(hash_cache_path)
     source_mirror = _mirror_dir(root)
-    set_manifest_subphase({
-        "subphase": "manifest_inputs_load", "state": "completed",
-        "elapsed_ms": round((time.monotonic() - inputs_started) * 1000.0, 3),
-        "hash_cache_entries": len(hash_cache),
-    })
+    timeout_failure = fail_if_attempt_expired("manifest_inputs_load")
+    if timeout_failure:
+        return timeout_failure
+    try:
+        set_manifest_subphase({
+            "subphase": "manifest_inputs_load", "state": "completed",
+            "elapsed_ms": round((time.monotonic() - inputs_started) * 1000.0, 3),
+            "hash_cache_entries": len(hash_cache),
+        })
+    except _BuildAttemptDeadlineExceeded as error:
+        return fail_attempt(str(error), failed_phase="attempt_timeout",
+                            timeout_seconds=attempt_timeout,
+                            timed_out_phase="manifest_inputs_load")
     manifest: dict = {}
     snapshot_errors: list[str] = []
     snapshot_retries = 0
@@ -1407,48 +1494,53 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
             "MIMITA_SNAPSHOT_ATTEMPTS", "3") or 3))
     except ValueError:
         snapshot_attempts = 3
-    for snapshot_try in range(snapshot_attempts):
-        snapshot_retries = snapshot_try
-        manifest_started_one = time.monotonic()
-        set_manifest_subphase({
-            "subphase": "build_manifest", "state": "started",
-            "elapsed_ms": 0.0, "snapshot_try": snapshot_try + 1,
-            "snapshot_attempts": snapshot_attempts,
-        })
-        manifest = build_manifest(root, hash_cache=hash_cache,
-                                  progress_callback=set_manifest_subphase)
-        set_manifest_subphase({
-            "subphase": "build_manifest", "state": "completed",
-            "elapsed_ms": round((time.monotonic() - manifest_started_one) * 1000.0, 3),
-            "snapshot_try": snapshot_try + 1,
-            "source_count": len(manifest.get("sources", [])),
-            "header_count": len(manifest.get("headers", [])),
-        })
-        cache_started = time.monotonic()
-        set_manifest_subphase({"subphase": "hash_cache_persist", "state": "started",
-                               "elapsed_ms": 0.0, "entries": len(hash_cache)})
-        try:
-            _write_json(hash_cache_path, hash_cache)
-        except OSError as error:
-            set_manifest_subphase({"subphase": "hash_cache_persist", "state": "failed",
-                                   "elapsed_ms": round((time.monotonic() - cache_started) * 1000.0, 3),
-                                   "error": str(error)[:240]})
-        else:
-            set_manifest_subphase({"subphase": "hash_cache_persist", "state": "completed",
-                                   "elapsed_ms": round((time.monotonic() - cache_started) * 1000.0, 3),
-                                   "entries": len(hash_cache)})
-        mirror_started = time.monotonic()
-        set_manifest_subphase({"subphase": "source_mirror_update", "state": "started",
-                               "elapsed_ms": 0.0, "snapshot_try": snapshot_try + 1})
-        snapshot_errors = _update_source_mirror(root, source_mirror, manifest)
-        set_manifest_subphase({"subphase": "source_mirror_update",
-                               "state": "failed" if snapshot_errors else "completed",
-                               "elapsed_ms": round((time.monotonic() - mirror_started) * 1000.0, 3),
-                               "snapshot_try": snapshot_try + 1,
-                               "mismatch_count": len(snapshot_errors),
-                               "mismatches": snapshot_errors[:4]})
-        if not snapshot_errors:
-            break
+    try:
+        for snapshot_try in range(snapshot_attempts):
+            snapshot_retries = snapshot_try
+            manifest_started_one = time.monotonic()
+            set_manifest_subphase({
+                "subphase": "build_manifest", "state": "started",
+                "elapsed_ms": 0.0, "snapshot_try": snapshot_try + 1,
+                "snapshot_attempts": snapshot_attempts,
+            })
+            manifest = build_manifest(root, hash_cache=hash_cache,
+                                      progress_callback=set_manifest_subphase)
+            set_manifest_subphase({
+                "subphase": "build_manifest", "state": "completed",
+                "elapsed_ms": round((time.monotonic() - manifest_started_one) * 1000.0, 3),
+                "snapshot_try": snapshot_try + 1,
+                "source_count": len(manifest.get("sources", [])),
+                "header_count": len(manifest.get("headers", [])),
+            })
+            cache_started = time.monotonic()
+            set_manifest_subphase({"subphase": "hash_cache_persist", "state": "started",
+                                   "elapsed_ms": 0.0, "entries": len(hash_cache)})
+            try:
+                _write_json(hash_cache_path, hash_cache)
+            except OSError as error:
+                set_manifest_subphase({"subphase": "hash_cache_persist", "state": "failed",
+                                       "elapsed_ms": round((time.monotonic() - cache_started) * 1000.0, 3),
+                                       "error": str(error)[:240]})
+            else:
+                set_manifest_subphase({"subphase": "hash_cache_persist", "state": "completed",
+                                       "elapsed_ms": round((time.monotonic() - cache_started) * 1000.0, 3),
+                                       "entries": len(hash_cache)})
+            mirror_started = time.monotonic()
+            set_manifest_subphase({"subphase": "source_mirror_update", "state": "started",
+                                   "elapsed_ms": 0.0, "snapshot_try": snapshot_try + 1})
+            snapshot_errors = _update_source_mirror(root, source_mirror, manifest)
+            set_manifest_subphase({"subphase": "source_mirror_update",
+                                   "state": "failed" if snapshot_errors else "completed",
+                                   "elapsed_ms": round((time.monotonic() - mirror_started) * 1000.0, 3),
+                                   "snapshot_try": snapshot_try + 1,
+                                   "mismatch_count": len(snapshot_errors),
+                                   "mismatches": snapshot_errors[:4]})
+            if not snapshot_errors:
+                break
+    except _BuildAttemptDeadlineExceeded as error:
+        return fail_attempt(str(error), failed_phase="attempt_timeout",
+                            timeout_seconds=attempt_timeout,
+                            timed_out_phase="manifest_snapshot")
     snapshot_duration_ms = round((time.monotonic() - manifest_started) * 1000, 3)
     set_stage("manifest_snapshot", "completed", duration_ms=snapshot_duration_ms,
               source_count=len(manifest.get("sources", [])),
@@ -1456,6 +1548,9 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     if snapshot_errors:
         return fail_attempt("source snapshot unstable: " + snapshot_errors[0],
                             errors=snapshot_errors[:20])
+    timeout_failure = fail_if_attempt_expired("manifest_snapshot")
+    if timeout_failure:
+        return timeout_failure
     set_stage("manifest_validation", "started")
     validation_started = time.monotonic()
     errors, warnings = validate(manifest)
@@ -1471,6 +1566,9 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     set_stage("manifest_validation", "completed",
               duration_ms=round((time.monotonic() - validation_started) * 1000, 3),
               source_count=len(manifest.get("sources", [])))
+    timeout_failure = fail_if_attempt_expired("manifest_validation")
+    if timeout_failure:
+        return timeout_failure
     diff_started = time.monotonic()
     set_driver_subphase("manifest_diff", "started", diff_started)
     previous_revision = str(old_manifest.get("revision") or "")
@@ -1486,6 +1584,9 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                         added_count=len(change_report.get("added", [])),
                         changed_header_count=len(change_report.get(
                             "changed_headers", [])))
+    timeout_failure = fail_if_attempt_expired("manifest_diff")
+    if timeout_failure:
+        return timeout_failure
     set_stage("source_snapshot", "started")
     snapshot_started = time.monotonic()
     metadata = build_metadata or {}
@@ -1499,7 +1600,7 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                 root, int(metadata.get("base_generation") or 0))
             source_snapshot = _create_overlay_snapshot(
                 root, base, [str(value) for value in metadata["overlay_paths"]],
-                attempt_id)
+                attempt_id, check_deadline=check_attempt_budget)
             snapshot_strategy = "preview_overlay"
         else:
             reusable = _reusable_published_snapshot(root, revision)
@@ -1536,12 +1637,16 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                         source_snapshot = _create_junction_overlay_snapshot(
                             root, previous, source_mirror,
                             replacement_paths, removed_paths, attempt_id,
-                            expected_hashes)
+                            expected_hashes,
+                            check_deadline=check_attempt_budget)
                         snapshot_strategy = "junction_overlay"
+                    except _BuildAttemptDeadlineExceeded:
+                        raise
                     except (OSError, RuntimeError, ValueError) as error:
                         snapshot_fallback_reason = str(error)[:300]
                         source_snapshot = _create_source_snapshot(
-                            root, source_mirror, attempt_id)
+                            root, source_mirror, attempt_id,
+                            check_deadline=check_attempt_budget)
                 else:
                     if previous is None:
                         snapshot_fallback_reason = "no matching published base snapshot"
@@ -1550,7 +1655,8 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                     else:
                         snapshot_fallback_reason = "delta exceeds 256 paths"
                     source_snapshot = _create_source_snapshot(
-                        root, source_mirror, attempt_id)
+                        root, source_mirror, attempt_id,
+                        check_deadline=check_attempt_budget)
         if str(metadata.get("kind") or "") != "preview":
             manifest_archive_started = time.monotonic()
             try:
@@ -1564,9 +1670,16 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                     "source_manifest_archive", "completed", manifest_archive_started,
                     revision=revision,
                     bytes=(source_snapshot.parent / "source-manifest.json").stat().st_size)
+    except _BuildAttemptDeadlineExceeded as error:
+        return fail_attempt(str(error), failed_phase="attempt_timeout",
+                            timeout_seconds=attempt_timeout,
+                            timed_out_phase="source_snapshot")
     except (OSError, RuntimeError, ValueError) as error:
         return fail_attempt(f"source snapshot failed: {error}",
                             failed_phase="source_snapshot")
+    timeout_failure = fail_if_attempt_expired("source_snapshot")
+    if timeout_failure:
+        return timeout_failure
     set_stage("source_snapshot", "completed",
               duration_ms=round((time.monotonic() - snapshot_started) * 1000, 3),
               path=str(source_snapshot.relative_to(root)),
@@ -1582,6 +1695,9 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     set_driver_subphase("snapshot_prune", "completed", driver_phase_started,
                         deferred_count=pruned_snapshots,
                         background_cleanup=True)
+    timeout_failure = fail_if_attempt_expired("snapshot_prune")
+    if timeout_failure:
+        return timeout_failure
 
     # Codegen checks are correctness gates, but running both Python generators
     # before every manifest scan makes a true no-op pay their full cost. The
@@ -1612,6 +1728,11 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
             [sys.executable, str(root / "devscripts" / script), "--check"],
             timeout=_env_float("MIMITA_CODEGEN_TIMEOUT", 300.0))
         if result == 124:
+            if attempt_deadline_expired():
+                return fail_attempt(
+                    f"whole DLL build attempt exceeded {attempt_timeout:.0f}s",
+                    failed_phase="attempt_timeout", timeout_seconds=attempt_timeout,
+                    timed_out_phase=stage_name)
             return fail_attempt(f"codegen timeout: {script}",
                                 failed_phase="codegen_timeout")
         if result != 0:
@@ -1625,6 +1746,9 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                     failed_phase="codegen_input_changed")
             new_checks[script] = fingerprint
             validated_this_attempt[script] = fingerprint
+        timeout_failure = fail_if_attempt_expired(stage_name)
+        if timeout_failure:
+            return timeout_failure
 
     if new_checks != cached_checks:
         cache_started = time.monotonic()
@@ -1723,6 +1847,10 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                 f"codegen inputs changed before worker launch: {script}",
                 failed_phase="codegen_input_changed")
 
+    timeout_failure = fail_if_attempt_expired("worker_command_prepare")
+    if timeout_failure:
+        return timeout_failure
+
     if on_output:
         on_output(f"building whole-game revision {revision[:12]}")
     progress["phase"] = "worker_start"
@@ -1733,25 +1861,58 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     # long experiments; the root dev-loop supervisor kills the worker tree.
     build_timeout = _env_float("MIMITA_GAME_BUILD_TIMEOUT", 300.0)
     slot_timeout = _env_float("MIMITA_GAME_BUILD_SLOT_TIMEOUT", 600.0)
+    slot_budget = remaining_attempt_seconds()
+    if slot_budget <= 0.0:
+        return fail_attempt(
+            f"whole DLL build attempt exceeded {attempt_timeout:.0f}s",
+            failed_phase="attempt_timeout", timeout_seconds=attempt_timeout,
+            timed_out_phase="module_slot_wait")
+    effective_slot_timeout = bounded_timeout(slot_timeout)
     driver_phase_started = time.monotonic()
     set_driver_subphase("module_slot_wait", "started", driver_phase_started,
-                        timeout_seconds=slot_timeout)
-    slot = acquire_build_slot("module", "game-dll", timeout=slot_timeout,
+                        timeout_seconds=effective_slot_timeout,
+                        attempt_timeout_seconds=attempt_timeout)
+    if effective_slot_timeout <= 0.0:
+        return fail_attempt(
+            f"whole DLL build attempt exceeded {attempt_timeout:.0f}s",
+            failed_phase="attempt_timeout", timeout_seconds=attempt_timeout,
+            timed_out_phase="module_slot_wait")
+    slot = acquire_build_slot("module", "game-dll", timeout=effective_slot_timeout,
                               metadata={"lane": os.environ.get("MIMITA_LANE_ID", ""),
                                         "root": str(root),
                                         "attempt": attempt_id})
     set_driver_subphase("module_slot_wait", "completed", driver_phase_started,
                         acquired=slot is not None,
-                        timeout_seconds=slot_timeout)
+                        timeout_seconds=effective_slot_timeout,
+                        attempt_timeout_seconds=attempt_timeout)
     if slot is None:
+        if attempt_deadline_expired():
+            return fail_attempt(
+                f"whole DLL build attempt exceeded {attempt_timeout:.0f}s",
+                failed_phase="attempt_timeout", timeout_seconds=attempt_timeout,
+                timed_out_phase="module_slot_wait")
         return fail_attempt("build_slot_timeout: no free module build slot",
                             failed_phase="build_slot_timeout")
     worker_startup_started = time.monotonic()
     set_driver_subphase("worker_launch_to_first_output", "started",
                         worker_startup_started)
+    remaining = remaining_attempt_seconds()
+    if remaining <= 0.0:
+        slot.release()
+        return fail_attempt(
+            f"whole DLL build attempt exceeded {attempt_timeout:.0f}s",
+            failed_phase="attempt_timeout", timeout_seconds=attempt_timeout,
+            timed_out_phase="worker_start")
+    effective_build_timeout = bounded_timeout(build_timeout)
+    if effective_build_timeout <= 0.0:
+        slot.release()
+        return fail_attempt(
+            f"whole DLL build attempt exceeded {attempt_timeout:.0f}s",
+            failed_phase="attempt_timeout", timeout_seconds=attempt_timeout,
+            timed_out_phase="worker_start")
     try:
         return_code = _run_checked(root, command, report_output,
-                                   timeout=build_timeout,
+                                   timeout=effective_build_timeout,
                                    terminal_failure_attempt=(
                                        last_attempt_path, attempt_id))
     finally:
@@ -1785,7 +1946,8 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                                 or last_attempt.get("phase") or ""))
     elif worker_timed_out:
         set_stage("worker_supervised", "failed", reason="timeout",
-                  timeout_seconds=build_timeout)
+                  timeout_seconds=effective_build_timeout,
+                  attempt_timeout_seconds=attempt_timeout)
     success = (return_code == 0 and str(current.get("status", "")) == "ok"
                and str(current.get("revision", "")) == revision)
     no_op = bool(success and attempt_records and last_attempt.get("no_op"))
@@ -1797,8 +1959,14 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                      else [])
     worker_tail = "\n".join(worker_output_tail)[-4000:]
     if worker_timed_out:
-        failed_phase = "worker_timeout"
-        worker_error = f"worker timed out after {build_timeout:.0f}s"
+        if attempt_deadline_expired():
+            failed_phase = "attempt_timeout"
+            worker_error = (
+                f"whole DLL build attempt exceeded {attempt_timeout:.0f}s "
+                "during worker")
+        else:
+            failed_phase = "worker_timeout"
+            worker_error = f"worker timed out after {effective_build_timeout:.0f}s"
         worker_errors = [worker_error]
     elif not success and not worker_error and worker_tail:
         worker_error = worker_tail
@@ -1825,6 +1993,7 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
         "event": "build.completed" if success else "build.failed",
         "time_utc": _utc_now(), "elapsed_ms": round(elapsed * 1000, 3),
         "build_attempt_id": attempt_id, "source_generation": source_generation,
+        "attempt_timeout_seconds": attempt_timeout,
         "revision": revision, "exit_code": return_code,
         "generation": current.get("generation"), "dll": current.get("dll"),
         "no_op": no_op, "failed_phase": "" if success else failed_phase,
@@ -1840,6 +2009,7 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
         current, worker_progress, last_attempt, attempt_id, no_op, success)
     summary = {
         "schema_version": 1, "build_attempt_id": attempt_id,
+        "attempt_timeout_seconds": attempt_timeout,
         "source_generation": source_generation, "revision": revision,
         "build_mode": str(mode).lower(),
         "request_ids": request_ids, "notes": notes,

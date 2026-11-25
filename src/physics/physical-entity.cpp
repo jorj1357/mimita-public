@@ -608,8 +608,12 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
     const MimitaImpact::DestructibleWorldConfig& objectPhysics =
         MimitaImpact::DestructibleWorldConfig::instance();
     mFixedAccumulator = std::min(mFixedAccumulator + (double)dt, 0.25);
-    constexpr double kFixedDt = 1.0 / 60.0;
-    constexpr int kMaxSteps = 5;
+    // Rocket League runs its car and ball physics at 120 Hz. The world tick stays
+    // 60 Hz, so the entity island runs two fixed steps per frame. At 60 Hz a fast
+    // ball can move further than its radius between samples and a dodge contact
+    // is decided by a single tick; at 120 Hz it matches the reference cadence.
+    constexpr double kFixedDt = 1.0 / 120.0;
+    constexpr int kMaxSteps = 10;
     int steps = 0;
     while (mFixedAccumulator >= kFixedDt && steps++ < kMaxSteps)
     {
@@ -723,6 +727,24 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
                             const float into = glm::dot(e.velocity, normal);
                             if (into < 0.0f)
                                 e.velocity -= normal * into;
+                            static thread_local uint64_t sLastCcdLogTick = 0;
+                            if (mSimulationTick > sLastCcdLogTick + 30)
+                            {
+                                sLastCcdLogTick = mSimulationTick;
+                                StructuredLogger::instance().writeEvent(
+                                    StructuredCategory::Physics,
+                                    StructuredLevel::Important,
+                                    "vehicle.ccd.clamp", std::to_string(e.id),
+                                    "swept sphere clamped to the first surface",
+                                    static_cast<uint32_t>(mSimulationTick),
+                                    nlohmann::json{
+                                        {"entity_id", e.id},
+                                        {"network_id", e.networkId},
+                                        {"travel_m", travel},
+                                        {"allowed_m", allowed},
+                                        {"normal", {normal.x, normal.y, normal.z}}},
+                                    __FILE__, __LINE__, __func__);
+                            }
                         }
                     }
                 }

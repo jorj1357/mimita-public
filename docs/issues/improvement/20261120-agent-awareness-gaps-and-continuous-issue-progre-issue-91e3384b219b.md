@@ -874,3 +874,57 @@ REFINEMENT PROPOSAL (no new authority): mark review-originated changes that are 
 MEASURABLE TARGET: 0 safe, review-originated observability tasks older than 72h remain unowned/unimplemented; specifically, issue-7ee67a85a40c's scan-outcome event is either implemented with one pinned dashboard.process_scan event or explicitly deferred by a named owner with a reason before the next 2 sweeps; and no issue receives a 3rd identical independent review while its safe next step is claimable.
 
 SMALLEST EXPERIMENT: label the existing 2026-11-22 scan-event step `safe` on issue-7ee67a85a40c, have the next waiting activation claim it via `next --claim`, add the single log_dashboard_event line, run one real Windows dashboard window, and append the resulting event. Falsifiable: if a waiting activation claims and implements it within 2 sweeps, the blocker was surfacing; if it stays unclaimed, the blocker is capacity/routing and the `safe` label alone is insufficient.
+
+## Agent suggestion
+
+### 2026-11-25T06:03:35.203Z — issue-review-sweeper
+
+Process/self-improvement proposal from independent review wake-fd9897787a91 (evidence recorded on issue-62ab3daa615d review 2026-11-25).
+
+Observed process gap (direct): a wake-delivery mitigation landed 2026-11-21 with unit proof only (review id 41 on issue-62ab3daa615d). Its required live verification (one opencode wake whose first user part matches the prompt file) was not captured until this scheduled review on 2026-11-25, so a partial fix sat ~2 days unverified; the first live check immediately showed the full body still missing (4202-byte prompt file, only the 390-char first line delivered). Verification depended on a human/manual or lucky scheduled wake, not on an automatic delivered-vs-prompt check.
+
+Measurable target: at every opencode wake launch, emit one structured event (or adapter-log field) recording delivered_bytes / prompt_file_bytes and a match flag for the first user part. Over the next 5 consecutive opencode wakes, recorded delivered text must cover 100% of prompt-file bytes (target 5/5) and 0 of those may require reading .dev/agent-wake to restate issue + requested work. Current: 0/1 (wake-fd9897787a91 delivered 390 of 4202 bytes).
+
+Smallest experiment: reuse the existing opencode adapter log (opencode run already uses --format json). For wake-fd9897787a91, parse the captured session first user part and byte-diff it to its .prompt.txt; if the log lacks it, add a single startup diagnostic that reads the first user message. Emit pass/fail as a wake event. No new harness and no new authority. This makes the already-proposed 5/5 sampling target on issue-62ab3daa615d measurable without a human, and gives an automated early warning for future wake-prompt regressions.
+
+No source edit, build, or closure claimed.
+
+## Agent suggestion
+
+### 2026-11-25T06:50:22.469Z — issue-review-sweeper
+
+Confirming instance for the existing reviewed-but-unowned handoff proposal (2026-11-24T15:05 entry on this issue); no new mechanism. issue-6e528c4dc127 (Dev-loop GUI controls and issue discussion panel reliability) was readiness 8/8, priority high, state=new, owner empty, tasks=0, proof records=0 from 2026-11-21T14:27:50Z until its first scheduled independent review at 2026-11-25T06:42Z: about 88.4 h unowned with no claim attempt. It is now in_review after review 428, still with 0 tasks and 0 proofs. Suggested measurable addition to the existing target: among issues with readiness>=7/8 and no owner, median age at first review <=24 h and zero such issues older than 72 h. Smallest read-only experiment: compute the age distribution from the existing issues table at each sync and expose the oldest 5 ready-unowned issues in brain_check/next --claim; record whether a waiting activation claims one within 10 sessions, or records why it declined. Do not auto-assign or change authority. No source edit or build claimed.
+
+## Agent suggestion
+
+### 2026-11-25T07:59:05.170Z — issue-review-sweeper
+
+Process proposal from bounded independent review of issue-a8a9bfe5f5f6 (issue-review-sweeper, wake-0a7ac3d430e7, 2026-11-25T07:58Z). No source/build/close performed.
+
+Evidence: issue-a8a9bfe5f5f6 was created 2026-11-21T14:34Z, is ready=true/score 8/high priority with 2 open unproven tasks, yet its first independent review (review id 430) only ran 2026-11-25T07:58Z after 712 completed work sessions, and proof list still has zero rows for either task. The scheduler already ranks unproven/stale proof first, but no event records why this issue was not selected in earlier sweeps, so the 4-day gap cannot be distinguished from an unlucky queue versus a coverage bug.
+
+Proposal (extends, does not replace, the 2026-11-21T14:36:50 coverage proposal): emit one coord.issue_review.considered event per sweep listing the top candidate issue ids with rank inputs (proof state, priority, last-review age) and the selected/skipped reason. This makes scheduler coverage auditable from events alone without a new dashboard.
+
+Measurable target: for the next 10 due sweeps, 10/10 include a considered list; over 7 days every ready high-priority unproven issue is reviewed within 48h or has an event-level skip reason; a reviewer explains any >48h gap from events in under 2 minutes.
+
+Smallest experiment: add only the considered event around _issue_review_scheduler_tick selection (no cadence change), run 3 real sweeps, and verify the events name the selected issue and why issue-a8a9bfe5f5f6 was previously skipped; revert if output exceeds one line per sweep.
+
+## Agent suggestion
+
+### 2026-11-25T10:09:29.869Z — issue-review-sweeper
+
+Process proposal from the independent review of issue-9b5be6c88de0 (2026-11-25T10:09Z, issue-review-sweeper; no code change). Evidence of repeated manual work and missing evidence: the 2026-11-21 suggestion on issue-9b5be6c88de0 asked for one proof/run generation classification (no_post_fix_run / running_generation_behind_published(<running> < <published>) / post_fix_run_present) exposed in dev-loop --status and the issue brief. A 2026-11-25 grep of devscripts and docs finds none of those tokens implemented, and that issue stayed unowned/triaged for four days. This review again had to derive the same stale-vs-loaded distinction by hand: run 20261125_082735 run.json pins generation 641 / EXE sha 5dda0879..., but its server journal hot-reloaded to generation 642 at 08:44:19Z; and proof_verify reads only one journal file (0 generation=1 rows in the active events.jsonl vs 899 rows in events-0001.jsonl). Each reviewer/owner therefore repeats a multi-step manual grep across multi-GB rotated journals and risks attributing a stale event to current source.
+
+Proposal (safe AI capability, measurable): make run/proof identity classification a first-class read-only tool. Extend dev-loop --status and/or agent-coord proof with one classify command that reads run.json plus the in-band journal identity (run_id/pid and game.hotness.summary generation/dll across ALL rotated events-*.jsonl), and prints exact pinned/loaded/published generation, run/build/DLL IDs, journal segments, and one verdict. Measurable target: one agent decides usable-vs-stale in <=2 commands and <=10s; 0 proof records marked runtime_proven/result=proven whose journal run_id or loaded generation mismatches the claimed identity in a 24h sample; 0 false 'unproven' for events that exist only in rotated segments. Smallest experiment: implement the classifier read-only against run 20261125_082735 (expected pinned 641, loaded 642, published 642, so it must flag that run.json is not runtime truth and that the enum needs a pinned-behind-loaded case) plus one control pinned post-fix run, and replay the 2026-11-21 gen432 / running-gen420 case. Owner/next/unknowns: owner unassigned; next step is a human/root decision to authorize the tooling change. Unknowns: whether the root dev-loop or agent_coord.py should own the classifier, and whether hot-reload should update run.json. Cross-ref issue-9b5be6c88de0, docs/specs/dev-loop/agent-proof-and-verification.md:127-163, and the 2026-11-25 09:24 review changelog rotation observation.
+
+## Agent suggestion
+
+### 2026-11-25T18:24:20.387Z — issue-review-sweeper
+
+Duplicate-quote intake detection (evidence: issue-07977478c8fc and issue-ba939787ffa3).
+
+Observed: the same verbatim human quote created two bug issues 16 s apart (2026-11-21T14:54:56Z and 2026-11-21T14:55:12Z). One received the triage/scope/trace hypothesis; this assigned duplicate received none and later produced a scheduled review wake 724 sessions later. `issue_readiness`/`issue_lint` (devscripts/agent_coord.py:2952-2966) validate required fields but never compare `human_quote`, so duplicates are invisible to agents and to the review scheduler.
+
+Measurable target: 0 unlinked exact-duplicate `human_quote` hashes among non-deferred issues, and the review scheduler never picks a duplicate when a canonical issue with the same quote hash exists.
+
+Smallest experiment: extend `issue lint` to compute a normalized `human_quote` hash and report `(id, canonical_id)` pairs without auto-merging; run it over the current issue set, record the pair count, and add one test with two identical quotes plus one distinct quote. Review-only; no behavior, state, or merge change without human approval.

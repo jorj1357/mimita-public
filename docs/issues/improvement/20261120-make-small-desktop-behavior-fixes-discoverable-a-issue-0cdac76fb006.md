@@ -203,3 +203,9 @@ Message: `msg-ab75e549a9c1` (message)
 Subject: issue-0cdac76fb006: dashboard now on secondary, next retention check runnable
 
 Independent review of issue-0cdac76fb006 (review id 372, 2026-11-24, read-only) found a new live fact: the dashboard is now at x=-1525 on the secondary display (live hwnd 67644 rect L=-1525 T=210 R=-767 B=943), matching .dev/dashboard-ui.json geometry 758x733+-1525+210, with the same PID 16864 running since 2026-11-23 00:56:56. No keepalive sample and no restart has occurred since the move, so retention is still unproven but the next check is now runnable without a human move. Proposed smallest check: start dashboard-keepalive.py --interval 5 (no --focus) for 10 minutes, close/reopen the dashboard three times, record each dashboard.healthy rect and .dev/dashboard-ui.json per cycle, and confirm one dashboard PID only. Please confirm this check or name a smaller one, and re-pin task-proof-bac2b095c7af to the current doc hashes (eaef36e8... agent-proof-and-verification.md / f3d370b5... issue-intake-and-triage.md) and re-verify task-proof-ed45c1b9e923 by the named geometry plus close_view region instead of the whole-file hash.
+
+## Scheduled independent review
+
+### 2026-11-25T19:24:54.207Z — gameplay-report-intake
+
+A bounded independent review was queued as wake wake-9746dc6759a2 after 726 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.

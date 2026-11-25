@@ -86,37 +86,41 @@ static uint64_t hashAABB(const AABB& aabb)
     return h;
 }
 
-static bool getCachedTriangles(const AABB& aabb, int currentFrame, std::vector<int>& out)
-{
-    uint64_t h = hashAABB(aabb);
-    for (int i = 0; i < TRIANGLE_CACHE_SIZE; ++i) {
-        if (sTriCache[i].frameNumber == currentFrame && sTriCache[i].hash == h) {
-            out = sTriCache[i].triangles;
-            sCacheHits++;
-            return true;
-        }
-    }
-    return false;
-}
+enum class TriangleCacheLookupResult {
+    Miss,
+    Exact,
+    Superset,
+};
 
-// Returns a cached (larger) triangle set whose AABB contains `aabb`. Safe: a
-// superset contains every triangle the contained query needs. Reuses one gather
-// across the overlapping movement phases instead of re-gathering ~15-20x/frame.
-static bool getCachedSuperset(const AABB& aabb, int currentFrame, std::vector<int>& out)
+static TriangleCacheLookupResult getCachedTrianglesOrSuperset(
+    const AABB& aabb, int currentFrame, std::vector<int>& out)
 {
+    const uint64_t h = hashAABB(aabb);
+    const TriangleCacheEntry* firstSuperset = nullptr;
     for (int i = 0; i < TRIANGLE_CACHE_SIZE; ++i) {
         const auto& e = sTriCache[i];
-        if (e.frameNumber != currentFrame || e.triangles.empty())
+        if (e.frameNumber != currentFrame)
             continue;
-        if (e.aabb.min.x <= aabb.min.x && e.aabb.min.y <= aabb.min.y && e.aabb.min.z <= aabb.min.z &&
-            e.aabb.max.x >= aabb.max.x && e.aabb.max.y >= aabb.max.y && e.aabb.max.z >= aabb.max.z)
-        {
+        if (e.hash == h) {
+            // Exact entries take precedence, including an exact empty result.
             out = e.triangles;
             sCacheHits++;
-            return true;
+            return TriangleCacheLookupResult::Exact;
+        }
+        if (!firstSuperset && !e.triangles.empty() &&
+            e.aabb.min.x <= aabb.min.x && e.aabb.min.y <= aabb.min.y && e.aabb.min.z <= aabb.min.z &&
+            e.aabb.max.x >= aabb.max.x && e.aabb.max.y >= aabb.max.y && e.aabb.max.z >= aabb.max.z)
+        {
+            // Keep scanning so a later exact entry still wins, as before.
+            firstSuperset = &e;
         }
     }
-    return false;
+    if (firstSuperset) {
+        out = firstSuperset->triangles;
+        sCacheHits++;
+        return TriangleCacheLookupResult::Superset;
+    }
+    return TriangleCacheLookupResult::Miss;
 }
 
 static void cacheTriangles(const AABB& aabb, int currentFrame, const std::vector<int>& triangles, const char* caller)
@@ -352,8 +356,9 @@ void gatherGLBTriangles(
             sweepBounds.max.x, sweepBounds.max.y, sweepBounds.max.z);
     }
 
-    // Check cache first
-    if (getCachedTriangles(sweepBounds, currentFrame, out)) {
+    // Check exact and containing cache entries in one pass.
+    const auto cacheResult = getCachedTrianglesOrSuperset(sweepBounds, currentFrame, out);
+    if (cacheResult == TriangleCacheLookupResult::Exact) {
         auto t1 = std::chrono::steady_clock::now();
         float elapsedMs = std::chrono::duration<float, std::milli>(t1 - t0).count();
         BROAD_LOG("[GATHER CACHE HIT] caller=%s candidates=%zu elapsedMs=%.3f\n",
@@ -361,8 +366,7 @@ void gatherGLBTriangles(
         return;
     }
 
-    // Superset cache: if a larger region was already gathered this frame, reuse it.
-    if (getCachedSuperset(sweepBounds, currentFrame, out)) {
+    if (cacheResult == TriangleCacheLookupResult::Superset) {
         Perf::state().current.repeatedQueries++;
         return;
     }

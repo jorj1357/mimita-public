@@ -344,6 +344,8 @@ class BuildResourceSampler:
         self._runtime_manifest_pid_set: set[int] = set()
         self._runtime_context_wall_ms = 0.0
         self._runtime_context_wall_ms_total = 0.0
+        self._process_discovery_status = "warming_up"
+        self._runtime_context_status = "warming_up"
         self._last_sample_monotonic = 0.0
         self._sample_count = 0
         self._sampler_thread_cpu_ms = 0.0
@@ -352,15 +354,23 @@ class BuildResourceSampler:
         self._errors: list[str] = []
         self._status = "starting"
         self._write_lock = threading.Lock()
+        self._background_lock = threading.Lock()
+        self._closed = False
         self._summary: dict | None = None
+        self._shutdown_timeout_seconds = 0.0
+        self._process_discovery_thread: threading.Thread | None = None
+        self._runtime_context_thread: threading.Thread | None = None
 
-    def _append(self, event: dict) -> None:
+    def _append(self, event: dict, *, allow_closed: bool = False) -> bool:
         event.update({"build_attempt_id": self.attempt_id,
                       "time_utc": _utc_now()})
         with self._write_lock:
+            if self._closed and not allow_closed:
+                return False
             self.jsonl_path.parent.mkdir(parents=True, exist_ok=True)
             with self.jsonl_path.open("a", encoding="utf-8", newline="\n") as output:
                 output.write(json.dumps(event, separators=(",", ":")) + "\n")
+        return True
 
     def _discover_processes(self) -> None:
         psutil = self._psutil
@@ -538,9 +548,11 @@ class BuildResourceSampler:
         if self._psutil is None and self._native_processes is None:
             return
         started = time.perf_counter()
+        successful = True
         try:
             self._discover_processes()
         except Exception as error:
+            successful = False
             # Keep host sampling alive when a process snapshot or a process
             # handle is temporarily unavailable.
             self._last_discovery = time.monotonic()
@@ -555,6 +567,60 @@ class BuildResourceSampler:
             self._last_discovery_wall_ms = max(
                 0.0, time.perf_counter() - started) * 1000.0
             self._process_discovery_wall_ms_total += self._last_discovery_wall_ms
+            self._process_discovery_status = (
+                "ready" if successful else "partial")
+
+    def _record_sampler_cpu(self, cpu_started: float) -> None:
+        elapsed_ms = max(0.0, time.thread_time() - cpu_started) * 1000.0
+        with self._write_lock:
+            self._sampler_thread_cpu_ms += elapsed_ms
+
+    def _queue_process_discovery(self, *, initial: bool = False) -> None:
+        if self._psutil is None and self._native_processes is None:
+            self._process_discovery_status = "unavailable"
+            return
+        if self._stop.is_set() or self._closed:
+            return
+        with self._background_lock:
+            if (self._process_discovery_thread is not None and
+                    self._process_discovery_thread.is_alive()):
+                return
+            if self._process_discovery_status == "ready":
+                self._process_discovery_status = "refreshing"
+            self._process_discovery_thread = threading.Thread(
+                target=self._discover_processes_background,
+                args=(initial,),
+                name=f"build-process-discovery-{self.attempt_id[-8:]}",
+                daemon=True)
+            self._process_discovery_thread.start()
+
+    def _discover_processes_background(self, initial: bool) -> None:
+        cpu_started = time.thread_time()
+        wall_started = time.monotonic()
+        try:
+            self._refresh_processes()
+            if initial:
+                self._append({
+                    "event": "resource.process_attribution_initialized",
+                    "process_discovery_wall_ms": round(
+                        (time.monotonic() - wall_started) * 1000.0, 3),
+                    "tracked_process_count": len(
+                        self._processes if self._psutil else
+                        self._native_tracked_processes),
+                    "top_process_count": len(self._top_processes),
+                    "status": self._process_discovery_status,
+                })
+        except Exception as error:  # host sampling must survive discovery errors
+            message = f"{type(error).__name__}: {error}"
+            self._errors.append(message[:500])
+            self._process_discovery_status = "partial"
+            try:
+                self._append({"event": "resource.sample_error",
+                              "error": message[:500]})
+            except OSError:
+                pass
+        finally:
+            self._record_sampler_cpu(cpu_started)
 
     def _build_state(self) -> dict:
         runtime = {}
@@ -860,10 +926,49 @@ class BuildResourceSampler:
             0.0, time.perf_counter() - started) * 1000.0
         self._runtime_context_wall_ms_total += self._runtime_context_wall_ms
 
+    def _queue_runtime_context_refresh(self) -> None:
+        if (self._process_discovery_status not in {"ready", "refreshing", "partial"} or
+                self._stop.is_set() or self._closed):
+            return
+        with self._background_lock:
+            if (self._runtime_context_thread is not None and
+                    self._runtime_context_thread.is_alive()):
+                return
+            self._runtime_context_thread = threading.Thread(
+                target=self._refresh_runtime_context_background,
+                name=f"build-runtime-context-{self.attempt_id[-8:]}",
+                daemon=True)
+            self._runtime_context_thread.start()
+
+    def _refresh_runtime_context_background(self) -> None:
+        cpu_started = time.thread_time()
+        try:
+            self._refresh_runtime_context()
+            self._runtime_context_status = "ready"
+            self._append({
+                "event": "resource.runtime_context_initialized",
+                "runtime_context_discovery_wall_ms": round(
+                    self._runtime_context_wall_ms, 3),
+                "runtime_pid_count": len(self._runtime_context_by_pid),
+                "status": self._runtime_context_status,
+            })
+        except Exception as error:
+            message = f"{type(error).__name__}: {error}"
+            self._errors.append(message[:500])
+            self._runtime_context_refreshed = time.monotonic()
+            self._runtime_context_status = "partial"
+            try:
+                self._append({"event": "resource.sample_error",
+                              "error": message[:500]})
+            except OSError:
+                pass
+        finally:
+            self._record_sampler_cpu(cpu_started)
+
     def _runtime_contexts(self) -> dict[int, dict]:
         if (time.monotonic() - self._runtime_context_refreshed >=
                 self.process_discovery_seconds):
-            self._refresh_runtime_context()
+            self._queue_runtime_context_refresh()
         return self._runtime_context_by_pid
 
     def _runtime_alignment_summary(self) -> dict:
@@ -960,16 +1065,17 @@ class BuildResourceSampler:
                 "newest_observation_age_seconds"),
         }
 
-    def _sample(self) -> None:
+    def _sample(self, *, discover_processes: bool = True,
+                refresh_runtime_context: bool = True,
+                host_cpu_baseline: bool = False) -> None:
         psutil = self._psutil
         if psutil is None and self._native_host is None:
             return
         now = time.monotonic()
-        if (now - self._last_discovery >= self.process_discovery_seconds and
+        if (discover_processes and
+                now - self._last_discovery >= self.process_discovery_seconds and
                 (psutil is not None or self._native_processes is not None)):
-            self._refresh_processes()
-        else:
-            self._last_discovery_wall_ms = 0.0
+            self._queue_process_discovery()
         if psutil is not None:
             vm = psutil.virtual_memory()
             swap = psutil.swap_memory()
@@ -988,6 +1094,11 @@ class BuildResourceSampler:
             }
         else:
             host = self._native_host.sample()
+        if host_cpu_baseline:
+            # A zero-width CPU delta is not a meaningful utilization sample.
+            # Keep the immediate memory row, and let the next periodic sample
+            # report CPU over a real interval.
+            host["cpu_percent"] = None
         relevant: dict[int, dict] = {}
         logical = host["logical_cpu_count"]
         for pid, (process, metadata) in (list(self._processes.items()) if psutil else []):
@@ -1021,7 +1132,8 @@ class BuildResourceSampler:
         top = self._top_processes
         for row in top:
             relevant.setdefault(row["pid"], row)
-        runtime_contexts = self._runtime_contexts()
+        runtime_contexts = (self._runtime_contexts() if refresh_runtime_context
+                            else self._runtime_context_by_pid)
         for pid, row in relevant.items():
             runtime = runtime_contexts.get(int(pid))
             if runtime:
@@ -1045,10 +1157,23 @@ class BuildResourceSampler:
                 round(now - self._last_discovery, 3)
                 if psutil is not None or self._native_processes is not None else None),
             "process_discovery_wall_ms": round(self._last_discovery_wall_ms, 3),
+            "process_attribution_status": self._process_discovery_status,
+            "process_discovery_in_progress": bool(
+                self._process_discovery_thread and
+                self._process_discovery_thread.is_alive()),
+            "runtime_context_status": self._runtime_context_status,
+            "runtime_context_discovery_in_progress": bool(
+                self._runtime_context_thread and
+                self._runtime_context_thread.is_alive()),
+            "host_cpu_rate_status": (
+                "baseline_only" if host_cpu_baseline else
+                "measured" if host["cpu_percent"] is not None else
+                "warming_up"),
             "runtime_context_discovery_wall_ms": round(
                 self._runtime_context_wall_ms, 3),
         }
-        self._append(sample)
+        if not self._append(sample):
+            return
         self._sample_count += 1
         self._last_sample_monotonic = now
         if host["cpu_percent"] is not None:
@@ -1069,8 +1194,7 @@ class BuildResourceSampler:
                 except OSError:
                     pass
             finally:
-                self._sampler_thread_cpu_ms += max(
-                    0.0, time.thread_time() - cpu_started) * 1000.0
+                self._record_sampler_cpu(cpu_started)
 
     def start(self) -> None:
         self._started = time.monotonic()
@@ -1094,18 +1218,29 @@ class BuildResourceSampler:
                 except (OSError, AttributeError, ctypes.ArgumentError):
                     self._native_processes = None
                     provider = "windows_kernel32_host_only"
-            if self._psutil is not None or self._native_processes is not None:
-                # Establish a process CPU baseline immediately so short builds
-                # still report current process memory and can compute a final
-                # CPU delta when they finish.
-                self._refresh_processes()
+            if self._psutil is None and self._native_processes is None:
+                self._process_discovery_status = "unavailable"
             self._status = "capturing"
             self._append({"event": "resource.capture_started",
                           "sample_interval_seconds": self.interval_seconds,
                           "process_discovery_seconds": self.process_discovery_seconds,
+                          "process_attribution_status": (
+                              "warming_up" if (self._psutil is not None or
+                                               self._native_processes is not None)
+                              else "unavailable"),
                           "logical_cpu_count": (self._psutil.cpu_count()
                                                 if self._psutil else os.cpu_count()),
                           "provider": provider})
+            # Emit memory immediately. The provider CPU counter has only just
+            # been primed, so its zero-width delta is deliberately marked
+            # unavailable. Expensive process attribution starts asynchronously
+            # after this row and does not block the build worker.
+            self._last_discovery = 0.0
+            self._sample(discover_processes=False,
+                         refresh_runtime_context=False,
+                         host_cpu_baseline=True)
+            if self._psutil is not None or self._native_processes is not None:
+                self._queue_process_discovery(initial=True)
             self._thread = threading.Thread(
                 target=self._run,
                 name=f"build-resource-{self.attempt_id[-12:]}", daemon=True)
@@ -1128,17 +1263,26 @@ class BuildResourceSampler:
         if self._summary is not None:
             return self._summary
         self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=max(2.0, self.interval_seconds * 2.0))
-            if self._thread.is_alive():
-                self._errors.append("sampler thread did not stop before timeout")
-        if self._status == "capturing":
+        self._shutdown_timeout_seconds = max(
+            0.25, min(1.0, self.interval_seconds))
+        join_deadline = time.monotonic() + self._shutdown_timeout_seconds
+        threads = [self._thread, self._process_discovery_thread,
+                   self._runtime_context_thread]
+        for thread in threads:
+            if thread is not None and thread is not threading.current_thread():
+                thread.join(timeout=max(0.0, join_deadline - time.monotonic()))
+        thread_alive = any(thread is not None and thread.is_alive()
+                           for thread in threads)
+        if thread_alive:
+            self._errors.append("sampler background thread did not stop before timeout")
+            # Slow inventory must not write after the completed summary or
+            # cause a duplicate synchronous scan during finalization.
+            with self._write_lock:
+                self._closed = True
+        if self._status == "capturing" and not thread_alive:
             try:
-                if (self._psutil is not None or self._native_processes is not None) and (
-                        time.monotonic() - self._last_discovery >=
-                        min(1.0, self.process_discovery_seconds)):
-                    self._refresh_processes()
-                self._sample()
+                self._sample(discover_processes=False,
+                             refresh_runtime_context=False)
             except Exception as error:
                 self._errors.append(
                     f"final sample failed: {type(error).__name__}: {error}"[:500])
@@ -1160,6 +1304,14 @@ class BuildResourceSampler:
             "duration_seconds": round(time.monotonic() - self._started, 3),
             "sampler_setup_wall_ms": round(self._setup_wall_ms, 3),
             "sampler_setup_cpu_ms": round(self._setup_cpu_ms, 3),
+            "process_attribution_startup": "asynchronous_after_initial_host_sample",
+            "sampler_shutdown_timeout_seconds": round(
+                self._shutdown_timeout_seconds, 3),
+            "sampler_thread_status": ("did_not_stop_before_timeout"
+                                       if thread_alive else "stopped"),
+            "final_sample_status": ("skipped_sampler_thread_timeout"
+                                     if thread_alive else
+                                     "host_and_cached_processes"),
             "sampler_thread_cpu_ms": round(self._sampler_thread_cpu_ms, 3),
             "process_discovery_wall_ms_total": round(
                 self._process_discovery_wall_ms_total, 3),
@@ -1206,7 +1358,10 @@ class BuildResourceSampler:
             self.summary_path.parent.mkdir(parents=True, exist_ok=True)
             self.summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n",
                                          encoding="utf-8")
-            self._append({"event": "resource.capture_completed", **summary})
+            with self._write_lock:
+                self._closed = True
+            self._append({"event": "resource.capture_completed", **summary},
+                         allow_closed=True)
         except Exception as error:
             summary["status"] = "partial"
             summary.setdefault("errors", []).append(

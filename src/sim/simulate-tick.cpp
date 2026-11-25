@@ -346,10 +346,23 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 sim.player->crouching = true;
                 // Possession mode: the actor body is the car. The render pass
                 // skips it while this is set and the seat is occupied.
-                sim.player->hideBodyWhileSeated =
-                    GamemodeRegistry::instance()
-                        .get(MimitaNet::CommunityMatchClient::instance().mode())
-                        .vehiclePossessActor;
+                {
+                    const bool possessNow =
+                        GamemodeRegistry::instance()
+                            .get(MimitaNet::CommunityMatchClient::instance().mode())
+                            .vehiclePossessActor;
+                    if (possessNow != sim.player->hideBodyWhileSeated)
+                    {
+                        sim.player->hideBodyWhileSeated = possessNow;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Physics,
+                            StructuredLevel::Important,
+                            "vehicle.possession.state", "vehicle-possession",
+                            "possession mode body visibility", sim.tick,
+                            {{"enabled", possessNow},
+                             {"seated", sim.player->seatedVehicleId != 0}});
+                    }
+                }
                 sim.player->ground.onGround = true;
                 sim.player->ground.stableOnGround = true;
             }

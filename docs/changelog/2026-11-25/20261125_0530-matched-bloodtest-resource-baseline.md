@@ -1,0 +1,57 @@
+# Matched Bloodtest process CPU baseline
+
+## Purpose
+
+Continue the user's CPU-reduction loop with an exact host/process sample and same-run journal review. The user wants every CPU-focused build pass to test one falsifiable code treatment, then compare the same workload before and after while preserving frame, tick, and gameplay behavior.
+
+## Matched run and resource sample
+
+The completed isolated run was `20261125_051843`, Bloodtest on `slaughterhouse1`, 2 NPC/1 player. The run manifest pins executable/build ID `2026-11-25T01:21:28.987918Z:5dda08799cefdf4caad640a34a806c92e4a03c3886acdd4aa943be8c558eeb8b` and game DLL generation635, SHA-256 `587e4f7ea1240cc7d563ee46cb93912b5dacf473c9f31037dec0c802d68366c6`; server NPC phase rows report module_generation635.
+
+Resource artifact: `.dev/perf-captures/orphan-miMITA-host-process-20261125T0521Z.json`. Window 2026-11-25T05:21:16.825–05:21:28.181Z, 11.356 seconds, 12 logical processors. Host CPU averaged77.25% (64.72–89.26). Server PID8272 used9.3906 CPU-seconds, 82.70% of one logical CPU /6.89% of total host capacity. Client PID17196 used23.5156 CPU-seconds, 207.08% of one logical CPU /17.26% of host. Pair total was24.15% host. Server working set was120.2→120.3MiB; client674.1→674.1MiB. Available RAM was4482.6→4437.6MiB. No concurrent build was reported by dev-loop; top competing process attribution was not captured.
+
+## Runtime behavior from the same interval
+
+Server journal `logs/2026-11-25/20261125_051843/server-01/events.jsonl` reports Bloodtest/slaughterhouse1, 2 NPC/1 player. It contains13 server tick windows and780 ticks, or60 ticks/s. Mean of window-average tick times was1.826ms; worst reported window p95 was9.84ms. Bounded `slowest_ticks` details include two ticks over16.667ms:22.953ms and18.248ms. The sample therefore shows the tick cadence but does not meet the strict late-tick tolerance.
+
+Client journal `logs/2026-11-25/20261125_051843/client-01/events.jsonl` contains13 FPS windows covering3572 frames:618 frames (17.301%) exceeded4.167ms. Mean window FPS was274.14, but the worst window p95 was5.667ms and one frame reached213.381ms. The every-frame 240-FPS criterion fails despite the mean above240.
+
+Phase timings are elapsed scope time, not CPU-time attribution. `updateOneNpc` (`src/npc/npc.cpp:4437`) produced13 windows averaging21.213ms/s total: collision7.624ms, physics10.298ms, decision3.589ms. `simulateSharedNpcs` (`src/network/server-npcs.cpp:3377`) averaged35.464ms per roughly60 ticks, including23.696ms AI. There were zero `performance.cpu-callsite-window` rows, so no leaf-function CPU percentage was measured.
+
+## Current disposition
+
+This is useful active-play Bloodtest evidence at2 NPC, not the 67-NPC Juggernaut acceptance workload and not an idle/background target. It identifies the client as the larger process CPU consumer in this interval and proves frame-time regressions; it does not yet explain which client function consumes that CPU. The NPC phase instrumentation is a lead only, not proof that NPC code dominates total CPU.
+
+A newer isolated run `20261125_052415` was online when checked, but its owner had not released a probe window. I requested coordination before sending the bounded `npc_cpu_probe on 15` command. No source treatment, build, restart, or stop was performed. Next step: obtain owner confirmation and bounded callsite attribution, then select one CPU treatment and compare against a matched pinned run.
+
+## Failed earlier capture attempt
+
+The separate artifact `.dev/perf-captures/orphan-miMITA-host-process-20261125T0450Z.json` covers 2026-11-25T05:15:23.260–05:15:39.533Z and records zero host/process rows. PowerShell rejected the reserved `$host` variable; the target PIDs had already exited. Available RAM rose4580.4→4864.9MiB. This is a failed capture, not CPU evidence. The later 05:17:52–05:18:08 host sample used `$cpuSamples` and wrote 15 rows.
+
+## Existing probe coverage
+
+No build is needed for client-side function attribution: `perf_callsite_cpu` in `src/terminal/debug-commands.cpp:629-667` starts the local profiler and forwards the bounded `npc_cpu_probe` request to a connected server. Existing sampled sites cover `EngineSimulate`, `Networking`, `EngineRender`, `updateOneNpc`, and `doCollisions` in `engine-tick.cpp`, `npc.cpp`, and `physics-collision-dispatch.cpp`. The sampler uses QueryThreadCycleTime at1/64 rate and same-window process CPU time for estimates. The server handler still follows the general admin gate, so a server-side rejection may leave only the client profile. No server command has been sent; the live run owner has not released the probe window.
+
+## CPU-first optimization loop priority and current gate
+
+The user restated that the PC feels faster immediately after closing MiMITA processes and directed that reducing MiMITA resource use through repeated code treatments is the primary goal. The exact wording is already preserved once in the coordination brain and linked to CPU issue `issue-ed3ac775283d`; the issue now states one evidence-selected CPU treatment per optimization build, with matched before/after workload, client/server resource values, `events.jsonl` behavior evidence, 240 FPS frame-time checks, 60 Hz ticks, and a keep/revert decision. The active goal already contains this optimization loop and remains active.
+
+The collaboration/measurement spec already encodes the requested scientific method: falsifiable hypothesis, pinned baseline and acceptance, one independent cause per pass, at least three matched samples when feasible, explicit supported/disproved/inconclusive result, and at least three ranked next hypotheses per confirmed problem. It also says each optimization build for this goal must name one evidence-selected change and compare matched runtime evidence. No spec change was needed in this pass.
+
+Current root dev-loop check: no active shared run; build lifecycle reports `game_build_succeeded` with `published_stale`, no pending batch in the status snapshot. Isolated runs `20261125_053930`, `20261125_052838`, and `20261125_052415` were listed online, all Bloodtest on Slaughterhouse 1 using the pinned EXE build ID recorded above. Runtime owner and exact current process/journal identity for the newest run are unresolved. I sent issue-linked coordination questions to `cpu-optimization-pass-loop` and `root-mode3-latency`, and a run-scoped ownership signal for `20261125_053930`; no release/probe result was available at this checkpoint. No build, code treatment, profiler command, process control, or runtime restart was performed.
+
+Next discriminating step: after the current run owner confirms release, verify live mode/workload, PIDs, EXE/DLL hashes and NPC module generation from the fresh journals, then use the existing bounded profiler (no instrumentation-only build). Choose one code treatment only if the profile identifies a specific expensive owner; compare at least three matched samples per condition when feasible and reject/revert if CPU gains come with frame, tick, or behavior regressions.
+
+## Build-overlap CPU evidence from two Bloodtest pairs
+
+Root Mode 3 attempt `game-dll-20261125T053302586316Z-919e8d` ran 2026-11-25T05:33:02.586–05:34:17.314Z (74.734s). Its sidecar records 50 samples, 12 logical CPUs, mean host CPU93.792%, peak100%, and minimum available memory4,115,681,280 bytes. Four tracked MiMITA PIDs used an average46.33% of whole-host CPU: server14688/client8040 in run052838 averaged15.76% together; server10396/client13524 in run052415 averaged30.57%. Their average working sets total roughly1.56GiB. The first server confirms Bloodtest/slaughterhouse1, 2NPC/1player, module_generation637; the second server also reports Bloodtest, 2NPC/1player, but host DLL generation637 vs NPC module_generation635. Client-side authoritative mode confirmation was absent. At the sampled end-of-build client windows, PID8040 had70/70 frames over4.167ms (p95 34.12ms, max40.70ms); PID13524 had67/67 over budget (p95 34.65ms, max63.97ms). Server journals each showed60 ticks in about one second, with one phase total59.64ms and the other63.37ms.
+
+This is direct evidence that four MiMITA processes consumed a large fraction of the host while it was heavily loaded; it is consistent with the user's report that closing the processes makes the PC feel faster. It does not prove causality, a single-function owner, or an optimization effect: there was no matched process-closure A/B, two separate pairs were active, one pair was generation-mismatched, client mode confirmation was missing, and the frame windows were sampled at the build's end. The profiler sample itself used approximately13.30 CPU-seconds across the74.734s window, an estimated1.48% of whole-host capacity; process discovery accumulated19.70s of wall time. Full sample attribution and caveats are appended to CPU issue `issue-ed3ac775283d` and cross-linked to the DLL build issue.
+
+## Gen639 build-overlap resource check
+
+A second non-CPU DLL build completed at 2026-11-25T05:47:39.706Z: `game-dll-20261125T054630085917Z-48e192`, 69.625s, changing `src/network/multiplayer-projectiles.cpp` for corpse-hit sweep radius. Its resource sidecar has46 samples/12 logical CPUs, host CPU mean90.022%/peak99.2%, minimum available memory3,605,352,448 bytes, and no matched prebuild baseline, commit-charge/limit, or independent client-mode confirmation. Three simultaneous Bloodtest pairs were tracked: run053930 PID8680/PID17384 averaged10.77% host, run052838 PID14688/PID8040 15.64%, run052415 PID10396/PID13524 25.08%. All six averaged51.49% whole-host CPU and about2.42GiB working set. For run053930, the server journal reports5NPC/1player and about61 ticks/window; the nearby client FPS window had59/59 frames above4.167ms at58.39 FPS, p95 45.25ms, max88.39ms. This is build-overlap evidence; client mode confirmation was absent, two other runs were concurrent, and there is no function-level attribution or matched pre/post CPU treatment. The build was for corpse-hit behavior and does not count as a CPU optimization pass. Full evidence is appended to issue-ed3ac775283d and linked to issue-136d4553ff92.
+
+## Latest high-pressure build sample and unresolved runtime owner
+
+The corpse-hit build attempt `game-dll-20261125T055256329120Z-9b2bcf` ran05:52:56.329–05:55:07.766Z (131.437s); its one changed path was `src/network/multiplayer-projectiles.cpp` (feature note1d3703603f8d), so it is not a CPU treatment. Sidecar data:60 samples,12 logical CPUs, host CPU mean95.45%/peak100%, minimum available memory1,836,306,432 bytes; no matched prebuild baseline, host commit-charge/limit, or independently verified client mode. Eight MiMITA PIDs across four Bloodtest pairs averaged61.66% of host CPU and about3,756MiB working set. The current pair run054920 (server13856/client9676) averaged8.46% host CPU; its server journal says Bloodtest,5NPC/1player. One nearby server window logged41 ticks/146.79ms total, including59.18ms AI; it is only a single window. The client reported36/36 frames over4.167ms (35.95 FPS, p95 70.66ms, max106.90ms), with client mode unverified. Because four pairs and a DLL compile overlapped, this is pressure evidence only, not causal or treatment evidence. The run owner has not been identified; the run-scoped signal broadcast to all and no profiler command was sent. Full process and event details are in CPU issue issue-ed3ac775283d; build details are cross-linked to issue-136d4553ff92.
