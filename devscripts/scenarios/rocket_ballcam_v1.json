@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "rocket_ballcam_v1",
+  "description": "Prove ball cam is a local presentation toggle that works while the client owns its car as a server mirror: switch it on and off and assert the journal recorded both states.",
+  "launch": {
+    "launch_mode": 60,
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "profile", "wait_for_event": "vehicle.profile.applied", "timeout_seconds": 60},
+    {"id": "seated", "wait_for_event": "vehicle.entered", "timeout_seconds": 60},
+    {"id": "settle", "wait_seconds": 1}
+  ],
+  "steps": [
+    {"id": "on", "command": "vehicle_ballcam", "args": ["local", "on"], "delay_ms_after": 400},
+    {"id": "off", "command": "vehicle_ballcam", "args": ["local", "off"], "delay_ms_after": 400},
+    {"id": "on_again", "command": "vehicle_ballcam", "args": ["local", "on"], "delay_ms_after": 400}
+  ],
+  "assertions": [
+    {"type": "event_count_at_least", "event": "vehicle.ballcam", "minimum": 3},
+    {"type": "event_field_count_at_least", "event": "vehicle.ballcam", "field": "on", "equals": true, "minimum": 2},
+    {"type": "event_field_count_at_least", "event": "vehicle.ballcam", "field": "on", "equals": false, "minimum": 1}
+  ],
+  "timeout_seconds": 120
+}

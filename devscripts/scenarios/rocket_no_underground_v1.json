@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "id": "rocket_no_underground_v1",
+  "description": "Surface invariant stress test: accelerate, jump, land hard, then drive into the goal frame. No wheel may ever be reported below the surface, so no vehicle.penetration event and every attitude sample must stay within one centimetre.",
+  "launch": {
+    "launch_mode": 60,
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {
+      "id": "profile",
+      "wait_for_event": "vehicle.profile.applied",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "seated",
+      "wait_for_event": "vehicle.entered",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "settle",
+      "wait_seconds": 2
+    }
+  ],
+  "steps": [
+    {
+      "id": "clear",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "0",
+        "0",
+        "0",
+        "1",
+        "0"
+      ],
+      "delay_ms_after": 200
+    },
+    {
+      "id": "build_speed",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "1",
+        "0",
+        "0",
+        "1",
+        "0"
+      ],
+      "delay_ms_after": 2500
+    },
+    {
+      "id": "jump",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "1",
+        "0",
+        "0",
+        "1",
+        "0",
+        "0",
+        "0",
+        "0",
+        "1"
+      ],
+      "delay_ms_after": 300
+    },
+    {
+      "id": "release",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "1",
+        "0",
+        "0",
+        "1",
+        "0"
+      ],
+      "delay_ms_after": 1500
+    },
+    {
+      "id": "landed",
+      "wait_for_event": "vehicle.landing",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "ram",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "1",
+        "0",
+        "0",
+        "1",
+        "0"
+      ],
+      "delay_ms_after": 2500
+    },
+    {
+      "id": "stop",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "0",
+        "0",
+        "0",
+        "1",
+        "0"
+      ],
+      "delay_ms_after": 500
+    }
+  ],
+  "assertions": [
+    {
+      "type": "event_present",
+      "event": "vehicle.landing"
+    },
+    {
+      "type": "event_count_at_most",
+      "event": "vehicle.penetration",
+      "maximum": 0
+    },
+    {
+      "type": "event_field_all_at_most",
+      "event": "vehicle.attitude",
+      "field": "resting_penetration_m",
+      "value": 0.01
+    }
+  ],
+  "timeout_seconds": 180
+}

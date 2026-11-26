@@ -179,3 +179,35 @@ Smallest experiment: at run completion, have the dev-loop write a proof stub (ru
 ### 2026-11-25T07:23:08.041Z — issue-review-sweeper
 
 Correction for the 2026-11-25T07:22 entry above: after re-reading this issue, the mechanism is already proposed at 2026-11-21T17:11 (read-only `proof capture --run <id> --task <id>` that resolves the pinned build/generation/DLL and writes the proof record) and the status guard at 2026-11-22T01:02. The 2026-11-25 sweep adds only a fresh datapoint, not a new gap: run 20261125_061355 (game gen 640, EXE sha 5dda0879) demonstrated stable direct join and a 63 Fighter + 4 Juggernaut + 1 human roster, yet `proof list --issue issue-cf9cd77eb056` was still []. Treat the 2026-11-25 entry as corroboration, not a separate work item. Recommended next step: trial the already-proposed `proof capture` on this run/issue and record the resulting link, rather than build a second mechanism.
+
+## Agent suggestion
+
+### 2026-11-25T22:04:37.702Z — issue-review-sweeper
+
+Evidence-grounded process add from independent review of issue-e5a086b0a441 (issue-review-sweeper, wake-31d5457f8d16, 2026-11-25T22:05Z). Read-only; no source, build, or run change.
+
+Observed: the retained/dashboard-launched Vehicle Arena run 20261125_212905 has run.json with source_generation=0 and build_match=false and no game_generation field; the only record of which game DLL it loaded is the first server `game.host.probe.started` event inside a 100MB-segmented journal, which reports generation 648 / build/game/generation-648/game-g648.dll (revision 4d985e57) while the published build was generation 651 (revision 5d18bf5a). By contrast, the profile-based test runs 20261125_210233_rl-check and 20261125_211059_rl-air did write game_generation=646/647 into run.json. So a proof reviewer cannot tell from run.json alone whether a retained run exercised the current code, and must hand-scan the journal; this is the same stale-generation ambiguity raised in the earlier generation-identity suggestions here, but on the run.json writer specifically.
+
+Proposal (complements, does not duplicate, the scanner identity-block and proof-attach-gate suggestions already on this issue): have the run.json writer for the retained/dashboard launch path populate game_generation (and the loaded DLL path/hash) from the host probe at run start, and make evidence attach refuse to mark a run proven when run.json.game_generation is 0/absent or differs from the current build/game ready.json generation unless an explicit stale-generation reason is recorded.
+
+Measurable target: for the next 3 retained Vehicle Arena runs, run.json.game_generation is non-zero and equals the first game.host.probe.started generation; zero evidence rows marked proven while run.json.game_generation is 0 or older than the published generation without a recorded reason; reviewer time to determine a retained run's game generation from run.json under 30 seconds (baseline: grep a segmented 100MB journal).
+
+Smallest experiment: populate the two fields in the retained-run manifest writer, launch one Vehicle Arena free-play run on the published generation, and diff run.json against the journal probe event. No gameplay or build change.
+
+## Agent suggestion
+
+### 2026-11-25T22:35:46.256Z — issue-review-sweeper
+
+Corroboration only (issue-review-sweeper, 2026-11-25T22:3xZ, read-only; no new work item proposed). This confirms the retained-run game_generation gap already proposed here at 2026-11-25T22:04Z. New datapoint: run 20261125_184820 (logs/2026-11-25/20261125_184820/client-01/events-0014.jsonl) contains 97 server-accepted Mace player->NPC contacts with exact client/server damage parity, but run.json pins server-01 pid 12632 (fun counter strike, dust2cyberiav4, build 2026-11-25T01:21:28.987918Z) while the accepting server is a replacement process pid 7876 that started 2026-11-25T20:32:12Z and loaded build/game/generation-642/game-g642.dll (its startup reports badhouse/team_deathmatch). run.json has no loaded game_generation and build_match=false. A reviewer can recover the loaded generation only by grepping the first game.host.probe.started in a 100 MB segmented journal. This is the same class as the 22:04 proposal (populate run.json game_generation and gate proof attach on a mismatch); the existing measurable target and smallest experiment still apply. No source, build, run, or fix claimed.
+
+## Agent suggestion
+
+### 2026-11-26T01:15:08.137Z — issue-review-sweeper
+
+Process update from independent review of issue-8e48cd0bc786 (2026-11-26T01:13Z, reviewer wake wake-5a57be69dc90). Read-only; no source, build, or run by this review.
+
+Evidence: this is the fifth bounded review of the same proof task (review ids 57, 211, 301, 404, now 459) and the blocker is still proof instrumentation, not scenario availability. Two surviving generation-627 journals now contain real rocket terminals: run 20261125_175329 has 578 explode-world, 117 explode-player and 6 explode-lifetime rocket policy events plus 71 client rocket shockwaves; run 20261125_184820 has 2003/400/33 plus 348 shockwaves. Both loaded config/impact_decals.json (enabled, explosionMarks enabled) yet produced 0 impact_decal.spawn, 0 impact_decal.render_submitted and 0 hitfx_trace lines, because `gHitFxTraceEnabled` defaults false (src/effects/hit-effects.cpp:34) and neither the dev-profile nor the test-run path enables it. The earlier proposal in this issue (2026-11-21T20:12) asked for a rocket-decal proof profile and proof-record validation; the remaining repeated gap is the per-run trace toggle, and the proof-record defect is still live: task-proof-9d05ae9ca4ff still reports status=runtime_proven with result=unproven, game_generation=0, verified_utc empty, and a journal path that does not exist.
+
+Proposal: make proof tracing a first-class pinned-run option and enforce proof-record consistency. Add one `hitfx_trace` enable step to the dev-profile/test-run path (for example `--start-test-run --trace hitfx` or a profile field) so a run can opt in without hand-editing a client command queue, and have the proof-record path reject `status=runtime_proven` when result != proven, generation == 0, verified_utc is empty, or the cited journal is absent.
+
+Measurable target: on the next 3 rocket-decal proof attempts, 100 percent produce a pinned run with non-zero generation containing at least one impact_decal.spawn plus matching impact_decal.render_submitted for each world terminal and zero for player/lifetime terminals, on the first attempt; zero new reviews blocked only by the trace toggle; zero proof records with status=runtime_proven while result != proven or verified_utc is empty. Smallest experiment: add the one profile field/flag, run one generation>=627 `fun counter strike` instance with tracing on, inspect the exact client journal, and record run_id/generation/DLL sha256. No gameplay change. Cross-ref issue-8e48cd0bc786.

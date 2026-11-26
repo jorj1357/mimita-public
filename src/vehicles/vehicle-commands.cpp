@@ -15,6 +15,7 @@
 #include "debug/structured-log.h"
 #include "devtools/terminal.h"
 #include "input/gamepad-input.h"
+#include "input/input-router.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/physical-entity.h"
 #include "terminal/terminal-state.h"
@@ -52,6 +53,19 @@ bool parseUint(const std::string& text, uint32_t& out)
     {
         return false;
     }
+}
+
+// Vehicle id argument for commands. "local" resolves the vehicle this process
+// is currently driving, so a scenario or a human never has to guess which
+// spawn slot the seat landed in.
+bool parseVehicleId(const std::string& text, uint32_t& out)
+{
+    if (text == "local" || text == "self")
+    {
+        out = VehicleSystem::instance().localVehicleId();
+        return out != 0;
+    }
+    return parseUint(text, out);
 }
 
 const char* modeName(VehicleControlMode mode)
@@ -433,7 +447,8 @@ void registerVehicleCommands()
     Terminal::instance().registerCommand({
         "vehicle_input",
         "Inject non-local vehicle input for validation (0..1 / -1..1)",
-        "vehicle_input <id> <throttle> <brake> <steer> <clutch> <handbrake>",
+        "vehicle_input <id|local> <throttle> <brake> <steer> <clutch> "
+        "<handbrake> [pitch] [yaw] [roll] [jump] [boost]",
         [](const std::vector<std::string>& args) {
             uint32_t id = 0;
             float throttle = 0.0f;
@@ -441,24 +456,43 @@ void registerVehicleCommands()
             float steer = 0.0f;
             float clutch = 1.0f;
             float handbrake = 0.0f;
-            if (args.size() < 6 || !parseUint(args[0], id) ||
-                !parseFloat(args[1], throttle) ||
-                !parseFloat(args[2], brake) ||
-                !parseFloat(args[3], steer) ||
-                !parseFloat(args[4], clutch) ||
-                !parseFloat(args[5], handbrake))
+            float pitch = 0.0f;
+            float yaw = 0.0f;
+            float roll = 0.0f;
+            float jump = 0.0f;
+            float boost = 0.0f;
+            const bool ok =
+                args.size() >= 6 && parseVehicleId(args[0], id) &&
+                parseFloat(args[1], throttle) &&
+                parseFloat(args[2], brake) &&
+                parseFloat(args[3], steer) &&
+                parseFloat(args[4], clutch) &&
+                parseFloat(args[5], handbrake) &&
+                (args.size() < 7 || parseFloat(args[6], pitch)) &&
+                (args.size() < 8 || parseFloat(args[7], yaw)) &&
+                (args.size() < 9 || parseFloat(args[8], roll)) &&
+                (args.size() < 10 || parseFloat(args[9], jump)) &&
+                (args.size() < 11 || parseFloat(args[10], boost));
+            if (!ok)
             {
                 Terminal::instance().addLog(
-                    "[VEHICLE] usage: vehicle_input <id> <throttle> <brake> "
-                    "<steer> <clutch> <handbrake>");
+                    "[VEHICLE] usage: vehicle_input <id|local> <throttle> <brake> "
+                    "<steer> <clutch> <handbrake> [pitch] [yaw] [roll] "
+                    "[jump] [boost]");
                 return;
             }
             VehicleInput input;
-            input.throttle = throttle;
-            input.brake = brake;
-            input.steer = steer;
-            input.clutch = clutch;
-            input.handbrake = handbrake;
+            input.throttle = std::clamp(throttle, 0.0f, 1.0f);
+            input.brake = std::clamp(brake, 0.0f, 1.0f);
+            input.steer = std::clamp(steer, -1.0f, 1.0f);
+            input.clutch = std::clamp(clutch, 0.0f, 1.0f);
+            input.handbrake = std::clamp(handbrake, 0.0f, 1.0f);
+            input.powerslide = handbrake > 0.5f;
+            input.pitch = std::clamp(pitch, -1.0f, 1.0f);
+            input.yaw = std::clamp(yaw, -1.0f, 1.0f);
+            input.roll = std::clamp(roll, -1.0f, 1.0f);
+            input.jumpHeld = jump > 0.5f;
+            input.boost = std::clamp(boost, 0.0f, 1.0f);
             if (!VehicleSystem::instance().find(id))
             {
                 Terminal::instance().addLog(
@@ -468,6 +502,43 @@ void registerVehicleCommands()
             VehicleSystem::instance().setInput(id, input);
             Terminal::instance().addLog("[VEHICLE] input queued for id=" +
                                         std::to_string(id));
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "vehicle_ballcam",
+        "Set or toggle the local driver ball cam (presentation only)",
+        "vehicle_ballcam <id|local> [on|off]",
+        [](const std::vector<std::string>& args) {
+            uint32_t id = 0;
+            if (args.empty() || !parseVehicleId(args[0], id))
+            {
+                Terminal::instance().addLog(
+                    "[VEHICLE] usage: vehicle_ballcam <id|local> [on|off]");
+                return;
+            }
+            VehicleState* state = VehicleSystem::instance().find(id);
+            if (!state)
+            {
+                Terminal::instance().addLog("[VEHICLE] id not found");
+                return;
+            }
+            if (args.size() >= 2 && (args[1] == "on" || args[1] == "off"))
+                state->ballCam = args[1] == "on";
+            else
+                state->ballCam = !state->ballCam;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.ballcam", std::to_string(id),
+                "ball cam set by command", 0,
+                {{"vehicle_id", id},
+                 {"on", state->ballCam},
+                 {"source", "command"}},
+                __FILE__, __LINE__, __func__);
+            Terminal::instance().addLog(
+                std::string("[VEHICLE] ball cam ") +
+                (state->ballCam ? "on" : "off") +
+                " for id=" + std::to_string(id));
         }
     });
 
@@ -581,33 +652,44 @@ void registerVehicleCommands()
     Terminal::instance().registerCommand({
         "vehicle_teleport",
         "Teleport a vehicle to a world position",
-        "vehicle_teleport <id> <x> <y> <z> [yaw]",
+        "vehicle_teleport <id|local> <x> <y> <z> [yaw] [roll] [pitch] (degrees)",
         [](const std::vector<std::string>& args) {
             uint32_t id = 0;
             glm::vec3 position(0.0f);
             float yaw = 0.0f;
-            if (args.size() < 4 || !parseUint(args[0], id) ||
+            float roll = 0.0f;
+            float pitch = 0.0f;
+            if (args.size() < 4 || !parseVehicleId(args[0], id) ||
                 !parseFloat(args[1], position.x) ||
                 !parseFloat(args[2], position.y) ||
                 !parseFloat(args[3], position.z))
             {
                 Terminal::instance().addLog(
-                    "[VEHICLE] usage: vehicle_teleport <id> <x> <y> <z> "
-                    "[yaw]");
+                    "[VEHICLE] usage: vehicle_teleport <id|local> <x> <y> <z> "
+                    "[yaw] [roll] [pitch]");
                 return;
             }
             if (args.size() >= 5)
                 parseFloat(args[4], yaw);
+            if (args.size() >= 6)
+                parseFloat(args[5], roll);
+            if (args.size() >= 7)
+                parseFloat(args[6], pitch);
             VehicleState* state = VehicleSystem::instance().find(id);
             if (!state)
             {
                 Terminal::instance().addLog("[VEHICLE] id not found");
                 return;
             }
+            // Optional attitude lets a scenario drop the car at an angle and
+            // prove it still settles flat instead of resting on a corner.
+            const glm::quat attitude =
+                glm::angleAxis(glm::radians(yaw), glm::vec3(0.0f, 0.0f, 1.0f)) *
+                glm::angleAxis(glm::radians(roll), glm::vec3(1.0f, 0.0f, 0.0f)) *
+                glm::angleAxis(glm::radians(pitch), glm::vec3(0.0f, 1.0f, 0.0f));
             const glm::mat4 transform =
                 glm::translate(glm::mat4(1.0f), position) *
-                glm::mat4_cast(
-                    glm::angleAxis(yaw, glm::vec3(0.0f, 0.0f, 1.0f)));
+                glm::mat4_cast(attitude);
             PhysicalEntitySystem::instance().moveKinematic(
                 state->entityId, transform, 0.0f);
             Terminal::instance().addLog("[VEHICLE] teleported id=" +
@@ -644,6 +726,18 @@ void registerVehicleCommands()
                 " standard=" + (pad.standardMapping() ? "yes" : "no") +
                 " raw=" + (pad.rawFallback() ? "yes" : "no") +
                 " virtual=" + (pad.virtualActive() ? "yes" : "no"));
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "focus_window",
+        "Bring the game window to the foreground so keyboard input works",
+        "focus_window",
+        [](const std::vector<std::string>&) {
+            const bool ok = InputRouter::focusGameWindow();
+            Terminal::instance().addLog(
+                ok ? "[INPUT] game window focused"
+                   : "[INPUT] could not take focus; click the game window");
         }
     });
 

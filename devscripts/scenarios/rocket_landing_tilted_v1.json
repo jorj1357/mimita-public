@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "id": "rocket_landing_tilted_v1",
+  "description": "Jump and roll the car most of the way onto its side, then land. It must touch down, must never be recorded as resting while tilted, and no wheel may go under the surface.",
+  "launch": {
+    "launch_mode": 60,
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {
+      "id": "profile",
+      "wait_for_event": "vehicle.profile.applied",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "seated",
+      "wait_for_event": "vehicle.entered",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "settle",
+      "wait_seconds": 2
+    }
+  ],
+  "steps": [
+    {
+      "id": "clear",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "0",
+        "0",
+        "0",
+        "1",
+        "0"
+      ],
+      "delay_ms_after": 200
+    },
+    {
+      "id": "jump",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "0",
+        "0",
+        "0",
+        "1",
+        "0",
+        "0",
+        "0",
+        "0",
+        "1"
+      ],
+      "delay_ms_after": 280
+    },
+    {
+      "id": "roll_over",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "0",
+        "0",
+        "0",
+        "1",
+        "0",
+        "0",
+        "0",
+        "0.9"
+      ],
+      "delay_ms_after": 620
+    },
+    {
+      "id": "release",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "0",
+        "0",
+        "0",
+        "1",
+        "0"
+      ],
+      "delay_ms_after": 300
+    },
+    {
+      "id": "landed",
+      "wait_for_event": "vehicle.landing",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "let_it_tip",
+      "wait_seconds": 4
+    }
+  ],
+  "assertions": [
+    {
+      "type": "event_present",
+      "event": "vehicle.landing"
+    },
+    {
+      "type": "event_count_at_most",
+      "event": "vehicle.rest.tilted",
+      "maximum": 0
+    },
+    {
+      "type": "event_count_at_most",
+      "event": "vehicle.penetration",
+      "maximum": 0
+    },
+    {
+      "type": "event_field_all_at_most",
+      "event": "vehicle.attitude",
+      "where": {
+        "grounded": true
+      },
+      "field": "resting_penetration_m",
+      "value": 0.01
+    }
+  ],
+  "timeout_seconds": 180
+}

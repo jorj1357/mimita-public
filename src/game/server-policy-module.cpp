@@ -545,6 +545,8 @@ int serverPolicySessionDecide(mimita::host::ServerSessionPolicyV1* inout) {
 
 }  // namespace mimita::game
 
+// Hot-side server policy export. The cold EXE requires this symbol from the
+// replaceable game generation; without it the server refuses to start.
 extern "C" __declspec(dllexport)
 const mimita::host::GameServerPolicyV1* GetMimitaGameServerPolicyV1(
     std::uint32_t abiVersion) {

@@ -209,6 +209,10 @@ class RuntimeManager:
         }
         if dll:
             env["MIMITA_GAME_DLL"] = str(dll)
+        # A launch mode may carry extra environment for bounded probes (the
+        # ball physics probe sets MIMITA_ARENA_BALL_KICK). Values are strings.
+        for key, value in (launch_mode.get("env") or {}).items():
+            env[str(key)] = str(value)
         args = self._build_server_args(exe, profile, launch_mode, map_name, room_file)
         server = subprocess.Popen(
             args, cwd=self.root, env=env,

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "rocket_ground_tilt_v1",
+  "description": "Full throttle for three seconds then reverse for three seconds. A Rocket League car is rigid on the ground: it may never pitch or roll from weight transfer, so every grounded attitude sample must stay flat.",
+  "launch": {
+    "launch_mode": 60,
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "profile", "wait_for_event": "vehicle.profile.applied", "timeout_seconds": 60},
+    {"id": "seated", "wait_for_event": "vehicle.entered", "timeout_seconds": 60},
+    {"id": "settle", "wait_seconds": 2}
+  ],
+  "steps": [
+    {"id": "drive", "command": "vehicle_input", "args": ["local", "1", "0", "0", "1", "0"], "delay_ms_after": 3000},
+    {"id": "reverse", "command": "vehicle_input", "args": ["local", "0", "1", "0", "1", "0"], "delay_ms_after": 3000},
+    {"id": "stop", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0"], "delay_ms_after": 500}
+  ],
+  "assertions": [
+    {"type": "event_field_all_at_most", "event": "vehicle.attitude", "where": {"grounded": true}, "field": "tilt_deg", "value": 3.0},
+    {"type": "event_field_all_at_most", "event": "vehicle.attitude", "where": {"grounded": true}, "field": "pitch_rate_local", "value": 0.15},
+    {"type": "event_field_all_at_least", "event": "vehicle.attitude", "where": {"grounded": true}, "field": "pitch_rate_local", "value": -0.15},
+    {"type": "event_field_all_at_most", "event": "vehicle.attitude", "where": {"grounded": true}, "field": "roll_rate_local", "value": 0.15},
+    {"type": "event_field_all_at_least", "event": "vehicle.attitude", "where": {"grounded": true}, "field": "roll_rate_local", "value": -0.15},
+    {"type": "event_present", "event": "vehicle.state"}
+  ],
+  "timeout_seconds": 180
+}

@@ -96,3 +96,43 @@ Evidence: {"build_attempt_id": "game-dll-20261125T021123740140Z-5e8bdb", "issue"
 ### 2026-11-25T06:11:06.017Z — build-wait-reviewer
 
 Occurrence 2026-11-25T05:46:30.064Z (issue-9c1fc3e3e668, attempt game-dll-20261125T054630085917Z-48e192): evidence.reason is still an unreadable mid-JSON tail beginning 'struction... "raw":"tree CFG construction ...' and ending with "progress_write_ms":4.459,"record_overhead_ms":5.283. This is the same trailing-worker-output defect. Reviewer build-wait-reviewer; no fix claimed.
+
+## Agent suggestion
+
+### 2026-11-25T21:36:44.100Z — build-wait-reviewer
+
+New confirming occurrence (2026-11-25T21:3xZ, review of issue-2e5c794199f1). wait_id game-dll-build:2026-11-25T21:00:55.639Z, elapsed 60.633s. evidence.reason is a mid-JSON tail of a [GAME_FILE] ftime report (ends "truncated":true},"progress_write_ms":58.898,"record_overhead_ms":60.151}). The most recent worker line at the budget check was the translation_unit.completed ftime payload for src/input/gamepad-input.cpp (38.744s) under attempt game-dll-20261125T210055875592Z-33009d (generation 646). Confirms this issue's root cause (_record_game_build_output detail=line.rstrip()[-240:]). The build succeeded (exit 0, gen 646); only the reason is unreadable. Read-only; no fix claimed.
+
+## Agent suggestion
+
+### 2026-11-25T22:05:29.657Z — build-wait-reviewer
+
+Fresh occurrence on wait game-dll-build:2026-11-25T21:45:58.563Z (issue-63ec094b8859, run 20261125_212905): evidence.reason is again a mid-JSON tail, not a readable stage summary: :57765.0,"build_attempt_id":"game-dll-20261125T214558738291Z-806cc2","source_generation":25,"generation":650,"revision":"5d18bf5a...","progress_write_ms":6.234,"record_overhead_ms":6.828. It matches the translation_unit.completed identity-provider row that set game_build_detail (dev-loop.py:3112/3142 detail=line.rstrip()[-240:]), read at the wait arm dev-loop.py:~3892 reason=self.game_build_detail. The waited-on attempt failed worker_timeout at 309.344s; the retry published generation 651 in 84.812s. Same defect as prior occurrences; no source edit made.
+
+## Agent suggestion
+
+### 2026-11-25T22:32:59.809Z — build-wait-reviewer
+
+Occurrence (wait game-dll-build:2026-11-25T21:53:31.363Z, run 20261125_212905): recorded reason is exactly a mid-JSON tail, "9906.0,""build_attempt_id"":""game-dll-20261125T215331554351Z-19bd08"",...". Confirms game_build_detail is the last 240 chars of the raw [GAME_FILE] worker line (dev-loop.py:3112 detail=line.rstrip()[-240:]; 3142 game_build_detail=detail) and is copied verbatim into the wait reason (dev-loop.py:3892). Reviewer: build-wait-reviewer.
+
+## Occurrence
+
+### 2026-11-26T00:03:55.923Z — build-wait-reviewer
+
+Wait `game-dll-build:2026-11-25T23:04:23.764Z` (build attempt game-dll-20261125T230423811208Z-c638b8, run 20261125_221046) again stored reason as a mid-JSON tail starting with `:59141.0,`. Confirmed on issue-4ab3b491ad6c and again on issue-6d572fc03e97 (reason starts `:67515.0,`). The unchanged source is dev-loop.py:_record_game_build_output `detail = line.rstrip()[-240:]`; the last worker line was a [GAME_FILE]/[GAME_STAGE] JSON payload. Occurrence count now 2 new today (23:04 and 23:50 UTC). No duplicate issue filed.
+
+Evidence: {"reason_prefixes": [":59141.0,", ":67515.0,"], "wait_ids": ["game-dll-build:2026-11-25T23:04:23.764Z", "game-dll-build:2026-11-25T23:50:11.848Z"]}
+
+## Agent suggestion
+
+### 2026-11-26T01:09:21.087Z — build-wait-reviewer
+
+Third same-day occurrence on wait game-dll-build:2026-11-26T00:29:50.339Z (issue-4a0450674f5f, attempt game-dll-20261126T002950581148Z-fff09d, run 20261126_002257): evidence.reason is again a mid-JSON tail starting ":52563.0,". Same unchanged source path dev-loop.py:_record_game_build_output detail=line.rstrip()[-240:]. The wait record now also shows build_id=2026-11-26T00:06:41.220046Z and generation=null instead of the attempt/gen 660, so this record also loses build identity in the snapshot. Evidence appended in the 01:06Z review on issue-4a0450674f5f; no duplicate issue filed.
+
+## Occurrence
+
+### 2026-11-26T01:39:32.531Z — build-wait-reviewer
+
+Fresh occurrence on wait game-dll-build:2026-11-26T00:55:56.696Z (issue-ac23ab33d184; attempt game-dll-20261126T005556909723Z-fa8154). evidence.reason is still the last 240 characters of a [GAME_FILE] row, starting `s":57328.0,` and ending with progress_write_ms/record_overhead_ms. It still embeds the in-flight attempt id and generation 662, but it is not a readable stage summary. Source unchanged: dev-loop.py:3112 `detail = line.rstrip()[-240:]`, assigned at dev-loop.py:3142, read at dev-loop.py:3892. Same-truncation sibling observation: dev-loop.wait.reviewer-wake's launch_result (build_friction.py:250, `launched.stdout.strip()[-2000:]`) also recorded a mid-JSON/prompt fragment for this wait instead of a structured launch result. Owner may decide whether that belongs in this issue's acceptance. No duplicate issue filed.
+
+Evidence: {"build_attempt_id": "game-dll-20261126T005556909723Z-fa8154", "issue": "issue-ac23ab33d184", "journal": "logs/2026-11-26/20261126_005302/dev-loop/events.jsonl", "reason_prefix": "s\":57328.0,", "sibling": "devscripts/build_friction.py:250 launch_result=stdout[-2000:]", "source": "devscripts/dev-loop.py:3112,3142,3892", "wait_id": "game-dll-build:2026-11-26T00:55:56.696Z"}

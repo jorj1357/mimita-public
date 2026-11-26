@@ -582,6 +582,45 @@
       "expect_gamemode": "vehicle_freeplay",
       "expect_npcs": 0,
       "require_client_connection": true,
+      "require_mode_start": false
+    },
+    "64": {
+      "name": "Vehicle Arena - 1v1 vs NPC (one client)",
+      "server_args": ["--mode", "vehicle_arena", "--gamemode", "vehicle_arena", "--no-npcs"],
+      "weapon_set": 1,
+      "client_args": [],
+      "map": "arena1",
+      "expect_map": "arena1",
+      "expect_mode": "vehicle_arena",
+      "expect_gamemode": "vehicle_arena",
+      "expect_weapon_set": 1,
+      "require_client_connection": true,
+      "require_mode_start": true
+    },
+    "62": {
+      "name": "Vehicle Arena - ball physics probe",
+      "server_args": ["--mode", "vehicle_freeplay", "--gamemode", "vehicle_freeplay", "--no-npcs"],
+      "env": {"MIMITA_ARENA_BALL_KICK": "-30,0,0,10,0,0.9125"},
+      "client_args": [],
+      "map": "arena1",
+      "expect_map": "arena1",
+      "expect_mode": "vehicle_freeplay",
+      "expect_gamemode": "vehicle_freeplay",
+      "expect_npcs": 0,
+      "require_client_connection": false,
+      "require_mode_start": false
+    },
+    "61": {
+      "name": "Bloodtest - Slaughterhouse 1 no NPC",
+      "server_args": ["--mode", "bloodtest", "--gamemode", "bloodtest", "--no-npcs"],
+      "weapon_set": "auto",
+      "client_args": ["--startup-command", "start bloodtest"],
+      "map": "slaughterhouse1",
+      "expect_map": "slaughterhouse1",
+      "expect_mode": "bloodtest",
+      "expect_gamemode": "bloodtest",
+      "expect_npcs": 0,
+      "require_client_connection": true,
       "require_mode_start": true
     }
   }

@@ -80,3 +80,11 @@ CONTRARY EVIDENCE
 
 NEXT DISCRIMINATING CHECK (no source edit this session)
 - After owner approval, add a bounded verifier test that (a) points a task proof at run 20261125_082735 requiring game.hotness.summary field generation=1; expected current code = unproven although server events-0001.jsonl has 899 matches (rotation gap), and (b) records a proof whose journal in-band run_id/generation differs from the claimed build/generation; expected current code to accept it (identity gap) while spec-first code rejects it. Smallest useful next step: an owner claims the verifier change and exposes the classification and identity fields in status; then repeat against a real user-owned run when one is active. The issue remains unowned and this review does not claim a fix.
+
+## Review (needs-evidence)
+
+### 2026-11-25T23:57:20.805Z — vehicle-ball-contact
+
+Reviewer: vehicle-ball-contact
+
+Scenario proof-integrity gap found while continuing the rocket-league handoff (2026-11-25 23:55 UTC). devscripts/dev-loop.py run_scenario_file sets launched_fresh=need_launch and reads all journal segments from the beginning. When the daemon retains a server across a client-only relaunch, the retained server journal replays pre-scenario history into the assertion record set. Evidence: run 20261125_234424 (client relaunched, server pid 26028 retained from run 20261125_233748) reported scenario.assert event_present vehicle.jump count=6 and vehicle.airroll count=66 while the server journal since wall_time 2026-11-25T23:44:20 contains no vehicle.jump at all (only 1 airroll, 1 jump.rejected). Same run passed event_field_at_least roll_input on samples from earlier scenarios. This violates this issue's expected behaviour ('never attributes unrelated or stale-binary events to current source'). Suggested smallest fix: for each journal whose process predates scenario.started (retained server), create the _JournalCursor with start_at_end=True (or capture the byte/seq offset at scenario.started and skip records before it), keeping whole-journal reading only for processes this scenario actually launched; keep the existing full-journal fallback in wait_for_event for setup lifecycle waits. Then re-run rocket_jump_airroll_v1 and require the jump/airroll counts to be produced after scenario.started.

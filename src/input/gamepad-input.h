@@ -54,6 +54,12 @@ public:
     void logState(const char* reason);
 
     bool held(const std::string& action) const;
+    // Raw device axis value (index 0..15), for diagnostics only.
+    float rawAxis(int axis) const
+    {
+        return (axis >= 0 && axis < mAxisCount && axis < 16) ? mAxes[axis]
+                                                             : 0.0f;
+    }
     float value(const std::string& action) const;
 
     // Logical vehicle helpers. Values are normalized 0..1 (throttle/brake) or
@@ -79,6 +85,8 @@ private:
     void loadMappings();
     void pollState();
     void logAxes();
+    void updateTriggerCalibration();
+    void finishTriggerCalibration();
     float axisValue(int axis, bool trigger, bool invert, float deadzone,
                     float upperDeadzone = 1.0f,
                     const std::string& mode = "auto",
@@ -90,6 +98,20 @@ private:
     bool mStandardMapping = false;
     bool mRawOnly = false;
     int mDeviceId = -1;
+    // Trigger calibration. A pad's trigger axes rest at -1 (signed), 0 (0..1)
+    // or +1 (inverted); guessing wrong makes a released trigger read as half
+    // pressed, which permanently fights the car's drive. The rest value and the
+    // observed travel are measured per axis when a device connects.
+    struct AxisCalibration
+    {
+        float rest = 0.0f;
+        float lo = 0.0f;
+        float hi = 1.0f;
+        bool valid = false;
+    };
+    AxisCalibration mAxisCal[16];
+    int mCalibratedDeviceId = -1;
+    int mCalibrationFrames = 0;
     std::string mName;
     std::string mConfigPath = "config/input/gamepad.json";
     std::string mMappingsPath = "config/input/gamecontrollerdb.txt";

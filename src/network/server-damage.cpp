@@ -11,6 +11,7 @@
 
 #include "network/server.h"
 #include "network/server-gamemode.h"
+#include "entities/actor-body.h"
 #include "gamemode/gamemode.h"
 #include "config/networking-config.h"
 #include "persistence/persistence-emit.h"
@@ -198,7 +199,8 @@ static ServerDamageResult applyPlayerDamageLegacy(
     result.partHealthBefore = target.body.health(bodyPart);
     const bool partDestroyed = bodyPartsEnabled &&
         target.body.applyDamage(bodyPart, clampedDamage);
-    if (bodyPartsEnabled && partDestroyed && target.body.lethalPartDestroyed())
+    if (bodyPartsEnabled && !ActorBodyConfig::instance().goreMode2() &&
+        partDestroyed && target.body.lethalPartDestroyed())
         target.health = 0;
     result.bodyPart = bodyPart;
     result.partHealthAfter = target.body.health(bodyPart);
@@ -235,6 +237,8 @@ static ServerDamageResult applyPlayerDamageLegacy(
           {"body_part", actorBodyPartName(result.bodyPart)},
           {"part_health_before", result.partHealthBefore},
           {"part_health_after", result.partHealthAfter},
+          {"part_gore_damage", target.body.goreDamage(result.bodyPart)},
+          {"gore_mode", ActorBodyConfig::instance().goreMode},
           {"layer_after", (int)target.body.layer(result.bodyPart)},
           {"part_destroyed", result.partDestroyed},
           {"spawn_generation", target.spawnGeneration},
@@ -488,7 +492,8 @@ ServerDamageResult applyActorDamage(
         result.partHealthBefore = target.body.health(part);
         const bool partDestroyed = bodyPartsEnabled &&
             target.body.applyDamage(part, appliedDamage);
-        if (bodyPartsEnabled && partDestroyed && target.body.lethalPartDestroyed())
+        if (bodyPartsEnabled && !ActorBodyConfig::instance().goreMode2() &&
+            partDestroyed && target.body.lethalPartDestroyed())
             target.health = 0;
         result.bodyPart = part;
         result.partHealthAfter = target.body.health(part);
@@ -510,6 +515,8 @@ ServerDamageResult applyActorDamage(
              {"body_part", actorBodyPartName(result.bodyPart)},
              {"part_health_before", result.partHealthBefore},
              {"part_health_after", result.partHealthAfter},
+             {"part_gore_damage", target.body.goreDamage(result.bodyPart)},
+             {"gore_mode", ActorBodyConfig::instance().goreMode},
              {"layer_after", (int)target.body.layer(result.bodyPart)},
              {"part_destroyed", result.partDestroyed},
              {"knockback", {request.knockback.x, request.knockback.y, request.knockback.z}}},

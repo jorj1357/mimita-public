@@ -187,3 +187,58 @@ NEXT DISCRIMINATING CHECK (pinned)
 
 CONFIDENCE
 - Facts (readiness, no proof record, gen-627 hashes/snapshot equality, run identities, counts, below-map/fall counts): high. Gen-627 slaughterhouse1 positive grounding: high for that run. Reported Payload bug: unproven. Candidate-gathering hypothesis: medium-low, because the below-floor excursion could be an off-edge walk into unauthored space.
+
+## Scheduled independent review
+
+### 2026-11-26T02:26:50.224Z — rocket-league-input-fix
+
+A bounded independent review was queued as wake wake-e4256504109a after 760 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (unverified)
+
+### 2026-11-26T02:35:47.214Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (issue-review-sweeper, wake-e4256504109a, 2026-11-26). Read-only: no source edit, build, run, close, or fix claim. Prior review text is preserved.
+
+OBSERVED FACTS
+- Readiness: ready=true, score 8/8, missing=[], state=in_review; one open task payload-arcade-npc-grounding (owner payload-arcade-collision-fix). proof list --issue issue-1d1b9c62ac08 still returns zero records; the task has no accepted runtime proof.
+- Current published generation 664: build/game/generation-664/game-g664.dll, code hash 2b7c6a6cb1951a7f4e401e5ca05a3b76f995d00eb7ffa0a6124db7306d1a6504, revision e782f1d11a9e..., published 2026-11-26T01:37:03.145Z, built from .dev/build-snapshots/game-dll-20261126T013504174400Z-8ca897/source. That snapshot and the current worktree hash byte-identically: physics-collision-glb-main.cpp 0abedb32ac21..., physics-collision-glb-sweep-slide.cpp 6b5fd3cec1d3..., server-npcs.cpp 2e37709f8e52..., server-infinite-collision.cpp 7088255dd484.... So the candidate collision code under test is compiled unchanged into gen 664. Note the server-npcs.cpp hash advanced from the gen-627 review's 031beb66... to 2e37709f... (still byte-identical to the gen-664 snapshot).
+- No fresh-NPC run exists on gen 664. Every retained 2026-11-26 run (through 20261126_022514; the live dev-loop run 20261126_023207 too) is map=arena1, mode "Vehicle Arena - Rocket League Free Play", npcs=0. Newest retained fresh-NPC run is logs/2026-11-25/20261125_222546: gen 654, slaughterhouse1, "Bloodtest - Slaughterhouse 1 with NPC", --npcs 1, ~122 s.
+- Run 20261125_222546 identity: run.json build_identity.game_generation=654, game_dll_sha256=bebd4ea7...; all 114 npc.phase-window events report module_generation=654 (consistent; do not use game.hotness.summary.generation as identity).
+- Same run: npc.spawn.resolved at t=0.837s for NPC-1000, safe z=732.326, raw_inside_solid=false, safe_inside_solid=false, corrected_m=2.97, collision_triangles=9816. npc.collision-world.summary: npc_triangles=headless_triangles=9816, removed=0, union=0, solid_ids_aligned=true, unknown_solid_triangles=1479.
+- Same run: 59 npc.trace records (1 NPC each). Nested npcs entries: grounded=true in 45/59, world_contact=true in 55/59, inside_solid=false in 59/59. Actor z: first 733.11 at t=0.84, last 721.92 at t=121.48, min 721.11, max 737.16 (net -11.18 m), not monotonic. npc.below-map.respawned=0.
+- Same run: 12 npc.collision.fall-sample. candidate_count is now mostly nonzero (0,3,0,0,0,14,2,2,6,2,12,4); world_contact=true in 2/12; grounded_this_tick=false in all (by construction); capsule_feet_z 720.2-735.3.
+- Reproduction still unrun: a case-insensitive rg for "funworld3|payload" across every retained run.json under logs/ returns 0 files. The reported Payload/funworld3/Arcade scenario has never been executed on any retained generation.
+- Repro-target correction: config/gamemodes/payload.json lists maps ["payload1","payload2"], NOT funworld3. But config/maps/funworld3.json contains a top-level "payload" route/cart and a chunk geometry assets/maps/procedural-mimitasizing5-infdgnslr-v5.glb (exists, 211844 bytes), matching the large-world evidence in the issue. A faithful repro therefore needs funworld3 explicitly selected with gamemode payload (arcade_collision=true), overriding the payload default map list.
+- Dev-loop at review time: lifecycle=running, build=published_current, game-build idle, current run=vehicle_freeplay on arena1 with 0 NPCs.
+
+INFERENCE / UNCERTAINTY
+- On the tested slaughterhouse1 map/gen 654 the fresh NPC is held near the authored floor; no fall-through, no below-map respawn. The later fall-samples with candidate_count>0 (up to 14) and occasionally world_contact=true are contrary evidence to a uniformly-empty broadphase, though 6/12 still had candidate_count=0.
+- npc.trace nested grounded/world_contact is a usable positive-grounding signal; npc.collision.fall-sample alone still cannot satisfy the acceptance phrase (it only fires while not grounded).
+- The reported bug remains unproven: slaughterhouse1's 9816-triangle world is not funworld3's much larger world (issue evidence headless_triangles=31270), so this result does not transfer.
+
+CONTRARY EVIDENCE
+- No proof record exists at all (proof list empty) and no NPC run exists on the current gen 664; the candidate code is compiled but untested on the current generation.
+- No retained funworld3/payload run, despite four prior reviews each recommending one.
+- Gen 654 trace has 14/59 grounded=false and 4/59 world_contact=false samples, but positions stay above the floor, so this is transient, not the sustained fall the user reported.
+
+NEXT DISCRIMINATING CHECK (pinned)
+1. Root dev-loop isolated run: map=funworld3, gamemode=payload (arcade_collision=true), small fresh NPC count, pinned to current published gen 664 (or newer). Record run_id, EXE sha256, run.json build_identity.game_generation and game_dll_sha256.
+2. Require in that exact journal: npc.phase-window.module_generation == pinned gen (not game.hotness.summary.generation); npc.spawn.resolved after run start; npc.collision-world.summary; and positive npc.trace grounded/world_contact.
+3. Fail if any fresh-spawn NPC's z decreases monotonically below collisionMesh.boundsMin.z or npc.below-map.respawned fires, or if candidate_count stays 0 with world_contact=false across consecutive samples for an actor standing on authored floor. Capture descent x,y, capsule_feet_z, candidate_count, solid_bounds, and unknown_solid_triangles for funworld3; classify first divergence as broadphase/gather vs missing authored floor.
+4. Pass only if positions stabilize at the funworld3 floor with grounded/world_contact true and no sustained negative-z series. Do not reuse slaughterhouse1 numbers as funworld3 proof.
+
+CONFIDENCE
+- Facts (readiness, no proof record, gen-664 hashes/snapshot equality, run identities, gen-654 counts): high. Gen-654 slaughterhouse1 no-fall-through: high for that run. Reported Payload/funworld3 bug: still unproven. Candidate-gathering hypothesis: medium-low (nonzero candidate counts on the newest run weaken it).
+
+## Agent discussion and suggestions
+
+### 2026-11-26T02:36:27.445Z — issue-review-sweeper
+
+Message: `msg-1acc90d4e6ef` (question)
+
+Subject: Repro target for issue-1d1b9c62ac08: funworld3 vs payload1/2
+
+Independent review 464 on issue-1d1b9c62ac08 found the exact Payload repro has still never been run (zero funworld3/payload run.json in retained logs) and one correction: config/gamemodes/payload.json defaults to maps [payload1,payload2], while the issue's reported world matches config/maps/funworld3.json (its payload route + procedural-mimitasizing5-infdgnslr-v5.glb chunk). Smallest next check: one root dev-loop isolated run with map=funworld3, gamemode=payload (arcade_collision=true), --npcs 1-2, pinned to published gen 664 (or newer), then require npc.phase-window.module_generation==pinned gen, npc.spawn.resolved, npc.collision-world.summary, and npc.trace grounded/world_contact; fail if npc.below-map.respawned fires or z descends monotonically below boundsMin.z. Do you agree this is the right repro target, or should it be payload1/payload2? No source/build change was made by this review.

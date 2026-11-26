@@ -1651,7 +1651,7 @@ def run(status_provider: Callable[[], dict],
         if state["coordination_snapshot_in_flight"] or state["closing"]:
             return
         now = time.monotonic()
-        if now - state["coordination_request_last_monotonic"] < 2.0:
+        if now - state["coordination_request_last_monotonic"] < 30.0:
             return
         start_coordination_reader()
         try:
@@ -2403,6 +2403,12 @@ def run(status_provider: Callable[[], dict],
         request_process_scan(force=True)
 
     def live_process_rows(model):
+        def command_option(command_line: str, name: str) -> str:
+            pattern = (rf"(?:^|\s)--{re.escape(name)}(?:=|\s+)"
+                       rf"(?:\"([^\"]*)\"|'([^']*)'|([^\s]+))")
+            matches = re.findall(pattern, command_line)
+            return next((value for value in matches[-1] if value), "") if matches else ""
+
         managed_by_pid = {}
         for checkout in model.get("checkouts", []) or []:
             checkout_state = checkout.get("state") or {}
@@ -2420,6 +2426,11 @@ def run(status_provider: Callable[[], dict],
                 if pid and instance.get("state") not in ("offline", "stopped", "failed"):
                     managed_by_pid[pid] = dict(
                         instance, checkout_id=checkout.get("checkout_id"),
+                        checkout_name=checkout.get("name"),
+                        checkout_run_id=(checkout_state.get("run_id") or
+                                         checkout_state.get("active_run_id")),
+                        checkout_mode_name=(checkout_state.get("launch_mode_name") or
+                                            checkout_state.get("mode_name") or ""),
                         checkout_available=checkout.get("available", False),
                         checkout_stale=checkout_stale)
 
@@ -2456,7 +2467,21 @@ def run(status_provider: Callable[[], dict],
                                    (instance or {}).get("executable") or ""),
                 "command_line": command_line,
                 "process_started_utc": started,
+                "run_id": (process.get("run_id") or row.get("run_id") or
+                           row.get("checkout_run_id") or ""),
+                "mode": (process.get("mode") or row.get("mode") or
+                         command_option(command_line, "gamemode") or
+                         command_option(command_line, "mode")),
+                "mode_name": (process.get("mode_name") or row.get("mode_name") or
+                              row.get("checkout_mode_name") or ""),
+                "map": (process.get("map") or row.get("map") or
+                        command_option(command_line, "map")),
+                "launch_reason": (process.get("launch_reason") or
+                                  row.get("launch_reason") or ""),
+                "startup_command": command_option(command_line, "startup-command"),
             })
+            row["purpose"] = (process.get("purpose") or row.get("purpose") or
+                              row.get("label") or "")
             try:
                 relative = Path(row["executable"]).resolve().relative_to(
                     Path(__file__).resolve().parents[2])
@@ -2467,6 +2492,26 @@ def run(status_provider: Callable[[], dict],
             if not instance:
                 row["instance_id"] = f"external-{pid}"
                 row["label"] = f"external {role}"
+            purpose_parts = []
+            if row.get("purpose") and row["purpose"] != row.get("label"):
+                purpose_parts.append(str(row["purpose"]))
+            mode_purpose = row.get("mode_name") or row.get("mode")
+            if mode_purpose:
+                purpose_parts.append(f"mode={mode_purpose}")
+            if (row.get("mode") and row.get("mode_name") and
+                    str(row["mode"]) != str(row["mode_name"])):
+                purpose_parts.append(f"mode_id={row['mode']}")
+            if row.get("map"):
+                purpose_parts.append(f"map={row['map']}")
+            if row.get("startup_command"):
+                purpose_parts.append(f"startup={row['startup_command']}")
+            if not purpose_parts and row.get("label"):
+                purpose_parts.append(str(row["label"]))
+            if row.get("launch_reason"):
+                purpose_parts.insert(0, f"reason={row['launch_reason']}")
+            elif not instance:
+                purpose_parts.append("launch reason unknown; external to active run")
+            row["purpose_display"] = " · ".join(purpose_parts) or "purpose not recorded"
             rows.append(row)
         return sorted(rows, key=lambda row: (
             row.get("role") != "server", row.get("source") != "managed", row.get("pid", 0)))
@@ -2514,6 +2559,18 @@ def run(status_provider: Callable[[], dict],
         for index, row in enumerate(rows):
             key = row["process_key"]
             row_state = state["process_rows"].get(key)
+            started = str(row.get("process_started_utc") or "")
+            started_text = "start time unknown"
+            if started:
+                try:
+                    parsed_started = datetime.fromisoformat(
+                        started.replace("Z", "+00:00"))
+                    if parsed_started.tzinfo is None:
+                        parsed_started = parsed_started.replace(tzinfo=timezone.utc)
+                    started_text = parsed_started.astimezone(timezone.utc).strftime(
+                        "started=%Y-%m-%d %H:%M:%S UTC")
+                except ValueError:
+                    started_text = f"started={started}"
             uptime = row.get("uptime_seconds")
             uptime_text = (f"up={int(uptime) // 60:02d}:{int(uptime) % 60:02d}"
                            if uptime is not None else "")
@@ -2524,13 +2581,19 @@ def run(status_provider: Callable[[], dict],
                       row.get("connection_target") or "")
             shown_state = ("stale · scan failed" if state.get("process_scan_error")
                            else str(row.get("state") or "running"))
-            parts = [str(row.get("checkout_id") or "main"),
-                     str(row.get("instance_id") or "MiMITA"), str(row.get("role") or "unknown"),
-                     shown_state, f"pid={row['pid']}"]
-            parts.extend(value for value in (uptime_text, snapshot_text) if value)
+            identity = [str(row.get("checkout_id") or "main"),
+                        str(row.get("instance_id") or "MiMITA"),
+                        str(row.get("role") or "unknown"), shown_state,
+                        f"pid={row['pid']}"]
+            runtime_details = [started_text]
+            if row.get("run_id"):
+                runtime_details.append(f"run={row['run_id']}")
+            runtime_details.extend(value for value in (uptime_text, snapshot_text) if value)
             if target:
-                parts.append(f"-> {target}")
-            text = "  ".join(parts)
+                runtime_details.append(f"-> {target}")
+            text = ("  ".join(identity) + "\n  " + " · ".join(runtime_details) +
+                    f"\nPurpose: {row.get('purpose_display') or 'purpose not recorded'}")
+            wraplength = max(360, process_canvas.winfo_width() - 48)
             if row_state is None:
                 variable = tk.BooleanVar(value=False)
                 widget = tk.Checkbutton(
@@ -2538,6 +2601,7 @@ def run(status_provider: Callable[[], dict],
                     bg=BLACK, fg=RED, activebackground=BLACK, activeforeground=WHITE,
                     selectcolor=BLACK, disabledforeground="#660000", relief="flat",
                     bd=0, highlightthickness=0, font=(family, 11),
+                    wraplength=wraplength, justify="left",
                     command=lambda process_key=key:
                     state.__setitem__("selected_process_key", process_key))
                 row_state = {"variable": variable, "widget": widget,
@@ -2545,6 +2609,8 @@ def run(status_provider: Callable[[], dict],
                 state["process_rows"][key] = row_state
             else:
                 widget = row_state["widget"]
+                if widget.cget("wraplength") != wraplength:
+                    widget.configure(wraplength=wraplength)
                 if row_state.get("text") != text:
                     widget.configure(text=text)
                     row_state["text"] = text

@@ -178,6 +178,7 @@
     "hit_flinch": true,
     "blood": true,
     "blood_client_feedback": true,
+    "gore_mode": 2,
     "proximity_fade": "off",
     "first_person": {
       "hide_head_cosmetics": true

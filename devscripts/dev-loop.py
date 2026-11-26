@@ -5061,6 +5061,10 @@ class DevLoop:
             if (self.profile.get("ice_force_relay", False) or
                     self.launch_mode.get("ice_force_relay", False)):
                 common_env["MIMITA_ICE_FORCE_RELAY"] = "1"
+            # A launch mode may carry extra environment for bounded probes
+            # (mode 62 sets MIMITA_ARENA_BALL_KICK).
+            for key, value in (self.launch_mode.get("env") or {}).items():
+                common_env[str(key)] = str(value)
             server_env = {**common_env, "MIMITA_PROCESS_ROLE": "server"}
             self.save_state("launching_server")
             version_env = {**common_env, "MIMITA_PROCESS_ROLE": "preflight"}
@@ -6519,6 +6523,29 @@ def _evaluate_assertions(assertions: list[dict], records: list[dict],
                 ok = any(value <= want for value in seen)
             actual = {"values": seen[-5:], "value": want,
                       "samples": len(seen)}
+        elif a_type in ("event_field_all_at_least",
+                        "event_field_all_at_most"):
+            # Every matching sample must satisfy the bound, and at least one
+            # sample must exist. "Any" cannot express "the car never pitched
+            # while grounded"; this can.
+            name = str(assertion.get("event", ""))
+            field = str(assertion.get("field", ""))
+            want = float(assertion.get("value", 0.0))
+            seen = []
+            for record in records:
+                if record.get("event") != name or not _record_matches_where(
+                        record, where):
+                    continue
+                value = _field_path(record, field)
+                if isinstance(value, (int, float)):
+                    seen.append(float(value))
+            if a_type == "event_field_all_at_least":
+                ok = bool(seen) and all(value >= want for value in seen)
+            else:
+                ok = bool(seen) and all(value <= want for value in seen)
+            actual = {"min": min(seen) if seen else None,
+                      "max": max(seen) if seen else None,
+                      "value": want, "samples": len(seen)}
         else:
             ok = False
             actual = {"error": f"unknown assertion type '{a_type}'"}

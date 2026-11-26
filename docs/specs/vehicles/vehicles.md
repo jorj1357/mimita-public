@@ -821,8 +821,10 @@ does not create a second vehicle networking system.
 The first online slice uses these compact packet families:
 
 - `VehicleInputPacket` (client to server, unreliable): sequence, vehicle id,
-  throttle, brake, steer, clutch, handbrake, and one-shot engine/mode/shift
-  flags.
+  throttle, brake, steer, normalized pitch/yaw/roll, clutch, handbrake, and
+  one-shot engine/mode/shift flags. The rotational axes are required: without
+  them the authoritative server can never pitch, yaw, roll, dodge, or stall for
+  a seated driver, and the car only drives on the ground.
 - `VehicleSeatRequestPacket` (client to server): request serial, vehicle id,
   seat, and enter/exit action. The client retries until a reliable answer.
 - `VehicleSpawnEventPacket` and `VehicleDespawnEventPacket` (reliable):

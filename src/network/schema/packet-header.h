@@ -23,7 +23,9 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 49: AttackRequestPacket carries validated client-first per-target hitscan
 //     aggregates so shotgun/revolver damage can match local prediction.
 // 50: DuelStatePacket carries the authoritative objective interaction range.
-constexpr uint16_t PROTOCOL_VERSION = 52;
+// 53: VehicleInputPacket carries normalized pitch/yaw/roll, so the
+//     authoritative server can air-roll, dodge, and stall for a seated driver.
+constexpr uint16_t PROTOCOL_VERSION = 53;
 
 #pragma pack(push, 1)
 

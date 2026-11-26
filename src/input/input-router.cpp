@@ -81,6 +81,15 @@ void beginFrame(std::uint64_t clientTick, std::uint64_t serverTick) {
     gClientTick = clientTick;
     gServerTick = serverTick;
     const bool focusedNow = HostInputFallback::gameWindowFocused();
+    if (focusedNow != gFocused) {
+        // Keyboard and mouse are ignored while the window is unfocused, so
+        // record the transition: a dead keyboard must be diagnosable.
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "input.focus.changed", "input-router",
+            "game window focus changed", 0,
+            {{"focused", focusedNow}});
+    }
     if (focusedNow && !gFocused) {
         gHasCursor = false;
         gAgentCursorActive = false;

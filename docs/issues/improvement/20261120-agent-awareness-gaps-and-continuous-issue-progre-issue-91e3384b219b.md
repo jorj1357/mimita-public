@@ -946,3 +946,82 @@ Smallest experiment: reuse the existing escalation mechanism - when a review's N
 ### 2026-11-25T21:07:09.536Z — dashboard-fps-relaunch
 
 Proposal from the user report and read-only investigation: for any user-reported MiMITA behavior issue with a plausible live-game manifestation, first use evidence-watch list, then show/tail the matching process journal before source-only diagnosis or asking the user to relaunch. Record PID, role, exact run/build, mode/map, journal and limits. Never take over or control a human/other-agent runtime. The user asked to make this routine for every relevant issue; the root instruction patch is prepared but its AGENTS.md lease commit recorded conflict-0e9e7b0e07dc, so durable completion is pending owner reconciliation. Current example: at 2026-11-25T21:04Z, evidence-watch found client PID36380 and server PID23536 in run 20261125_210344, mode Vehicle Arena - Rocket League Free Play, map arena1, build 2026-11-25T20:35:21.601166Z:ff20ae8525ee2afc5727a0ca055796369445e697123df0bef8bb4d5b46422764. This demonstrates the workflow; it is not NPC-behavior proof because the live mode is vehicle free play and the server has --no-npcs.
+
+## Agent suggestion
+
+### 2026-11-25T21:45:06.874Z — issue-review-sweeper
+
+Process improvement proposal (issue-review-sweeper, 2026-11-25, from independent review of issue-55bd775c8026).
+
+Observed: dev-loop managed-instance stops are inconsistently evidenced. `stop_client_instance` emits `dev-loop.instance.stopped` before termination (devscripts/dev-loop.py:1855-1883), but the `"stop"` control path sets the stop event and then `stop_processes()` terminates children without any per-instance intent event (dev-loop.py:3758-3768, 5904-5917). Evidence: run 20261124_150432 restart-instance logged dev-loop.instance.stopped then exited 4294967295; run 20261125_152203 logged a client exit 3221226356 (STATUS_STACK_BUFFER_OVERRUN) and a server exit 1 with no control stop, no dev-loop.instance.stopped, and no crash artifact, so the cause is unrecoverable from the journal. This repeats the attribution delay seen in every prior review of issue-55bd775c8026, where truthful stops had to be separated from crashes by hand.
+
+Proposal: make every managed exit self-describing. Emit `dev-loop.instance.stopping` with `intent` in {requested-stop, watchdog-restart, launch-reconciliation, explicit-restart, unrequested} before terminating in `stop_processes`, and add `intent`, `initiating_control_id`, and `expected_by_dev_loop` to `dev-loop.instance.exited`. When exit_code is a Windows exception status, record `dump_expected`/`dump_missing` instead of only `crash_artifacts=[]`.
+
+Measurable target: in a 24h sample of root dev-loop journals, 100% of managed-instance exits with a non-zero/non-1 code carry a non-empty `intent`, and an `initiating_control_id` whenever a control action caused them; 0 instances have an exit_code in the Windows exception range with an unclassified intent.
+
+Smallest experiment: on one pinned run, exercise (a) stop-all, (b) restart-instance, (c) client window close, (d) kill client, and require each resulting journal to name the intent/control and expected-vs-actual code. Acceptance: the four cases are distinguishable from the journal alone without reading source, and the 20261125_152203 0xC0000409 scenario is classified as a known stop or as an unrequested exit.
+
+## Agent suggestion
+
+### 2026-11-25T23:48:00.821Z — issue-review-sweeper
+
+Process review from issue-review-sweeper (wake wake-54803a3bce8c; 2026-11-25), bounded review of issue-ba939787ffa3. Read-only; no source edit, build, or proof-state change claimed.
+
+Confirming instance for the existing runtime-run handoff proposal (2026-11-25T01:17 entry on this issue) and the reviewed-but-unowned handoff proposal (2026-11-24T15:05 entry); no new mechanism, and this does not duplicate the cadence/cooldown proposals.
+
+OBSERVED: issue-ba939787ffa3 was readiness 8/8, priority high, state triaged, owner empty, tasks=0, proof records=0, and 0 linked build/run/journal from 2026-11-21T14:55Z until its first scheduled independent review at 2026-11-25T23:39Z (about 81 h; 747 global completed work sessions on the scheduler counter). A concrete 2026-11-21T15:33Z first-evidence plan (instrument paste/reload/save/rebuild and run a pinned Payload paste workload) was never executed: among the four named editor operations only autosave gained a duration_ms log, and no editor-operation journal exists anywhere under C:\mimita-v9\logs (only map-editor.config.loaded). The named check is still unexecuted.
+
+NEW EVIDENCE-HANDOFF GAP: usable timing evidence for the shared failure path already existed in a retained run ~3 h before this review and was not linked or surfaced. Run 20261125_204934_01 (build 2026-11-25T20:35:21.601166Z:ff20ae8525ee2afc5727a0ca055796369445e697123df0bef8bb4d5b46422764, game generation 645) records map.collision.static-solid-union union_ms=1165.1213 with performance.stall-watchdog frame_heartbeat_age_ms=1681/2726 on the same applyAuthoredMapGeometry path the editor calls. The issue still had zero linked runs at review time.
+
+MEASURABLE ADDITION to the existing runtime-run handoff target: for ready high, unowned issues whose next check names a sub-step, track whether any retained run harness already times that sub-step and whether it is cross-linked as evidence. Target: 0 such issues reach an independent review with a retained-journal timing match but 0 linked runs. Baseline: this issue, 0 linked runs at 81 h/first review while 20261125_204934_01 already contained the timing event.
+
+SMALLEST EXPERIMENT (read-only, no new authority): on the next 5 sweeps, when a selected issue's next check names a sub-step, grep retained logs for its timing event (for this issue: map.collision.static-solid-union / map-authored-geometry.applied / performance.stall-watchdog), append one cross-linked evidence note, and record hits/misses and time from run creation to cross-link. Do not auto-assign, auto-close, or self-approve proof; execution still follows ownership and dev-loop run rules.
+
+## Agent suggestion
+
+### 2026-11-26T01:48:01.425Z — issue-review-sweeper
+
+Development-process proposal from issue-review-sweeper, sweep of issue-87d8c9c7ffb1 (fifth review, review id 462, 2026-11-26T01:47Z). Read-only; no source edit, build, run, reopen, or reassignment performed.
+
+EVIDENCE (observed)
+- issue-87d8c9c7ffb1 (high priority, in_review) has now been independently reviewed 5 times: review ids 58 (2026-11-21T20:46Z), 212 (2026-11-22T20:58Z), 302 (2026-11-23T21:41Z), 406 (2026-11-25T00:42Z), 462 (2026-11-26T01:47Z). Reviews 2-5 all reach the same conclusion: source identity is confirmed in the then-current published generation (gen 519 -> 571 -> 627 -> 664), the required runtime event is absent for the reported scenario, and the issue stays unproven.
+- Review 2 (2026-11-22T20:58Z) already established that sha256(physics-collision-glb-sweep-slide.cpp)=6b5fd3ce... matches the proof source hashes and the published build. The three later reviews (302/406/462) therefore repeated a known result.
+- The only remaining step is a bounded, side-effect-free dev-loop isolated run in Payload/funworld3 Arcade with a player, not a code change: no human judgment is required. The proof predicate is already written down (event collision.arcade_entity.sweep, field entity_id, actor=<player>).
+- The task owner payload-arcade-collision-fix has been inactive since 2026-11-21T15:55:08Z (~110h at this sweep). There is no blocker *issue* to detect (the 2026-11-22 stalled-dependency proposal keys off a named blocker issue); only the owning task's activation step is stalled.
+- The review scheduler can re-select the issue for review, but no queue state turns "unproven, identity-confirmed, activation-only" into an artifact another agent can claim, so each sweep can only restate the gap.
+
+INFERENCE: the review cadence is working, but an issue whose only remaining step is a bounded proof-activation run and whose owner has gone inactive has no discoverable work item. Identical reviews repeat and the reported bug stays unproven indefinitely despite requiring no new source work.
+
+PROPOSAL: add a read-only coordinator derivation (called from sync / issue review) that, for each high-priority in_review issue, checks: task proof.result=unproven; task source_hashes match the current published build snapshot; task owner inactive beyond a threshold (default 24h). When all hold, create (or refresh) exactly one claimable `proof-activation` task on the issue containing the exact scenario (map/mode/gamemode), the pinned generation range with the matching hashes, the required journal events/fields, and explicit guards (use the root dev-loop isolated test run only; never disturb a shared/human run; no source edit; no auto-close; no proof-state change). It must not auto-claim, reassign, close, or alter proof; it only makes the run discoverable through `agent-coord next --claim` so any available agent can execute it under normal ownership rules.
+
+MEASURABLE TARGET
+- <=1 independent-review verdict of "unproven with no new evidence" after source identity is confirmed for the issue (baseline 3 for issue-87d8c9c7ffb1: reviews 302/406/462 after identity was established in 212).
+- Median time from identity-confirmed to a qualifying activation run <=24h for high-priority behavior bugs.
+- At most one activation task per issue (deduplicated across sweeps); zero extra dev-loops/builders and zero disruption to an existing shared run.
+
+SMALLEST EXPERIMENT: implement only the read-only derivation and task write for two issues on the current coordinator DB - issue-87d8c9c7ffb1 (owner inactive) and one control issue whose owner logged activity in the last 24h. Verify the run flags 87d8 and does NOT flag the control, produces exactly one claimable task with the scenario/predicate/guards above, and leaves proof/issue state unchanged. Then let one agent other than the inactive owner claim and execute only that activation through the root dev-loop isolated test run; measure whether a qualifying journal appears within 24h and record the result. No source, build, gameplay, or proof-state change is part of the experiment.
+
+Cross-ref: issue-87d8c9c7ffb1 (this sweep), issue-70cbf4d13c02 (cold handoff), issue-9a4503f6ed68 (proof-first wait issues). Not implemented.
+
+## Agent suggestion
+
+### 2026-11-26T02:36:03.847Z — issue-review-sweeper
+
+Process gap (issue-review-sweeper, 2026-11-26; derived from issue-1d1b9c62ac08). Five consecutive independent reviews (review ids 61, 215, 305, 407, 464) each ended with the same 'next discriminating check': one pinned funworld3+payload fresh-NPC run. A case-insensitive rg of every retained run.json under logs/ finds zero funworld3/payload runs, so the recommended experiment has never been executed across ~5 days. The review loop records the required run but nothing turns it into an owned run request or flags that the recommended run never happened, leaving the issue in_review on a known evidence gap.
+Proposal: attach an executable next-step obligation to each reviewer-suggested discriminating check. Minimal experiment: for the next 10 scheduler reviews that recommend a dev-loop run, (a) create one linked, claimable task containing owner, repro args, pinned generation, and required journal events, and (b) on the next sync flag the parent if no run_id with those args appears. Measurable target: consecutive reviews whose recommended run_id never appears drops from 5 to 0; >=90 percent of review-recommended runs recorded within 2 activations; no increase in over-budget build/run waits. Smallest implementation: an optional field on 'issue review' (e.g. --next-check-run) that auto-creates the linked task and surfaces a repro-missing counter in brain_check. No source or build change was made in this sweep.
+
+## Agent suggestion
+
+### 2026-11-26T04:15:16.028Z — issue-review-sweeper
+
+Process proposal from the 2026-11-26 bounded review of issue-136d4553ff92 (wake-bc4d564a2363), supported by real build evidence.
+
+Evidence: attempt game-dll-20261126T035727134387Z-8864f8 failed at changed_source_preflight on src/vehicles/vehicle-commands.cpp in 8.75s. Its summary preserves failed_phase and build_attempt_id, but the actionable cause is not retained: worker_error is only "changed-source preflight failed: src/vehicles/vehicle-commands.cpp in 8.75s" and worker_output_tail ends on the same line. The next attempt (9b4e13) succeeded on the same file 32s later. A cold-handoff agent therefore cannot tell whether this was a concurrent-edit race, an intermediate edit state, or a real compile error without re-running the build or reading raw logs.
+
+Proposal (safe, no build behavior change): require every failed build attempt summary to carry the first actionable diagnostic (file:line plus GCC/LLD code or message) in a dedicated, bounded field, in addition to failed_phase and attempt_id. Do not auto-close, retry, or fail-open any required compile/link failure.
+
+Measurable target: over the next 10 natural failed build attempts, 10/10 attempt summaries contain a non-empty first-diagnostic field, and 0 require raw output_tail to identify the failing file/line/cause. Report any attempt where the compiler emitted no diagnostic explicitly rather than leaving it blank.
+
+Smallest experiment: observational first. On the next naturally failing changed-source preflight, check whether the diagnostic exists. If absent, add bounded capture of the first diagnostic line at the existing failure owner (no retry/timeout/priority change) and re-check on the following natural failure. Add a focused parser/format test only if a new field is introduced.
+
+Cross-links: issue-136d4553ff92 acceptance requires failures to preserve an actionable cause; issue-6e08d89b55e3 covers truncation in the wait-issue reason field (different field); issue-7d3dcfd7433b covers wait build/generation identity. If the owner judges this duplicate of the issue-136d4553ff92 acceptance clause, treat it as supporting evidence there rather than new scope.

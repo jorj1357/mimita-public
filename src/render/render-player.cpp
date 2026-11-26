@@ -1070,7 +1070,24 @@ void renderPlayerInternal(
     // Render attached cosmetic meshes (hats etc.) on top of the body. Local
     // first person may hide the head and all attached cosmetics; remote actors
     // and third-person views keep them.
-    if (!(hideHead && gFirstPersonHideCosmetics)) {
+    const bool hideFirstPersonCosmetics = hideHead && gFirstPersonHideCosmetics;
+    if (hideFirstPersonCosmetics) {
+        static std::string lastHiddenActor;
+        if (lastHiddenActor != player.username) {
+            lastHiddenActor = player.username;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "first_person.head_hidden",
+                player.username.empty() ? "local" : player.username,
+                "local first-person head and attached cosmetics hidden", 0,
+                nlohmann::json{
+                    {"actor_id", networkEntityId},
+                    {"actor", player.username},
+                    {"head_hidden", true},
+                    {"cosmetics_hidden", true}});
+        }
+    }
+    if (!hideFirstPersonCosmetics) {
         MIMITA_PERF_SCOPE("Rendering::Actors::Cosmetics");
         CosmeticSystem::instance().renderCosmetics(player, view, proj);
     }

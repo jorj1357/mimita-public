@@ -806,6 +806,13 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                     next.presentation.hasProximityFade = false;
                 }
             }
+            if (p.contains("gore_mode") && p["gore_mode"].is_number_integer()) {
+                const int mode = p["gore_mode"].get<int>();
+                if (mode == 1 || mode == 2) {
+                    next.presentation.hasGoreMode = true;
+                    next.presentation.goreMode = mode;
+                }
+            }
             if (p.contains("first_person") && p["first_person"].is_object()) {
                 const auto& fp = p["first_person"];
                 if (fp.contains("hide_head_cosmetics") &&

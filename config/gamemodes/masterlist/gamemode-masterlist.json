@@ -800,6 +800,13 @@
           "enum": ["inherit", "on", "off"],
           "description": "Per-mode world proximity fade policy. inherit uses config/camconfig.json; on/off override it for this mode."
         },
+        "gore_mode": {
+          "type": "integer",
+          "required": false,
+          "default": 1,
+          "enum": [1, 2],
+          "description": "1 keeps the original 100-point part model. 2 separates actor HP from a 1000-point per-part gore pool with 250/500/1000 layer thresholds."
+        },
         "first_person": {
           "type": "object",
           "required": false,

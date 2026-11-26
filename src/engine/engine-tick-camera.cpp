@@ -4,7 +4,9 @@
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "mapeditor/map-editor.h"
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <glm/gtx/quaternion.hpp>
 #include <functional>
 #include <GLFW/glfw3.h>
@@ -144,6 +146,8 @@ static uint32_t gReplayRocketLastTick = 0;
 static uint32_t gReplayRocketSimTick = 0;
 static WeaponRuntime gReplayRocketRuntime;
 
+// Read-only accessor used by the render tick for replay rocket ghosts.
+// Kept here so the launcher state stays owned by this translation unit.
 const RocketLauncherState& replayRocketState() { return gReplayRocketState; }
 
 static void syncPlayerYawFromCamera(Player& player, const Camera& camera)
@@ -403,6 +407,31 @@ void engineTickCamera(Engine& engine, float dt)
     const auto camCfg = CamConfig::instance().effectiveData();
     if (MimitaNet::CommunityMatchClient::instance().forceFirstPerson())
         camera.thirdPerson = false;
+    // Bounded evidence that the bodycam policy reached the camera module and
+    // which first-person branch owns the pose this second.
+    {
+        static double lastBodycamPathTrace = -1.0;
+        const double now = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count() / 1000.0;
+        if (lastBodycamPathTrace < 0.0 || now - lastBodycamPathTrace >= 1.0) {
+            lastBodycamPathTrace = now;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Camera, StructuredLevel::Important,
+                "camera.bodycam.path", "bodycam",
+                "bodycam camera path and spring ownership", 0,
+                nlohmann::json{
+                    {"third_person", camera.thirdPerson},
+                    {"force_first_person",
+                        MimitaNet::CommunityMatchClient::instance().forceFirstPerson()},
+                    {"ragdoll_active", RagdollModeSystem::instance().isActive()},
+                    {"ragdoll_aim_active", RagdollModeSystem::instance().aimActive()},
+                    {"orientation_mode", camCfg.orientationMode},
+                    {"bodycam_override",
+                        CamConfig::instance().bodycamOverride().has_value()},
+                    {"camconfig_ptr", reinterpret_cast<std::uintptr_t>(
+                        &CamConfig::instance())}});
+        }
+    }
     camera.decayPunch(dt);
     const WeaponDefinition* recoilDef = weapons.getCurrentDef(player);
     camera.decayWeaponRecoil(
@@ -1278,6 +1307,19 @@ void engineTickCamera(Engine& engine, float dt)
         camera.pos = player.pos + glm::vec3(0.0f, 0.0f, eyeHeight);
         // Apply punch for weapon recoil
         camera.pos += camera.front * glm::vec3(0.0f, 0.0f, 0.0f); // no offset
+        // A bodycam override still owns the presentation spring on the plain
+        // first-person path, when the local actor is not in ragdoll/aim mode.
+        const auto& bodycam = CamConfig::instance().bodycamOverride();
+        if (bodycam && !RagdollModeSystem::instance().isActive() &&
+            !RagdollModeSystem::instance().aimActive()) {
+            camera.applyBodycamPose(camera.pos, camera.front, camera.up,
+                player.pos, world, dt, bodycam->positionResponseSeconds,
+                bodycam->rotationResponseSeconds,
+                bodycam->settleDeadbandDegrees,
+                bodycam->settlePositionMeters,
+                bodycam->settleHoldTicks, false,
+                bodycam->wallCollision, bodycam->wallProbeRadiusMeters);
+        }
     } else {
         const auto camCfg = CamConfig::instance().effectiveData();
         camera.fov = camCfg.fov;
@@ -1310,7 +1352,10 @@ void engineTickCamera(Engine& engine, float dt)
         if (glm::length(headRight) > 1e-4f)
             headUp = glm::normalize(glm::cross(headRight, headFront));
         const auto& bodycam = CamConfig::instance().bodycamOverride();
-        if (!camera.thirdPerson && !RagdollModeSystem::instance().isActive()) {
+        // A bodycam override is explicitly a presentation spring. It must also
+        // damp the fully active ragdoll head, not only the aim-only path.
+        if (!camera.thirdPerson &&
+            (!RagdollModeSystem::instance().isActive() || bodycam)) {
             glm::vec3 eyePosition = glm::vec3(headTransform[3]);
             if (bodycam) eyePosition += headRotation * bodycam->eyeOffsetMeters;
             if (bodycam) {

@@ -1,5 +1,6 @@
 #include "gamemode/gamemode-runtime-resolver.h"
 
+#include <cstdint>
 #include <string>
 
 #include "gamemode/gamemode.h"
@@ -10,6 +11,7 @@
 #include "render/post-fx.h"
 #include "render/render-player.h"
 #include "entities/aimbody-config.h"
+#include "entities/actor-body.h"
 #include "combat/actor-preset-weapons.h"
 #include "gui/hud/healthbar-config.h"
 #include "gui/ui-system.h"
@@ -129,6 +131,37 @@ void applyPresentationPolicy(const Gamemode& mode)
         CamConfig::instance().clearProximityFadeOverride();
     setFirstPersonHideCosmetics(
         p.hasFirstPersonHide ? p.firstPersonHide : false);
+    ActorBodyConfig::instance().setGoreMode(
+        p.hasGoreMode ? p.goreMode : 1);
+
+    // Bounded mode-policy evidence. The resolver runs on every state packet;
+    // only a changed resolved policy writes an event.
+    const std::string policyFingerprint =
+        mode.id + "|" + (p.hud.configured && p.hud.enabled && p.hud.sceneLayer
+            ? "scene" : "normal") + "|" +
+        (p.hasProximityFade ? (p.proximityFade ? "on" : "off") : "inherit") +
+        "|" + (p.hasFirstPersonHide && p.firstPersonHide ? "hide" : "show") +
+        "|" + std::to_string(p.hasGoreMode ? p.goreMode : 1);
+    static std::string lastPolicyFingerprint;
+    if (policyFingerprint != lastPolicyFingerprint) {
+        lastPolicyFingerprint = policyFingerprint;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "gamemode.presentation.policy", mode.id,
+            "resolved per-mode presentation policy", 0,
+            nlohmann::json{
+                {"mode_id", mode.id},
+                {"hud_scene_layer", p.hud.configured && p.hud.enabled &&
+                    p.hud.sceneLayer},
+                {"proximity_fade", p.hasProximityFade
+                    ? (p.proximityFade ? "on" : "off") : "inherit"},
+                {"first_person_hide_cosmetics", p.hasFirstPersonHide
+                    ? p.firstPersonHide : false},
+                {"gore_mode", p.hasGoreMode ? p.goreMode : 1},
+                {"camconfig_ptr", reinterpret_cast<std::uintptr_t>(
+                    &CamConfig::instance())}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 
     if (p.hasBloodClientFeedback)
         ImpactDecalsConfig::instance().setRuntimeClientFeedbackEnabled(
@@ -278,7 +311,10 @@ void GamemodeRuntimeResolver::clearClient()
     visuals.clearTeammateTrailOverride();
 
     CamConfig::instance().clearHitFlinchOverride();
+    CamConfig::instance().clearProximityFadeOverride();
     CamConfig::instance().clearBodycamOverride();
+    setFirstPersonHideCosmetics(false);
+    ActorBodyConfig::instance().setGoreMode(1);
     AimBodyConfig::instance().clearBodycamResponseOverride();
     PostFX::instance().clearBodycamLensOverride();
     uiSetHudPolicy(false, true, true, true, true, 0.12f);

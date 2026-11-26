@@ -213,3 +213,54 @@ Independent bounded review by issue-review-sweeper (read-only; no source edit, b
 3. For the user's case, have the local player fire at a wall, at an actor, and into open air and repeat those checks.
 4. Capture multi-angle visuals. Record run_id, game_generation 627, DLL sha256, and event line numbers. Then repair task-proof-9d05ae9ca4ff only from that pinned, non-zero-generation, trace-enabled journal; otherwise leave it unproven.
 5. Preserve the pinned journal (or a copy) against log rotation so the next reviewer can re-inspect it.
+
+## Scheduled independent review
+
+### 2026-11-26T00:58:51.192Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-5a57be69dc90 after 754 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive - gen-627 rocket bases survive on disk; hitfx tracing never enabled; local actor-mark heuristic unexercised)
+
+### 2026-11-26T01:14:34.317Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review by issue-review-sweeper (read-only; no source edit, build, run, lease, closure, or fix claimed). Reviewer wake wake-5a57be69dc90, 2026-11-26T01:13Z UTC (2026-11-25 20:13 EST). Prior reviews ids 57, 211, 301, 404 are preserved; this is append-only.
+
+## Observed facts
+
+- Readiness is complete (`missing=[]`, ready=true, 1 active task `rocket-impact-placement-proof`); issue state is `in_review`. No fix is proven.
+- Proof record `task-proof-9d05ae9ca4ff` is unchanged and still self-contradictory: `status=runtime_proven`, `result=unproven`, `verified_utc=""`, `build_id=""`, `game_generation=0`, `run_id=20261121_000922`, `journal_path=logs/2026-11-21/20261121_000922/client-01/events.jsonl`. `Test-Path logs/2026-11-21` is False, so the cited journal does not exist. This record is not evidence.
+- Current build: `build/game/current.json` `generation=662`, `status=ok`, `dll=build\game\generation-662\game-g662.dll`, `code_hash=24d73b811b3d4a8a3bb5e36ded1034730932592456aaf5fc0565c199521182c4`, `revision=e4b902e4...`, generated 2026-11-26T00:59:11Z; `ready.json` published 00:59:13Z. Snapshot `.dev/build-snapshots/game-dll-20261126T005556909723Z-fa8154/source` contains `server-projectiles.cpp:741 packet.reserved[0] = std::strcmp(impactType, "world") == 0 ? 1 : 0;` and `multiplayer-projectiles.cpp:1303/1332/1338 ... event->reserved[0] != 0`. The world-only gate is present in the current generation.
+- New strongest surviving rocket bases (both generation 627, mode `fun counter strike`; artifact build_id `2026-11-25T01:21:28.987918Z:5dda08799cefdf4caad640a34a806c92e4a03c3886acdd4aa943be8c558eeb8b`, mapped by `.dev/build-timings/game-dll-20261125T012133976103Z-b7c31e.json` to generation 627):
+  - Run `20261125_175329`: 680 `npc.projectile-created` rocket_launcher; terminal `PROJECTILE_POLICY_EVENT` reasons `explode-world` 578, `explode-player` 117, `explode-lifetime` 6 (plus 147 `continue-event`). Client journal has 71 rocket `explosion.shockwave.spawn` and 2 `impact_decals.config_read`; 0 `impact_decal.spawn`, 0 `impact_decal.render_submitted`, 0 hitfx lines.
+  - Run `20261125_184820`: 2379 rocket_launcher created; `explode-world` 2003, `explode-player` 400, `explode-lifetime` 33 (plus 949 continue). Client journal has 348 rocket shockwaves and 2 config reads; 0 decal spawn/render, 0 hitfx lines.
+  - Combined: 2,581 world, 517 player, 39 lifetime rocket terminals on a post-gate generation-627 build reached client FX, yet produced no decal events. These journals survive on disk, unlike the pruned 205333 base from review 301.
+- `rg --no-ignore` across `logs/` still returns zero `impact_decal.spawn`, zero `impact_decal.render_submitted`, zero `explosion_mark`, and zero `hitfx_trace` lines. Tracing defaults off: `src/effects/hit-effects.cpp:34 bool gHitFxTraceEnabled = false;`; spawn emit at `src/effects/effect-part.cpp:440`; render emit at `src/effects/effect-part-render.cpp:900`; command `hitfx_trace [0|1]` at `src/effects/hitfx-commands.cpp:194`.
+- First surviving `rocket.impact-mark.resolved` event exists: `logs/2026-11-24/20261124_205956/client-01/events-0005.jsonl:8138` (build `2026-11-24T19:27:02.742Z`, map `dust2cyberiav4`, mode `[2 CLIENTS] Vehicle Arena - 1v1`, local user Guest1859). Fields: `impact_surface=world_triangle`, `mark_surface=static_world_triangle`, `mark_applied=true`, `world_triangle_index=9140`, `nearest_world_surface_distance_m=-1.0`, `impact_position == mark_position == [183.832,-298.669,735.635]`, `weapon_mark_texture=explosionmarkv1.png`. This is the only such event in all logs. It is a world-hit resolver data point, not a spawn/render proof; it also corrects review 404's statement that no surviving 2026-11-24 run had rocket mark evidence. The `-1.0` distance is the unset sentinel for the direct world-triangle path (`src/combat/weapon-rocket-launcher.cpp:156,160,182`).
+- `config/impact_decals.json` still has `enabled: true` and `explosionMarks.enabled: true`; both new runs loaded it (fingerprint `6989:b53d80c391645c31`).
+- No rocket impact run exists on generations 628-662. The newest gen-662 runs (`20261126_010040` and neighbours) are `Vehicle Arena - Rocket League Free Play` on `arena1` with zero rocket-launcher projectile-policy events.
+
+## Inference / uncertainty
+
+- The world-only gate is contained in generation 662. Suppression of replicated player/lifetime marks and one mark for a world hit is consistent with expected behavior, but remains runtime-unproven because tracing has never been on.
+- The new gen-627 counter-strike runs are the best available proof base: they survive on disk and already produce thousands of world terminals. A single re-run with `hitfx_trace 1` would turn those same terminals into mark spawn/render events without new scenario setup.
+- The single mark event shows the local path can anchor a direct world hit exactly at the impact point. It says nothing about actor-hit or open-air, which are the float-prone cases.
+
+## Contrary evidence / scope risks
+
+- The offline/local actor-impact path in `src/combat/weapon-rocket-launcher.cpp:157-167` still calls `findNearestWorldSurface` and anchors the mark to the nearest static world triangle within 8 m for actor impacts. A midair actor hit near a ceiling/wall can therefore place the mark on that nearest surface instead of suppressing it, which is the reported floating symptom. The network path suppresses actor marks; the local/SP path does not. The one observed mark is `impact_surface=world_triangle`, so this actor path is unexercised.
+- `src/pobjects/persistent-physics.cpp:403 doExplosion` (grenade/persistent explosions) still defaults `spawnMark=true` with a +Z normal; it is outside the rocket gate and can still float on an in-air explosion.
+- Acceptance says every mark sits flush; the implemented network behavior suppresses actor/open-air marks rather than anchoring them. Human review should confirm suppression is acceptable.
+- The `rocket.impact-mark.resolved` event is emitted only from the local weapon path; replicated/NPC marks are observable only through `hitfx_trace`. A world-terminal journal with tracing off cannot distinguish correct suppression from a skipped or broken mark path.
+
+## Next discriminating check (cold handoff)
+
+1. Re-run a surviving gen-627 base (`20261125_175329` or `20261125_184820`, `fun counter strike`) or a newer generation >= 662 rocket profile with `hitfx_trace 1` in the client agent-command queue; prefer a current-generation run and keep `impact_decals.config_read` showing enabled.
+2. In that exact client journal require: each `explode-world` (stepType=2) yields `impact_decal.spawn` (kind `explosion_mark`) plus `impact_decal.render_submitted` with the same `decal_id`; `explode-player`/`explode-lifetime` yield no explosion-mark decal id and no render submission; spawn position/normal are finite and the world-hit normal is not the +Z default.
+3. Separately exercise the local/offline actor case: fire a rocket at an actor in open air and require `rocket.impact-mark.resolved` with `impact_surface=actor` and either `mark_applied=false`/`mark_surface=none_within_8m`, or a `nearest_world_surface_distance_m` consistent with a truly adjacent surface and a mark visibly flush. A mark anchored to a surface >0 m away from a midair actor is the floating defect.
+4. Capture multi-angle visuals for the world-hit mark and the actor case; record run_id, game_generation, DLL sha256, and event line numbers.
+5. Repair `task-proof-9d05ae9ca4ff` only from that pinned, non-zero-generation, trace-enabled journal; otherwise leave it unproven. Preserve a journal copy against log rotation.
+
+Verdict: inconclusive - gen-627 rocket bases survive on disk; hitfx tracing still never enabled; local actor-mark heuristic unexercised.

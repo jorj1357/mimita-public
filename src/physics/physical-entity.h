@@ -104,7 +104,24 @@ struct PhysicalEntity {
     float sleepAngularThreshold = 0.25f;
     uint16_t sleepTicks = 0;
     uint16_t sleepRequiredTicks = 45;
+    // Deepest world-contact penetration measured on the last fixed step, in
+    // metres. 0 means no part of the body is inside world geometry. Published
+    // so a body owner (for example a vehicle) can prove "never below the
+    // surface" without re-deriving contacts.
+    float lastContactPenetration = 0.0f;
+    // Linear damping that replaces the global object damping instead of adding
+    // to it. Negative means "compose with the global value". The arena ball
+    // needs this: Rocket League's only ball decay is drag 0.03/s, and the
+    // global object damping would otherwise triple it.
+    float linearDampingOverride = -1.0f;
     uint8_t supportGraceTicks = 0;
+    // True when this body generated at least one world contact in its last
+    // fixed step. Lets an owner distinguish "resting on the ground" from
+    // "falling" without re-running contact detection.
+    bool lastContactedWorld = false;
+    // Normal of the deepest world contact on the last fixed step, so a caller
+    // can tell a floor overlap from being wedged into a wall.
+    glm::vec3 lastContactNormal{0.0f, 0.0f, 1.0f};
     float strength = 100.0f;
     float health = 100.0f;
     // Authoritative destruction state (box minus spherical cuts). `enabled`

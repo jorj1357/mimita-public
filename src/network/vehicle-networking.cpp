@@ -24,6 +24,8 @@
 #include "gamemode/arena-ball.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/map-config.h"
+#include "input/gamepad-input.h"
+#include "input/input-router.h"
 #include "network/multiplayer-context.h"
 #include "network/server-gamemode.h"
 #include "physics/movement/physics-collision.h"
@@ -273,6 +275,7 @@ void tickArenaGoals(ServerVehicleState& vehicleState,
 {
     if (!map.arena.present)
         return;
+    ArenaBall::tick();
     PhysicalEntity* ball = nullptr;
     for (PhysicalEntity& entity : PhysicalEntitySystem::instance().entities())
         if (entity.persistenceId == "arena-ball")
@@ -668,12 +671,22 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
     {
         // Seat human players before NPCs. Otherwise an NPC can claim the car
         // nearest the human spawn and starve the joining player.
+        // A human waiting for a car, and at least one human already seated. The
+        // NPC must never take the car a joining human would have reached: at
+        // server start no human exists yet, so an "only when nobody is waiting"
+        // gate let the NPC claim the blue car and left the human unseated.
         bool humanWaitingForCar = false;
+        bool humanSeated = false;
         for (const auto& [playerId, player] : players)
-            if (!player.dead && player.seatedVehicleId == 0 &&
-                player.spawnState == ServerPlayer::Active)
+        {
+            if (player.dead)
+                continue;
+            if (player.seatedVehicleId != 0)
+                humanSeated = true;
+            else if (player.spawnState == ServerPlayer::Active)
                 humanWaitingForCar = true;
-        if (!humanWaitingForCar)
+        }
+        if (!humanWaitingForCar && humanSeated)
         {
         bool npcVehicleAlive = false;
         for (const VehicleState& vehicle : VehicleSystem::instance().vehicles())
@@ -1038,15 +1051,41 @@ void handleVehicleInputPacket(const char* buffer, int bytes,
     ServerPlayer& player = it->second;
     if (from && !playerOwnsConnectionSource(player, from, connectionId))
         return;
+    // Bounded rejection diagnostic: a dropped input packet used to be silent,
+    // which made "the car does not respond" impossible to attribute.
+    const auto reject = [&](const char* reason) {
+        static uint32_t sLastRejectTick = 0;
+        if (serverTick - sLastRejectTick < 30u)
+            return;
+        sLastRejectTick = serverTick;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "vehicle.input.rejected", std::to_string(pkt->vehicleId),
+            "server rejected a driver input packet", serverTick,
+            {{"reason", reason},
+             {"vehicle_id", pkt->vehicleId},
+             {"player_id", pkt->header.playerId},
+             {"seated_vehicle", player.seatedVehicleId},
+             {"dead", player.dead}});
+    };
     if (player.dead || player.seatedVehicleId == 0 ||
         player.seatedVehicleId != pkt->vehicleId)
+    {
+        reject(player.dead ? "dead" : "seat_mismatch");
         return;
+    }
     VehicleState* vehicle =
         VehicleSystem::instance().find(pkt->vehicleId);
     if (!vehicle || vehicle->serverMirror)
+    {
+        reject(vehicle ? "server_mirror" : "no_vehicle");
         return;
+    }
     if (!VehicleSystem::instance().isDriver(pkt->vehicleId, player.id))
+    {
+        reject("not_driver");
         return;
+    }
 
     VehicleInput input;
     input.throttle = std::clamp(pkt->throttle, 0.0f, 1.0f);
@@ -1055,6 +1094,9 @@ void handleVehicleInputPacket(const char* buffer, int bytes,
     input.clutch = std::clamp(pkt->clutch, 0.0f, 1.0f);
     input.handbrake = std::clamp(pkt->handbrake, 0.0f, 1.0f);
     input.boost = std::clamp(pkt->boost, 0.0f, 1.0f);
+    input.pitch = std::clamp(pkt->pitch, -1.0f, 1.0f);
+    input.yaw = std::clamp(pkt->yaw, -1.0f, 1.0f);
+    input.roll = std::clamp(pkt->roll, -1.0f, 1.0f);
     input.jumpHeld = (pkt->flags & VEHICLE_INPUT_JUMP_HELD) != 0;
     input.powerslide = (pkt->flags & VEHICLE_INPUT_POWER_SLIDE) != 0;
     input.engineToggle = (pkt->flags & VEHICLE_INPUT_ENGINE_TOGGLE) != 0;
@@ -1065,7 +1107,9 @@ void handleVehicleInputPacket(const char* buffer, int bytes,
 
     static uint32_t sLastInputLogTick = 0;
     if ((input.throttle > 0.01f || input.brake > 0.01f ||
-         std::abs(input.steer) > 0.01f || input.handbrake > 0.01f) &&
+         std::abs(input.steer) > 0.01f || input.handbrake > 0.01f ||
+         std::abs(input.pitch) > 0.01f || std::abs(input.yaw) > 0.01f ||
+         std::abs(input.roll) > 0.01f) &&
         serverTick - sLastInputLogTick >= 15u)
     {
         sLastInputLogTick = serverTick;
@@ -1081,6 +1125,9 @@ void handleVehicleInputPacket(const char* buffer, int bytes,
              {"throttle", input.throttle},
              {"brake", input.brake},
              {"steer", input.steer},
+             {"pitch", input.pitch},
+             {"yaw", input.yaw},
+             {"roll", input.roll},
              {"handbrake", input.handbrake},
              {"boost", input.boost},
              {"jump_held", input.jumpHeld},
@@ -1502,21 +1549,48 @@ void mpSendVehicleInput(MultiplayerContext& ctx, uint32_t currentMs)
         return;
     const VehicleInput input = vehicles.sampleLocalInput();
     static uint32_t sLastLocalInputLogMs = 0;
-    if ((input.throttle > 0.01f || input.brake > 0.01f ||
-         std::abs(input.steer) > 0.01f || input.clutch > 0.01f ||
-         input.handbrake > 0.01f || input.engineToggle || input.modeToggle ||
-         input.shiftUp || input.shiftDown) &&
-        currentMs - sLastLocalInputLogMs >= 250u)
+    static uint32_t sLastIdleSampleMs = 0;
+    const bool hasInput =
+        input.throttle > 0.01f || input.brake > 0.01f ||
+        std::abs(input.steer) > 0.01f || input.clutch > 0.01f ||
+        input.handbrake > 0.01f || std::abs(input.pitch) > 0.01f ||
+        std::abs(input.yaw) > 0.01f || std::abs(input.roll) > 0.01f ||
+        input.engineToggle || input.modeToggle ||
+        input.shiftUp || input.shiftDown;
+    // One unconditional 1 Hz sample. Without it a driver that produces no
+    // input at all is invisible in the journal, which is exactly the state that
+    // is hardest to diagnose ("I press and nothing happens").
+    const bool idleSampleDue = currentMs - sLastIdleSampleMs >= 1000u;
+    if (hasInput && currentMs - sLastLocalInputLogMs >= 250u)
+    {
+        sLastLocalInputLogMs = currentMs;
+    }
+    else if (!hasInput && !idleSampleDue)
+    {
+        return;
+    }
+    if (!hasInput)
+        sLastIdleSampleMs = currentMs;
     {
         sLastLocalInputLogMs = currentMs;
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Network, StructuredLevel::Important,
             "vehicle.input.local", std::to_string(vehicleId),
-            "local seated driver input sampled", ctx.tick,
+            hasInput ? "local seated driver input sampled"
+                     : "local seated driver idle sample",
+            ctx.tick,
             {{"vehicle_id", vehicleId},
              {"throttle", input.throttle},
              {"brake", input.brake},
              {"steer", input.steer},
+             {"gamepad_connected", GamepadInput::instance().connected()},
+             {"raw_throttle_axis", GamepadInput::instance().rawAxis(5)},
+             {"raw_brake_axis", GamepadInput::instance().rawAxis(4)},
+             {"focused", InputRouter::gameWindowFocused()},
+             {"idle", !hasInput},
+             {"pitch", input.pitch},
+             {"yaw", input.yaw},
+             {"roll", input.roll},
              {"clutch", input.clutch},
              {"handbrake", input.handbrake},
              {"boost", input.boost},
@@ -1539,6 +1613,9 @@ void mpSendVehicleInput(MultiplayerContext& ctx, uint32_t currentMs)
     pkt.throttle = input.throttle;
     pkt.brake = input.brake;
     pkt.steer = input.steer;
+    pkt.pitch = input.pitch;
+    pkt.yaw = input.yaw;
+    pkt.roll = input.roll;
     pkt.clutch = input.clutch;
     pkt.handbrake = input.handbrake;
     pkt.boost = input.boost;

@@ -17,8 +17,12 @@
   "width": 0.842,
   "height": 0.362,
   "collisionLength": 1.18,
-  "collisionWidth": 0.56,
-  "collisionHeight": 0.28,
+  "collisionWidth": 0.84,
+  "collisionHeight": 0.431,
+  // Bottom face is the wheel contact plane (hub z -0.10 - wheel radius 0.15
+  // = -0.25) and the top is the roof, so the whole car is inside the box and
+  // no wheel can sit below the surface.
+  "collisionCenter": [0.0, 0.0, -0.0345],
   "drag": 0.0,
   "downforce": 0.0,
   "bodyFriction": 0.85,

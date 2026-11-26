@@ -125,10 +125,14 @@ struct VehicleSpec {
     float density = 120.0f;
     glm::vec3 centerOfMass{0.0f};
     glm::vec3 halfExtents{2.2f, 0.9f, 0.6f};
-    // Collision extents may differ from the rendered body. A narrower, lower
-    // collision slab lets the wheels be the lowest and widest points, so a
-    // tipped car has no stable face to rest on. Zero means "use halfExtents".
+    // Collision extents may differ from the rendered body. Zero means "use
+    // halfExtents". The box is the car's whole envelope and must contain the
+    // wheels: its bottom face is the wheel contact plane, so no part of the car
+    // can sit below the surface at rest.
     glm::vec3 collisionHalfExtents{0.0f};
+    // Offset of the collision box from the chassis origin. Used to put the box
+    // bottom exactly on the wheel contact plane without moving the visual body.
+    glm::vec3 collisionCenter{0.0f};
     float drag = 0.32f;
     float downforce = 0.0f;
     // Chassis-vs-world material response. Low friction lets the body slide off
@@ -234,7 +238,6 @@ struct VehicleInput {
     bool jumpHeld = false;
     bool jumpPressed = false;
     bool powerslide = false;
-    bool ballCamToggle = false;
     bool engineToggle = false;
     bool modeToggle = false;
     bool shiftUp = false;
@@ -377,6 +380,8 @@ struct VehicleState {
     bool flipReported = false;
     glm::vec3 settleAnchor{0.0f};
     bool settleAnchorValid = false;
+    // Rate limit for the sustained-penetration diagnostic.
+    uint32_t lastPenetrationLogTick = 0;
 
     // Input used when no local driver is attached (terminal, NPC, network).
     VehicleInput pendingInput;

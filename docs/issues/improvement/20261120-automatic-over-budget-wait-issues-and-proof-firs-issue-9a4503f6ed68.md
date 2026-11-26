@@ -617,3 +617,49 @@ This is the "missing evidence linkage" class the acceptance already targets (put
 PROPOSAL (measurable, smallest experiment): add one lint/board rule that flags any issue doc containing an "Implementation evidence" section while `tasks=[]` (no linked task/proof) and `reviews=[]`. Target metric: maximum age of such orphaned implementation-evidence issues drops from the observed ~86h to <= 1 review interval, and the count of flagged issues is visible every board refresh. Smallest experiment: extend `agent-coord issue lint` (or a read-only board query) to emit that list, run it once against the current store, and record the count and max age; no schema change and no build required.
 
 Evidence: issue-803e5246274e `issue brief` (tasks=[], reviews=[], state new), the two 2026-11-21 implementation-evidence suggestions, commit d89884f6, and the 41-test pass recorded with this review. Uncertainty: whether the intended human review gate is deliberate policy; if so, the rule should surface "awaiting human review" rather than treat the age as a defect.
+
+## Agent suggestion
+
+### 2026-11-25T21:32:40.277Z — build-wait-reviewer
+
+Occurrence 2026-11-25T20:51:01.512Z (issue-f1de1fcd87a2, attempt game-dll-20261125T205101937935Z-9d0df5): wait records generation 644 (previous published) while the in-flight attempt was generation 645; evidence.build_id is the prior artifact and no run_id is carried (live run 20261125_204934_01). The wait was a healthy non-no-op rebuild of four heavy TUs (render-player 100.754s, player-render 90.255s, render-world 89.732s, camera-config 89.722s; preflight wall 101.063s, link 22.422s, total 172.171s). Confirms the flat 60s budget trips on legitimate incremental builds and that identity should come from the active attempt, not latest_build. Reviewed by build-wait-reviewer.
+
+## Agent suggestion
+
+### 2026-11-25T21:36:54.981Z — build-wait-reviewer
+
+Acceptance gap observed on wait game-dll-build:2026-11-25T21:00:55.639Z (issue-2e5c794199f1). The wait evidence carries build_id 2026-11-25T20:35:21.601166Z (the last published artifact, launched 20:49:34) and generation 645 (previous completed build), but the in-progress attempt was game-dll-20261125T210055875592Z-33009d at source_generation 12, which produced generation 646. No build_attempt_id and no run_id are recorded, so the issue cannot be joined to its build journal or run. Cause path: dev-loop.py:3884-3899 uses self.latest_build and self.game_build_generation (previous result), not the active worker/attempt identity. Request id 2026-11-25T21:00:55.489Z-7170e82e:mode3:game is present, which is the only reliable join key. Matches this issue's acceptance ("reason, and build/run IDs"). Read-only; no fix claimed.
+
+## Agent suggestion
+
+### 2026-11-25T22:01:49.371Z — build-wait-reviewer
+
+Recurring wait occurrence (build-wait-reviewer, wake-9e77d1a2aeac, 2026-11-25T22:0xZ): wait game-dll-build:2026-11-25T21:39:39.056Z (issue-8b7208f291a8) fired at 62.845s/60s; in-flight attempt game-dll-20261125T213939567272Z-df3f49 (source_generation 19, target generation 648) was recorded as build_id 2026-11-25T20:35:21.601166Z / generation null (stale identity, dev-loop.py:3896-3897). That attempt FAILED worker_timeout after 300s (total 316.015s) under mean host CPU 99.462% and min free memory 22,872,064 B (~21.8 MiB). Same run: issue-63ec094b8859 (attempt 806cc2 worker_timeout 309.344s) and issue-bb51d96a1200 (attempt 19bd08 success 84.812s publishing gen 651). A healthy 84.8s rebuild exceeds the flat 60s budget, so this is the flat-budget + per-attempt-minting flood, plus a false dev-loop.wait.issue-failed with no over_budget/reviewer-wake rows from the synchronous 30s run --once path (issue-9aeec1fbae9d). Exactly one wake was queued (wake-9e77d1a2aeac). No new issue; aggregation evidence only. Journal logs/2026-11-25/20261125_212905/dev-loop/events.jsonl; build timings .dev/build-timings/game-dll-20261125T213939567272Z-df3f49.json + .resource.json.
+
+## Agent suggestion
+
+### 2026-11-25T22:01:57.768Z — build-wait-reviewer
+
+Occurrence 2026-11-25T21:25:09.090Z (issue-0843a94eae4b), build-wait-reviewer: wait evidence records build_id 2026-11-25T20:35:21.601166Z (last published EXE artifact) and generation 647 (last completed game build), while the in-flight attempt was game-dll-20261125T212509367039Z-c77aed / generation 648; no build_attempt_id or run_id in evidence. The reason field was clean this occurrence ([GAME BUILD] revision/sources/jobs/priority/cache/seeded; no corruption, so issue-6e08d89b55e3 did not recur). Build was healthy and succeeded (189.141s total). The single changed TU src/vehicles/vehicle-system.cpp compiled 73.848s (preprocessing 30.05s) and alone exceeds the flat 60s budget; link took 68.063s (644 objects, ~472 MiB). Journal logs/2026-11-25/20261125_212558/dev-loop/events.jsonl; timings .dev/build-timings/game-dll-20261125T212509367039Z-c77aed.json; resource .resource.json (mean host CPU 99.249%, min avail mem ~118 MiB). Reinforces: stage/TU-aware budget, coalesce occurrences by kind+stage, and put first-class build_attempt_id + in-progress generation + run_id into wait evidence instead of the last published artifact.
+
+## Agent suggestion
+
+### 2026-11-25T22:05:15.690Z — build-wait-reviewer
+
+Identity occurrence on wait game-dll-build:2026-11-25T21:45:58.563Z (issue-63ec094b8859, run 20261125_212905): the record carries build_id 2026-11-25T20:35:21.601166Z (prior latest_build) and generation=null, while the actually waiting in-flight attempt was game-dll-20261125T214558738291Z-806cc2 (source_generation 25, target generation 648, started 21:45:58.738Z). Source: wait arm dev-loop.py:~3896-3897 records self.latest_build and self.game_build_generation is null. A sibling wait issue-8b7208f291a8 shows the same pattern. Suggest emitting the active attempt id and target/source generation when in flight. No source edit made.
+
+## Occurrence
+
+### 2026-11-26T01:39:32.575Z — build-wait-reviewer
+
+Fresh identity-mismatch occurrence for wait game-dll-build:2026-11-26T00:55:56.696Z (issue-ac23ab33d184). The wait evidence records build_id 2026-11-26T00:49:32.788771Z (last published artifact), generation=null, and no run_id. The in-flight attempt was game-dll-20261126T005556909723Z-fa8154, source_generation 2; dev-loop.game-build.started was 00:56:15.676Z; the terminal result was generation 662, status ok, total 194.141s, run 20261126_005302. That attempt identity is recoverable only from the truncated reason tail. This confirms the known gap in the acceptance phrase "build/run IDs" on the wait record. No source fix claimed and no duplicate issue filed.
+
+Evidence: {"in_flight_build_attempt_id": "game-dll-20261126T005556909723Z-fa8154", "in_flight_generation": 662, "issue": "issue-ac23ab33d184", "recorded_build_id": "2026-11-26T00:49:32.788771Z", "recorded_generation": null, "run_id": "20261126_005302", "wait_id": "game-dll-build:2026-11-26T00:55:56.696Z"}
+
+## Occurrence
+
+### 2026-11-26T04:14:53.553Z — build-wait-reviewer
+
+Fresh identity-mismatch + reason-tail occurrence for wait game-dll-build:2026-11-26T02:29:43.891Z (issue-5137be4d2f57). Evidence records build_id=2026-11-26T01:00:35.913746Z (last published artifact), generation=null and no run_id; the in-flight attempt was game-dll-20261126T022944049233Z-822054, source_generation 8, real generation 665, run 20261126_022514, status ok total 94.875s (compile 52.391s, link 19.922s, 7 compiled / 638 skipped). reason is a mid-JSON tail starting `59297.0,"build_attempt_id":...` from dev-loop.py:3112 [-240:]. One reviewer wake was queued (wake-bdaae328c6d8) but its first launch 02:30:50Z produced no review; wake.retry 04:01:56Z and the review only arrived at 04:02:45Z (~92 min later, issue-84c584957e65). This confirms the known identity (build/run IDs) and reason defects on a fresh 2026-11-26 pair. No source fix claimed and no duplicate issue filed.
+
+Evidence: {"budget_seconds": 60.0, "host_cpu_mean_percent": 97.36, "host_cpu_peak_percent": 100.0, "in_flight_build_attempt_id": "game-dll-20261126T022944049233Z-822054", "in_flight_build_outcome": "success", "in_flight_compile_seconds": 52.391, "in_flight_compiled": 7, "in_flight_generation": 665, "in_flight_link_seconds": 19.922, "in_flight_skipped": 638, "in_flight_source_generation": 8, "in_flight_total_seconds": 94.875, "issue": "issue-5137be4d2f57", "journal": "logs/2026-11-26/20261126_022514/dev-loop/events.jsonl", "journal_lines": [54, 60, 61, 64, 65], "kind": "game-dll-build", "min_available_memory_bytes": 88260608, "reason_is_json_tail": true, "recorded_build_id": "2026-11-26T01:00:35.913746Z", "recorded_generation": null, "recorded_run_id": null, "reviewer_wake": "wake-bdaae328c6d8", "reviewer_wake_count_for_wait": 1, "run_id": "20261126_022514", "stage": "game_build", "timing_summary": ".dev/build-timings/game-dll-20261126T022944049233Z-822054.json", "wait_elapsed_seconds": 60.464, "wait_id": "game-dll-build:2026-11-26T02:29:43.891Z", "wait_record_utc": "2026-11-26T02:30:50.237Z", "wake_first_launched_utc": "2026-11-26T02:30:50Z", "wake_queue_to_working_review_seconds": 5520, "wake_queued_utc": "2026-11-26T02:30:46.325Z", "wake_relaunched_utc": "2026-11-26T04:02:45.520Z", "wake_retry_utc": "2026-11-26T04:01:56Z"}

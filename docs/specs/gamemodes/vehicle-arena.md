@@ -9,6 +9,49 @@ while MiMITA arena tuning and first implementation remain pending.
 **Does not:** add a second vehicle physics solver, require vehicle-mounted
 weapons, or replace the shared gamemode lifecycle.
 
+## The dream
+
+Two cars, one ball, one arena. The controls, the car, the ball, and the camera
+behave the way Rocket League players already have in their hands. A mechanic is
+never "close enough, we will tune it later": each one is proven in a live
+journal before the next one starts, and the numbers come from documented Rocket
+League references (§9) instead of invented values.
+
+## Milestone ladder
+
+The mode ships as a ladder, not a pile of features. Each milestone closes only
+on journal evidence from the exact run that exercised it; a successful build is
+not evidence of behavior. The `state` column is the current truth and belongs in
+the same commit as any change to it.
+
+| # | Milestone | State | Proof |
+|---|---|---|---|
+| M1 | Input contract: one logical action, any device. Profile data owns the keyboard mapping; the pad owns its own device mapping; nothing hardcodes a key. | partial | Server-side `vehicle.airroll` after a transmitted roll input: run `20261125_233342`, game generation 656. Keyboard rebind path is source-only, not yet runtime-proven |
+| M2 | Air handling: jump, double jump, dodge, air roll (all four), stall, flip reset, 5.5 rad/s cap | partial | Jump and air roll proven in run `20261125_233342` (`vehicle.jump`, `vehicle.airroll`, `air_control=true`, 184 samples, angular speed capped at 5.5). Roll and yaw direction proven in run `20261126_014900`: intent sign matched the measured `roll_rate_local`/`yaw_rate_local`, zero `vehicle.aircontrol.mismatch`. Dodge, stall, and flip reset unproven |
+| M3 | Ground handling: throttle curve, 23 m/s cap, supersonic, powerslide, wall drive, landing, ground attitude | partial | Drive at 17.5-20 m/s proven earlier. Run `20261126_014657`: 3,726 grounded samples with max \|pitch_rate_local\| and \|roll_rate_local\| of 0.000 and max tilt 0.00 deg under throttle and reverse. Run `20261126_014117`: jump lands with `up_dot 1.0000`, `wheel_mask 15`, zero penetration. Run `20261126_013852`: hard landing plus wall ram, zero penetration events, zero resting penetration. Run `20261126_014423`: a 90-degree roll landing touches down on the chassis (`wheel_mask 0`), never reports a tilted rest, and holds 0.005 m resting overlap. Powerslide effect still unproven |
+| M4 | Ball: roll-down, wall/ceiling bounce, car-ball impulse curve, 50/50 convergence | partial | Ball caps proven (60 m/s, 6 rad/s); bounce, impulse curve, and 50/50 unproven |
+| M5 | Camera and presentation: ball cam on Triangle and Space, boost meter, nametags, touch markers, sounds | partial | `vehicle.ballcam` on/off/on recorded in run `20261125_233213` from the command surface; the Triangle pad path still needs a human check |
+| M6 | 1v1 versus an NPC: kickoff, goal, reset, score, timer, full match | unproven | One complete match to the score limit, 5x `arena.goal.detected` + `arena.goal.reset`, correct winner |
+| M7 | 3v3 and SSL-level bots | not started | later, data-driven rosters |
+
+Rules for the ladder:
+
+- A mechanic with no journal proof is described as unproven, never as working.
+- A proof names its run, build identity, and journal path.
+- Moving a row forward requires the proof event, not a playtest feeling alone;
+  human acceptance is recorded separately from `runtime_proven`.
+- New mode work extends an existing milestone or adds one. It does not create a
+  parallel controller, physics, or ball path.
+- The repeatable proofs live in `devscripts/scenarios/rocket_*_v1.json`
+  (`rocket_input_rotation_v1`, `rocket_jump_airroll_v1`,
+  `rocket_ballcam_v1`, `rocket_landing_flat_v1`, `rocket_landing_tilted_v1`,
+  `rocket_ground_tilt_v1`, `rocket_airroll_dir_v1`,
+  `rocket_no_underground_v1`). Their commands accept `local` as the vehicle id
+  and resolve the seated vehicle, so a scenario never depends on a spawn slot.
+- `event_field_all_at_most` / `event_field_all_at_least` assertions require every
+  matching sample to satisfy the bound (and at least one sample to exist), which
+  is how "the car never pitched while grounded" is expressed.
+
 ## 1. Scope
 
 Vehicle Arena is a mode on top of the shared vehicle library. It owns:
@@ -142,6 +185,36 @@ the phase transition, matching the shared score-limit ordering rule.
 
 ## 9. Reference tuning
 
+### 9.0 Ball measurement record (2026-11-26)
+
+Ball behaviour is measured, not felt. The ball owner exposes a test surface so a
+run can be reproduced without a human:
+
+- `ball_set <x> <y> <z> [vx vy vz]` places the arena ball with a velocity. It is
+  server-authoritative: a client-side placement is overwritten, so the command
+  belongs on the server (a dev launch mode may pass it as a startup command).
+- `ball_status` logs `arena.ball.status` on request.
+- `arena.ball.state` samples position, velocity, linear and angular speed at
+  10 Hz; `arena.ball.contact` and `arena.ball.extra_impulse` record the
+  pre/post contact velocities and the added impulse.
+
+Each row below is filled from a run and compared with §9.1. Empty cells are
+unmeasured, not "fine".
+
+| Behaviour | Scenario | Reference | Measured | Delta |
+|---|---|---|---|---|
+| Car→ball impulse, slow hit (~5 m/s) | `rocket_ball_hit_v1` | curve 0.65, Z 0.35 | | |
+| Car→ball impulse, fast hit (~23 m/s) | `rocket_ball_hit_v1` | curve 0.55 | | |
+| Ball roll-down on flat ground | launch mode `62` (probe kick), runs `20261126_033552` and `20261126_040455` | drag 0.03/s (0.9 m/s^2 at 30 m/s) | 29.9 -> 25.1 m/s in 1.2 s = **4.0 m/s^2, k 0.175 /s** after the damping override | **~5x too much**; the 6 rad/s spin cap prevented rolling (pure rolling at 25 m/s needs 27 rad/s), so the ball slid for the whole roll. Spin cap raised to 66 rad/s; re-measure pending |
+| Ball spin during roll | run `20261126_040455` | angular speed consistent with rolling at `v/r` | spin rose 0.39 -> 6.89 rad/s and stopped at the cap | waiting on the raised cap |
+| Ball resting height | run `20261126_033552` | radius 0.9125 m -> centre at 0.9125 | centre rest **1.01 m**, i.e. the ball floats **~0.10 m** | tessellated sphere is inscribed in the collision radius; needs the analytic radius at the contact |
+| Floor rebound at 20 m/s | `rocket_ball_bounce_v1` | restitution 0.6 | | |
+| Wall rebound at 20 m/s | `rocket_ball_bounce_v1` | restitution 0.6 | | |
+| Ball speed cap | any | 60 m/s | 60 m/s (proven earlier) | 0 |
+| Ball spin cap | any | 6 rad/s | 6 rad/s (proven earlier) | 0 |
+| 50/50 convergence | `rocket_ball_50_50_v1` | one authoritative result | | |
+| Dribble carry | `rocket_ball_dribble_v1` | friction 2.0, restitution 0.0 | | |
+
 ### 9.1 Rocket League reference baseline
 
 This is a comparison baseline, not a claim that Epic published Rocket League's
@@ -236,7 +309,16 @@ input and physics owners; it does not add an arena-only car solver or an
 | `Space` | ball cam / car cam toggle | same |
 
 - Controls are car-relative, never camera-relative.
-- Air control has no yaw. It applies pitch and roll torque only.
+- The keyboard mapping in this table is data: each profile's `bindings` block in
+  `config/vehicle-profiles/` maps the logical action to the key or mouse button,
+  and the pad mapping lives in `config/input/gamepad.json`. The vehicle input
+  path reads those two owners only; it never falls back to a hardcoded key, so a
+  rebind always wins.
+- Air control applies pitch, yaw, and roll torque from the profile `airControl`
+  block. The horizontal stick is yaw; the free-air-roll modifier (Shift, or R1
+  on the pad) remaps it to roll, and Square/Circle are directional air roll.
+  Opposing yaw and roll cancel that axis immediately, which is the Rocket League
+  stall.
 - Diagonal air inputs combine; opposing inputs cancel that axis immediately while
   existing angular momentum damps.
 - Air roll keeps angular momentum and decays with profile damping.
@@ -312,9 +394,60 @@ vehicle.boost
 vehicle.powerslide
 vehicle.airroll
 vehicle.ballcam
+vehicle.landing
+vehicle.attitude
+vehicle.aircontrol.mismatch
+vehicle.penetration
+vehicle.rest
+vehicle.rest.tilted
+vehicle.settle
 ```
 
 Diagnostics are categorized, bounded, and rate-limited where they can repeat.
+
+Landing and orientation proofs read these fields:
+
+- `vehicle.landing` carries `up_dot_world_up`, `tilt_deg`, `wheel_mask`,
+  `wheels_contact`, `settled_on_wheels`, `impact_speed_mps`, `impact_vz`,
+  `angular_speed`, `pitch_rate_local`, `roll_rate_local`, and
+  `max_penetration_m` at the touchdown tick. A flat landing is
+  `up_dot_world_up > 0.97` with `wheel_mask` at its full value.
+- `vehicle.attitude` is a 10 Hz sample of `grounded`, `wheel_mask`,
+  `up_dot_world_up`, `tilt_deg`, `pitch_rate_local`, `yaw_rate_local`,
+  `roll_rate_local`, the decoded `pitch_input`/`yaw_input`/`roll_input`, and
+  `max_penetration_m`. `yaw_rate_local` and `roll_rate_local` are signed so
+  positive is always the driver's right, which makes "intent sign equals
+  rotation sign" a direct assertion.
+- `roll_meaningful`/`yaw_meaningful` gate that comparison to samples where the
+  input and the response are both significant and the other axis is quiet.
+  `vehicle.aircontrol.mismatch` fires when a meaningful sample disagrees, so
+  its absence plus a meaningful sample proves the direction contract.
+- `vehicle.penetration` carries `max_penetration_m` from the contact solver for
+  the car's real collision shape. A compressed suspension is not penetration.
+- `vehicle.rest.tilted` is emitted instead of `vehicle.rest` when a body sleeps
+  out of the upright band; the vehicle never sleeps while tilted, so any
+  occurrence is a regression.
+
+## 14. Ground attitude contract (2026-11-26)
+
+A Rocket League car is rigid on the ground. Tyre and suspension forces are
+applied at the contact patch, which produces weight-transfer pitch and roll that
+the real game does not have; that also let a car freeze on a corner. The
+profile's `ground.attitude` block owns the rule:
+
+- `attitudeLock` (default false, enabled by the Rocket League profiles): while
+  all four wheels are grounded, not flipping, and not resting on the ball, the
+  chassis keeps only its yaw rate and its up axis follows the averaged wheel
+  contact normal at `alignRateDegPerSecond`. It is skipped when the car is not
+  roughly upright, so a torso pose is never snapped back.
+- No other code pitches or rolls a grounded car. The old per-wheel angular
+  damping is gone; only vertical bounce damping remains for a four-wheel stance.
+- A body may not sleep while `up.z <= 0.90`, so a half-finished tip can always
+  finish instead of being recorded as a resting pose.
+- The collision box is the car's whole envelope and its bottom face is the
+  wheel contact plane (`collisionCenter` in the vehicle template), so the
+  wheels cannot sit below the surface at rest and the wheel mesh follows
+  suspension travel instead of sinking into geometry.
 
 ## Related specifications
 

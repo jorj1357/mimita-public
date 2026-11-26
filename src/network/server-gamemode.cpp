@@ -26,6 +26,7 @@
 
 #include "network/packets.h"
 #include "network/server.h"
+#include "entities/actor-body.h"
 #include "npc/npc.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-navigation.h"
@@ -1312,6 +1313,8 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
 
     // Load gamemode config using the resolved gamemode_id
     const Gamemode& gm = GamemodeRegistry::instance().get(resolvedGamemodeId);
+    ActorBodyConfig::instance().setGoreMode(
+        gm.presentation.hasGoreMode ? gm.presentation.goreMode : 1);
     // Resolve Auto to the gamemode default before writing the configuration
     // event; an explicit GUI/host selection has already been staged.
     if (!d.communityWeaponSetExplicit && gm.weaponSetId > 0)

@@ -255,6 +255,9 @@ struct GamemodePresentation {
     bool hasPlayerWireframes = false;     bool playerWireframes = false;
     bool hasFriendlyWireframes = false;   bool friendlyWireframes = false;
     bool hasEnemyOutlineAlpha = false;   float enemyOutlineAlpha = 0.25f;
+    // Gore mode 1 is the original 100-point part model. Gore mode 2 separates
+    // actor HP from a 1000-point per-part gore pool for layered destruction.
+    bool hasGoreMode = false;            int goreMode = 1;
     // Modes without an explicit gore profile use minimal blood; Bloodtest
     // overrides these back to 1.0 for its max-gore sandbox.
     float bloodScale = 0.35f;

@@ -123,7 +123,15 @@
     "powerslideFallPerSecond": 2.0,
     "powerslideLatFrictionScale": 0.1,
     "powerslideLongFrictionMin": 0.5,
-    "powerslideLongFrictionMax": 0.9
+    "powerslideLongFrictionMax": 0.9,
+
+    // Rocket League cars are rigid on the ground: tyre and suspension forces
+    // must not pitch or roll the chassis, so accelerating or reversing cannot
+    // tip the car. The grounded car keeps only yaw and follows the averaged
+    // wheel contact normal (ramps still work).
+    "attitudeLock": true,
+    "alignToSurface": true,
+    "alignRateDegPerSecond": 480.0
   },
 
   "steering": {
@@ -183,14 +191,19 @@
     "autoRollAngularAccel": 7.68
   },
 
+  // Keyboard layout from docs/specs/gamemodes/vehicle-arena.md §11. This
+  // profile is the single owner of the keyboard→action mapping; the vehicle
+  // input path never reads a global key directly, so a rebind here cannot be
+  // shadowed by a hardcoded fallback. Space toggles ball cam, right mouse
+  // jumps, left mouse boosts, Shift is powerslide / air-roll modifier.
   "bindings": {
     "throttle": "walkforward",
     "brake": "walkback",
     "steerLeft": "walkleft",
     "steerRight": "walkright",
-    "boost": "key_left_shift",
-    "jump": "key_space",
-    "powerslideAirRoll": "key_left_control",
-    "ballCam": "freeze"
+    "boost": "mouse_left",
+    "jump": "mouse_right",
+    "powerslideAirRoll": "key_left_shift",
+    "ballCam": "key_space"
   }
 }

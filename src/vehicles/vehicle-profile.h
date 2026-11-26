@@ -42,6 +42,9 @@ struct VehicleJumpProfile {
     float doubleJumpWindowSeconds = 1.25f;  // DOUBLEJUMP_MAX_DELAY
     // Dodge activates from the magnitude of the rotational inputs.
     float dodgeDeadzone = 0.1f;
+    // Test/dev only: allow more than one air jump. Default off; Rocket League
+    // arms a flip only after all four wheels touch a surface again.
+    bool infiniteJumps = false;
 };
 
 // Finite dodge program. Direction comes from (-pitch, yaw + roll). When the
@@ -89,6 +92,14 @@ struct VehicleGroundProfile {
     float powerslideLatFrictionScale = 0.1f;
     float powerslideLongFrictionMin = 0.5f;
     float powerslideLongFrictionMax = 0.9f;
+    // Rocket League cars are rigid on the ground: tyre and suspension forces
+    // never pitch or roll the chassis, so accelerating or reversing cannot tip
+    // the car. When true, a grounded car keeps only its yaw rate and follows
+    // the averaged wheel contact normal.
+    bool attitudeLock = false;
+    bool alignToSurface = true;
+    // Degrees per second the chassis may rotate to follow the surface normal.
+    float alignRateDegPerSecond = 480.0f;
 };
 
 // The one deliberate Rocket League gameplay impulse: a non-conserving velocity

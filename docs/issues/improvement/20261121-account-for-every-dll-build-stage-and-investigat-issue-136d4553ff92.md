@@ -6559,3 +6559,84 @@ Evidence-ranked method update from primary sources, based on the gen642 11.084s 
 3) LLD COFF supports an incremental-link mode, but Microsoft's /INCREMENTAL docs warn it falls back to full link when the ILK/output is missing or options change, and options such as /OPT:REF or /OPT:ICF force a full link. Current attempt used MinGW g++ -fuse-ld=lld, 646 object inputs/~495.5MB, a new generation-specific output, and LLD2.313s; no incremental state is currently evidenced. A root-dev-loop-only trial would need stable linker state/output staging and must prove the selected GNU/COFF driver actually reuses it. Even eliminating the observed 2.36s full link plus 3.95s synchronous sampler startup leaves ~13.47s on this attempt, so a link win alone cannot satisfy <=10s. Source: https://learn.microsoft.com/en-us/cpp/build/reference/incremental-link-incrementally?view=msvc-170 and https://lld.llvm.org/windows_support.html
 
 Recommended direction for the 15–20-file goal: first prototype a coarse separately built behavior DLL using the current MinGW path and cr.h, with state kept in the resident host behind a stable C ABI; benchmark compile+small-plugin-link+reload and behavior. Keep Blink as a separate PDB/MSVC experiment for a single frequently-called function. Neither has been integrated or benchmarked here; the current live logger A/B remains owned by cpu-a-b-verification and I am not starting a build/reload.
+
+## Agent suggestion
+
+### 2026-11-26T00:13:34.890Z — build-wait-reviewer
+
+BUILD-PRESSURE EVIDENCE (cross-link: issue-6d572fc03e97 wait occurrence; observed, not inferred)
+- Window: 2026-11-25T23:50:12Z -> 23:52:26Z (build_attempt game-dll-20261125T235012012371Z-a9ad0a), 90 samples @1s (134.6s).
+- Host: 12 logical CPUs. mean host CPU 98.869% of whole machine (~11.86/12 cores), peak 100.0%. minimum_available_memory_bytes=107,323,392 (~102 MiB).
+- Process attribution: sampler ran host + cached-process mode; per-PID breakdown is in the jsonl (not summarized here); process_discovery_wall_ms_total=88114ms. Live game mode/workload: UNKNOWN (runtime_alignment=unavailable, fresh server/client not matched).
+- Concurrent build phase: compile (21 TUs, compile_sum=842.8s, compile_max=80.8s map-editor.cpp, wall compile 94.891s) then link 10.485s; total 134.64s, success. Trigger was vehicle-types.h header fanout (~20 dependents).
+- Paths: .dev/build-timings/game-dll-20261125T235012012371Z-a9ad0a.json, .resource.json, .resource.jsonl; journal logs/2026-11-25/20261125_234424/dev-loop/events.jsonl.
+- Note: host logical CPU count was absent from this attempt's summary JSON but present in resource.jsonl capture_started; consider recording it in the summary for handoff completeness.
+
+## Occurrence
+
+### 2026-11-26T01:39:32.676Z — build-wait-reviewer
+
+Another real over-budget game-DLL data point for stage accounting and speed work: wait game-dll-build:2026-11-26T00:55:56.696Z fired at 60.564s (budget 60.0) on attempt game-dll-20261126T005556909723Z-fa8154 (run 20261126_005302). The build succeeded (generation 662, total 194.141s; compile 157.766s, link 11.203s). The wait clock started 18.98s before the worker started (manifest snapshot + source snapshot + codegen); only 6/36 TUs were done at the 60s mark; the longest TU src/network/server-gamemode.cpp started ~1s after the wait and took 110.490s; physical-entity.h invalidated 30 cached TUs. The flat 60s budget is below the natural wall time of this 36-TU fanout. No new proposal; supports the existing scale/dedupe budget decision. No fix claimed.
+
+Evidence: {"build_attempt_id": "game-dll-20261126T005556909723Z-fa8154", "build_total_seconds": 194.141, "compile_seconds": 157.766, "compiled": 36, "fanout_sources_from_header": 30, "issue": "issue-ac23ab33d184", "journal": "logs/2026-11-26/20261126_005302/dev-loop/events.jsonl", "run_id": "20261126_005302", "slowest_tu": "src/network/server-gamemode.cpp", "slowest_tu_seconds": 110.49, "wait_elapsed_seconds": 60.564, "wait_id": "game-dll-build:2026-11-26T00:55:56.696Z", "worker_start_delay_seconds": 18.98}
+
+## Scheduled independent review
+
+### 2026-11-26T04:02:44.549Z — cpu-resource-goal
+
+A bounded independent review was queued as wake wake-bc4d564a2363 after 762 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (evidence-gap)
+
+### 2026-11-26T04:14:58.739Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review by issue-review-sweeper (wake-bc4d564a2363), 2026-11-26T04:0xZ. Read-only: no source edit, no build/test requested by this agent, no fix/close/proof claim.
+
+STATE: issue in_review, owner build-coordinator, readiness ready=true score 8/8 missing=[], 11 tasks (3 done runtime_proven, 3 in_progress with no proof record, 5 open), 5 reviewers. Since the last reviewer review (id 420, 2026-11-25T02:02Z), new real root-dev-loop attempts exist; this review uses those journals rather than restating older rows.
+
+PROOF-STATE FINDING 1 (implemented but unproven task): task cpp-latency-compile-time-report (owner cpp-latency-digest-cache) is state=in_progress with latest_proof=null. Yet attempt game-dll-20261126T040021929713Z-cc30b9 (run 20261126_035851) already emits parsed GCC -ftime-report per changed TU as dev-loop.game-build.file fields.compiler_timing. Example src/physics/physical-entity.cpp: parsing 16.01s (46%), lang deferred 5.20s, opt+generate 13.28s, template instantiation 7.90s; src/gamemode/arena-ball.cpp has the same block. So the instrumentation is live, but no task-proof is recorded and the acceptance item "focused parser test passes; report overhead measured separately" is not shown by the attempt. A cold-handoff agent cannot tell done from not-done. Owner action: record a task-proof against this attempt/run, or state the missing parser-test/overhead evidence.
+
+OBSERVED FACTS - newest successful header-fanout attempt game-dll-20261126T040021929713Z-cc30b9 (gen 683):
+- changed: src/gamemode/arena-ball.cpp, src/physics/physical-entity.cpp, src/physics/physical-entity.h.
+- 32 cache invalidations: 30 dependents with reason "dependency newer than object: src/physics/physical-entity.h" plus 2 direct "missing or invalid dependency file". 36 compiled / 609 skipped.
+- total 144.234s; worker_total 130.812s; pre-worker handoff 13.422s.
+- phase_durations: compile 119.156s (compile_sum 954.760s over 36 TUs; slowest TU src/network/server-gamemode.cpp 76.631s), link 7.063s (644 inputs, 496,317,823 object bytes), object_cache_scan 2.516s, publish 0.468s, coherence_validation 0.812s.
+- pressure: mean host CPU 97.221%, peak 100%, minimum available memory 119,906,304 B (~114 MiB), 104 samples/144s; runtime_alignment run 20261126_035851, server PID 448, mode vehicle_freeplay, server+client observed, client mode unverified.
+- request 2026-11-26T04:00:21.715Z (request id 2026-11-26T04:00:21.715Z-5669dc8f:mode3:game); dev-loop.game-build.result 04:02:39.119Z; server game.generation.activated gen 683 at 04:02:46.763Z (client 04:02:46.978Z; PIDs 448/32772; reason "candidate committed"). Request->server activation ~145.048s; build-result->activation 7.644s.
+
+MATCHED COMPARISON - same fanout class, not perfectly matched:
+- game-dll-20261126T005556909723Z-fa8154 (run 20261126_005302, gen 662): same physical-entity.h, 36 compiled/609 skipped, 30 physical-entity.h dependents; total 196.828s, compile 157.766s, link 11.343s, mean CPU 97.95%, min available memory 215,298,048 B (~205 MiB). Request 2026-11-26T00:55:56.518Z -> server activation gen 662 at 00:59:13.851Z = 197.333s.
+- cc30b9 vs fa8154: end-to-end -52.285s (-26.5%), compile -38.610s, link -4.280s, although cc30b9 had ~91 MiB LESS available memory. Changed sets differ (fa8154 also changed src/vehicles/vehicle-system.cpp), so this is directional, not causal. The 36-TU set and the heavy TU fell: server-gamemode.cpp 110.49s -> 76.631s.
+- Provenance note: occurrence seq 19524 (build-wait-reviewer) quoted fa8154 total 194.141s / link 11.203s; the summary JSON says 196.828s / 11.343s. This review uses the summary JSON and flags the 2.7s difference rather than reconciling it silently.
+
+ONE-FILE SUCCESSES (the best case for the <=10s goal):
+- game-dll-20261126T035759552705Z-9b4e13 (gen 682): only src/vehicles/vehicle-commands.cpp; 2 compiled/643 skipped; total 24.641s (pre-worker 7.485s, worker 17.156s); changed_source_preflight (the changed TU compile) 10.704s, link 2.891s, scan 2.140s, publish 0.562s. Request 03:57:58.997Z -> server activation 03:58:24.360Z = 25.363s (client 25.483s). CPU mean 77.2%, min memory ~3.65 GiB.
+- game-dll-20261126T035503351956Z-48958a (gen 680): only src/engine/engine-tick-camera.cpp; total 25.078s (preflight 13.916s, link 1.735s). Request 03:55:03.145Z -> server activation 03:55:28.560Z = 25.415s.
+- Consequence: no successful attempt in this sample met <=10s. Even the best warm single-.cpp success spends 10.7-13.9s compiling the changed TU before link/scan/publish. A <=10s success therefore cannot come from scan/publish caching alone; the changed-TU compile itself must shrink or be avoided (candidate module / incremental compile), consistent with npc-behavior-root-candidate-dll.
+
+FAIL-FAST / RETRY / MACHINERY observations:
+- game-dll-20261126T035417304563Z-331e59 (request 03:54:17.065Z) failed at link in 9.828s total (lld 1.141s) with undefined replayRocketState(), engineTickCamera(Engine&,float), and gRplx* counters. This is a fast FAILURE, not a live update.
+- game-dll-20261126T035727134387Z-8864f8 (request 03:57:26.792Z) failed at changed_source_preflight on src/vehicles/vehicle-commands.cpp in 8.75s (total 16.672s), 32s before 9b4e13 succeeded on the same file. worker_error is only "changed-source preflight failed: src/vehicles/vehicle-commands.cpp in 8.75s" and worker_output_tail ends on the same line; the compiler diagnostic/message is NOT retained. failed_phase and attempt ID are preserved, but the issue acceptance clause "failures preserve ... actionable cause" is not met for this attempt. Whether it was a concurrent-edit race, an intermediate edit, or a real compile error is unknown from the summary.
+- The over-budget machinery worked: cc30b9 fired dev-loop.wait.over_budget at 04:01:56 (elapsed 60.182s, budget 60.0), created issue-75e49f67b48c, and queued a reviewer wake. However the wait record carried build_id 2026-11-26T03:19:09.976948Z (prior latest_build) and generation=null while the in-flight target was cc30b9/gen 683 - the known identity gap tracked by issue-7d3dcfd7433b, not a new defect.
+
+INFERENCE / UNCERTAINTY:
+- High confidence on the stage numbers and on "no successful <=10s attempt in this sample".
+- Medium confidence that cc30b9's improvement over fa8154 is pressure/CPU-time variation: changed sets differ and there are only two samples; not causal.
+- Medium confidence that the 8864f8 preflight failure was an intermediate concurrent-edit state, because 9b4e13 succeeded 32s later on the same file; unproven because the diagnostic is absent.
+- The 7.644s build-result->activation gap is not in the stage table; host poll cadence vs publish finalization is unproven.
+
+CONTRARY EVIDENCE:
+- Earlier "sub-10s" data points (9.004s b7c31e, 9.828s 331e59) are failures, not successful edit-to-live; they do not meet the user's goal.
+- Performance improved for the same fanout (197.333s -> 145.048s end-to-end), contradicting a "everything is getting slower" reading, but both remain far above 10s.
+- Fail-fast and over-budget issue/wake creation are functioning as designed (sub-10s failure detection; wait issue created), so not every observed problem is a regression.
+
+NEXT DISCRIMINATING CHECKS (ordered):
+1. Owner records or declines proof for cpp-latency-compile-time-report against cc30b9, or names the missing parser-test/overhead evidence. Zero-code handoff.
+2. On the next natural changed_source_preflight failure, capture the first GCC diagnostic line in the attempt summary and compare the cause; test whether the 8864f8 class is a race or a real edit. (Cross-linked process proposal appended to issue-91e3384b219b.)
+3. Attribute the 7.644s result->activation gap and the 13.422s/7.485s/5.812s pre-worker gaps; if host polling is the cause, that is a safe <=10s enabler independent of compile.
+4. Re-measure one-file success and physical-entity.h fanout under matched workload with a recorded pre-build resource baseline (the attempt currently lists "matched_prebuild_resource_baseline" as unavailable) to separate pressure from code gains.
+5. Treat the changed-TU compile as the gating unit for <=10s: a 10.7s one-TU preflight plus ~2.9s link cannot reach 10s; prioritize candidate-module isolation / faster single-TU over scan/publish.
+
+This review changes no task state, closes nothing, and claims no fix or human acceptance. The issue remains open and high priority. Scan, publish, and fail-fast are proven only for their own stages; successful edit-to-live latency is still ~25s one-file and ~145s for this 36-TU header fanout under ~97% host CPU and ~114 MiB free.

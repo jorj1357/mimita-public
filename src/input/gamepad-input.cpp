@@ -308,6 +308,97 @@ void GamepadInput::clearVirtualState()
         {{"active", false}});
 }
 
+void GamepadInput::updateTriggerCalibration()
+{
+    constexpr int kCalibrationFrames = 30;
+    for (int axis = 0; axis < mAxisCount && axis < 16; ++axis)
+    {
+        const float observed = mAxes[axis];
+        if (!std::isfinite(observed))
+            continue;
+        AxisCalibration& cal = mAxisCal[axis];
+        if (mCalibrationFrames == 0)
+        {
+            cal.rest = observed;
+            cal.lo = observed;
+            cal.hi = observed;
+        }
+        else
+        {
+            // The rest value is captured on the first frame and never moves;
+            // travel keeps learning so a later full press reaches exactly 1.
+            cal.lo = std::min(cal.lo, observed);
+            cal.hi = std::max(cal.hi, observed);
+        }
+    }
+    if (mCalibrationFrames < kCalibrationFrames)
+    {
+        ++mCalibrationFrames;
+        if (mCalibrationFrames == kCalibrationFrames)
+            finishTriggerCalibration();
+    }
+}
+
+void GamepadInput::finishTriggerCalibration()
+{
+    nlohmann::json axes = nlohmann::json::array();
+    for (int axis = 0; axis < mAxisCount && axis < 16; ++axis)
+    {
+        AxisCalibration& cal = mAxisCal[axis];
+        const float travel = cal.hi - cal.lo;
+        const char* convention = "axis01";
+        if (travel < 0.25f)
+        {
+            // Nothing was pressed during the window: infer from the rest value.
+            if (cal.rest <= -0.5f)
+            {
+                cal.lo = -1.0f;
+                cal.hi = 1.0f;
+                convention = "signed";
+            }
+            else if (cal.rest >= 0.5f)
+            {
+                cal.lo = 1.0f;
+                cal.hi = -1.0f;
+                convention = "inverted";
+            }
+            else
+            {
+                cal.lo = 0.0f;
+                cal.hi = 1.0f;
+                convention = "axis01";
+            }
+        }
+        else if (cal.rest <= -0.5f)
+        {
+            convention = "signed";
+        }
+        else if (cal.rest >= 0.5f)
+        {
+            convention = "inverted";
+        }
+        cal.valid = true;
+        axes.push_back({{"axis", axis},
+                        {"rest", cal.rest},
+                        {"lo", cal.lo},
+                        {"hi", cal.hi},
+                        {"convention", convention},
+                        {"valid", true}});
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "input.gamepad.calibrated", "gamepad",
+        "trigger rest and travel measured for this device", 0,
+        {{"device_id", mDeviceId},
+         {"name", mName},
+         {"axis_count", mAxisCount},
+         {"throttle_axis", 5},
+         {"brake_axis", 4},
+         {"throttle", value("throttle")},
+         {"brake", value("brake")},
+         {"axes", axes}});
+}
+
 void GamepadInput::logState(const char* reason)
 {
     StructuredLogger::instance().writeEvent(
@@ -322,6 +413,9 @@ void GamepadInput::logState(const char* reason)
          {"raw_fallback", mRawOnly},
          {"axis_count", mAxisCount},
          {"button_count", mButtonCount},
+         {"raw_throttle_axis", mAxisCount > 5 ? mAxes[5] : 0.0f},
+         {"raw_brake_axis", mAxisCount > 4 ? mAxes[4] : 0.0f},
+         {"trigger_calibrated", mAxisCal[4].valid && mAxisCal[5].valid},
          {"throttle", value("throttle")},
          {"brake", value("brake")},
          {"steer", value("steer")},
@@ -388,6 +482,16 @@ void GamepadInput::poll()
         logState("gamepad connected");
     }
 
+    if (mCalibratedDeviceId != device)
+    {
+        // New device (or first poll): measure trigger rest and travel before
+        // trusting any trigger value.
+        mCalibratedDeviceId = device;
+        mCalibrationFrames = 0;
+        for (AxisCalibration& cal : mAxisCal)
+            cal = AxisCalibration{};
+    }
+
     if (glfwJoystickIsGamepad(device))
     {
         GLFWgamepadstate state{};
@@ -400,6 +504,7 @@ void GamepadInput::poll()
             mAxes[i] = state.axes[i];
         for (int i = 0; i < mButtonCount && i < 32; ++i)
             mButtons[i] = state.buttons[i];
+        updateTriggerCalibration();
         logAxes();
         return;
     }
@@ -416,6 +521,7 @@ void GamepadInput::poll()
     mButtonCount = std::clamp(count, 0, 32);
     for (int i = 0; i < mButtonCount; ++i)
         mButtons[i] = buttons ? buttons[i] : 0;
+    updateTriggerCalibration();
     logAxes();
 }
 
@@ -428,8 +534,6 @@ float GamepadInput::axisValue(int axis, bool trigger, bool invert,
     float value = mAxes[axis];
     if (!std::isfinite(value))
         return 0.0f;
-    if (invert)
-        value = -value;
 
     const auto remap01 = [&](float raw) {
         if (raw <= deadzone)
@@ -439,6 +543,23 @@ float GamepadInput::axisValue(int axis, bool trigger, bool invert,
             0.01f);
         return std::clamp((raw - deadzone) / span, 0.0f, 1.0f);
     };
+
+    // Calibrated triggers ("auto"): released is exactly where the axis rests,
+    // full travel is the observed extreme. This is what stops a pad whose
+    // triggers rest at 0 from reading as half pressed forever.
+    if (trigger && mode == "auto")
+    {
+        const AxisCalibration& cal = mAxisCal[axis];
+        if (!cal.valid)
+            return 0.0f;
+        const float travel = cal.hi - cal.lo;
+        if (std::fabs(travel) <= 1e-3f)
+            return 0.0f;
+        return remap01(std::clamp((value - cal.rest) / travel, 0.0f, 1.0f));
+    }
+
+    if (invert)
+        value = -value;
 
     // "axis01": the device already reports a 0..1 axis (a DS4 over Bluetooth
     // does; treating that as -1..1 put both triggers at 0.5 at rest, which made

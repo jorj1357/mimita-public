@@ -39,6 +39,7 @@ namespace r = mimita::game::render;
 #include "debug/debug-diag.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "debug/structured-log.h"
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
 #include "perf/perf-frame.h"
@@ -255,9 +256,28 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
                 MIMITA_PERF_SCOPE("Rendering");
                 engineTickRender(engine, dt, worldPassRan);
             } HEARTBEAT("after render");
-            const bool hudDeferred =
-                engine.renderer && engine.renderer->stretchesWholeFrame() &&
-                !uiHudSceneLayer();
+            const bool wholeFrame = engine.renderer &&
+                engine.renderer->stretchesWholeFrame();
+            const bool sceneHud = wholeFrame && uiHudSceneLayer();
+            const bool hudDeferred = wholeFrame && !uiHudSceneLayer();
+            {
+                // Bounded evidence for the one-draw HUD/console contract.
+                static int lastDrawPath = -1;
+                const int drawPath = sceneHud ? 1 : 0;
+                if (drawPath != lastDrawPath) {
+                    lastDrawPath = drawPath;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::General, StructuredLevel::Important,
+                        "ui.scene.draw_path", "hud",
+                        "resolved whole-frame HUD and console draw path", 0,
+                        nlohmann::json{
+                            {"whole_frame", wholeFrame},
+                            {"scene_layer", uiHudSceneLayer()},
+                            {"hud_in_scene", sceneHud},
+                            {"postfx_hud", !sceneHud},
+                            {"console_draw_count", 1}});
+                }
+            }
             if (!hudDeferred) {
                 MIMITA_PERF_PROGRESS("UI");
                 MIMITA_PERF_SCOPE("UI");

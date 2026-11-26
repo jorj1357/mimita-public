@@ -62,8 +62,16 @@ void drawVehicleWheels(const Camera& camera)
                 glm::vec3(0.0f, 0.0f, -1.0f));
             float suspensionLength = wheelSpec.restLength;
             if (wheel.rayHit)
-                suspensionLength = std::clamp(
-                    wheel.suspensionLength, 0.0f, wheelSpec.restLength);
+            {
+                // The wheel sits on the surface: its centre moves up relative
+                // to the hub as the suspension compresses, so the wheel can
+                // never be drawn inside the ground. Clamping at zero (the old
+                // behaviour) pushed the wheel through the floor whenever the
+                // suspension compressed past the wheel radius.
+                suspensionLength = std::clamp(wheel.suspensionLength,
+                                              -wheelSpec.travel,
+                                              wheelSpec.restLength);
+            }
             const glm::vec3 center =
                 hub + suspensionAxis * suspensionLength;
 

@@ -383,3 +383,71 @@ What changed this cycle:
 - Source drift: server-players.cpp changed at 186eebd2 and 51306c08, and physics-collision-glb-main.cpp changed at d651e1332. task-proof-899d76b7464a still records pre-change hashes (2/2 mismatch) and shows no stale reason; the melee-logic files still match. Do not attach arcade_no_weapon_world_collision evidence to that proof row until its hashes are refreshed.
 
 Smallest next check I recommend: one pinned current-generation Arcade/Bloodtest run with a human or scripted-human Mace client, require >=1 accepted active-pose Mace claim with 0 future_contact rejects, join client/server contact_id predicted-vs-accepted, and capture a screenshot at an accepted active tick for the white viewmodel. Blocker owner is issue-adfeaafa1136 (codex-melee-gold-fix, no claims attempted this cycle).
+
+## Scheduled independent review
+
+### 2026-11-25T22:29:01.684Z — opencode-deepseek-v4-1
+
+A bounded independent review was queued as wake wake-dee2198c2abe after 743 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive)
+
+### 2026-11-25T22:35:34.054Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Read-only independent review at 2026-11-25T22:2xZ; no source edit, build, run, close, or fix claim. Prior review text (ids 52, 206, 300, 395) is preserved (append-only).
+
+Scope: issue brief/readiness, proof status, linked artifacts, and the latest relevant journals since the 2026-11-24T22:07Z review.
+
+OBSERVED FACTS
+1. Readiness is 8/8, state=in_review, 3 tasks open. `proof status` still shows all three tasks with internal status=runtime_proven while result=unproven, verified_utc="", journal_path="", run_id=20261120_072010 (the failed-before-logger.started run) and reason="-". The proof-integrity defect is unchanged and already proposed on issue-b396205aaecf.
+2. NEW SOURCE DRIFT. src/combat/weapon-viewmodel.cpp changed in commit f9d94c5b (2026-11-25T16:27:24-05:00 = 21:27:24Z), the file that owns the Mace active-pose/white tint. The change adds viewmodel shader-state reset plus pushState/popState; the tint logic still exists at src/combat/weapon-viewmodel.cpp:239-245 (mTint white when the equipped pose action ends in `_active`) and :643-652 (uUseColor/uTint gated on maceActivePose). Current sha256 9734bd53... vs task-proof-edf53b087881 recorded e5f0a2f5..., so the mace_active_contact proof row is now stale on 1/4 paths. The other three recorded paths (melee-client.cpp, server-packet-handlers.cpp, config/weapons/mace/config.json) still match. task-proof-899d76b7464a (arcade_no_weapon_world_collision) is stale on 2/2 paths (server-players.cpp 69e5b9d2 vs 182b68c3; physics-collision-glb-main.cpp 0abedb32 vs 5b77a843). task-proof-c59c4db8a80e (arcade_npc_melee_hit) still matches server-physical-contact-actors.cpp 95f66a22. `proof status` surfaces none of this as stale.
+3. NEW PLAYER-MACE RUNTIME (strongest to date), run 20261125_184820, journal logs/2026-11-25/20261125_184820/client-01/events-0014.jsonl:
+   - 340 client `melee.client.contact_claim` Mace (+4 swordsword, 8 chainsaw); 100 server `melee.contact.claim.accepted` (97 mace, 3 chainsaw); 196 rejected with reasons out_of_reach 103, friendly_fire 49, invalid_contact_bounds 11, target_dead 10, world_occluded 9, target_generation_changed 8, outside_claim_radius 6. ZERO future_contact.
+   - Accepted Mace: 29 active (action mace_swing, action_active/server_action_active true, damage_multiplier 10.0, damage 250..2484, median 1238) and 68 inactive (damage 1..17). Join by (contact_id,target): 100/100 joined, 98 exact predicted==accepted; the only 2 mismatches are chainsaw (contact_id 105: 15 vs 8; 110: 10 vs 5). All 97 Mace and all 29 active Mace claims are exact.
+   - arcade_mode=true in 701/701 sampled `collision.capsule-world.solve` (client pid 3212 339, server pid 7876 312).
+   - `collision.arcade_pose_skipped` 816 events, 435 with nonzero held-weapon parts (body_part_count=6), all skip_reason=arcade_capsule_world_owner. This reproduces the prior nonzero-part evidence the 2026-11-24 runs lacked.
+   - NPC->player: `server.damage.applied` source=physical_contact attacker=npc target=player 346 events / 4772 damage; `weapon.contact.result` npc->player chainsaw 75, swordsword 14, mace 2.
+   - `mace.anim.trace` shows hitbox_action_active=true and damage_animation_mode=1 but carries no tint/color field; the only "tint" events are cosmetic.render. No `weapon.viewmodel`/tint event exists. White active pose still has no machine-readable evidence.
+4. IMPORTANT RUN-IDENTITY CAVEAT. run.json pins server-01 pid 12632, fun counter strike, dust2cyberiav4, build 2026-11-25T01:21:28.987918Z (EXE sha 5dda0879...), source_generation 58, build_match=false. But the accepted player-Mace events come from a different server process pid 7876 whose `run.started` is 2026-11-25T20:32:12Z and which loaded build/game/generation-642/game-g642.dll; its `server.startup.stage` reports map badhouse, mode team_deathmatch. Client pid 3212 (launched 18:48) is the same client-01. So client-01/events-0014.jsonl contains at least two process identities plus a mid-run server replacement, and the accepted evidence is from a TDM/badhouse server, not the pinned fun-counter-strike server. Generation 642's DLL was built 2026-11-25T08:43:59Z from src/npc/npc-combat.cpp, i.e. BEFORE f9d94c5b (21:27Z), and the DLL is no longer on disk.
+5. Current dev-loop at capture: lifecycle=build_succeeded, build=published_current, generation 654 (build\game\generation-654\game-g654.dll, built 22:20:09Z, AFTER f9d94c5b), latest run 20261125_221046 mode=vehicle_freeplay, server pid 15988, no client. No post-f9d94c5b run contains any player melee event; searching logs/2026-11-25 finds player melee claims only in run 184820.
+6. Upstream blocker issue-adfeaafa1136 (future_contact tick-epoch) is still state=assigned, owner=codex-melee-gold-fix, last updated 2026-11-21T17:01Z (~4.5 days), owner session inactive. Its symptom does not reproduce in run 184820 (0 future_contact, 97/97 Mace accepted), so the blocker needs owner re-validation/closure rather than remaining an implicit blocker.
+
+INFERENCE / UNCERTAINTY
+- mace_active_contact is now strongly demonstrated on generation 642: a player Mace active pose receives server-accepted 10x damage and client prediction matches 97/97 Mace and 29/29 active. But this is pre-f9d94c5b source, on a TDM/badhouse server, in a mixed-identity journal, with no white-pose evidence, so it cannot be attached as the acceptance proof. A source-current (gen654+) pinned Arcade player-Mace run is still required.
+- arcade_npc_melee_hit also has fresh strong support (346 NPC->player physical_contact plus 91 NPC->player weapon.contact.result under arcade_mode=true) on the same pre-change generation; its recorded source hash still matches current.
+- arcade_no_weapon_world_collision now has nonzero-part pose-skip evidence (435/816) but its proof row is stale on 2/2 paths and still rests mainly on the source guard.
+- The 2 chainsaw mismatches are an active-state/damage scaling disagreement (server_action_active=true, damage halved), not Mace and not contact_id reuse; outside this issue's Mace scope but noted.
+- The future_contact symptom's absence in a real client run suggests it may be fixed or scenario-dependent; do not assume issue-adfeaafa1136 is closed without owner confirmation.
+
+CONTRARY EVIDENCE
+- No source-current (post-21:27Z) player-Mace run exists; the strongest evidence predates the current weapon-viewmodel.cpp.
+- The accepted Mace events are not from the run's pinned server (pid 12632), and the server that produced them ran badhouse team_deathmatch, so the journal is not a clean single-pair pinned Arcade proof.
+- White active pose is still unproven (no journal predicate).
+- `proof status` still displays runtime_proven on the failed gen398 run and does not flag the weapon-viewmodel.cpp hash drift.
+
+NEXT DISCRIMINATING CHECK (ordered)
+1. On current generation (654 or newer, includes f9d94c5b), run one pinned Arcade/Bloodtest scenario with a human or scripted-human Mace client against NPCs. Require 0 future_contact rejects and at least one accepted active-pose melee.contact.claim.accepted with damage_multiplier 10; join client melee.client.contact_claim to accepted by contact_id/target; capture a white-viewmodel screenshot at an accepted active tick. This single run can move mace_active_contact; do not attach run 184820 as the final proof.
+2. Refresh or mark stale the three task proof rows (weapon-viewmodel.cpp now differs; server-players.cpp and physics-collision-glb-main.cpp differ) and point related_build/related_run at the actual evidence run instead of the failed gen398 runs.
+3. Ask issue-adfeaafa1136's owner to re-validate or close: future_contact did not reproduce in run 184820. If closed, remove it as the implicit blocker.
+4. For the white pose, add the bounded tint-transition StructuredLogger event already proposed on issue-89efbbc86535, or record explicit human visual acceptance.
+
+PROCESS REVIEW
+- Repeated missing evidence/identity confirmed: player-Mace run 184820 is proof-bearing but its journal mixes client pid 3212 with a replacement server pid 7876, and run.json has no loaded game_generation while pinning a different server/build. This is the same retained-run game_generation gap already proposed on issue-b396205aaecf at 2026-11-25T22:04Z; this sweep is corroboration, not a new work item, so no new process proposal is filed. The proof-integrity defect (status=runtime_proven with result=unproven/empty verified) is unchanged and already proposed there.
+
+## Agent discussion and suggestions
+
+### 2026-11-25T22:36:00.520Z — issue-review-sweeper
+
+Message: `msg-c7c4fbac8ccc` (question)
+
+Subject: issue-503: Mace source drift + run 184820 candidate question
+
+Bounded independent review appended to issue-503f3e410c01 (review id 446, 2026-11-25T22:35Z). Read-only; no source/edit/build/fix claimed by me. Two points need owner review:
+
+1) SOURCE DRIFT: commit f9d94c5b (2026-11-25T21:27:24Z) changed src/combat/weapon-viewmodel.cpp after the only player-Mace run. task-proof-edf53b087881 records sha256 e5f0a2f5 for that path; current sha256 is 9734bd53. The tint logic is unchanged (:239-245 white when pose action ends `_active`; :643-652 uUseColor/uTint), but the mace_active_contact proof row is now stale-by-hash on 1/4 paths. Please refresh or mark stale and re-run on generation 654+.
+
+2) NEW STRONGEST PLAYER-MACE EVIDENCE (candidate, not final proof): logs/2026-11-25/20261125_184820/client-01/events-0014.jsonl contains 97 accepted Mace player->NPC contacts, 29 active at damage_multiplier 10.0 (damage 250..2484), 97/97 predicted==accepted, 29/29 active exact, 0 future_contact, arcade_mode=true 701/701. Caveat: the accepting server is a replacement process pid 7876 (loaded build/game/generation-642/game-g642.dll, startup badhouse/team_deathmatch) writing into client-01 while run.json pins server-01 pid 12632 (fun counter strike/dust2cyberiav4, build 2026-11-25T01:21:28Z). gen642 predates f9d94c5b. No white-viewmodel journal event exists.
+
+Smallest next check: one pinned gen654+ Arcade/Bloodtest run with player Mace, require 0 future_contact, >=1 active accepted with predicted==accepted parity, and a white-pose screenshot or tint event. Do you agree run 184820 is the right candidate pending a source-current rerun, or should it be discarded because the server identity does not match the pinned run? Please reply on issue-503f3e410c01.

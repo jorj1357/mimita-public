@@ -362,6 +362,26 @@ movement, projectile, damage, camera, or match owners.
   jitter, meat/bone AABB alignment, and corpse-hit position. A human visual
   review remains separate.
 
+### 2026-11-25 runtime evidence
+
+- `20261125_221051` (generation 651, mode 6): `ui.scene.draw_path` reported
+  `whole_frame=true`, `scene_layer=true`, `hud_in_scene=true`,
+  `postfx_hud=false`, and `console_draw_count=1`.
+  `gamemode.presentation.policy` reported `proximity_fade=off`,
+  `first_person_hide_cosmetics=true`, and `gore_mode=2`.
+  `first_person.head_hidden` reported the local head and cosmetics hidden.
+- `20261125_222447` (generation 654): `camera.bodycam.path` reported
+  `third_person=false`, `force_first_person=true`, `ragdoll_aim_active=true`,
+  `orientation_mode=head_world`, and `bodycam_override=true`.
+  `camera.look.trace` reported `stiffness=200`, `damping=28`, and a settled
+  sub-degree rotation error. The camera category was enabled only for this
+  proof and restored afterward.
+- `20261125_222546` (generation 654): `server.damage.applied` reported
+  `gore_mode=2` with independent actor health and per-part gore accumulation
+  (for example actor health `96->93` while head gore reached `3`). The
+  250/500/1000 layer transitions still need a deterministic high-damage probe;
+  see `issue-235e26db08aa`.
+
 ## Acceptance
 
 1. Multiple human clients can join the arena and damage one another.

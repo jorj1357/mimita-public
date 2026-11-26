@@ -222,6 +222,8 @@ bool VehicleProfileRegistry::loadFile(const std::string& path,
             profile.jump.doubleJumpWindowSeconds, 0.0f, 10.0f);
         profile.jump.dodgeDeadzone = readFloat(
             jump, "dodgeDeadzone", profile.jump.dodgeDeadzone, 0.0f, 3.0f);
+        profile.jump.infiniteJumps =
+            readBool(jump, "infiniteJumps", profile.jump.infiniteJumps);
     }
 
     if (root.contains("flip") && root["flip"].is_object())
@@ -365,6 +367,13 @@ bool VehicleProfileRegistry::loadFile(const std::string& path,
         profile.ground.powerslideLongFrictionMax = readFloat(
             ground, "powerslideLongFrictionMax",
             profile.ground.powerslideLongFrictionMax, 0.0f, 2.0f);
+        profile.ground.attitudeLock = readBool(
+            ground, "attitudeLock", profile.ground.attitudeLock);
+        profile.ground.alignToSurface = readBool(
+            ground, "alignToSurface", profile.ground.alignToSurface);
+        profile.ground.alignRateDegPerSecond = readFloat(
+            ground, "alignRateDegPerSecond",
+            profile.ground.alignRateDegPerSecond, 0.0f, 3600.0f);
     }
 
     if (root.contains("ballHit") && root["ballHit"].is_object())

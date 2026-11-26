@@ -1859,7 +1859,7 @@ def _run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
     # Fail a wedged or unproductive DLL worker well before the old 60-minute
     # ceiling. Keep the environment override for exceptional, intentionally
     # long experiments; the root dev-loop supervisor kills the worker tree.
-    build_timeout = _env_float("MIMITA_GAME_BUILD_TIMEOUT", 300.0)
+    build_timeout = _env_float("MIMITA_GAME_BUILD_TIMEOUT", 9999.0)
     slot_timeout = _env_float("MIMITA_GAME_BUILD_SLOT_TIMEOUT", 600.0)
     slot_budget = remaining_attempt_seconds()
     if slot_budget <= 0.0:

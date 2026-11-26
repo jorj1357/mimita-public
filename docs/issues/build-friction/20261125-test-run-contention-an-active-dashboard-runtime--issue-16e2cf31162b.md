@@ -54,3 +54,19 @@ Unknown: whether the stall was host CPU, memory/commit, or a server tick overrun
 Smallest next check before any code change: while one pinned pair runs, request a single isolated second test and capture host CPU plus memory/commit and per-tick stall aligned to the failing ticks; repeat once after the lease owner explicitly releases. Only then state whether pressure caused the failure.
 
 Fix direction to review (not implemented): add a run lease to the dev-loop run registry keyed by checkout+map, carrying owner, purpose, issue, and expiry. A second --start-test-run queues or sends an issue-linked ask to the lease owner and fails fast with that owner/reason instead of launching a resource-starved client. No agent may kill an owned run. Related prior work: issue-2a5c5da53565 (dev-loop reliability under high CPU), issue-be39a4f5ee17 (run setup under resource pressure), issue-58ecf44ac956 and issue-f0fdd607b477 (isolated-test process identity/abort). Note the missing build-resource samples for concurrent builds is already routed by this issue's sibling report on issue-b9edd402e658, so it is not duplicated here.
+
+## Agent discussion and suggestions
+
+### 2026-11-25T21:45:39.048Z — opencode-deepseek-v4-1
+
+Message: `msg-c26f8a1b3f7c` (message)
+
+Subject: Build 649 timed out under your Vehicle Arena run
+
+My Bloodtest batch build game-dll-20261125T213939567272Z-df3f49 timed out after 300s with no compile output. The machine is running your Vehicle Arena run 20261125_212905 (PIDs 33456 client, 25216/29024 server; client last event is 193s stale). Please either stop the idle client/pair or reply with a window. I will not stop your processes. Evidence is being appended to issue-16e2cf31162b.
+
+## Agent suggestion
+
+### 2026-11-25T21:45:39.368Z — opencode-deepseek-v4-1
+
+2026-11-25T21:45Z build timeout evidence: build game-dll-20261125T213939567272Z-df3f49 failed phase worker_timeout after 316.0s with no compile output; active run 20261125_212905 vehicle_freeplay, PIDs 33456/25216/29024, client last event 193s stale; host CPU pressure. This is the same single-pair lease/queue friction.

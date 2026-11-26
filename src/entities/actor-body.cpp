@@ -60,10 +60,21 @@ ActorBodyConfig& ActorBodyConfig::instance()
     return config;
 }
 
+void ActorBodyConfig::setGoreMode(int mode)
+{
+    goreMode = mode == 2 ? 2 : 1;
+}
+
 void ActorBodyState::reset()
 {
+    const ActorBodyConfig& config = ActorBodyConfig::instance();
+    partGoreDamage.fill(0);
+    if (config.goreMode2()) {
+        partHealth.fill(100);
+        return;
+    }
     partHealth.fill(static_cast<uint8_t>(
-        std::clamp(ActorBodyConfig::instance().partMaxHealth, 0, 255)));
+        std::clamp(config.partMaxHealth, 0, 255)));
 }
 
 bool ActorBodyState::applyDamage(ActorBodyPart part, int damage)
@@ -71,6 +82,24 @@ bool ActorBodyState::applyDamage(ActorBodyPart part, int damage)
     int index = 0;
     if (!partIndex(part, index) || damage <= 0)
         return false;
+    const ActorBodyConfig& config = ActorBodyConfig::instance();
+    if (config.goreMode2()) {
+        uint16_t& gore = partGoreDamage[(size_t)index];
+        if (gore >= (uint16_t)config.gorePartMaxHealth)
+            return false;
+        const int next = std::min(config.gorePartMaxHealth,
+            (int)gore + damage);
+        gore = (uint16_t)next;
+        if (next >= config.gorePartMaxHealth)
+            partHealth[(size_t)index] = 0;
+        else if (next >= config.goreBoneDamage)
+            partHealth[(size_t)index] = 33;
+        else if (next >= config.goreMeatDamage)
+            partHealth[(size_t)index] = 66;
+        else
+            partHealth[(size_t)index] = 100;
+        return partHealth[(size_t)index] == 0;
+    }
     uint8_t& current = partHealth[(size_t)index];
     if (current == 0)
         return false;
@@ -96,16 +125,31 @@ uint8_t ActorBodyState::health(ActorBodyPart part) const
     return partIndex(part, index) ? partHealth[(size_t)index] : 0;
 }
 
+uint16_t ActorBodyState::goreDamage(ActorBodyPart part) const
+{
+    int index = 0;
+    return partIndex(part, index) ? partGoreDamage[(size_t)index] : 0;
+}
+
 ActorBodyLayer ActorBodyState::layer(ActorBodyPart part) const
 {
     int index = 0;
     if (!partIndex(part, index))
         return ActorBodyLayer::Skin;
-    const float maxHealth = (float)std::max(1, ActorBodyConfig::instance().partMaxHealth);
+    const ActorBodyConfig& config = ActorBodyConfig::instance();
+    if (config.goreMode2()) {
+        // partHealth carries the replicated layer stage in mode 2, so remote
+        // clients can derive meat/bone without receiving cumulative gore HP.
+        const uint8_t stage = partHealth[(size_t)index];
+        if (stage == 0) return ActorBodyLayer::Destroyed;
+        if (stage <= 33) return ActorBodyLayer::Bone;
+        if (stage <= 66) return ActorBodyLayer::Meat;
+        return ActorBodyLayer::Skin;
+    }
+    const float maxHealth = (float)std::max(1, config.partMaxHealth);
     const float healthValue = (float)partHealth[(size_t)index];
     if (healthValue <= 0.0f)
         return ActorBodyLayer::Destroyed;
-    const ActorBodyConfig& config = ActorBodyConfig::instance();
     if (healthValue > maxHealth * config.meatThreshold)
         return ActorBodyLayer::Skin;
     if (healthValue > maxHealth * config.boneThreshold)

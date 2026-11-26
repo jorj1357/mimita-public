@@ -344,6 +344,7 @@ void updateSettling(PhysicalEntity& e,
                     const MimitaImpact::DestructibleWorldConfig& config,
                     float maxPenetration)
 {
+    e.lastContactPenetration = maxPenetration;
     if (e.motion != PhysicalEntityMotion::Dynamic)
         return;
     const glm::vec3 position(e.transform[3]);
@@ -628,6 +629,10 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
                 ((e.motion != PhysicalEntityMotion::Kinematic &&
                   e.motion != PhysicalEntityMotion::Dynamic) || e.sleeping))
                 continue;
+            // Rebuild "did this body touch world geometry this step" from the
+            // contact pass below. Bodies that skip (sleeping/kinematic-only)
+            // keep the previous value.
+            e.lastContactedWorld = false;
             refreshMassProperties(e);
             if (e.motion == PhysicalEntityMotion::Dynamic)
             {
@@ -638,8 +643,12 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
                     e.velocity.z + objectPhysics.objectGravity() * e.gravityScale *
                                        (float)kFixedDt,
                     -MAX_FALL_SPEED);
+                const float linearDamping =
+                    e.linearDampingOverride >= 0.0f
+                        ? e.linearDampingOverride
+                        : objectPhysics.objectLinearDamping();
                 e.velocity *= std::max(
-                    0.0f, 1.0f - objectPhysics.objectLinearDamping() * (float)kFixedDt);
+                    0.0f, 1.0f - linearDamping * (float)kFixedDt);
                 e.angularVelocity *= std::max(
                     0.0f, 1.0f - objectPhysics.objectAngularDamping() * (float)kFixedDt);
                 const float angularSpeed = glm::length(e.angularVelocity);
@@ -809,6 +818,8 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
                     world, s_objectMeshes, s_objectCandidates,
                     glm::vec3(e.transform[3]), s_objectContacts, true, -1.0f,
                     worldTree);
+                if (!s_objectContacts.empty())
+                    e.lastContactedWorld = true;
                 if (s_objectContacts.empty())
                     break;
                 const glm::vec3 correction = solveBatchedCorrection(
@@ -870,7 +881,13 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
             // velocity damping.
             float maxPenetration = 0.0f;
             for (const RecoveryContact& contact : s_objectContacts)
-                maxPenetration = std::max(maxPenetration, contact.penetration);
+            {
+                if (contact.penetration > maxPenetration)
+                {
+                    maxPenetration = contact.penetration;
+                    e.lastContactNormal = contact.normal;
+                }
+            }
             updateSettling(e, objectPhysics, maxPenetration);
         }
         resolveEntityContacts(mEntities);
@@ -1499,17 +1516,20 @@ void resolveEntityContacts(std::vector<PhysicalEntity>& entities)
             static thread_local uint64_t sLastBallStateTick = 0;
             const uint64_t tick =
                 PhysicalEntitySystem::instance().simulationTick();
-            if (tick > sLastBallStateTick + 60)
+            if (tick > sLastBallStateTick + 6)
             {
                 sLastBallStateTick = tick;
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Physics, StructuredLevel::Important,
                     "arena.ball.state", std::to_string(a.networkId),
-                    "arena ball eligibility for entity pair contacts",
+                    "arena ball motion and eligibility sample",
                     static_cast<uint32_t>(tick),
                     nlohmann::json{
                         {"pos", {a.transform[3].x, a.transform[3].y,
                                  a.transform[3].z}},
+                        {"velocity", {a.velocity.x, a.velocity.y, a.velocity.z}},
+                        {"speed", glm::length(a.velocity)},
+                        {"angular_speed", glm::length(a.angularVelocity)},
                         {"motion", static_cast<int>(a.motion)},
                         {"sleeping", a.sleeping},
                         {"serverDriven", a.serverDriven},

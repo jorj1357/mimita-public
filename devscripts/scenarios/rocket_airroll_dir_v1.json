@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "rocket_airroll_dir_v1",
+  "description": "Air roll and yaw direction: the car must rotate the way the stick points. Roll and yaw are measured in separate jumps so neither contaminates the other; meaningful samples must exist, they must agree with the intent, and no mismatch event may be recorded.",
+  "launch": {
+    "launch_mode": 60,
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "profile", "wait_for_event": "vehicle.profile.applied", "timeout_seconds": 60},
+    {"id": "seated", "wait_for_event": "vehicle.entered", "timeout_seconds": 60},
+    {"id": "settle", "wait_seconds": 2}
+  ],
+  "steps": [
+    {"id": "clear", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0"], "delay_ms_after": 200},
+    {"id": "jump_roll", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0", "0", "0", "0", "1"], "delay_ms_after": 280},
+    {"id": "roll_right", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0", "0", "0", "0.9"], "delay_ms_after": 620},
+    {"id": "land_roll", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0"], "delay_ms_after": 1600},
+    {"id": "jump_yaw", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0", "0", "0", "0", "1"], "delay_ms_after": 280},
+    {"id": "yaw_right", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0", "0", "0.9", "0"], "delay_ms_after": 620},
+    {"id": "stop", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0"], "delay_ms_after": 600}
+  ],
+  "assertions": [
+    {"type": "event_field_count_at_least", "event": "vehicle.attitude", "field": "roll_meaningful", "equals": true, "minimum": 3},
+    {"type": "event_field_count_at_least", "event": "vehicle.attitude", "field": "roll_agrees", "equals": true, "minimum": 3},
+    {"type": "event_field_count_at_least", "event": "vehicle.attitude", "field": "yaw_meaningful", "equals": true, "minimum": 3},
+    {"type": "event_field_count_at_least", "event": "vehicle.attitude", "field": "yaw_agrees", "equals": true, "minimum": 3},
+    {"type": "event_count_at_most", "event": "vehicle.aircontrol.mismatch", "maximum": 0}
+  ],
+  "timeout_seconds": 180
+}

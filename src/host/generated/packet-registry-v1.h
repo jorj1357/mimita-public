@@ -9,7 +9,7 @@
 
 namespace mimita::host::packet_registry {
 
-inline constexpr std::uint16_t kProtocolVersion = 52;
+inline constexpr std::uint16_t kProtocolVersion = 53;
 
 enum class Path : std::uint8_t { Resident = 0, Dll = 1, Unknown = 2 };
 

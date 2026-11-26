@@ -41,6 +41,13 @@ struct VehicleInputPacket
     float clutch = 0.0f;
     float handbrake = 0.0f;
     float boost = 0.0f;
+    // Rotational intent, normalized -1..1 (docs/specs/vehicles/vehicles.md).
+    // The authoritative solver consumes exactly the axes the local driver
+    // produced: without them the server can never pitch, yaw, roll, dodge or
+    // stall, so the car only ever drives on the ground.
+    float pitch = 0.0f;
+    float yaw = 0.0f;
+    float roll = 0.0f;
     uint8_t flags = 0;
     uint8_t reserved[3] = {};
 };
@@ -129,7 +136,7 @@ struct VehicleStatePacket
 };
 
 
-static_assert(sizeof(VehicleInputPacket) <= 64,
+static_assert(sizeof(VehicleInputPacket) <= 72,
               "VehicleInputPacket is too large");
 static_assert(sizeof(VehicleSeatRequestPacket) <= 32,
               "VehicleSeatRequestPacket is too large");

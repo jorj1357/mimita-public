@@ -118,6 +118,10 @@ private:
                            const glm::mat4& transform, uint32_t driverActorId,
                            uint32_t chassisNetworkId, bool authoritative);
     VehicleInput readLocalInput(const VehicleState& state);
+    // Ball cam is a local presentation preference, so it is polled and applied
+    // outside the simulation branch; a networked client owns its car as a
+    // server mirror and never reaches the input path in `update`.
+    bool pollLocalBallCam(const VehicleState& state, uint32_t tick);
     void updateDrivetrain(VehicleState& state, const VehicleSpec& spec, float dt);
     void updateWheel(VehicleState& state, const VehicleSpec& spec,
                      int wheelIndex, float dt, const World& world,

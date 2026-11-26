@@ -1110,7 +1110,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 11193,
+      "client_line": 11196,
       "client_owner": "game",
       "client_source": "src/network/server-gamemode.cpp",
       "id": 67,
@@ -1118,7 +1118,7 @@
       "server": "dll",
       "server_handler": "",
       "server_inbound": false,
-      "server_line": 11193,
+      "server_line": 11196,
       "server_owner": "game",
       "server_source": "src/network/server-gamemode.cpp"
     },
@@ -1344,7 +1344,7 @@
       "server_source": "src/network/multiplayer-tick.cpp"
     }
   ],
-  "protocol_version": 52,
+  "protocol_version": 53,
   "schema_version": 1,
-  "source_sha256": "3ea22b7c5847dd405b345151f8318fdb258165d1489feca4e2bbad4e6821dc5f"
+  "source_sha256": "290dd8c41c23bbcebb78389ef5d0b9b53e3a3a45fa1d67729f0a8d558bd637e8"
 }

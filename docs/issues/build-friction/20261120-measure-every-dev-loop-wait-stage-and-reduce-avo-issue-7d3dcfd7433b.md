@@ -163,3 +163,62 @@ Direct observation from Bloodtest bodycam build attempt game-dll-20261123T191346
 ### 2026-11-24T08:39:57.409Z — build-wait-reviewer
 
 Measured occurrence on wait game-dll-build:2026-11-24T07:37:44.064Z (issue-8bdc83a5708d, build attempt game-dll-20261124T073744074582Z-faf01b, generation 586, success, total 136.225s). Phase durations: changed_source_preflight 39.049s, compile wall 57.999s (compile_sum 161.992s over jobs=10), link 29.090s, object_cache_scan 2.687s, publish 0.530s. The single longest translation unit src/vehicles/vehicle-system.cpp took 55.251s and was invalidated only by 'dependency newer than object: src/input/gamepad-input.h', so the longest unit alone nearly exhausts the 60s budget before preflight and link. Resource sampler (120 samples @1s) recorded mean host CPU 99.977%, peak 100%, minimum available memory ~294 MiB while a live bloodtest server (pid 29932) and client (pid 34840), run 20261124_072002, were active. Observed: this wait is structural for a hot-header warm rebuild, not a stuck worker; the build succeeded. Suggested scope for this tracker: per-kind/per-workload budget or N-consecutive-occurrence throttle instead of the single 60s high-priority issue+wake; report the active sub-stage and the active game-DLL attempt id/generation (currently build_id is the prior latest_build and generation=null); reason quality is tracked separately in issue-6e08d89b55e3. No code changed. Artifact: .dev/build-timings/game-dll-20261124T073744074582Z-faf01b.json.
+
+## Agent suggestion
+
+### 2026-11-25T21:29:26.768Z — build-wait-reviewer
+
+Recurring `game-dll-build at game_build` wait — occurrence evidence (build-wait-reviewer, 2026-11-25T21:29Z, read-only).
+
+This is the build-wait half of this umbrella (`latency-wait-occurrences`). 195 non-closed identical-title wait issues already exist; no new issue created.
+
+Representative occurrence (issue-40243f99b16c):
+- wait_id `game-dll-build:2026-11-25T21:08:23.776Z`; budget 60.0s; woke at 61.955s; build `game-dll-20261125T210823887519Z-42efb4`, gen 647, revision 1b99644e…
+- Build `success: true`; total 115.1s (compile 79.6s, link 17.64s); published `ready.json` 21:10:18.734Z.
+- Root cause: `compile_max_ms 61635.236` → `src/main-systems.cpp` alone 61.635s > 60s budget. Triggered by `camera-config.h` header fanout 14 (16 invalidations all "dependency newer than object: camera-config.h"); 17 compiled / 628 skipped; host CPU mean 97.56%, peak 100%, jobs 10.
+
+Finding: the 60s wait budget (`WAIT_ISSUE_SECONDS`, dev-loop.py:114) is below the p100 single-TU compile time for any build touching `main-systems.cpp`, so the wait issue is deterministic and non-actionable per occurrence, not a stall. This explains the duplicate volume.
+
+Smallest next checks:
+1. Decide wait-issue policy: measure budget against p100 affected-TU compile time, or only file when the build is non-progressing. (dev-loop.py check_wait_budget, build_friction.py)
+2. For real latency reduction, target `main-systems.cpp` compile cost and `camera-config.h` fanout, not the budget.
+Owner unknown/inactive; left unowned. No proof claimed.
+
+## Agent suggestion
+
+### 2026-11-25T21:36:57.192Z — build-wait-reviewer
+
+Fresh data point (issue-2e5c794199f1, wait game-dll-build:2026-11-25T21:00:55.639Z, elapsed 60.633s). Build attempt game-dll-20261125T210055875592Z-33009d succeeded (gen 646) in 84.984s: manifest 2.609s, changed_source_preflight 54.594s, compile 0.797s, link 8.141s. Crossed 60s because startup (~19.5s) + slowest changed TU src/vehicles/vehicle-system.cpp 54.455s (gamepad-input.cpp 38.744s concurrently) exceeds the budget, not because of a stall. Host: 12 logical CPUs, jobs 10, mean_host_cpu 99.281%, peak 100%, minimum available memory 156,905,472 bytes. Supports the sibling finding on issue-40243f99b16c (main-systems.cpp 61.635s): the 60s budget is below the current startup+slow-TU envelope on this host. Suggested check: compare budget against p100 of (startup + slowest affected TU) or require non-progressing evidence before filing; do not simply raise the budget if latency reduction is the goal. Read-only.
+
+## Agent suggestion
+
+### 2026-11-25T22:33:00.009Z — build-wait-reviewer
+
+Occurrence (wait game-dll-build:2026-11-25T21:53:31.363Z, run 20261125_212905): evidence.build_id=2026-11-25T20:35:21.601166Z is the prior latest EXE artifact and generation=null, while the in-flight game-DLL attempt game-dll-20261125T215331554351Z-19bd08 / generation 651 appears only inside the corrupt reason tail. Consistent with the wait arm using self.latest_build at dev-loop.py:3896-3897 instead of the active game-build attempt. Build then succeeded (generation 651, 84.812s). Reviewer: build-wait-reviewer.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T00:14:27.065Z — build-wait-reviewer
+
+Message: `msg-a4b921e5817c` (question)
+
+Subject: game-dll-build 60s budget vs 73.45s single-TU compile; >=158 duplicate wait issues
+
+Bounded review wake-ec92bcb2152d on issue-af48c43ce6c5 (wait game-dll-build:2026-11-26T00:03:44.421Z). Evidence: the waited-on attempt game-dll-20261126T000344661706Z-d96bf3 was real work (success, no_op=false, generation 658, total 100.563s); compile 75.235s; one TU src/vehicles/vehicle-system.cpp alone took 73.453s (vehicle-networking 51.885s, vehicle-config 49.648s, vehicle-commands 44.038s, vehicle-profile 39.730s, vehicle-hud 29.098s; 7 compiled / 638 skipped / 644 source_count, jobs=10) after src/vehicles/vehicle-profile.h changed. So a flat 60s WAIT_ISSUE_SECONDS is below the natural compile cost of the vehicle fanout and fires predictably mid-compile. At least 158 open build-friction issues share the exact title 'Wait over budget: game-dll-build at game_build' because wait_id is per started_utc. Smallest next check I suggest: agree whether to (a) scale the game-dll-build threshold to observed p95 real compile, (b) dedupe consecutive same-kind progressing waits into one class issue per root cause/time window, and (c) consolidate the duplicates into umbrella issue-136d4553ff92. No fix claimed; no duplicate issue created. Details appended to issue-af48c43ce6c5.
+
+## Agent suggestion
+
+### 2026-11-26T02:32:36.900Z — build-wait-reviewer
+
+Recurring `game-dll-build at game_build` wait — occurrence evidence (build-wait-reviewer, 2026-11-26T02:32Z, read-only). This is the build-wait half of `latency-wait-occurrences`; no new issue created for this occurrence (the auto-created per-wait issue is issue-fa0da68ca2b3, reviewed there).
+
+Occurrence: wait_id `game-dll-build:2026-11-26T01:35:04.053Z`; budget 60.0s; woke at 60.738s; request 2026-11-26T01:35:03.964Z-c594b53f; stage game_build.
+- Waited-on attempt `game-dll-20261126T013504174400Z-8ca897` (run 20261126_013130) SUCCEEDED: generation 664, revision e782f1d1…, total_seconds 116.234 (worker 94.203), compile 78.718s, link 13.156s, 2 compiled / 643 skipped of 644, jobs=10.
+- Root cause of the crossing: slowest/only changed TU `src/vehicles/vehicle-system.cpp` alone took 75.902s (started 01:35:28.062Z); the 60s budget crossed at ~01:36:04.79Z while that TU was still compiling. changed_source_preflight 75.984s.
+- Compiler ftime for that TU: parsing 32.47s (45%), template instantiation 19.58s (27%), opt+generate 26.66s (37%) — real compile cost, not I/O or a stall.
+- Resource sidecar partial (sampler-thread stop timeout): 92 samples/120.625s, mean host CPU 98.738%, peak 100%, min free RAM 1,227,251,712 B; gap_key already recorded on issue-2a5c5da53565. Correlation only.
+
+Findings relevant to this tracker (no new proposal):
+1. Confirms the 60s `WAIT_ISSUE_SECONDS` is below the p100 single-TU compile time for `vehicle-system.cpp` (~70-110s) on this host; the wait issue is deterministic, not actionable per occurrence.
+2. Confirms the duplicate-issue behavior: this wait created a NEW issue rather than appending to issue-347500dfb032 from the immediately preceding 01:18:41Z wait, because build_friction.py `_wait_issue` dedupes only on exact wait_id. Consecutive same-kind over-budget waits therefore produce one issue each. Supports the existing option (b) dedupe / class-issue consolidation ask.
+3. The wait record's `build_id` is the prior published build (2026-11-26T01:00:35.913746Z) and `generation=null` (already known self.latest_build ambiguity here).

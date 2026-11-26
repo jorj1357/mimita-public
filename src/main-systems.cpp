@@ -128,6 +128,7 @@
 #include "config/movement-config.h"
 #include "npc/npc-difficulty-config.h"
 #include "gamemode/gamemode.h"
+#include "gamemode/arena-ball.h"
 #include "gamemode/match-roles.h"
 #include "gamemode/monster-pools.h"
 #include "npc/npc-behavior.h"
@@ -1492,6 +1493,7 @@ void gameInitSubsystems(Engine& engine)
     registerObjectCommands();
     registerConstraintCommands();
     registerVehicleCommands();
+    ArenaBall::registerArenaBallCommands();
     registerInteractionCommands();
     registerRuntimeObjectCommands();
     VehicleSystem::instance().loadConfig("config/vehicles");

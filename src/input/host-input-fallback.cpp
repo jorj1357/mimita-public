@@ -98,8 +98,21 @@ bool focusGameWindow() {
     if (IsIconic(window)) ShowWindow(window, SW_RESTORE);
     ShowWindow(window, SW_SHOW);
     BringWindowToTop(window);
+    // Windows refuses SetForegroundWindow from a process that is not already
+    // foreground. Attaching to the foreground thread's input queue is the
+    // documented way to make the request legitimate; without it a launched game
+    // keeps keyboard input dead until the user clicks the window.
+    HWND foreground = GetForegroundWindow();
+    DWORD foregroundThread = foreground
+                                 ? GetWindowThreadProcessId(foreground, nullptr)
+                                 : 0;
+    const DWORD thisThread = GetCurrentThreadId();
+    const bool attached = foregroundThread != 0 &&
+                          foregroundThread != thisThread &&
+                          AttachThreadInput(thisThread, foregroundThread, TRUE);
     SetForegroundWindow(window);
     SetFocus(window);
+    if (attached) AttachThreadInput(thisThread, foregroundThread, FALSE);
     return GetForegroundWindow() == window;
 }
 

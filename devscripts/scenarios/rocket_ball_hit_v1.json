@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "id": "rocket_ball_hit_v1",
+  "description": "Measure the car-to-ball impulse and the ball's first second of rolling. One throttled run from the kickoff drives into the spawned ball; the journal records pre/post contact velocities and 10 Hz ball state so the impulse curve and drag can be compared to the Rocket League reference.",
+  "launch": {
+    "launch_mode": 60,
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {
+      "id": "profile",
+      "wait_for_event": "vehicle.profile.applied",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "seated",
+      "wait_for_event": "vehicle.entered",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "ball",
+      "wait_for_event": "arena.ball.spawned",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "settle",
+      "wait_seconds": 2
+    }
+  ],
+  "steps": [
+    {
+      "id": "drive",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "1",
+        "0",
+        "0",
+        "1",
+        "0"
+      ],
+      "delay_ms_after": 7000
+    },
+    {
+      "id": "coast",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "0",
+        "0",
+        "0",
+        "1",
+        "0"
+      ],
+      "delay_ms_after": 1500
+    },
+    {
+      "id": "status",
+      "command": "ball_status",
+      "args": [],
+      "delay_ms_after": 300
+    }
+  ],
+  "assertions": [
+    {
+      "type": "event_present",
+      "event": "arena.ball.spawned"
+    },
+    {
+      "type": "event_present",
+      "event": "arena.ball.contact"
+    },
+    {
+      "type": "event_present",
+      "event": "arena.ball.extra_impulse"
+    },
+    {
+      "type": "event_field_at_least",
+      "event": "arena.ball.contact",
+      "field": "tick",
+      "value": 1
+    }
+  ],
+  "timeout_seconds": 180
+}

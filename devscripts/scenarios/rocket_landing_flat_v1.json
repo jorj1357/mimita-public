@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "id": "rocket_landing_flat_v1",
+  "description": "Prove a plain jump lands on all four wheels: the landing sample must be upright, all four wheels in contact, and no wheel may be below the surface.",
+  "launch": {
+    "launch_mode": 60,
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {
+      "id": "profile",
+      "wait_for_event": "vehicle.profile.applied",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "seated",
+      "wait_for_event": "vehicle.entered",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "settle",
+      "wait_seconds": 2
+    }
+  ],
+  "steps": [
+    {
+      "id": "clear",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "0",
+        "0",
+        "0",
+        "1",
+        "0"
+      ],
+      "delay_ms_after": 300
+    },
+    {
+      "id": "jump",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "0",
+        "0",
+        "0",
+        "1",
+        "0",
+        "0",
+        "0",
+        "0",
+        "1"
+      ],
+      "delay_ms_after": 300
+    },
+    {
+      "id": "release",
+      "command": "vehicle_input",
+      "args": [
+        "local",
+        "0",
+        "0",
+        "0",
+        "1",
+        "0"
+      ],
+      "delay_ms_after": 1200
+    },
+    {
+      "id": "landed",
+      "wait_for_event": "vehicle.landing",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "rest",
+      "wait_seconds": 3
+    }
+  ],
+  "assertions": [
+    {
+      "type": "event_present",
+      "event": "vehicle.jump"
+    },
+    {
+      "type": "event_present",
+      "event": "vehicle.landing"
+    },
+    {
+      "type": "event_field_all_at_least",
+      "event": "vehicle.landing",
+      "field": "up_dot_world_up",
+      "value": 0.97
+    },
+    {
+      "type": "event_field_all_at_least",
+      "event": "vehicle.landing",
+      "field": "wheel_mask",
+      "value": 15
+    },
+    {
+      "type": "event_count_at_most",
+      "event": "vehicle.penetration",
+      "maximum": 0
+    },
+    {
+      "type": "event_field_all_at_most",
+      "event": "vehicle.attitude",
+      "where": {
+        "grounded": true
+      },
+      "field": "resting_penetration_m",
+      "value": 0.01
+    }
+  ],
+  "timeout_seconds": 180
+}

@@ -230,6 +230,7 @@ json vehicleSpecJson(const VehicleSpec& spec)
     root["length"] = spec.halfExtents.x * 2.0f;
     root["width"] = spec.halfExtents.y * 2.0f;
     root["height"] = spec.halfExtents.z * 2.0f;
+    root["collisionCenter"] = vec3Json(spec.collisionCenter);
     root["drag"] = spec.drag;
     root["downforce"] = spec.downforce;
     root["bodyFriction"] = spec.bodyFriction;
@@ -410,6 +411,14 @@ bool VehicleConfigRegistry::loadFile(const std::string& path,
         root, "collisionHeight", spec.halfExtents.z * 2.0f, 0.05f, 50.0f);
     spec.collisionHalfExtents =
         glm::vec3(collisionLength, collisionWidth, collisionHeight) * 0.5f;
+    if (root.contains("collisionCenter") && root["collisionCenter"].is_array() &&
+        root["collisionCenter"].size() == 3)
+    {
+        spec.collisionCenter = glm::vec3(
+            root["collisionCenter"][0].get<float>(),
+            root["collisionCenter"][1].get<float>(),
+            root["collisionCenter"][2].get<float>());
+    }
     spec.drag = readFloat(root, "drag", spec.drag, 0.0f, 10.0f);
     spec.downforce = readFloat(root, "downforce", spec.downforce, 0.0f, 10.0f);
     spec.bodyFriction = readFloat(root, "bodyFriction",
