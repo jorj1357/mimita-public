@@ -39,6 +39,7 @@
 #include "gamemode/map-config.h"
 #include "gamemode/gamemode.h"
 #include "entities/player.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "npc/npc.h"
 #include "perf/npc-cpu-probe.h"
 #include <glm/glm.hpp>
@@ -826,6 +827,30 @@ void registerDebugCommands()
             Terminal::instance().addLog(std::string("[HEALTHBAR] healthbar_debug=") + (val ? "1" : "0"));
         },
         "2026-07-03", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.corpseprobe",
+        "Spawn a local corpse and apply 250/500/1000 torso gore for presentation proof",
+        "agent.corpseprobe [corpse_id]",
+        [](const std::vector<std::string>& args) {
+            Player& player = THE_PLAYER;
+            const std::string corpseId =
+                args.empty() ? "corpse-probe" : args[0];
+            RagdollModeSystem::instance().spawnCorpse(
+                player, glm::vec3(0.0f, 0.0f, 1.0f), corpseId, 0);
+            const glm::vec3 point = player.pos + glm::vec3(0.0f, 0.0f, 0.9f);
+            const glm::vec3 direction(0.0f, 1.0f, 0.0f);
+            // Torso is ragdoll part 0. Apply exactly 250, 500, then 1000
+            // cumulative gore so the three mode-2 stages are observable.
+            RagdollModeSystem::instance().applyCorpseHit(
+                corpseId, 0, 250, point, direction, 30.0f, "corpseprobe");
+            RagdollModeSystem::instance().applyCorpseHit(
+                corpseId, 0, 250, point, direction, 30.0f, "corpseprobe");
+            RagdollModeSystem::instance().applyCorpseHit(
+                corpseId, 0, 500, point, direction, 30.0f, "corpseprobe");
+            Terminal::instance().addLog("[AGENT] corpse gore probe complete: " + corpseId);
+        }, "2026-11-26", CommandCategory::Debug
     });
 
     Terminal::instance().registerCommand({

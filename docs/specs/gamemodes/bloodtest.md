@@ -382,6 +382,34 @@ movement, projectile, damage, camera, or match owners.
   250/500/1000 layer transitions still need a deterministic high-damage probe;
   see `issue-235e26db08aa`.
 
+## 2026-11-26 presentation pass 2
+
+- **Lens modes:** `presentation.bodycam.lens.chromatic_aberration_mode` is
+  exclusive. `full_world` applies chromatic aberration to the complete final
+  scene; `background_only` masks the shifted image to dark/background pixels.
+  Bloodtest defaults to `full_world`. Do not composite a normal world in front
+  of a separate CA ghost world.
+- **Camera:** Bloodtest uses `orientation_mode: mouse`. The bodycam spring
+  follows the camera wish yaw/pitch, while the head/eye supplies position only.
+  Moving and settled camera angles therefore use the same aim direction.
+- **ADS:** per-weapon `ads` maps a camera-aligned sight offset, blend rate, and
+  optional FOV. While RMB is held, the right-arm ADS target is locked against
+  solver jitter; authoritative muzzle and damage behavior are unchanged.
+- **Projectiles:** AK and Judgement use faster authoritative projectile speeds,
+  larger visible projectiles, stronger glow/trails, and per-projectile dynamic
+  light. Tracer thickness, lifetime, and alpha are per-weapon JSON.
+- **Impacts:** Bloodtest bullet holes use a larger per-weapon scale. Bullet
+  shockwaves use start alpha 0.5, end alpha 0.0, and 0.1 s (six ticks) with a
+  larger start/end scale.
+- **Corpse gore:** corpse hits use the same gore mode 2 part pool and
+  `HitEffects` owner as living actors. `applyCorpseHit` advances skin -> meat ->
+  bone -> destroyed and spawns the destroyed mist. `agent.corpseprobe` in
+  `20261126_160721` observed `gore_damage=250 layer=1`,
+  `gore_damage=500 layer=2`, and `gore_damage=1000 layer=3 destroyed`.
+- **ADS evidence:** the same run's `agent.hold secondary 120` observed
+  `weapon.ads.state ads_requested=true` and a rising blend. A human visual
+  review of the final sight picture and a full blend=1.0 sample remain useful.
+
 ## Acceptance
 
 1. Multiple human clients can join the arena and damage one another.

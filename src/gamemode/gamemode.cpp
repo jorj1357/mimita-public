@@ -743,6 +743,12 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                     const auto& lens = bodycam["lens"];
                     out.chromaticAberration = std::clamp(
                         lens.value("chromatic_aberration", out.chromaticAberration), 0.0f, 0.8f);
+                    out.chromaticAberrationMode = lens.value(
+                        "chromatic_aberration_mode", out.chromaticAberrationMode);
+                    if (out.chromaticAberrationMode != "full_world" &&
+                        out.chromaticAberrationMode != "background_only") {
+                        out.chromaticAberrationMode = "full_world";
+                    }
                     out.vignette = std::clamp(
                         lens.value("vignette", out.vignette), 0.0f, 0.8f);
                     out.lensDistortion = std::clamp(

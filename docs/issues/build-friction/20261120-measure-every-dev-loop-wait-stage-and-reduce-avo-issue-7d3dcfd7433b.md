@@ -222,3 +222,37 @@ Findings relevant to this tracker (no new proposal):
 1. Confirms the 60s `WAIT_ISSUE_SECONDS` is below the p100 single-TU compile time for `vehicle-system.cpp` (~70-110s) on this host; the wait issue is deterministic, not actionable per occurrence.
 2. Confirms the duplicate-issue behavior: this wait created a NEW issue rather than appending to issue-347500dfb032 from the immediately preceding 01:18:41Z wait, because build_friction.py `_wait_issue` dedupes only on exact wait_id. Consecutive same-kind over-budget waits therefore produce one issue each. Supports the existing option (b) dedupe / class-issue consolidation ask.
 3. The wait record's `build_id` is the prior published build (2026-11-26T01:00:35.913746Z) and `generation=null` (already known self.latest_build ambiguity here).
+
+## Agent suggestion
+
+### 2026-11-26T06:23:34.011Z — build-wait-reviewer
+
+Occurrence from issue-a114980aee90 (wait game-dll-build:2026-11-26T06:07:55.877Z, elapsed 60.623s vs 60.0s, run 20261126_055157, attempt game-dll-20261126T060755948198Z-ddc45d gen 687 source_generation 32). False positive: build succeeded in 88.921s (compile phase 74.438s) with 36 compiled / 609 skipped; TUs were completing at the crossing (multiplayer-reconcile 06:08:56.713Z, constraint-system 06:08:57.091Z, main-systems 06:08:57.472Z). Crossing was driven by header fanout physical-entity.h(31)/vehicle-system.h(15)/vehicle-types.h(17). Identity defects reproduced: wait evidence build_id=2026-11-26T06:00:42.933273Z (last EXE artifact, not the in-flight attempt) and generation=686 (previous published, not 687); correct attempt id appears only inside the corrupted reason JSON tail. Same run also spawned the immediately preceding near-duplicate wait game-dll-build:2026-11-26T06:00:44.737Z -> issue-70a739edc6ae (attempt 9b7ffb, 419.093s). Recommend (unchanged): stage/progress-gated budget + dedup by (kind, stage, active attempt) + record in-flight attempt id/target generation. No new code change by reviewer.
+
+## Agent suggestion
+
+### 2026-11-26T15:03:00.711Z — build-wait-reviewer
+
+Recurring game-dll-build at game_build wait - occurrence evidence (build-wait-reviewer, read-only; no new issue created).
+
+Occurrence: wait_id game-dll-build:2026-11-26T06:17:59.474Z (issue-3385f308560f); budget 60.0s; woke at 60.773s; stage game_build; source_generation 2; request 2026-11-26T06:17:59.223Z-261bb8d6.
+- Waited-on attempt game-dll-20261126T061759578653Z-67ec90 SUCCEEDED: generation 688, revision eee512f0058f4458ee4d80b6e1448740fea5b093c5d2ee4ffd764faea2cf33c2, changed src/combat/explosion-fx.cpp + src/combat/weapon-viewmodel.cpp, total 107.875s, completed 06:19:47.463Z; 3 compiled / 642 skipped of 644, jobs 10.
+- Crossing at ~06:18:59.47Z was inside changed_source_preflight (06:18:28.240Z to 06:19:14.806Z) with both heavy TUs still compiling (weapon-viewmodel 46.407s, explosion-fx 41.993s); then link.lld_linker 06:19:18.292Z to 06:19:45.544Z (27.203s). Progressing, not stalled. Flat 60s budget is below the natural 2-TU + 644-object link cost on this host.
+
+Occurrence detail vs prior samples:
+1. reason was READABLE this time ('[GAME BUILD] revision=... sources=644 jobs=10 ... seeded=0'); the [GAME_FILE] JSON-tail corruption did NOT reproduce. Positive data point.
+2. Identity defect reproduced: wait build_id=2026-11-26T06:10:41.962780Z is the preceding EXE artifact, not the in-flight attempt; generation=null vs in-flight 688 (dev-loop.py:~3896-3897).
+3. reviewer-wake launch_result again carries the full reviewer prompt text (wake pollution).
+4. Dispatch: crossing ~06:18:59.47Z, wake log 06:19:02.266Z, over_budget/reviewer-wake stamped 06:19:05.640Z; consistent with synchronous dispatch inside check_wait_budget.
+
+No new recommendation beyond the existing tracker asks (stage/progress-gated budget, dedup by kind/stage/active attempt, record in-flight attempt id/target generation). Build success is build evidence only, not behavior proof.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T15:04:23.112Z — build-wait-reviewer
+
+Message: `msg-25e5298193f9` (question)
+
+Subject: Wait issue-3385f308560f: false-positive 60s budget + identity defects
+
+Bounded review request: wait game-dll-build:2026-11-26T06:17:59.474Z (issue-3385f308560f) is another false positive of the flat 60s budget - attempt game-dll-20261126T061759578653Z-67ec90 (gen 688) succeeded in 107.875s; at the crossing both changed TUs were still compiling (weapon-viewmodel 46.407s, explosion-fx 41.993s), then a 27.203s link. Record defects reproduced: build_id=prior EXE 2026-11-26T06:10:41.962780Z, generation=null vs 688; reason was readable this time ('[GAME BUILD] ...'), so JSON-tail corruption did not reproduce; wake launch_result still carries full prompt text. Dispatch was fast this time (~3s queue-to-launch, one wake). Occurrence appended to issue-7d3dcfd7433b. Please review and agree the smallest next check for a stage/progress-gated budget and dedup by (kind, stage, active attempt) plus in-flight attempt/generation identity. No source changed; shared dev-loop change needs human approval.

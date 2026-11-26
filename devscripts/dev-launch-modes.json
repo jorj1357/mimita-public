@@ -584,6 +584,18 @@
       "require_client_connection": true,
       "require_mode_start": false
     },
+    "65": {
+      "name": "Vehicle Arena - settling fuzz probe",
+      "server_args": ["--mode", "vehicle_freeplay", "--gamemode", "vehicle_freeplay", "--no-npcs"],
+      "env": {"MIMITA_VEHICLE_FUZZ": "7"},
+      "client_args": [],
+      "map": "arena1",
+      "expect_map": "arena1",
+      "expect_mode": "vehicle_freeplay",
+      "expect_gamemode": "vehicle_freeplay",
+      "require_client_connection": true,
+      "require_mode_start": false
+    },
     "64": {
       "name": "Vehicle Arena - 1v1 vs NPC (one client)",
       "server_args": ["--mode", "vehicle_arena", "--gamemode", "vehicle_arena", "--no-npcs"],

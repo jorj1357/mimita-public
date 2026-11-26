@@ -1911,3 +1911,55 @@ Next discriminating check (smallest, bounded)
 On a fresh pinned gen-640 run, after room_register compare three values in one pass: run.json instances[server-01].room_code, room-code.txt, and the journal network.room.registered room_code. If run.json stays empty while the other two carry 55CWE6Z, that is the first concrete metadata defect to fix for the no-room-code class. In the same run, exercise the in-game GUI server-start and JOIN buttons through agent console actions and record whether the scanned widget id matches the clicked widget; then sample room_register elapsed_ms over 5 starts to test the 1 s target.
 
 Verdict: evidence-gap and partial progress - gen-640 run shows stable direct join, no false reconnect, and a correct 63+4+1 horde roster, but room code metadata is inconsistent, room registration is 1.60 s, startup still forces --npcs 1, the GUI button path is not exercised, and no proof is linked.
+
+## Scheduled independent review
+
+### 2026-11-26T14:57:46.845Z — vehicle-freeplay-launch-regression
+
+A bounded independent review was queued as wake wake-947313207784 after 776 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (evidence-gap: gen-688 vehicle_freeplay server startup ACCESS_VIOLATION masked as client_connect_timeout; proof unlinked)
+
+### 2026-11-26T15:02:51.252Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+﻿Independent bounded review (read-only) - issue-review-sweeper - 2026-11-26T15:00Z, wake-947313207784. No source, config, build, stop, or runtime mutation by this reviewer. I read journals, crash artifacts, and metadata only. Run 20261126_145549 was live/owned by the dashboard launch path while I read it; I did not touch it.
+
+Scope and readiness
+- Issue state in_review, owner root-connection-reliability, readiness ready=true score=8 missing=[], 12 tasks.
+- `proof list --issue issue-cf9cd77eb056` returns [] again. No proof record is linked to this issue; task rows remain result=unproven (payload-cart-transform-telemetry, client-window-health-status).
+- related_build still names EXE 2026-11-22T02:37:06.972018Z (game generation 446). Current evidence is the current published artifact 2026-11-26T06:10:41.962780Z (EXE sha 31b8690d..., game generation 688), so related_build does not describe current evidence.
+
+Observed facts (read from the journals/crash reports; causes labeled separately)
+1. Fresh dashboard launch 20261126_145549 (mode 60 "Vehicle Arena - Rocket League Free Play", map arena1, EXE sha 31b8690d..., game generation 688, debug; request dashboard-590903f7) failed at client_connection.
+2. Server PID 10544 exited with code 3221225477 (0xC0000005 ACCESS_VIOLATION). Crash report .dev/crashes/20261126_145549/crash-2026-11-26_09-55-49-10544.txt records: ACCESS_VIOLATION read at 0x6c, module libstdc++-6.dll+0x165b00; stack ZSt11_Hash_bytesPKvyy+0x40 <- world-rendering module API frames <- network-policy module API frames <- GetMimitaGameServerPolicyV1+0xdc6f <- mimita.exe. The server journal's last event is network.server-ice-startup.stage stage=turn_credentials ok=true duration_ms=164 at 14:55:50.132Z (seq 150); nothing after. dev-loop.instance.exited (14:56:35.419Z) role=server pid=10544 exit_code=3221225477 with both crash artifacts.
+3. A second process PID 12892 crashed at 14:56:12 with an identical stack/module/offset (libstdc++-6.dll+0x165b00). Its run.started row in client-01/events.jsonl is self-tagged process=server/process_role=server but instance_id=client-01; the earlier client PID 29616 had already switched its join target from 127.0.0.1:59031 to 127.0.0.1:1357 at 14:56:11.825Z. The role/instance labeling of PID 12892 is internally inconsistent.
+4. Client PID 29616 never reached Connected: no network.connection-state.changed, no join.accepted, no snapshots. It logged network.join.map-required-missing (required_map_id empty, snapshots_received=0) every ~2 s starting 14:55:51.839Z. dev-loop.launch.stage client_connection=failed at 14:56:35.217Z: "client pid=29616 did not reach Connected before the timeout" after stage_elapsed_ms=45047.
+5. Launch args (dev-loop.launch.args) contain a duplicate mode: `--mode ssbm ... --mode vehicle_freeplay --gamemode vehicle_freeplay --no-npcs`; the server resolved to vehicle_freeplay.
+6. Launch-friction issue issue-1251508e4f3c already has an occurrence for this exact launch_id (2026-11-26T14:55:49.281Z, client pid 29616, client_connect_timeout) recorded by launch-doctor. This defect is filed, but the recorded cause is only "client did not reach Connected"; the server access violation is not in that occurrence.
+7. At 14:58Z `dev-loop.py --status` printed lifecycle=launch_failed, run=20261126_145549, run=RUNNING, server pid=10544 alive=False, client pids=[29616]; run.json shows server state=offline, client state=frozen. "run=RUNNING" plus a frozen client that cannot ever connect is a status-truthfulness concern (same class as issue-c481ab36713a and prior reviews).
+
+Inference and uncertainty
+- The best-evidenced first failure is a server-side ACCESS_VIOLATION at startup on generation 688 in vehicle_freeplay, not a network-protocol defect: the server logged only through TURN credential acquisition and then died, so the client had no endpoint to connect to. The client's map-required-missing/snapshot=0 is downstream of the dead server.
+- The identical libstdc++ stack for server 10544 and second process 12892 suggests a common crash site, but I did not symbolize the module offset or capture a fresh stack; the causal code path is not proven.
+- I cannot attribute the crash to the duplicate `--mode`, the custom vehicle tuning warnings (static compression exceeds 75% of travel; spring bottoms out at rest; nominalLoad far from static corner load; top speed misses target), or the TURN credential step from this evidence alone. Those are candidate leads, not causes.
+- The role/instance inconsistency of PID 12892 is unexplained; I cannot tell whether it was an auto-relaunch, a fallback listen server, or a mislabeled client.
+
+Contrary evidence
+- The crash is specific to this launch/mode; I did not observe a comparable crash in the earlier gen-640 horde run (review 429) or the gen-583 hang class (review 337). The umbrella's connection path has current positive evidence (stable direct join over ~59 min on gen 640), so this is not a blanket networking regression.
+- No snapshots/reconnects happened here because the server never served; absence of reconnect events is not evidence the reconnect path works or fails.
+
+Next discriminating check (one)
+Re-run the identical mode-60 vehicle_freeplay dashboard/isolated launch on the same gen-688 artifact and, in the same run, capture (a) a symbolized stack at the crash offset (stack pointer map for libstdc++-6.dll+0x165b00 / GetMimitaGameServerPolicyV1+0xdc6f), and (b) whether dropping the duplicate `--mode ssbm` prefix and/or the vehicle tuning warnings changes the crash. If it reproduces with the same offset and a single clean `--mode`, the first owner is the server startup/vehicle/TURN path, not argument parsing; if it disappears with a single `--mode`, argument resolution is the first cause. Also state which of PIDs 29616/12892 is client vs server so the role/instance mismatch is resolved.
+
+Cold handoff
+- Start from logs/2026-11-26/20261126_145549/{server-01,client-01,dev-loop} and .dev/crashes/20261126_145549/. Server died ~14:55:50Z (last event network.server-ice-startup.stage turn_credentials) with 0xC0000005 in libstdc++-6.dll+0x165b00; client 29616 never connected; launch marked failed at client_connection. This is fresh reviewer evidence, not a proof link; the issue's proof list is still empty.
+
+Verdict: evidence-gap and fresh regression - gen-688 vehicle_freeplay launch shows a server startup ACCESS_VIOLATION (likely first failure) that the launch report reduces to a client_connect_timeout; proof remains unlinked and related_build is stale.
+
+## Agent suggestion
+
+### 2026-11-26T15:23:19.092Z — vehicle-freeplay-launch-regression
+
+Fresh exact map from run 20261126_145549, build SHA 31b8690d2866363bc3918d3dbc50e15cdf660760f055a28838f0ddf22af2efe7, generation 688: three preserved dumps in .dev/crashes/20261126_145453 and 20261126_145549 show the identical ACCESS_VIOLATION read at 0x6c in libstdc++-6.dll+0x165b00. Addr2line on game-g688.dll maps frames to std::_Hashtable<string, VehicleProfile>::_M_node, VehicleSystem::profileFor(VehicleState const&) at snapshot src/vehicles/vehicle-system.cpp:521, then tickArenaBoostPads -> serverTickVehicles -> serverRuntimePublish. This is stronger than the launch report's client_connect_timeout and confirms a repeated server crash. Code fix and live rerun are still pending; exact snapshot/source path is .dev/build-snapshots/game-dll-20261126T060755948198Z-ddc45d/source/src/vehicles/vehicle-system.cpp. Link this to any active owner of the vehicle profile lookup.

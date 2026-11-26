@@ -44,6 +44,8 @@ struct WeaponViewModel {
     float mReloadBlendVelocity = 0.0f;
     glm::vec3 mRecoilPosition{0.0f};
     glm::vec3 mRecoilRotation{0.0f};
+    float mAdsBlend = 0.0f;
+    float mAdsBlendVelocity = 0.0f;
 
     void loadModel(const std::string& modelPath);
     void syncFromAsset();

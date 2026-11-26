@@ -9,6 +9,8 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -54,6 +56,9 @@ struct VehicleFlipProfile {
     float angularAccelPitch = 21.5f;
     float angularAccelRoll = 25.0f;
     float torqueSeconds = 0.65f;
+    // A dodge is not air control. Without its own limit the shared air-control
+    // clamp (5.5 rad/s) caps every flip at about 205 degrees.
+    float maxAngularVelocity = 20.0f;
     float pitchLockSeconds = 1.0f;
     float initialDeltaVelMps = 5.0f;
     float forwardMaxSpeedScale = 1.0f;
@@ -183,11 +188,17 @@ float vehicleProfileCurveSample(const std::vector<glm::vec2>& curve, float input
 
 class VehicleProfileRegistry {
 public:
+    // A profile snapshot. Reloads publish a new snapshot instead of mutating the
+    // live one, so a pointer handed to a caller can never be destroyed under it
+    // by a concurrent reload. This is the fix for the launch crash where the
+    // server tick rebuilt the registry while another thread read it.
+    using ProfilePtr = std::shared_ptr<const VehicleProfile>;
+
     static VehicleProfileRegistry& instance();
 
     bool loadDirectory(const std::string& directory = "config/vehicle-profiles");
     bool pollReload();
-    const VehicleProfile* find(const std::string& id) const;
+    ProfilePtr find(const std::string& id) const;
     std::vector<std::string> ids() const;
 
     uint64_t revision() const { return mRevision; }
@@ -198,7 +209,8 @@ private:
 
     bool loadFile(const std::string& path, VehicleProfile& out) const;
 
-    std::unordered_map<std::string, VehicleProfile> mProfiles;
+    mutable std::shared_mutex mProfilesMutex;
+    std::unordered_map<std::string, ProfilePtr> mProfiles;
     std::unordered_map<std::string, std::string> mProfilePaths;
     std::unordered_map<std::string, int64_t> mFileTimes;
     std::string mDirectory = "config/vehicle-profiles";

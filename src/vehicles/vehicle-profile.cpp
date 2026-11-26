@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <mutex>
 #include <fstream>
 #include <set>
 
@@ -237,6 +238,9 @@ bool VehicleProfileRegistry::loadFile(const std::string& path,
             0.0f, 500.0f);
         profile.flip.torqueSeconds = readFloat(
             flip, "torqueSeconds", profile.flip.torqueSeconds, 0.0f, 5.0f);
+        profile.flip.maxAngularVelocity = readFloat(
+            flip, "maxAngularVelocity", profile.flip.maxAngularVelocity,
+            0.0f, 100.0f);
         profile.flip.pitchLockSeconds = readFloat(
             flip, "pitchLockSeconds", profile.flip.pitchLockSeconds, 0.0f, 5.0f);
         profile.flip.initialDeltaVelMps = readFloat(
@@ -446,8 +450,9 @@ bool VehicleProfileRegistry::loadFile(const std::string& path,
 
 bool VehicleProfileRegistry::loadDirectory(const std::string& directory)
 {
+    std::unique_lock<std::shared_mutex> publishLock(mProfilesMutex);
     mDirectory = directory;
-    std::unordered_map<std::string, VehicleProfile> profiles;
+    std::unordered_map<std::string, ProfilePtr> profiles;
     std::unordered_map<std::string, std::string> profilePaths;
     std::unordered_map<std::string, int64_t> times;
 
@@ -480,8 +485,12 @@ bool VehicleProfileRegistry::loadDirectory(const std::string& directory)
             continue;
         }
         times[entry.path().string()] = modifiedTime(entry.path().string());
-        profilePaths[profile.id] = entry.path().string();
-        profiles[profile.id] = std::move(profile);
+        // Read the id BEFORE moving the profile into the snapshot: evaluation
+        // order of the key and the moved argument is unspecified, and reading a
+        // moved-from string collapsed every profile onto the empty key.
+        const std::string id = profile.id;
+        profilePaths[id] = entry.path().string();
+        profiles[id] = std::make_shared<const VehicleProfile>(std::move(profile));
     }
 
     mProfiles = std::move(profiles);
@@ -491,6 +500,12 @@ bool VehicleProfileRegistry::loadDirectory(const std::string& directory)
     Debug::log(Debug::Category::Physics,
                "[VEHICLE PROFILE] loaded %zu profiles from %s\n",
                mProfiles.size(), directory.c_str());
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Physics, StructuredLevel::Important,
+        "vehicle.profile.registry", "vehicle-profile",
+        "profile registry published a new snapshot", 0,
+        {{"revision", mRevision}, {"count", mProfiles.size()},
+         {"directory", directory}});
     return !mProfiles.empty();
 }
 
@@ -523,14 +538,17 @@ bool VehicleProfileRegistry::pollReload()
     return false;
 }
 
-const VehicleProfile* VehicleProfileRegistry::find(const std::string& id) const
+VehicleProfileRegistry::ProfilePtr VehicleProfileRegistry::find(
+    const std::string& id) const
 {
+    std::shared_lock<std::shared_mutex> readLock(mProfilesMutex);
     auto it = mProfiles.find(id);
-    return it != mProfiles.end() ? &it->second : nullptr;
+    return it != mProfiles.end() ? it->second : nullptr;
 }
 
 std::vector<std::string> VehicleProfileRegistry::ids() const
 {
+    std::shared_lock<std::shared_mutex> readLock(mProfilesMutex);
     std::vector<std::string> out;
     out.reserve(mProfiles.size());
     for (const auto& [id, _] : mProfiles)

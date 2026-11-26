@@ -194,6 +194,8 @@ void applyPresentationPolicy(const Gamemode& mode)
 
         PostFX::ModeBodycamLensOverride lens;
         lens.chromaticAberration = p.bodycam.chromaticAberration;
+        lens.chromaticAberrationBackgroundOnly =
+            p.bodycam.chromaticAberrationMode == "background_only";
         lens.vignette = p.bodycam.vignette;
         lens.distortion = p.bodycam.lensDistortion;
         lens.curve = p.bodycam.lensCurve;
@@ -234,6 +236,7 @@ void applyPresentationPolicy(const Gamemode& mode)
                 {"wall_probe_radius_m", p.bodycam.wallProbeRadiusMeters},
                 {"lens", {
                     {"chromatic_aberration", p.bodycam.chromaticAberration},
+                    {"chromatic_aberration_mode", p.bodycam.chromaticAberrationMode},
                     {"vignette", p.bodycam.vignette},
                     {"distortion", p.bodycam.lensDistortion},
                     {"curve", p.bodycam.lensCurve},

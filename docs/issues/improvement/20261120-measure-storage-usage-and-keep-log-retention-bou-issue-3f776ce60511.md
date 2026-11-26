@@ -280,3 +280,17 @@ Smallest experiment: extend devscripts/prune-builds.py --logs-only --dry-run to 
 ### 2026-11-26T00:03:27.347Z — root-resource-loop
 
 JOURNAL-VOLUME DIRECT SAMPLE + FIX (root-resource-loop, 2026-11-26T00:05Z, read-only measurement + one leased source change). Live run 20261125_233748 logs/2026-11-25/20261125_233748 server-01 across all segments events-0009, events-0010, events: 128,205 events, 227,235,851 bytes total in ~6 min. vehicle.state alone was 96,239 events / 162,338,645 bytes = 71.4% of bytes, emitted every 120 Hz entity tick per vehicle; vehicle.bounce was 20.9% (16,039 events), 8,537 of them at rest (speed<0.1, groundedCount=4). Spec docs/specs/vehicles/vehicles.md section 24 requires vehicle.bounce at 10 Hz; it was 20 Hz after the entity step moved to 120 Hz. FIX on game generation 657 (build/game/generation-657/game-g657.dll, revision 56c4855e): vehicle.state now emits at tick % 12 and vehicle.bounce at bounceTick % 12. PROOF isolated run 20261125_235847 logs/2026-11-25/20261125_235847, pinned game_generation 657 sha256 26e610066a0778ca8070ad0cac64e1f103281bef9e847e887090dcc107696bbc: 401 vehicle.state per vehicle over 43.33 s = 9.25 Hz/vehicle (was ~120 Hz); vehicle.bounce 9.26 Hz/vehicle (was ~20 Hz). Projected journal reduction ~65% of total bytes with the same workload. The isolated test run failed readiness before steady state, so the byte/min before/after under a long session is NOT yet measured; only the deterministic per-event rate is proven. Cross-link issue-ed3ac775283d. No claim that this explains CPU; it is an I/O and evidence-durability reduction.
+
+## Agent suggestion
+
+### 2026-11-26T05:55:10.718Z — issue-review-sweeper
+
+Proposed non-duplicate addition to this retention issue (from issue-review-sweeper 2026-11-26 sweep of issue-be1adb51b6ac). Distinct from the date-root pruning proposal already here: a run-manifest/journal completeness check.
+
+Observed (read-only, no build/run): for logs/2026-11-24..26, 145 of 365 run.json instance journal_path entries do not exist on disk. Newest concrete case: logs/2026-11-25/20261125_152203/run.json names server-01/events.jsonl but only client-01 exists (events.jsonl 490 B + one 100 MB events-0017.jsonl), so that FCS server session's journal is absent while the run is referenced by its manifest. This is not explained by only-3-newest date-root pruning (the date root still exists and the client journal survived).
+
+Measurable target: at run end, every instance journal_path in run.json either exists (non-empty) or the manifest is explicitly marked incomplete; target 0 runs whose manifest points at a journal that never existed, and every missing-at-run-end case emitted as one categorized evidence-loss event.
+
+Smallest experiment: a read-only scan of existing run.json files that classifies each missing journal_path as (a) directory never created, (b) pruned whole date root, or (c) file removed inside a surviving root, and reports counts only. No deletion and no source change in the experiment.
+
+Confidence: the 145/365 count and the 20261125_152203 server-journal absence are directly observed; the cause of each absence is unknown and not inferred.

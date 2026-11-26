@@ -69,25 +69,37 @@
     "color": [1.0, 0.98, 0.95]
   },
   "bloodtest_ak47": {
+    "thickness": 0.09,
+    "end_thickness": 0.05,
+    "lifetime": 0.16,
+    "start_alpha": 0.95,
+    "end_alpha": 0.0,
+    "color": [1.0, 0.9, 0.55],
     "projectile_trail": {
       "enabled": true,
       "style": "line",
-      "start_alpha": 0.5,
+      "start_alpha": 0.95,
       "end_alpha": 0.0,
-      "color": [1.0, 0.82, 0.05],
-      "thickness": 0.1,
-      "segments": 4
+      "color": [1.0, 0.86, 0.35],
+      "thickness": 0.16,
+      "segments": 6
     }
   },
   "bloodtest_judgement": {
+    "thickness": 0.08,
+    "end_thickness": 0.045,
+    "lifetime": 0.16,
+    "start_alpha": 0.95,
+    "end_alpha": 0.0,
+    "color": [1.0, 0.9, 0.6],
     "projectile_trail": {
       "enabled": true,
       "style": "line",
-      "start_alpha": 0.5,
+      "start_alpha": 0.95,
       "end_alpha": 0.0,
-      "color": [1.0, 0.86, 0.1],
-      "thickness": 0.1,
-      "segments": 4
+      "color": [1.0, 0.88, 0.4],
+      "thickness": 0.15,
+      "segments": 6
     }
   }
 }

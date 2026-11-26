@@ -168,11 +168,11 @@
       "texture": "assets/textureshq/sblood3.png"
     },
     "destroyed": {
-      "chunkMultiplier": 3.0,
-      "boneMultiplier": 2.5,
-      "mistMultiplier": 4.0,
-      "decalMultiplier": 2.0,
-      "forceMultiplier": 1.5
+      "chunkMultiplier": 5.0,
+      "boneMultiplier": 4.0,
+      "mistMultiplier": 8.0,
+      "decalMultiplier": 3.0,
+      "forceMultiplier": 2.0
     },
     "exitCone": {
       "enabled": true,

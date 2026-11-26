@@ -449,6 +449,25 @@ profile's `ground.attitude` block owns the rule:
   wheels cannot sit below the surface at rest and the wheel mesh follows
   suspension travel instead of sinking into geometry.
 
+## 15. Presentation preferences (2026-11-26)
+
+Two local-seat presentation elements are console-toggled and **disabled by
+default**. Both defaults are written once at startup as `vehicle.preferences`
+(`hud_car_assist=false`, `vehicle_exit_prompt=false`, `exit_key=F`) so a missing
+element is explained by the journal instead of looking broken.
+
+| Preference | Command | Default | Effect when on |
+|---|---|---|---|
+| Engine / gear / diff readout | `hud_car_assist on\|off` (no argument toggles) | off | Draws `ENGINE ON/OFF  AUTO/MANUAL  GEAR n  DIFF x` above the speed line |
+| Enter/exit vehicle prompt | `vehicle_exit_prompt on\|off` (no argument toggles) | off | Shows the `enter seat` / `exit vehicle` prompt |
+
+- **F always exits the vehicle**, independently of the prompt. It logs
+  `vehicle.exit.key` with the prompt state so the behaviour is visible.
+- Each change logs `vehicle.preference` with the preference name, the new value,
+  and the compiled default.
+- Turning a preference on is presentation only; it never gates driving,
+  possession, or the exit action.
+
 ## Related specifications
 
 - [Vehicles](../vehicles/vehicles.md)

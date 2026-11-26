@@ -19,6 +19,7 @@ uniform float uVignette;
 uniform float uFilmGrain;
 uniform float uChromaticAberration;
 uniform int uChromaticAberrationRadial;
+uniform int uChromaticAberrationBackgroundOnly;
 uniform float uLensDistortion;
 uniform float uLensDistortionCurve;
 uniform float uLensDistortionZoom;
@@ -134,6 +135,15 @@ void main()
     if (strength > 0.001)
     {
         float off = strength * 0.02;
+        // Full-world mode applies the shifted color image to every pixel.
+        // Background-only mode keeps the normal foreground intact and lets the
+        // chromatic image show only through dark/background pixels.
+        float caMask = 1.0;
+        if (uChromaticAberrationBackgroundOnly != 0)
+        {
+            float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+            caMask = 1.0 - smoothstep(0.02, 0.35, luma);
+        }
         if (uChromaticAberrationRadial != 0)
         {
             vec2 fromCenter = uv - vec2(0.5);
@@ -143,15 +153,15 @@ void main()
             float radialOff = off * (0.18 + edge * 1.9);
             float r = texture(uScene, uv + dir * radialOff).r;
             float b = texture(uScene, uv - dir * radialOff).b;
-            col.r = mix(col.r, r, 1.0);
-            col.b = mix(col.b, b, 1.0);
+            col.r = mix(col.r, r, caMask);
+            col.b = mix(col.b, b, caMask);
         }
         else
         {
             float r = texture(uScene, uv + vec2(off, 0.0)).r;
             float b = texture(uScene, uv - vec2(off, 0.0)).b;
-            col.r = mix(col.r, r, 1.0);
-            col.b = mix(col.b, b, 1.0);
+            col.r = mix(col.r, r, caMask);
+            col.b = mix(col.b, b, caMask);
         }
     }
 

@@ -649,8 +649,12 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
                         : objectPhysics.objectLinearDamping();
                 e.velocity *= std::max(
                     0.0f, 1.0f - linearDamping * (float)kFixedDt);
+                const float angularDamping =
+                    e.angularDampingOverride >= 0.0f
+                        ? e.angularDampingOverride
+                        : objectPhysics.objectAngularDamping();
                 e.angularVelocity *= std::max(
-                    0.0f, 1.0f - objectPhysics.objectAngularDamping() * (float)kFixedDt);
+                    0.0f, 1.0f - angularDamping * (float)kFixedDt);
                 const float angularSpeed = glm::length(e.angularVelocity);
                 if (angularSpeed > 1e-5f)
                 {

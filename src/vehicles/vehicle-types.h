@@ -378,6 +378,14 @@ struct VehicleState {
     int settleTicks = 0;
     bool settleReported = false;
     bool flipReported = false;
+    // One-shot latch so a flip cancel is logged once per dodge.
+    bool flipCancelLogged = false;
+    // Total rotation this dodge has accumulated, radians. Proves a full 360.
+    float flipRotationRad = 0.0f;
+    // Stick direction at dodge start in the car's own input axes (pitch,
+    // yaw+roll). Flip cancel compares against this, so car rotation cannot make
+    // the check fire by itself.
+    glm::vec2 flipCancelLocal{0.0f};
     glm::vec3 settleAnchor{0.0f};
     bool settleAnchorValid = false;
     // Rate limit for the sustained-penetration diagnostic.

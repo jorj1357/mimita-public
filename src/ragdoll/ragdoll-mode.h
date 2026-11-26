@@ -213,6 +213,14 @@ public:
     // ragdoll body. Returns the matching corpse actor id.
     bool queryCorpseHit(const glm::vec3& point, float radius,
                         std::string& outActorId) const;
+    // Corpse presentation damage: returns the ragdoll part index and exact
+    // closest surface point so bullets can advance skin -> meat -> bone.
+    bool queryCorpseHitPart(const glm::vec3& point, float radius,
+                            std::string& outActorId, int& outPartIndex,
+                            glm::vec3& outPoint) const;
+    void applyCorpseHit(const std::string& corpseId, int partIndex, int damage,
+                        const glm::vec3& point, const glm::vec3& direction,
+                        float force, const std::string& attacker);
 
 private:
     RagdollModeSystem() = default;

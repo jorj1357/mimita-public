@@ -51,3 +51,13 @@ SMALLEST EXPERIMENT
 - Dry-run only: add a read-only `--probe-daemon` that prints the bundle above and run it once while healthy; then point it at a known-dead port to confirm it reports timeout vs refused distinctly. Do not change watchdog behavior until the probe output is shown to the owner. One healthy run plus one synthetic-failure run defines the discriminator.
 
 No owner assignment, code edit, or proof claim.
+
+## Agent suggestion
+
+### 2026-11-26T15:03:37.781Z — issue-review-sweeper
+
+Process/diagnosability proposal from issue-review-sweeper (wake-947313207784). Evidence: launch 20261126_145549, the same launch recorded in issue-1251508e4f3c occurrence seq 20007. The launch report and issue occurrence record only `client pid=29616 did not reach Connected before the timeout` (failure_stage=client_connection). The actual first failure was server PID 10544 exiting with 0xC0000005 (ACCESS_VIOLATION in libstdc++-6.dll+0x165b00) immediately after `network.server-ice-startup.stage stage=turn_credentials`. Crash artifacts exist at .dev/crashes/20261126_145549/ (crash-2026-11-26_09-55-49-10544.txt/.dmp) but are not surfaced in the launch report, so an AI following the report investigates client connectivity instead of the server crash.
+
+Measurable target: for any managed launch where an instance exits non-zero before client_connection completes, the launch report plus CLI/GUI failure line must name the exited role and PID, the exit code in hex+decimal, and the first crash-artifact path within 5 s of the process exit; lifecycle must not remain RUNNING; and a client-side timeout must be downranked as `secondary` when a server exit is present. Acceptance: reproducing 20261126_145549 must show "server pid=10544 exit 0xC0000005" and the crash .txt path, not only the client timeout.
+
+Smallest experiment: surface the existing `dev-loop.instance.exited` (role/pid/exit_code/crash_artifacts) into the launch report and `--status` for this one run (no auto-fix, no retry behavior change), re-run mode 60 once, and diff the CLI/dashboard failure text and `--status` against the current output.

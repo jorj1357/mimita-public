@@ -730,6 +730,62 @@ void registerVehicleCommands()
     });
 
     Terminal::instance().registerCommand({
+        "hud_car_assist",
+        "Show or hide the engine/gear assist readout (default off)",
+        "hud_car_assist [on|off]",
+        [](const std::vector<std::string>& args) {
+            VehicleSystem& vehicles = VehicleSystem::instance();
+            const bool on = args.empty() ? !vehicles.hudCarAssistEnabled()
+                                         : (args[0] == "on");
+            vehicles.setHudCarAssistEnabled(on);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "vehicle.preference", "vehicle",
+                "hud car assist toggled", 0,
+                {{"preference", "hud_car_assist"},
+                 {"enabled", on},
+                 {"default", VehicleSystem::defaultHudCarAssist()}},
+                __FILE__, __LINE__, __func__);
+            Terminal::instance().addLog(std::string("[VEHICLE] hud_car_assist ") +
+                                        (on ? "on" : "off"));
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "vehicle_exit_prompt",
+        "Show or hide the enter/exit vehicle prompt (default off; F still exits)",
+        "vehicle_exit_prompt [on|off]",
+        [](const std::vector<std::string>& args) {
+            VehicleSystem& vehicles = VehicleSystem::instance();
+            const bool on = args.empty() ? !vehicles.exitPromptEnabled()
+                                         : (args[0] == "on");
+            vehicles.setExitPromptEnabled(on);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "vehicle.preference", "vehicle",
+                "vehicle exit prompt toggled", 0,
+                {{"preference", "vehicle_exit_prompt"},
+                 {"enabled", on},
+                 {"default", VehicleSystem::defaultExitPrompt()}},
+                __FILE__, __LINE__, __func__);
+            Terminal::instance().addLog(
+                std::string("[VEHICLE] vehicle_exit_prompt ") +
+                (on ? "on" : "off"));
+        }
+    });
+
+    // The defaults are stated once at startup so a missing prompt or readout is
+    // explained by the journal instead of looking broken.
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "vehicle.preferences", "vehicle",
+        "presentation preference defaults", 0,
+        {{"hud_car_assist", VehicleSystem::defaultHudCarAssist()},
+         {"vehicle_exit_prompt", VehicleSystem::defaultExitPrompt()},
+         {"exit_key", "F"}},
+        __FILE__, __LINE__, __func__);
+
+    Terminal::instance().registerCommand({
         "focus_window",
         "Bring the game window to the foreground so keyboard input works",
         "focus_window",

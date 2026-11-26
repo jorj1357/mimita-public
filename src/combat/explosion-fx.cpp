@@ -33,9 +33,12 @@ bool spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
         const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
         const glm::vec3 normal = glm::length(surfaceNormal) > 0.001f
             ? glm::normalize(surfaceNormal) : glm::vec3(0.0f, 0.0f, 1.0f);
+        const float bulletHoleScale = def && def->customParams.count("bullet_hole_scale")
+            ? std::clamp(def->customParams.at("bullet_hole_scale"), 0.05f, 4.0f)
+            : 0.25f;
         if (spawnMark)
             EffectPartSystem::instance().spawnBulletImpact(
-                position, normal, 0.25f, 1.0f, 1.0f);
+                position, normal, bulletHoleScale, 1.0f, 1.0f);
         if (def &&
             (!def->explosionShockwaveModel.empty() ||
              !def->explosionShockwaveTexture.empty())) {
@@ -76,7 +79,13 @@ bool spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
             0, nlohmann::json{{"weapon", weaponId},
                               {"force_scale", forceScale},
                               {"spawn_mark", spawnMark},
+                              {"bullet_hole_scale", bulletHoleScale},
                               {"shockwave_model", def ? def->explosionShockwaveModel : std::string()},
+                              {"shockwave_lifetime_seconds", def ? def->explosionShockwaveLifetime : 0.0f},
+                              {"shockwave_start_scale", def ? def->explosionShockwaveStartScale : 0.0f},
+                              {"shockwave_end_scale", def ? def->explosionShockwaveEndScale : 0.0f},
+                              {"shockwave_start_alpha", def ? def->explosionShockwaveStartAlpha : 0.0f},
+                              {"shockwave_end_alpha", def ? def->explosionShockwaveEndAlpha : 0.0f},
                               {"base_scale", def ? def->explosionShockwaveModelBaseScale : 1.0f}});
         return false;
     }

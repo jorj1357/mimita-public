@@ -13,6 +13,7 @@
 
 #include <glm/glm.hpp>
 
+#include "vehicles/vehicle-profile.h"
 #include "vehicles/vehicle-types.h"
 
 struct World;
@@ -39,7 +40,9 @@ public:
     // empty id keeps template-only physics.
     void setActiveProfile(const std::string& profileId);
     const std::string& activeProfileId() const { return mActiveProfileId; }
-    const VehicleProfile* profileFor(const VehicleState& state) const;
+    // A snapshot; callers hold it for the duration of use so a concurrent
+    // profile reload can never free it from under them.
+    VehicleProfileRegistry::ProfilePtr profileFor(const VehicleState& state) const;
 
     uint32_t spawn(const std::string& templateId, const glm::mat4& transform,
                    uint32_t driverActorId = 0);
@@ -122,6 +125,20 @@ private:
     // outside the simulation branch; a networked client owns its car as a
     // server mirror and never reaches the input path in `update`.
     bool pollLocalBallCam(const VehicleState& state, uint32_t tick);
+    // Exit-vehicle key (F) edge latch, polled for the local driver.
+    void pollLocalExitKey(const VehicleState& state);
+
+public:
+    // Presentation preferences owned here because they describe the local seat:
+    // both default disabled and are toggled from the console.
+    bool hudCarAssistEnabled() const { return mHudCarAssist; }
+    bool exitPromptEnabled() const { return mExitPrompt; }
+    void setHudCarAssistEnabled(bool on) { mHudCarAssist = on; }
+    void setExitPromptEnabled(bool on) { mExitPrompt = on; }
+    static bool defaultHudCarAssist() { return false; }
+    static bool defaultExitPrompt() { return false; }
+
+private:
     void updateDrivetrain(VehicleState& state, const VehicleSpec& spec, float dt);
     void updateWheel(VehicleState& state, const VehicleSpec& spec,
                      int wheelIndex, float dt, const World& world,
@@ -149,4 +166,7 @@ private:
     bool mPrevShiftUpKey = false;
     bool mPrevShiftDownKey = false;
     bool mPrevBallCamHeld = false;
+    bool mPrevExitKey = false;
+    bool mHudCarAssist = false;
+    bool mExitPrompt = false;
 };

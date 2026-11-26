@@ -696,6 +696,7 @@
               "required": false,
               "fields": {
                 "chromatic_aberration": { "type": "number", "required": false, "default": 0.12, "min": 0.0, "max": 0.8 },
+                "chromatic_aberration_mode": { "type": "string", "required": false, "default": "full_world", "enum": ["full_world", "background_only"] },
                 "vignette": { "type": "number", "required": false, "default": 0.18, "min": 0.0, "max": 0.8 },
                 "distortion": { "type": "number", "required": false, "default": 0.0, "min": 0.0, "max": 100.0 },
                 "curve": { "type": "number", "required": false, "default": 2.0, "min": 0.05, "max": 8.0 },

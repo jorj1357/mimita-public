@@ -47,23 +47,29 @@ void drawVehicleHud()
     const int speedKmh = (int)(state->speed * 3.6f + 0.5f);
 
     char line[192];
-    std::snprintf(line, sizeof(line), "%s  %s  GEAR %s  DIFF %s",
-                  state->engineOn ? "ENGINE ON" : "ENGINE OFF", mode, gear,
-                  diff);
     const float scale = 0.34f;
     const float x = 24.0f;
     float y = uiScreenH() - 300.0f;
     uiDrawRect({x - 8.0f, y - 8.0f, 470.0f, 178.0f},
                {0.03f, 0.04f, 0.06f, 0.72f}, "vehicle-hud-bg");
-    uiDrawText(line, x, y, scale, {1.0f, 1.0f, 1.0f, 1.0f});
-    y += 22.0f;
+
+    // Engine/gear assist readout is a console-toggled presentation preference,
+    // disabled by default (see docs/specs/gamemodes/vehicle-arena.md §15).
+    if (vehicles.hudCarAssistEnabled())
+    {
+        std::snprintf(line, sizeof(line), "%s  %s  GEAR %s  DIFF %s",
+                      state->engineOn ? "ENGINE ON" : "ENGINE OFF", mode, gear,
+                      diff);
+        uiDrawText(line, x, y, scale, {1.0f, 1.0f, 1.0f, 1.0f});
+        y += 22.0f;
+    }
 
     std::snprintf(line, sizeof(line), "%d km/h   %d rpm",
                   speedKmh, (int)(state->engineRpm + 0.5f));
     uiDrawText(line, x, y, scale, {1.0f, 1.0f, 1.0f, 1.0f});
     y += 22.0f;
 
-    if (const VehicleProfile* profile = vehicles.profileFor(*state))
+    if (auto profile = vehicles.profileFor(*state))
     {
         std::snprintf(line, sizeof(line), "BOOST %d%%   BALL CAM %s",
                       (int)(100.0f * state->boostCharge /

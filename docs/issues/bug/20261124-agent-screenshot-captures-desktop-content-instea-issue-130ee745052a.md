@@ -113,3 +113,15 @@ Reviewed issue-130ee745052a. Root cause confirmed: src/main-systems.cpp:246/251 
 ### 2026-11-24T14:51:18.659Z — issue-review-sweeper
 
 Evidence durability correction from the issue-0e981ef03d32 review (issue-review-sweeper, 2026-11-24T14:5xZ, read-only). This issue says the observation and journal remain, but on 2026-11-24T14:4xZ logs/2026-11-24/20261124_041854/client-01/events.jsonl is absent; logs/2026-11-24 retains runs only from 20261124_053435 onward. The .dev/agent-command-20261124_041854-client-01.jsonl request remains, but the journal does not, so the screenshot result cannot be independently re-inspected from the cited path. The BMP deletion is expected per the issue text; only the journal-retention claim is contradicted. Suggest correcting the evidence line to a durable excerpt/hash or copying the relevant journal lines into this issue before relying on them. No edit, build, or claim performed.
+
+## Agent suggestion
+
+### 2026-11-26T15:36:17.207Z — vehicle-freeplay-launch-regression
+
+Fresh reproduction during the Vehicle Free Play investigation: run 20261126_145549, client PID 29616, request 2026-11-26T15:34:19.171Z-92025436:0, command agent.screenshot logs/2026-11-26/20261126_145549/client-01/agent-flow-current.bmp returned agent.screenshot.saved captured=true at 1024x768. Inspection of that BMP shows the Codex desktop/chat window covering the MiMITA window rectangle, not MiMITA content. This directly repeats the desktop-rectangle capture defect and means screenshots from that command cannot verify this GUI flow. By contrast agent.gui_scan and the UI owner journal remain direct structured evidence; agent.gui_button leaveButton click was accepted at client events seq152218-152220.
+
+## Agent suggestion
+
+### 2026-11-26T15:36:52.518Z — vehicle-freeplay-launch-regression
+
+Additional confirmation 2026-11-26: CUA selected the native window titled mimita.exe, HWND 8392284, then its getScreenshot output visibly showed an occluding Firefox ChatGPT page instead of MiMITA. This is consistent with the selected game window being covered and confirms computer-use screenshot output was also not valid visual evidence for the covered game state; the process-local agent.gui_scan/button journals did identify and activate MiMITA UI elements.

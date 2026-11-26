@@ -507,3 +507,54 @@ The waited-on attempt game-dll-20261126T013504174400Z-8ca897 was healthy and suc
 Fresh ~92 min queue-to-working-review data point (occurrence wait game-dll-build:2026-11-26T02:29:43.891Z, issue-5137be4d2f57). wake-bdaae328c6d8: wake.queued 2026-11-26T02:30:46.325Z; claimed+launched 02:30:50Z (codex); wake.retry 04:01:56Z; claimed+launched 04:02:45.520Z (opencode, this session). The first codex launch exited without producing a review, and the fallback was only retried/drained by a later trigger, so the review landed ~5520s after the wait. Matches this issue's codex-primary / no-daemon-drain mode. Evidence: .dev/agent-wake/events.jsonl, .dev/agent-wake/requests/wake-bdaae328c6d8.json.
 
 Evidence: {"issue": "issue-5137be4d2f57", "queue_to_working_review_seconds": 5520, "wait_id": "game-dll-build:2026-11-26T02:29:43.891Z", "wake": "wake-bdaae328c6d8", "wake_queued_utc": "2026-11-26T02:30:46.325Z", "wake_retry_utc": "2026-11-26T04:01:56Z", "wake_working_review_utc": "2026-11-26T04:02:45.520Z"}
+
+## Agent suggestion
+
+### 2026-11-26T06:23:51.136Z — build-wait-reviewer
+
+Occurrence from issue-a114980aee90 (wait game-dll-build:2026-11-26T06:07:55.877Z, run 20261126_055157). One wake.queued for wake-fc2eaee53560 at 2026-11-26T06:08:58.473Z; codex primary claimed/launched 06:09:01.728/06:09:01.753Z (pid 4732) but produced no review; wake.retry "stale launched request recovered by scheduler" 06:13:17.754Z switched to opencode; opencode claimed/launched 06:13:18.758/06:13:18.819Z (pid 18876). Queue-to-final-launch 260.3s (~4m20.3s), attempts=2, two wake.launched rows for one wait_id. The underlying build was actively compiling at the crossing and succeeded at 88.921s, so this is not a stalled build. Within the proposed <=5 min bound but confirms primary-codex-no-completion + fallback recovery.
+
+## Agent suggestion
+
+### 2026-11-26T06:25:56.297Z — issue-review-sweeper
+
+Proposal from issue-review-sweeper (2026-11-26 sweep), measured target + smallest experiment, grounded in issue-121f867b430a review:
+
+Evidence (observed): For over-budget wait issue-121f867b430a the single reviewer wake (wake-67f7ae30cfff) ended `status=failed / "adapter process exited"`, its log is missing, and NO review was appended for ~5 days until a scheduled sweep. The 5 currently-claimable sibling build-friction issues each have exactly 1 wake and it is `failed:1`. Across `.dev/agent-wake/requests` (647 files): failed=486 (484 "adapter process exited"), cancelled=156, launched=4, queued=1; build-wait-reviewer 259 failed vs 4 launched. Critically, a sweeper wake that DID append review msg-13a00ff6d98f at 06:11 is also labeled failed — so "failed/adapter process exited" conflates clean one-shot exit with crash. Separately, 13 game-dll-build wait issues were created on 2026-11-26 alone, so these wakes are high-volume.
+
+Inference/uncertainty: Cannot tell from artifacts whether wake-67f7ae crashed or exited cleanly without output; exit code / terminal reason is not recorded. So two distinct defects may coexist: (a) mislabeled wake status, (b) real non-delivery. Unknown which dominates.
+
+Measurable target: 
+- 100% of wake requests record an adapter exit code and a terminal status that distinguishes `completed-clean` (exit 0) from `failed`; 
+- 0 requests labeled `failed` solely because the one-shot adapter exited; 
+- every over-budget wait issue reaches `reviewed` or an explicit `reviewed-noop` within 24h (currently this one took ~5 days).
+
+Smallest experiment: instrument `devscripts/agent-wake.py` to persist the adapter process return code into the request JSON and map exit 0 to a non-failed terminal status. Then launch one build-wait-reviewer wake for a fresh wait (e.g. newest build-friction issue) and verify: (1) request shows the exit code, (2) a wake that appends a review is no longer `failed`, (3) the review or explicit no-op appears on the issue the same day. Compare the pre/post count of `failed/"adapter process exited"` for 5 wakes.
+
+Cross-ref: this extends the existing late/failed-dispatch reporting here; the "exactly one wake queued" acceptance passed, so the gap is delivery/completion accounting, not duplicate wakes.
+
+## Agent suggestion
+
+### 2026-11-26T15:03:32.082Z — build-wait-reviewer
+
+Occurrence (build-wait-reviewer, 2026-11-26, read-only): wait game-dll-build:2026-11-26T06:17:59.474Z -> issue-3385f308560f, wake wake-14d62006319a.
+
+Positive: dispatch was NOT late this time. Crossing ~06:18:59.47Z, wake log 2026-11-26T06-19-02.266Z-build-wait-reviewer.log, dev-loop.wait.over_budget and dev-loop.wait.reviewer-wake both stamped 06:19:05.640Z; the reviewer was this session, so queue-to-launch was ~3s and no duplicate launch was observed for this wait_id. The wake journal shows one over_budget (created=true) and one reviewer-wake row.
+
+Still defective: the reviewer-wake row fields.wake.launch_result again contains the full reviewer prompt text (this time correctly embedding wake-14d62006319a and issue-3385f308560f, so NOT the prior misattribution case), rather than a bounded launch result. Root remains build_friction.py wake_reviewer returning agent-wake.py run --once stdout. This shows the launch_result pollution persists even when attribution is correct; the journal row cannot be read as a compact launch result.
+
+No fix claimed; no duplicate issue created.
+
+## Agent suggestion
+
+### 2026-11-26T15:52:23.378Z — issue-review-sweeper
+
+**Process proposal from issue-review-sweeper (wake-479e90a636b1), 2026-11-26.**
+
+Observed (distinct from the existing 39-min dispatch-latency case): build-wait issue-f995213a15b0's reviewer wake wake-02cf34c2ff22 was queued exactly once (15:26:33.515Z), launched codex (15:26:34.385Z), retried to opencode (15:34:08.140Z), launched opencode (15:53:25.942Z), then ended `wake.failed` at 16:07:34.018Z ("adapter process exited; reconciled by scheduler") with NO review appended for ~5 days. The wake DID reach `wake.launched` on the fallback yet still terminated with no completion signal, so this issue's "one wake.launched to a healthy adapter" criterion is insufficient to prove a review actually happened.
+
+Measurable target: over a 7-day window, 0 over-budget wait reviewer wakes end in `wake.failed` with no issue review appended, and >=95% append a review within 10 min of wake.queued. Baseline from this case: review appended ~5 days later by a different scheduler.
+
+Smallest experiment: add a terminal-completion predicate to the wake journal/scheduler — when a wake reaches `wake.failed`, or is claimed with no review within N minutes, re-queue once and record the outcome; then run one over-budget wait and verify the journal shows either a review append or exactly one bounded re-queue. I suggest adding a "review appended (not just launched)" completion clause to this issue's acceptance.
+
+Cross-links: issue-f995213a15b0 (occurrence), issue-9a4503f6ed68 (budget/coalescing, already filed). No duplicate issue created.

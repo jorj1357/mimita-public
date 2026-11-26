@@ -350,3 +350,58 @@ Build attempt: game-dll-20261126T013504174400Z-8ca897
 Run: 20261126_013130
 
 This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent suggestion
+
+### 2026-11-26T05:54:14.580Z — build-wait-reviewer
+
+Build-time resource observation from issue-75e49f67b48c / build cc30b9 (run 20261126_035851). Direct observation: .dev/build-timings/game-dll-20261126T040021929713Z-cc30b9.resource.json sampled 104x @1s over 144.203s (started 04:00:21.929Z, completed 04:02:46.132Z): mean_host_cpu_percent=97.221, peak_host_cpu_percent=100.0 on a 12-logical-CPU host, minimum_available_memory_bytes=119906304 (~114.4 MiB of ~15.6 GiB total). final_sample_status=host_and_cached_processes; aligned run 20261126_035851 server mode vehicle_freeplay (server pid 448, client pid 32772; client frame p95 4.9ms, peak 7.1ms at 267.7fps). Unavailable per record: matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation (mode_unverified). Inference (not proven): host CPU/memory contention may have lengthened compiles (slowest src/network/server-gamemode.cpp 76.631s). Suggested smallest next check: capture one matched prebuild resource baseline plus a postbuild sample for the next intentional game-DLL build so build-time CPU/memory can be attributed rather than inferred. No cause asserted.
+
+## Occurrence
+
+### 2026-11-26T06:17:21.282Z — build-wait-reviewer
+
+gap_key: build-resource-sampling:game-dll-20261126T054715953058Z-ee15db. New resource-sampling occurrence captured during review of over-budget wait game-dll-build:2026-11-26T05:47:15.830Z (issue-8b46d995a7a0). DIRECT observation from .dev/build-timings/game-dll-20261126T054715953058Z-ee15db.resource.json: status=captured, provider=psutil_host_and_process, sample_count=70 @ 1.0s over duration=85.906s (started_utc=2026-11-26T05:47:15.953Z, completed_utc=2026-11-26T05:48:41.860Z); mean_host_cpu_percent=91.371, peak_host_cpu_percent=100.0 on a 12-logical-CPU (8 physical) host; minimum_available_memory_bytes=16,654,336 (~15.9 MiB of 16.0 GiB). The build succeeded anyway (gen 685, total_seconds=85.922, 22 CUs compiled, 623 skipped, compile_seconds=66.953, link_seconds=5.89, no worker errors). These 15.9 MiB free is the lowest build-sample free-memory point seen in this reviewer's recent occurrences (prior: 6.2 MiB c638b8, 1.08 GiB d96bf3, ~114 MiB cc30b9). unavailable_fields still include matched_prebuild_resource_baseline, host_commit_charge_and_limit, and journal_aligned_live_mode_workload_and_frame_tick_metrics; runtime_alignment=unavailable (mode unverified, no matched server/client journal). INFERENCE (not established): host CPU saturation is expected from a 10-job compile and memory pressure may have lengthened compiles, but no aligned pre-build baseline exists, so do NOT treat pressure as the proven cause of the >60s wait. This is a direct observation only; no duplicate issue created.
+
+Evidence: {"build_attempt_id": "game-dll-20261126T054715953058Z-ee15db", "duration_seconds": 85.906, "gap_key": "build-resource-sampling:game-dll-20261126T054715953058Z-ee15db", "host_logical_cpus": 12, "host_total_memory_bytes": 16802918400, "issue": "issue-8b46d995a7a0", "mean_host_cpu_percent": 91.371, "minimum_available_memory_bytes": 16654336, "peak_host_cpu_percent": 100.0, "sample_count": 70, "sample_interval_seconds": 1.0, "wait_id": "game-dll-build:2026-11-26T05:47:15.830Z"}
+
+## Agent suggestion
+
+### 2026-11-26T06:23:55.199Z — build-wait-reviewer
+
+Evidence-gap occurrence from build-wait review of issue-a114980aee90 (2026-11-26T06:2xZ). brain_check.build_resource_gaps reports three missing_build_resource_measurement entries; resource sidecars were captured but are not matched/verified, so the gap is unavailable-alignment, not absent sampling. This is the single report for these gap_keys (not duplicated elsewhere):
+1) gap_key build-resource-sampling:game-dll-20261126T060755948198Z-ddc45d (gen 687, source_generation 32): 67 samples @1s over 88.906s, mean_host_cpu_percent=96.442, peak=100.0, minimum_available_memory_bytes=34,197,504 (~32.6 MiB), final_sample_status=host_and_cached_processes, jobs=10; runtime_alignment=unavailable/mode_unverified; unavailable_fields=[matched_prebuild_resource_baseline, host_commit_charge_and_limit, journal_aligned_live_mode_workload_and_frame_tick_metrics].
+2) gap_key build-resource-sampling:game-dll-20261126T060044815851Z-9b7ffb (gen 686): 280 samples over 419.078s, mean_cpu=97.601, peak=100, min_avail_mem=22,413,312; runtime_alignment=mode_unverified/client_mode_unverified; unavailable=[matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation].
+3) gap_key build-resource-sampling:game-dll-20261126T054715953058Z-ee15db (gen 685): 70 samples over 85.906s, mean_cpu=91.371, peak=100, min_avail_mem=16,654,336; runtime_alignment=unavailable/unverified; unavailable=[matched_prebuild_resource_baseline, host_commit_charge_and_limit, journal_aligned_live_mode_workload_and_frame_tick_metrics].
+Direct observation only; host pressure is not claimed as the cause of any wait crossing. Smallest next check: add a matched pre-build baseline sample and host commit charge/limit to the same sidecar so pressure claims can be falsified. No source edit by reviewer.
+
+## Agent suggestion
+
+### 2026-11-26T15:03:01.640Z — build-wait-reviewer
+
+New resource-sample occurrence (same class as prior build-resource-sampling entries). gap_key: build-resource-sampling:game-dll-20261126T061759578653Z-67ec90.
+
+Direct observation from .dev/build-timings/game-dll-20261126T061759578653Z-67ec90.resource.json: status=captured, final_sample_status=host_and_cached_processes, 75 samples @1s over 107.86s, mean_host_cpu_percent=98.63, peak_host_cpu_percent=100.0, minimum_available_memory_bytes=378,179,584 (~360 MiB), sampler_thread_status=stopped (no shutdown timeout this time). unavailable_fields: matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation. runtime_alignment run_id=20261126_061412: server bloodtest pid 10544 gen 687, client pid 28860 ~199.8 fps (147/200 over budget), pair_alignment observed, client_mode unverified.
+The build itself succeeded: attempt game-dll-20261126T061759578653Z-67ec90, generation 688, total 107.875s, changed_source_preflight 46.563s, compile 3.39s, link 27.266s, 3 compiled / 642 skipped. Its over-budget wait is issue-3385f308560f (game-dll-build:2026-11-26T06:17:59.474Z, 60.773s). Correlation only; pressure is recorded but not proven as the cause of the crossing. No duplicate proposal; user context unchanged.
+
+## Agent suggestion
+
+### 2026-11-26T15:55:46.042Z — build-wait-reviewer
+
+gap_key: build-resource-sampling:game-dll-20261126T154301815009Z-41b473. New resource-sampling occurrence captured during review of over-budget wait game-dll-build:2026-11-26T15:43:01.573Z (issue-28feee119403).
+
+DIRECT observation from .dev/build-timings/game-dll-20261126T154301815009Z-41b473.resource.json: status=captured, provider=psutil_host_and_process, sample_count=56 @ 1.0s over duration=68.468s (started_utc=2026-11-26T15:43:01.815Z, completed_utc=2026-11-26T15:44:10.280Z); 12 logical CPUs; mean_host_cpu_percent=92.962, peak_host_cpu_percent=100.0; minimum_available_memory_bytes=2,049,060,864 (~1.91 GiB of 16.8 GB total). Build succeeded anyway: gen 691, worker_total_seconds=54.766, compile_seconds=45.016, link_seconds=5.953, attempt total_seconds=68.593.
+
+Competing whole-host CPU average over the 56 samples: dwm 8.66%, firefox 5.07%, MsMpEng (Windows Defender) 4.53%, System 3.71%, obs64 3.59%, ChatGPT 3.35%, python 1.80%, codex-computer-use 1.19%, Taskmgr 0.48%; System Idle 7.12%. Tracked build processes included mimita.exe at avg 14.92% whole-host (a live runtime) and cc1plus compiler. dev-loop runtime_context reported run 20261126_145549, mode vehicle_freeplay, map arena1, npcs 0, but runtime_alignment=unavailable (mode unverified, no matched server/client journal).
+
+INFERENCE (not established): a live game plus several desktop/agent apps and Defender contended the 12-CPU host during a 10-job compile. There is no matched pre-build baseline, so do NOT treat pressure as the proven cause of the >60s wait. unavailable_fields: matched_prebuild_resource_baseline, host_commit_charge_and_limit, journal_aligned_live_mode_workload_and_frame_tick_metrics. Smallest next check: capture one matched low-load baseline and one build sample with a journal-verified live mode, or add the missing fields to the sampler. No duplicate issue created.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T15:55:55.593Z — build-wait-reviewer
+
+Message: `msg-f16e12d90d90` (question)
+
+Subject: Review resource gap for build 41b473 (wait 15:43:01)
+
+Resource gap build-resource-sampling:game-dll-20261126T154301815009Z-41b473 was appended to issue-2a5c5da53565. Direct sample: 12 logical CPUs, mean host CPU 92.962%, peak 100%, min available memory ~1.91 GiB, 56 samples @1s over 68.468s; tracked mimita.exe avg 14.92% whole-host (reported vehicle_freeplay, not journal-verified); competing apps include Defender 4.53%, firefox 5.07%, obs64 3.59%, ChatGPT 3.35%. Build succeeded (gen 691, worker 54.766s). This is observation only, not proven cause, because matched_prebuild_resource_baseline and journal-aligned live mode are unavailable. Please review and agree the smallest next check (one matched low-load baseline + one journal-verified build sample, or add the missing sampler fields); reply on issue-2a5c5da53565. I am not claiming a fix.

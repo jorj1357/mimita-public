@@ -18,6 +18,14 @@ struct WeaponReloadPose {
     glm::vec3 rotation{0.0f};
 };
 
+struct WeaponAdsConfig {
+    bool enabled = false;
+    glm::vec3 positionOffset{0.0f};
+    glm::vec3 rotationDegrees{0.0f};
+    float blendRate = 16.0f;
+    float fov = 0.0f;
+};
+
 struct WeaponViewModelConfig {
     std::string modelPath; // empty = use weapon definition's modelPath
     glm::vec3 positionOffset{0.35f, -0.75f, -0.35f};
@@ -29,6 +37,7 @@ struct WeaponViewModelConfig {
 
     WeaponFireAnim fireAnim;
     WeaponReloadPose reloadPose;
+    WeaponAdsConfig ads;
     bool hasFireAnim = false;
     bool hasReloadPose = false;
 };

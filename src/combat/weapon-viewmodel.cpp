@@ -23,6 +23,7 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "entities/player.h"
 #include "map/map_loader.h"
 #include "renderer/renderer.h"
@@ -200,6 +201,36 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
     if (def && !def->id.empty()) {
         vmcfg = wc.get(def->id);
         hasConfig = (vmcfg != nullptr);
+    }
+
+    // Camera/ADS presentation blend. This is a sight-alignment offset relative
+    // to the physical hand; it never changes authoritative damage or hit logic.
+    const bool adsWanted = hasConfig && vmcfg && vmcfg->ads.enabled &&
+        player.weaponAimDownSights;
+    const float adsRate = (hasConfig && vmcfg) ? vmcfg->ads.blendRate : 16.0f;
+    const float adsAlpha = 1.0f - std::exp(-adsRate * std::max(0.0f, dt));
+    mAdsBlend += ((adsWanted ? 1.0f : 0.0f) - mAdsBlend) * adsAlpha;
+    mAdsBlend = std::clamp(mAdsBlend, 0.0f, 1.0f);
+    if (hasConfig && vmcfg && vmcfg->ads.enabled) {
+        static std::string lastAdsStateKey;
+        const std::string adsStateKey = (def ? def->id : std::string("?")) +
+            (adsWanted ? ":ads" : ":hip");
+        if (adsStateKey != lastAdsStateKey) {
+            lastAdsStateKey = adsStateKey;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "weapon.ads.state", def ? def->id : "unknown",
+                "camera-aligned ADS presentation state", 0,
+                nlohmann::json{
+                    {"weapon", def ? def->id : ""},
+                    {"ads_requested", adsWanted},
+                    {"blend", mAdsBlend},
+                    {"position_offset", {vmcfg->ads.positionOffset.x,
+                        vmcfg->ads.positionOffset.y, vmcfg->ads.positionOffset.z}},
+                    {"rotation_degrees", {vmcfg->ads.rotationDegrees.x,
+                        vmcfg->ads.rotationDegrees.y, vmcfg->ads.rotationDegrees.z}},
+                    {"blend_rate", vmcfg->ads.blendRate}});
+        }
     }
 
     // Use config modelPath if available, otherwise fall back to definition
@@ -468,6 +499,17 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             weaponTransform = glm::rotate(weaponTransform, glm::radians(mRecoilRotation.x), glm::vec3(1,0,0));
             weaponTransform = glm::rotate(weaponTransform, glm::radians(mRecoilRotation.y), glm::vec3(0,1,0));
             weaponTransform = glm::rotate(weaponTransform, glm::radians(mRecoilRotation.z), glm::vec3(0,0,1));
+
+            glm::mat4 adsLocal(1.0f);
+            if (hasConfig && vmcfg && vmcfg->ads.enabled && mAdsBlend > 0.0001f) {
+                const glm::vec3 adsPos = vmcfg->ads.positionOffset * mAdsBlend;
+                const glm::vec3 adsRot = vmcfg->ads.rotationDegrees * mAdsBlend;
+                adsLocal = glm::translate(adsLocal, adsPos);
+                adsLocal = glm::rotate(adsLocal, glm::radians(adsRot.x), glm::vec3(1,0,0));
+                adsLocal = glm::rotate(adsLocal, glm::radians(adsRot.y), glm::vec3(0,1,0));
+                adsLocal = glm::rotate(adsLocal, glm::radians(adsRot.z), glm::vec3(0,0,1));
+                weaponTransform = weaponTransform * adsLocal;
+            }
         }
 
         muzzle = glm::vec3(weaponTransform * glm::vec4(collisionMuzzle, 1.0f));
@@ -528,6 +570,14 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                 extraTransform = glm::rotate(extraTransform, glm::radians(mRecoilRotation.x), glm::vec3(1,0,0));
                 extraTransform = glm::rotate(extraTransform, glm::radians(mRecoilRotation.y), glm::vec3(0,1,0));
                 extraTransform = glm::rotate(extraTransform, glm::radians(mRecoilRotation.z), glm::vec3(0,0,1));
+                if (vmcfg->ads.enabled && mAdsBlend > 0.0001f) {
+                    const glm::vec3 adsPos = vmcfg->ads.positionOffset * mAdsBlend;
+                    const glm::vec3 adsRot = vmcfg->ads.rotationDegrees * mAdsBlend;
+                    extraTransform = glm::translate(extraTransform, adsPos);
+                    extraTransform = glm::rotate(extraTransform, glm::radians(adsRot.x), glm::vec3(1,0,0));
+                    extraTransform = glm::rotate(extraTransform, glm::radians(adsRot.y), glm::vec3(0,1,0));
+                    extraTransform = glm::rotate(extraTransform, glm::radians(adsRot.z), glm::vec3(0,0,1));
+                }
             }
             player.weaponLocalToArm = armToWeapon * extraTransform;
             player.weaponGripLocal = colGrip;

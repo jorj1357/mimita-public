@@ -637,3 +637,67 @@ the 10 Hz samples show the ball spinning to the 6 rad/s cap while pure rolling a
 25 m/s needs 27 rad/s, so it slides for the whole roll and friction eats the
 speed. Filed with the numbers; the next change is the roll/friction model, not
 damping.
+
+## Follow-up: dodge 360, general surface clamp, ball roll, presentation toggles
+
+**Dodge.** The air-control clamp was applied during flips, so 5.5 rad/s over the
+0.65 s flip window capped every dodge at ~205 degrees. Flips now use their own
+`flip.maxAngularVelocity` (24 rad/s) and `angularAccel` 40 rad/s^2, and the
+chassis replaces the global object angular damping (1.5/s) with 0.2/s. The
+measured cause of a short flip was worse than the clamp: the flip-cancel check
+compared the stick against a *world* vector, so once the car had rotated ~90
+degrees the check fired by itself (measured `against = -0.12` against a 0.1
+threshold, `rotation_deg_total = 187`). It now compares the stick against the
+direction captured in the car's own input axes at dodge start, and logs
+`vehicle.flip.cancel`.
+
+**World contact.** The floor-only penetration lift now pushes the chassis out
+along any contact normal, so a car pressed into a wall or ceiling is recovered the
+same way it was for the floor.
+
+**Ball.** Friction 0.35 -> 0.03 and restitution 0.6 -> 0.45 in `arena1.json`, with
+the ball already replacing the global object damping: the ball now rolls instead
+of decelerating 4-6 m/s^2. Car-vs-world restitution raised to 0.25 so a high-speed
+impact reflects about a quarter of the normal speed.
+
+**Presentation.** F exits the vehicle and logs `vehicle.exit.key`.
+`hud_car_assist` and `vehicle_exit_prompt` are console toggles, **both disabled by
+default**, and the defaults are written at startup as `vehicle.preferences`.
+Documented in `vehicle-arena.md` §15.
+
+Verification note: the dodge proof scenario `rocket_dodge_360_v1` is written but
+its run failed at setup because the client did not auto-seat in that launch, so
+the 360 is implemented and instrumented but not yet proven in a journal.
+
+
+## Follow-up: server died instantly at launch (0xC0000005) — fixed
+
+`VehicleProfileRegistry::loadDirectory` published with
+`mProfiles = std::move(profiles)`, destroying every live element of the map that
+`VehicleSystem::profileFor` hands out pointers into. `serverTickVehicles` called
+`VehicleSystem::instance().pollReload()` whenever `tick % 60 == 0`,
+**and `tick 0` satisfies that**, so every server start rebuilt the registry on its
+first server tick while the main thread was still loading the same singleton. The
+recorded fault (`std::_Hash_bytes` reading `0x6c` in `libstdc++-6.dll`) is the
+freed bucket array.
+
+The registry now stores `std::shared_ptr<const VehicleProfile>` behind a
+`std::shared_mutex`, publishes a new snapshot under the write lock, and `find`
+returns a snapshot under the read lock. `profileFor`, the HUD and networking hold
+that snapshot for the duration of use. The server-tick reload is kept (a
+dedicated server never runs the engine config-polling path, so it is the only
+reload) and is now safe. New `vehicle.profile.registry` event records revision,
+count and directory on every publish.
+
+One self-inflicted regression is recorded deliberately: the first version read
+`profile.id` in the same expression that did `std::move(profile)`, collapsing all
+three profiles onto the empty key (`count=1`, no profile applied, car
+undrivable). Fixed by capturing the id before the move.
+
+Proof, game generation 693: five consecutive launches (`20261126_161031`,
+`161111`, `161152`, `161232`, `161313`) each show 0 occurrences of
+`0xC0000005`, 0 `dev-loop.instance.exited`, registry count 3, profile applied 2,
+client entered 1. Reload stress in `20261126_161313`: touching a profile file
+mid-run produced registry revision 2 with count 3, zero crashes, server still
+running. Full cause, fix and prevention rules are in
+`docs/regressions/dev-loop/server-crash-frozen-REG-2026-09-27.md` Occurrence 4.

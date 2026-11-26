@@ -193,6 +193,9 @@ struct GamemodeBodycam {
     int settleCameraHoldTicks = 6;
     float cameraSwayScale = 1.0f;
     float chromaticAberration = 0.12f;
+    // "full_world" applies CA to the complete final scene; "background_only"
+    // masks the shifted image to dark/background pixels.
+    std::string chromaticAberrationMode = "full_world";
     float vignette = 0.18f;
     float lensDistortion = 0.0f;
     float lensCurve = 2.0f;

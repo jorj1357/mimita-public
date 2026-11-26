@@ -1350,6 +1350,13 @@ void RagdollModeSystem::stabilizeHybridArms(RagdollBody& b,
             alpha *= (1.0f - pointingBlend);
         if (alpha <= 1e-4f) continue;
 
+        if (activelyPointing && aimStabilityMultiplier >= 30.0f) {
+            // ADS presentation lock: the camera target is authoritative while
+            // RMB is held, so do not let residual solver jitter move the sight.
+            part.body.orientation = glm::normalize(target);
+            part.body.angularVelocity = glm::vec3(0.0f);
+            continue;
+        }
         part.body.orientation = glm::normalize(
             glm::slerp(part.body.orientation, target, alpha));
         const float velocityRetention = cameraFollow > 1.0f
@@ -3278,6 +3285,100 @@ bool RagdollModeSystem::queryCorpseHit(const glm::vec3& point, float radius,
         }
     }
     return false;
+}
+
+bool RagdollModeSystem::queryCorpseHitPart(const glm::vec3& point, float radius,
+                                           std::string& outActorId,
+                                           int& outPartIndex,
+                                           glm::vec3& outPoint) const
+{
+    outPartIndex = -1;
+    for (const RagdollCorpse& corpse : mCorpses) {
+        if (corpse.fade >= 1.0f)
+            continue;
+        for (int i = 0; i < (int)corpse.body.parts.size(); ++i) {
+            const RagdollModePart& part = corpse.body.parts[i];
+            const Capsule capsule = capsuleOf(part.body);
+            const glm::vec3 ab = capsule.b - capsule.a;
+            const float lengthSq = glm::dot(ab, ab);
+            const float t = lengthSq > 0.000001f
+                ? glm::clamp(glm::dot(point - capsule.a, ab) / lengthSq, 0.0f, 1.0f)
+                : 0.0f;
+            const glm::vec3 closest = capsule.a + ab * t;
+            if (glm::length(point - closest) <= radius + capsule.r) {
+                outActorId = corpse.actorId;
+                outPartIndex = i;
+                outPoint = closest;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void RagdollModeSystem::applyCorpseHit(const std::string& corpseId,
+                                       int partIndex, int damage,
+                                       const glm::vec3& point,
+                                       const glm::vec3& direction,
+                                       float force,
+                                       const std::string& attacker)
+{
+    for (RagdollCorpse& corpse : mCorpses) {
+        if (corpse.actorId != corpseId)
+            continue;
+        if (partIndex < 0 || partIndex >= (int)corpse.body.parts.size())
+            return;
+        const ActorBodyPart bodyPart =
+            actorBodyPartFromRagdollIndex(partIndex);
+        if (bodyPart == ActorBodyPart::Unknown)
+            return;
+        corpse.actor.body.applyDamage(bodyPart, std::max(1, damage));
+        const int healthAfter = (int)corpse.actor.body.health(bodyPart);
+        const bool destroyed = corpse.actor.body.destroyed(bodyPart);
+
+        HitEvent event;
+        event.position = point;
+        event.normal = glm::length(direction) > 0.001f
+            ? -glm::normalize(direction) : glm::vec3(0.0f, 0.0f, 1.0f);
+        event.direction = glm::length(direction) > 0.001f
+            ? glm::normalize(direction) : glm::vec3(0.0f, 0.0f, 1.0f);
+        event.hitEntity = true;
+        event.damage = std::max(1, damage);
+        event.attacker = attacker;
+        event.victim = corpseId;
+        event.weaponSource = "projectile";
+        event.bodyPart = actorBodyPartName(bodyPart);
+        event.partHealthAfter = healthAfter;
+        event.partDestroyed = destroyed;
+        event.contactForce = force;
+        event.spawnDamageNumber = false;
+        event.bloodAmountScale = destroyed
+            ? ActorBodyConfig::instance().destroyedBloodScale : 1.4f;
+        HitEffects::onHit(event);
+
+        if (destroyed && partIndex < (int)corpse.body.parts.size()) {
+            corpse.body.parts[partIndex].body.linearVelocity +=
+                event.direction * std::max(1.0f, force);
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Ragdoll, StructuredLevel::Important,
+            "corpse.gore.stage", corpseId,
+            destroyed ? "corpse part destroyed by accumulated gore"
+                      : "corpse part gore advanced",
+            0,
+            nlohmann::json{
+                {"actor_id", corpseId},
+                {"part", actorBodyPartName(bodyPart)},
+                {"part_index", partIndex},
+                {"damage", damage},
+                {"part_health_after", healthAfter},
+                {"layer_after", (int)corpse.actor.body.layer(bodyPart)},
+                {"gore_damage", corpse.actor.body.goreDamage(bodyPart)},
+                {"destroyed", destroyed},
+                {"position", {point.x, point.y, point.z}},
+                {"direction", {event.direction.x, event.direction.y, event.direction.z}}});
+        return;
+    }
 }
 
 void RagdollModeSystem::renderCorpses(const Camera& camera)

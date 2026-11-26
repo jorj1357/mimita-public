@@ -67,6 +67,13 @@ void PostFX::loadConfig(const std::string& path)
         read("vignette", mData.vignette, 0.0f);
         read("filmGrain", mData.filmGrain, 0.0f);
         read("chromaticAberration", mData.chromaticAberration, 0.0f);
+        if (j.contains("chromaticAberrationBackgroundOnly")) {
+            mData.chromaticAberrationBackgroundOnly = j["chromaticAberrationBackgroundOnly"]
+                .is_boolean() && j["chromaticAberrationBackgroundOnly"].get<bool>();
+        } else if (j.contains("chromaticAberrationMode") && j["chromaticAberrationMode"].is_string()) {
+            mData.chromaticAberrationBackgroundOnly =
+                j["chromaticAberrationMode"].get<std::string>() == "background_only";
+        }
         read("lensDistortion", mData.lensDistortion, 0.0f);
         read("scanlines", mData.scanlines, 0.0f);
         read("pixelation", mData.pixelation, 0.0f);
@@ -354,6 +361,8 @@ void PostFX::setUniforms(const PostFXData& data, const char* prefix)
     set1f("uFilmGrain", data.filmGrain);
     set1f("uChromaticAberration", data.chromaticAberration);
     set1i("uChromaticAberrationRadial", data.chromaticAberrationRadial ? 1 : 0);
+    set1i("uChromaticAberrationBackgroundOnly",
+          data.chromaticAberrationBackgroundOnly ? 1 : 0);
     set1f("uLensDistortion", data.lensDistortion);
     set1f("uLensDistortionCurve", data.lensDistortionCurve);
     set1f("uLensDistortionZoom", data.lensDistortionZoom);
@@ -518,6 +527,8 @@ void PostFX::render()
     if (mBodycamLensOverride) {
         data.chromaticAberration = mBodycamLensOverride->chromaticAberration;
         data.chromaticAberrationRadial = mBodycamLensOverride->radialChromaticAberration;
+        data.chromaticAberrationBackgroundOnly =
+            mBodycamLensOverride->chromaticAberrationBackgroundOnly;
         data.vignette = mBodycamLensOverride->vignette;
         data.lensDistortion = mBodycamLensOverride->distortion;
         data.lensDistortionCurve = mBodycamLensOverride->curve;

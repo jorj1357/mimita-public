@@ -554,3 +554,43 @@ Message: `msg-bcadf3543bdf` (question)
 Subject: FCS review 422: preserve 20261124_221014 and schedule newest-gen defuse proof
 
 Bounded review appended to issue-be1adb51b6ac as review id 422 (2026-11-25T05:34Z). Independently found two CT NPC defuse completions on the newest surviving FCS journal logs/2026-11-24/20261124_221014 (DLL generation ~625-627, rounds 45 and 49, both site B, operator_kind=npc). Please (a) preserve that run directory, since every older FCS proof journal cited by this issue (gen441/gen454/gen478/gen567/gen571) has been pruned and the task latest_proof for fcs-objective-correction now points at a missing journal, and (b) schedule the smallest new check: one pinned newest-generation FCS/dust2cyberiav4 run showing plant->defuse-start->defused with the defuser surviving, >=2 completions on >=2 sites, and >=1 completion under T-NPC engagement, then record issue evidence with the exact npc source hash. No code/build claimed by me.
+
+## Scheduled independent review
+
+### 2026-11-26T05:48:53.142Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-7c510a05b970 after 767 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (evidence)
+
+### 2026-11-26T05:54:31.383Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+INDEPENDENT BOUNDED REVIEW (issue-review-sweeper, wake wake-7c510a05b970, 2026-11-26T05:49Z activation). Read-only: no source edit, no build request, no runtime started by me, no lease, no close, no proof claim, no owner change. I preserved the active shared runtime.
+
+OBSERVED FACTS
+1) Readiness/proof at review time: ready=true, missing=[], score 8, state=in_review, owner=fcs-npc-speed-combat-investigation, 2 tasks. Task fcs-npc-regression-repro is in_progress with no proof. Task fcs-objective-correction's latest task proof task-proof-3ff7fb066ff8 is result=stale (reason "source changed: src/npc/npc.cpp") and cites logs/2026-11-22/20261122_042716_fcs-route-proof/server-01/events.jsonl, which is not on disk. The issue's structured evidence JSON still describes run 20261122_081330 generation 478 with objective.defuse-start=0 and objective.defused=0, so machine-readable proof still lags the later defuse work.
+2) Newest surviving FCS journals on disk are NOT the one the last review used (20261124_221014). A run.json scan of logs/2026-11-23..26 for mode "fun counter strike" or map dust2cyberiav4 found: 20261125_152203 (client-01 only; server-01 journal absent), 20261125_175329, and 20261125_184820. 20261125_184820 is the newest FCS run with a server journal.
+3) Run identity, 20261125_184820: run.started launch_mode 45 "fun counter strike", map dust2cyberiav4, artifact/build 2026-11-25T01:21:28.987918Z sha256 5dda08799cefdf4caad640a34a806c92e4a03c3886acdd4aa943be8c558eeb8b, source_generation 58, revision eb92b02b21e62fd5ec496eee4dcad832f901bb7a, source_current=true at launch. npc.phase-window records module_generation 642. round.start participants=20. Real player actors also appear (e.g. server.damage.applied attacker_type=player), so this was a live dev-loop match, not an isolated reviewer run.
+4) Server event totals for 20261125_184820 across its 12 retained events*.jsonl segments (~18:48-20:24 UTC): round.start 65, round.result 64, objective.plant-start 128, objective.planted 53, objective.exploded 26, objective.defuse-start 404, objective.defuse-interrupted 369, objective.defused 27; kill.reward 1269; npc.stuck-episode 17,333; npc.movement-progress-failed 7,764. Note the objective outcome reconciliation is clean: 53 planted = 27 defused + 26 exploded. Every objective.defuse-start sampled/counted has operator_kind=npc; no non-npc defuse-start was found.
+5) I correlated each objective.defused to the planted site in its round by correlation_id. Result: 27 defuse completions = 11 on site A + 16 on site B. For all 27, the defusing NPC had no credited kill.reward as victim between its last objective.defuse-start and objective.defused. Last-start-to-defused hold durations: min 4.95 s, median 4.99 s, max 9.57 s (required_seconds=5.0). This directly satisfies the prior review's discriminator ">=2 completions on >=2 distinct sites" and shows the defuser was not kill-credited during the 5 s hold.
+6) Second surviving server journal 20261125_175329 (same artifact/source_generation): 21 round.result, 17 planted, 8 defused, 9 exploded, 140 defuse-start (all operator_kind=npc), 371 kill.reward, 5,490 npc.stuck-episode.
+7) Evidence loss recurs, with a new form. 20261125_152203's run.json names server-01/events.jsonl but that directory does not exist; only client-01 exists (events.jsonl 490 B + one 100 MB events-0017.jsonl), so roughly 2.3 h (15:22-17:44) of FCS server journal is gone. Separately, the prior task proof's 2026-11-22 journal is also gone. The date-root pruning explanation is already tracked on issue-3f776ce60511; a run whose manifest points at a server journal that never existed is a distinct completeness gap.
+
+INFERENCE / UNCERTAINTY
+- Confidence is high for the recorded gen642 events themselves: 27 NPC defuses, 11 A + 16 B, no credited-kill during the hold, on a 20-actor FCS match. This corroborates and substantially extends the gen567/gen571 and 625-627 single-map defuse findings to a larger multi-round sample.
+- This is NOT newest-source proof. Current HEAD is 0794fe4ee3e0448286768b696d38e07f52bc4385 (2026-11-26T05:24Z) and the newest build artifact is 2026-11-26T05:49:53Z; the run is revision eb92b02b / module_generation 642 and source_current was true only at its launch. The active build-friction issue-381dc906ecd4 reports that current launches fail at server_gameplay_readiness loading generation-668 with reason=missing-server-policy, so a current-generation FCS run may be blocked until that owner resolves.
+- Death detection here uses credited kill.reward only; uncredited death/respawn at a round boundary is not fully excluded. The 4.95 s minimum hold is marginally under the 5.0 s requirement, consistent with tick-boundary rounding, not a behavior failure.
+- 404 starts - 369 interrupted - 27 defused leaves 8 starts without a terminal event in the retained segments (boundary/rotation), so counts are not perfectly closed.
+
+CONTRARY EVIDENCE
+- Movement/wall acceptance is still unmet: 17,333 npc.stuck-episode and 7,764 npc.movement-progress-failed in ~96 min remain high.
+- Defuse hold is still fragile: 369 interruptions vs 404 starts, and completions often need multiple starts per round.
+- 11 of 64 rounds produced no objective outcome (64 round.result vs 53 plants), so timeout/elimination still ends some rounds; speed/contact targets are not addressed by this run.
+- 20261125_152203's missing server journal means that ~2.3 h FCS session cannot corroborate anything.
+
+NEXT DISCRIMINATING CHECK
+One pinned isolated FCS/dust2cyberiav4 run on the current newest published generation, through the root dev-loop (not started by a reviewer), after/with issue-381dc906ecd4 clearing the missing-server-policy launch block, retained so its journal shows: (a) per-round plant-start -> defuse-start -> objective.defused ticks on both sites; (b) the defuser's own server.damage.applied and death transition across the hold; (c) per-actor stuck seconds/contacts. Then record issue evidence with the exact npc source hash and re-point task proof so it is neither stale nor dangling. Preserve the journal per the retention issue.
+
+VERDICT: evidence (newer-generation, multi-site, multi-round corroboration of CT NPC defuse; not completion, because it is not current source, machine-readable proof is stale/dangling, movement acceptance is unmet, and death-survival used credited kills only). Human visual review not performed.

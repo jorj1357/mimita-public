@@ -19,6 +19,9 @@ struct PostFXData
     float filmGrain = 0.0f;
     float chromaticAberration = 0.0f;
     bool chromaticAberrationRadial = false;
+    // false = full-world chromatic aberration; true = only background/dark
+    // pixels receive the shifted red/blue image.
+    bool chromaticAberrationBackgroundOnly = false;
     float lensDistortion = 0.0f;
     float lensDistortionCurve = 1.0f;
     float lensDistortionZoom = 1.0f;
@@ -65,6 +68,7 @@ public:
     void applyConfig(const PostFXData& data);
     struct ModeBodycamLensOverride {
         float chromaticAberration = 0.0f;
+        bool chromaticAberrationBackgroundOnly = false;
         float vignette = 0.0f;
         float distortion = 0.0f;
         float curve = 2.0f;

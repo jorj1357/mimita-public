@@ -5,6 +5,8 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cstdlib>
+#include <random>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -510,7 +512,7 @@ void VehicleSystem::setActiveProfile(const std::string& profileId)
         state.profileId = profileId;
 }
 
-const VehicleProfile* VehicleSystem::profileFor(
+VehicleProfileRegistry::ProfilePtr VehicleSystem::profileFor(
     const VehicleState& state) const
 {
     if (state.profileId.empty())
@@ -585,6 +587,9 @@ uint32_t VehicleSystem::spawnInternal(const std::string& templateId,
     entity->restitution = spec->bodyRestitution;
     entity->linearDamping = spec->linearDamping;
     entity->angularDamping = spec->angularDamping;
+    // The shared object angular damping (1.5/s) is for crates; applied to a car
+    // it bleeds a flip's rotation before the dodge can complete 360 degrees.
+    entity->angularDampingOverride = 0.2f;
     entity->rollingResistance = spec->tire.rollingResistance;
     entity->maxAngularSpeed = spec->maxAngularSpeed;
     entity->sleepLinearThreshold = spec->sleepLinearThreshold;
@@ -620,7 +625,7 @@ uint32_t VehicleSystem::spawnInternal(const std::string& templateId,
     state.mode = VehicleControlMode::Manual;
     state.gear = 1;
     state.clutch = 0.0f;
-    if (const VehicleProfile* profile = profileFor(state))
+    if (auto profile = profileFor(state))
     {
         if (profile->automatic)
             state.mode = VehicleControlMode::Automatic;
@@ -1311,10 +1316,10 @@ VehicleInput VehicleSystem::readLocalInput(const VehicleState& state)
     VehicleInput input;
     InputCommandSystem& commands = InputCommandSystem::instance();
     const GamepadInput& pad = GamepadInput::instance();
-    const VehicleProfile* profile = profileFor(state);
+    auto profile = profileFor(state);
 
     const auto boundHeld = [&](const char* logical) {
-        return profileBindingHeld(profile, logical);
+        return profileBindingHeld(profile.get(), logical);
     };
 
     input.throttle =
@@ -1387,12 +1392,40 @@ VehicleInput VehicleSystem::readLocalInput(const VehicleState& state)
     return input;
 }
 
+void VehicleSystem::pollLocalExitKey(const VehicleState& state)
+{
+    if (!state.localDriver)
+        return;
+    const bool held =
+        InputCommandSystem::instance().isKeyHeld(GLFW_KEY_F);
+    const bool pressed = held && !mPrevExitKey;
+    mPrevExitKey = held;
+    if (!pressed)
+        return;
+    VehicleState* mutableState = find(state.id);
+    if (!mutableState)
+        return;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Physics, StructuredLevel::Important,
+        "vehicle.exit.key", std::to_string(state.id),
+        "local driver pressed the exit key", 0,
+        {{"vehicle_id", state.id},
+         {"networked", mutableState->serverMirror},
+         {"prompt_enabled", mExitPrompt}},
+        __FILE__, __LINE__, __func__);
+    if (mutableState->serverMirror)
+        requestSeat(state.id, -1, true);
+    else
+        exitLocalDriver();
+}
+
 bool VehicleSystem::pollLocalBallCam(const VehicleState& state, uint32_t tick)
 {
     if (!state.localDriver || state.inputOverride)
         return false;
     const bool held = GamepadInput::instance().ballCam() ||
-                      profileBindingHeld(profileFor(state), "ballCam");
+                      profileBindingHeld(profileFor(state).get(),
+                                         "ballCam");
     const bool toggled = held && !mPrevBallCamHeld;
     mPrevBallCamHeld = held;
     if (!toggled)
@@ -1675,7 +1708,7 @@ void VehicleSystem::updateWheel(VehicleState& state, const VehicleSpec& spec,
         forward = glm::normalize(forward);
         glm::vec3 right = glm::normalize(glm::cross(normal, forward));
 
-        const VehicleProfile* profile = profileFor(state);
+        auto profile = profileFor(state);
         const float maxAngleDeg = profile
                                       ? profile->steering.maxAngleDeg
                                       : spec.steering.maxAngleDeg;
@@ -2108,6 +2141,14 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                 state.hasFlipped = true;
                 state.isFlipping = true;
                 state.flipTimer = 0.0f;
+                state.flipRotationRad = 0.0f;
+                state.flipCancelLogged = false;
+                // Flip cancel is car-relative: remember the stick direction in
+                // the car's own input axes. Comparing against world vectors made
+                // the check fire spuriously once the car had rotated.
+                state.flipCancelLocal = glm::vec2(state.pitchInput,
+                                                  state.yawInput +
+                                                      state.rollInput);
                 state.isJumping = false;
 
                 const float vertical = state.pitchInput;
@@ -2306,6 +2347,16 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
         {
             state.isFlipping = false;
             airControlAllowed = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.flip", std::to_string(state.id),
+                "dodge finished", tick,
+                {{"vehicle_id", state.id},
+                 {"rotation_deg_total",
+                  glm::degrees(state.flipRotationRad)},
+                 {"cancelled", state.flipCancelLogged},
+                 {"angular_speed", glm::length(entity.angularVelocity)}},
+                __FILE__, __LINE__, __func__);
         }
         else
         {
@@ -2318,12 +2369,46 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                 pitchScale = 1.0f - std::min(std::fabs(state.pitchInput), 1.0f);
                 airControlAllowed = true;
             }
+            // Flip cancel: pushing the stick back against the dodge direction
+            // stops the flip torque and keeps the momentum already gained. This
+            // is the Rocket League half-flip / flip-cancel input and it works on
+            // any dodge axis, not only pitch.
+            float cancelScale = 1.0f;
+            const glm::vec2 stickLocal(state.pitchInput,
+                                       state.yawInput + state.rollInput);
+            if (state.flipTimer <= profile.flip.pitchLockSeconds &&
+                glm::dot(state.dodgeWorldDir, state.dodgeWorldDir) > 1e-6f &&
+                glm::dot(stickLocal, stickLocal) > 0.01f &&
+                glm::dot(state.flipCancelLocal, state.flipCancelLocal) > 0.01f)
+            {
+                const float against = glm::dot(
+                    glm::normalize(stickLocal),
+                    glm::normalize(state.flipCancelLocal));
+                if (against < -profile.flip.directionCancelThreshold)
+                {
+                    cancelScale = 0.0f;
+                    airControlAllowed = true;
+                    if (!state.flipCancelLogged)
+                    {
+                        state.flipCancelLogged = true;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Physics,
+                            StructuredLevel::Important,
+                            "vehicle.flip.cancel", std::to_string(state.id),
+                            "flip cancelled by opposing stick input", tick,
+                            {{"vehicle_id", state.id},
+                             {"against", against},
+                             {"flip_timer", state.flipTimer}},
+                            __FILE__, __LINE__, __func__);
+                    }
+                }
+            }
             const float pitchWeight = std::fabs(axisPitch);
             const float rollWeight =
                 std::fabs(glm::dot(state.flipAxisWorld, forward));
             const float accel =
-                profile.flip.angularAccelPitch * pitchWeight * pitchScale +
-                profile.flip.angularAccelRoll * rollWeight;
+                (profile.flip.angularAccelPitch * pitchWeight * pitchScale +
+                 profile.flip.angularAccelRoll * rollWeight) * cancelScale;
             if (accel > 0.0f)
                 entity.angularVelocity += state.flipAxisWorld * (accel * dt);
 
@@ -2338,6 +2423,8 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                     dt * 120.0f);
             }
             state.flipTimer += dt;
+            state.flipRotationRad +=
+                glm::length(entity.angularVelocity) * dt;
         }
     }
     if (stall && state.isFlipping)
@@ -2425,11 +2512,18 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
         state.airRollActive = false;
     }
 
-    // ── Angular velocity clamp: the only global rotational limit ────────
+    // ── Angular velocity clamp ─────────────────────────────────────────
+    // Air control is limited to CAR_MAX_ANG_SPEED, but a dodge is not air
+    // control: Rocket League flips far faster than 5.5 rad/s. Applying the air
+    // clamp during a flip capped every dodge at about 205 degrees, which is why
+    // a 360 dodge was impossible.
     const float omega = glm::length(entity.angularVelocity);
-    if (profile.airControl.maxAngularVelocity > 0.0f &&
-        omega > profile.airControl.maxAngularVelocity)
-        entity.angularVelocity *= profile.airControl.maxAngularVelocity / omega;
+    const float angularLimit =
+        state.isFlipping && profile.flip.maxAngularVelocity > 0.0f
+            ? profile.flip.maxAngularVelocity
+            : profile.airControl.maxAngularVelocity;
+    if (angularLimit > 0.0f && omega > angularLimit)
+        entity.angularVelocity *= angularLimit / omega;
 
     // ── Ground drive: throttle / brake / coast curves ───────────────────
     // Any wheel with contact can drive the car. Requiring all four meant that a
@@ -2527,7 +2621,7 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
     // under acceleration or reverse (weight transfer). A grounded car keeps
     // only its yaw rate and rotates its up axis onto the averaged wheel
     // contact normal, so it drives flat on the floor and still follows ramps.
-    if (profile.ground.attitudeLock && onGround && up.z > 0.7f &&
+    if (profile.ground.attitudeLock && supported && up.z > 0.7f &&
         !state.isFlipping &&
         !state.wheelOnBall)
     {
@@ -2576,6 +2670,15 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
     // assertions on these fields.
     if (tick % 6u == 0u)
     {
+        float surfaceNormalZ = 0.0f;
+        {
+            glm::vec3 n(0.0f);
+            for (const VehicleWheelState& wheel : state.wheels)
+                if (wheel.grounded)
+                    n += wheel.contactNormal;
+            const float len = glm::length(n);
+            surfaceNormalZ = len > 1e-5f ? (n / len).z : 0.0f;
+        }
         // Chassis penetration comes from the contact solver, so it measures the
         // deepest point of the car's real collision shape inside world geometry.
         // A compressed suspension is not penetration: the wheel simply sits
@@ -2630,6 +2733,10 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
             {"angular_speed", angularSpeed},
             {"max_penetration_m", maxPenetration},
             {"resting_penetration_m", restingPenetration},
+            {"supported", supported},
+            {"all_wheels", onGround},
+            {"resting_contact_count", grounded},
+            {"surface_z", surfaceNormalZ},
             {"penetration_normal_z", entity.lastContactNormal.z},
             {"chassis_z", entity.transform[3].z},
             {"roll_meaningful", rollMeaningful},
@@ -2690,6 +2797,52 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
 
     if (tick % 12u == 0u)
     {
+        // Chassis-vs-support geometry: proves the wheels are the lowest part of
+        // the car and that they sit on the surface, not below it.
+        {
+            float lowestWheelZ = std::numeric_limits<float>::max();
+            float groundZ = std::numeric_limits<float>::max();
+            float surfaceZ = 0.0f;
+            glm::vec3 normalSum(0.0f);
+            for (const VehicleWheelState& wheel : state.wheels)
+            {
+                if (!wheel.rayHit)
+                    continue;
+                const float radius =
+                    std::max(wheel.rayDistance - wheel.suspensionLength, 0.0f);
+                lowestWheelZ = std::min(lowestWheelZ,
+                                        wheel.worldCenter.z - radius);
+                if (wheel.grounded)
+                {
+                    groundZ = std::min(groundZ, wheel.contactPoint.z);
+                    normalSum += wheel.contactNormal;
+                }
+            }
+            const float normalLength = glm::length(normalSum);
+            if (normalLength > 1e-5f)
+                surfaceZ = (normalSum / normalLength).z;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.chassis", std::to_string(state.id),
+                "chassis, wheel and support heights", tick,
+                {{"vehicle_id", state.id},
+                 {"origin_z", entity.transform[3].z},
+                 {"lowest_wheel_z",
+                  lowestWheelZ == std::numeric_limits<float>::max()
+                      ? 0.0f
+                      : lowestWheelZ},
+                 {"wheel_contact_z",
+                  groundZ == std::numeric_limits<float>::max() ? 0.0f
+                                                               : groundZ},
+                 {"support_normal_z", surfaceZ},
+                 {"up_dot_world_up", up.z},
+                 {"supported", supported},
+                 {"grounded_wheels", grounded},
+                 {"speed_mps", glm::length(entity.velocity)},
+                 {"angular_speed", glm::length(entity.angularVelocity)}},
+                __FILE__, __LINE__, __func__);
+        }
+
         // Consolidated state sample: orientation, per-wheel contact, decoded
         // inputs and settle state in one event so a proof can assert on it.
         const char* support = "none";
@@ -2849,6 +3002,15 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
             // arrived on the wheels and whether any wheel went under the
             // surface.
             float landingPenetration = 0.0f;
+            glm::vec3 landingNormalSum(0.0f);
+            for (const VehicleWheelState& wheel : state.wheels)
+                if (wheel.grounded)
+                    landingNormalSum += wheel.contactNormal;
+            const float landingNormalLen = glm::length(landingNormalSum);
+            const float landingNormalZ =
+                landingNormalLen > 1e-5f
+                    ? (landingNormalSum / landingNormalLen).z
+                    : 0.0f;
             for (const VehicleWheelState& wheel : state.wheels)
                 if (wheel.rayHit)
                     landingPenetration = std::max(
@@ -2871,6 +3033,9 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                  {"settled_on_wheels",
                   up.z > 0.95f && grounded == wheelCount},
                  {"max_penetration_m", landingPenetration},
+                 {"surface_normal_z", landingNormalZ},
+                 {"contact_parts",
+                  state.wheelMask == 0 ? "chassis" : "wheels"},
                  {"angular_speed", glm::length(entity.angularVelocity)},
                  {"pitch_rate_local", glm::dot(entity.angularVelocity, right)},
                  {"roll_rate_local",
@@ -2935,6 +3100,14 @@ void VehicleSystem::update(float dt, const World& world)
     const auto started = std::chrono::steady_clock::now();
     int awakeVehicles = 0;
 
+    // Randomized settling probe: MIMITA_VEHICLE_FUZZ seeds repeated kicks so a
+    // run can prove "lands on wheels most of the time" across many drops.
+    static const char* sFuzzEnv = std::getenv("MIMITA_VEHICLE_FUZZ");
+    static std::mt19937 sFuzzRng(
+        sFuzzEnv ? static_cast<uint32_t>(std::strtoul(sFuzzEnv, nullptr, 10))
+                 : 0u);
+    static uint64_t sLastFuzzTick = 0;
+
     for (VehicleState& state : mVehicles)
     {
         PhysicalEntity* entity =
@@ -2949,17 +3122,55 @@ void VehicleSystem::update(float dt, const World& world)
         // chassis out so no part of the car ever ends a tick below the surface.
         // Only floor contacts are corrected here; wall overlaps stay with the
         // generic solver.
-        if (entity->lastContactPenetration > 0.005f &&
-            entity->lastContactNormal.z > 0.5f)
+        if (entity->lastContactPenetration > 0.005f)
         {
+            // Any surface, not just the floor: a car pressed into a wall or a
+            // ceiling must be pushed out the same way. The normal comes from the
+            // solver, so the correction is along the real contact direction.
+            const glm::vec3 normal = entity->lastContactNormal;
             const float lift = entity->lastContactPenetration - 0.005f;
-            entity->transform[3].z += lift;
-            entity->previousTransform[3].z += lift;
+            const glm::vec3 push = normal * lift;
+            entity->transform[3] += glm::vec4(push, 0.0f);
+            entity->previousTransform[3] += glm::vec4(push, 0.0f);
             entity->lastContactPenetration = 0.005f;
         }
 
         const uint64_t simulationTick =
             PhysicalEntitySystem::instance().simulationTick();
+
+        // One randomized kick every four seconds on the first arena car.
+        if (sFuzzEnv && state.id == 1 && profileFor(state) &&
+            simulationTick - sLastFuzzTick >= 240u)
+        {
+            const bool settled = state.wheels.size() > 0 &&
+                                 state.speed < 1.0f &&
+                                 glm::length(entity->angularVelocity) < 1.0f;
+            if (settled)
+            {
+                sLastFuzzTick = simulationTick;
+                std::uniform_real_distribution<float> vy(-8.0f, 8.0f);
+                std::uniform_real_distribution<float> vz(4.0f, 9.0f);
+                std::uniform_real_distribution<float> spin(-6.0f, 6.0f);
+                const glm::vec3 kick(vy(sFuzzRng), vy(sFuzzRng), vz(sFuzzRng));
+                const glm::vec3 spinVel(spin(sFuzzRng), spin(sFuzzRng),
+                                        spin(sFuzzRng));
+                entity->velocity = kick;
+                entity->angularVelocity = spinVel;
+                entity->sleeping = false;
+                entity->sleepTicks = 0;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Physics, StructuredLevel::Important,
+                    "vehicle.drop.fuzz", std::to_string(state.id),
+                    "random settling probe kick",
+                    static_cast<uint32_t>(simulationTick),
+                    {{"vehicle_id", state.id},
+                     {"velocity", {kick.x, kick.y, kick.z}},
+                     {"angular_velocity",
+                      {spinVel.x, spinVel.y, spinVel.z}},
+                     {"up_dot_world_up", state.upDotWorldUp}},
+                    __FILE__, __LINE__, __func__);
+            }
+        }
 
         if (state.wheels.size() != spec->wheels.size())
             state.wheels.resize(spec->wheels.size());
@@ -2983,15 +3194,19 @@ void VehicleSystem::update(float dt, const World& world)
                         : "driver";
                 label = "enter " + seatName + " seat";
             }
-            InteractionSystem::instance().updateTarget(
-                state.interactionTargetId, promptOrigin, origin, label,
-                spec->interactionRadius, true);
+            if (mExitPrompt)
+            {
+                InteractionSystem::instance().updateTarget(
+                    state.interactionTargetId, promptOrigin, origin, label,
+                    spec->interactionRadius, true);
+            }
         }
 
         // Ball cam is presentation state owned by the local player. Poll it
         // here, outside the simulation branch, because a networked client owns
         // its car as a server mirror and returns before the input path.
         pollLocalBallCam(state, static_cast<uint32_t>(simulationTick));
+        pollLocalExitKey(state);
 
         if (state.serverMirror && !state.clientPredicted)
         {
@@ -3093,7 +3308,7 @@ void VehicleSystem::update(float dt, const World& world)
         // An arcade profile owns acceleration directly (Rocket League curves),
         // so the template drivetrain must not add engine torque on top.
         {
-            const VehicleProfile* activeProfile = profileFor(state);
+            auto activeProfile = profileFor(state);
             state.torqueScale =
                 (activeProfile && activeProfile->arcade) ? 0.0f : 1.0f;
         }
@@ -3170,7 +3385,7 @@ void VehicleSystem::update(float dt, const World& world)
         for (int i = 0; i < static_cast<int>(spec->wheels.size()); ++i)
             updateWheel(state, *spec, i, dt, world, sWheelCandidates);
 
-        if (const VehicleProfile* profile = profileFor(state))
+        if (auto profile = profileFor(state))
             updateArcadeControls(state, *profile, *entity, dt);
 
         // Anti-roll bars: couple the left/right wheels of each axle. Without

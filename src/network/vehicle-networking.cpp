@@ -225,8 +225,7 @@ void resetVehicleToKickoff(VehicleState& vehicle, const glm::vec3& position,
     vehicle.jumpCount = 0;
     vehicle.jumpHeld = false;
     vehicle.jumpHeldPrev = false;
-    if (const VehicleProfile* profile =
-            VehicleSystem::instance().profileFor(vehicle))
+    if (auto profile = VehicleSystem::instance().profileFor(vehicle))
         vehicle.boostCharge = profile->boost.max;
 }
 
@@ -370,8 +369,7 @@ void tickArenaBoostPads(ServerVehicleState& vehicleState,
         {
             if (!vehicle.serverAuthoritative || vehicle.serverMirror)
                 continue;
-            const VehicleProfile* profile =
-                VehicleSystem::instance().profileFor(vehicle);
+            auto profile = VehicleSystem::instance().profileFor(vehicle);
             if (!profile || profile->boost.max <= 0.0f)
                 continue;
             const PhysicalEntity* entity =
@@ -557,6 +555,11 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
     if (!VehicleSystem::instance().isServerProcess())
         return;
 
+    // A dedicated server never runs the engine config-polling path, so this is
+    // its only profile reload. It used to race the engine thread's first load
+    // and crash in the registry hash lookup; the registry now publishes
+    // immutable snapshots under a shared_mutex, so a reload from either thread
+    // is safe.
     if ((tick % 60u) == 0u)
         VehicleSystem::instance().pollReload();
 

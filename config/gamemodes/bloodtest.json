@@ -129,7 +129,7 @@
     },
     "bodycam": {
       "enabled": true,
-      "orientation_mode": "head_world",
+      "orientation_mode": "mouse",
       "head_eye_offset_m": [
         0.0,
         0.0,
@@ -150,6 +150,7 @@
       "camera_sway_enabled": true,
       "lens": {
         "chromatic_aberration": 0.8,
+        "chromatic_aberration_mode": "full_world",
         "vignette": 0.5,
         "distortion": 100.0,
         "curve": 0.5,

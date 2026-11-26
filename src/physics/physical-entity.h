@@ -114,6 +114,9 @@ struct PhysicalEntity {
     // needs this: Rocket League's only ball decay is drag 0.03/s, and the
     // global object damping would otherwise triple it.
     float linearDampingOverride = -1.0f;
+    // Angular equivalent. The global object angular damping is far too strong
+    // for a flipping chassis, so a vehicle replaces it.
+    float angularDampingOverride = -1.0f;
     uint8_t supportGraceTicks = 0;
     // True when this body generated at least one world contact in its last
     // fixed step. Lets an owner distinguish "resting on the ground" from

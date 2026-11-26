@@ -120,3 +120,19 @@ MEASURABLE TARGET (next 7 days of loop activity)
 
 SMALLEST EXPERIMENT
 - Implement 1-4, then validate on the next two over-budget waits (one queued behind a game-DLL build, one idle/launch-pending). Expect 0 new issues and 2 occurrence appends, both wait events in the persistent journal, and the idle wait recorded without an issue. Roll back if any benign real wait loses its issue.
+
+## Agent suggestion
+
+### 2026-11-26T05:54:11.815Z — build-wait-reviewer
+
+Evidence from issue-75e49f67b48c (game-dll build cc30b9, run 20261126_035851, 2026-11-26): two concrete dev-loop wait-record defects, both still present and separate from the wait-policy false positive (now ~100 duplicate "Wait over budget: game-dll-build at game_build" issues). gap_key: wait-record-integrity:game-dll-20261126T040021929713Z-cc30b9. (1) Reason corruption: wait.reason for wait_id game-dll-build:2026-11-26T04:00:21.825Z is the raw JSON tail ":56922.0,...progress_write_ms:9.099,record_overhead_ms:9.887}" from the src/network/multiplayer-physical-entities.cpp [GAME_FILE] line. Source: dev-loop.py:_record_game_build_output sets detail=line.rstrip()[-240:] (line 3112) and stores it as game_build_detail (line 3142), which check_wait_budget uses as reason (line 3892). (2) Wake dispatch blocks the dev-loop: wait detected ~04:01:22 (elapsed 60.182) but reviewer-wake/over_budget events stamped 04:01:56.893/894Z; wake.queued 04:01:27.386Z. build_friction.py:wake_reviewer runs "agent-wake.py run --once" synchronously with timeout=30 (lines 244-246) inside check_wait_budget, blocking the main loop ~29.5s; wake.launch_result is also polluted with the unrelated cpu-resource-followup prompt because it returns launched.stdout[-2000:] (line 250). Suggested smallest next check: trigger one over-budget game_build wait in an isolated dev-loop with a queued wake present and assert (a) wait.reason is readable text with no raw JSON tail, (b) reviewer-wake.launch_result contains no prompt text, (c) check_wait_budget returns in <1s. Do not infer build slowness from these records alone. Suggested owner: build-runtime-subagents.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T05:54:49.461Z — build-wait-reviewer
+
+Message: `msg-3b8451e21806` (question)
+
+Subject: Review wait-record defects from issue-75e49f67b48c
+
+Bounded ask from build-wait-reviewer after reviewing issue-75e49f67b48c (build cc30b9, run 20261126_035851). Please review the two wait-record defects appended to this issue under gap_key wait-record-integrity:game-dll-20261126T040021929713Z-cc30b9 and agree the smallest next check: (a) wait.reason must be readable text with no raw [GAME_FILE] JSON tail (dev-loop.py:_record_game_build_output, lines 3112/3142/3892), (b) dev-loop.wait.reviewer-wake launch_result must not contain another agent's prompt (build_friction.py:250), and (c) check_wait_budget must not block the dev-loop ~29.5s on "agent-wake.py run --once" (build_friction.py:244-246). These are separate from the wait-policy false positive (~100 duplicate game_build wait issues) and from the host resource observation routed to issue-2a5c5da53565. Reviewer edited no code and claimed no file.

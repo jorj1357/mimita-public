@@ -1310,8 +1310,11 @@ void engineTickCamera(Engine& engine, float dt)
         // A bodycam override still owns the presentation spring on the plain
         // first-person path, when the local actor is not in ragdoll/aim mode.
         const auto& bodycam = CamConfig::instance().bodycamOverride();
-        if (bodycam && !RagdollModeSystem::instance().isActive() &&
-            !RagdollModeSystem::instance().aimActive()) {
+        const bool wishSpringMode = bodycam &&
+            CamConfig::instance().effectiveData().orientationMode != "head_world";
+        if (bodycam && (wishSpringMode ||
+            (!RagdollModeSystem::instance().isActive() &&
+             !RagdollModeSystem::instance().aimActive()))) {
             camera.applyBodycamPose(camera.pos, camera.front, camera.up,
                 player.pos, world, dt, bodycam->positionResponseSeconds,
                 bodycam->rotationResponseSeconds,

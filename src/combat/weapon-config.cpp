@@ -1,5 +1,6 @@
 #include "weapon-config.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 
@@ -34,6 +35,17 @@ static WeaponViewModelConfig parseOne(const json& root) {
             cfg.scale = glm::vec3((float)vm["scale"][0], (float)vm["scale"][1], (float)vm["scale"][2]);
         if (vm.contains("color") && vm["color"].is_array() && vm["color"].size() >= 3)
             cfg.color = glm::vec3((float)vm["color"][0], (float)vm["color"][1], (float)vm["color"][2]);
+    }
+
+    if (root.contains("ads") && root["ads"].is_object()) {
+        const auto& ads = root["ads"];
+        cfg.ads.enabled = ads.value("enabled", true);
+        if (ads.contains("position") && ads["position"].is_array() && ads["position"].size() >= 3)
+            cfg.ads.positionOffset = glm::vec3((float)ads["position"][0], (float)ads["position"][1], (float)ads["position"][2]);
+        if (ads.contains("rotation_degrees") && ads["rotation_degrees"].is_array() && ads["rotation_degrees"].size() >= 3)
+            cfg.ads.rotationDegrees = glm::vec3((float)ads["rotation_degrees"][0], (float)ads["rotation_degrees"][1], (float)ads["rotation_degrees"][2]);
+        cfg.ads.blendRate = std::clamp(ads.value("blend_rate", cfg.ads.blendRate), 1.0f, 60.0f);
+        cfg.ads.fov = std::clamp(ads.value("fov", cfg.ads.fov), 0.0f, 180.0f);
     }
 
     if (root.contains("animations") && root["animations"].is_object()) {

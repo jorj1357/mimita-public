@@ -827,23 +827,17 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
             const glm::vec3 point = glm::mix(serverPosition, segmentEnd,
                 (float)sweep / (float)kSpawnCorpseSweepSteps);
             std::string corpseId;
-            if (!RagdollModeSystem::instance().queryCorpseHit(
-                    point, projectile.radius + 0.35f, corpseId))
+            int corpsePart = -1;
+            glm::vec3 corpsePoint(0.0f);
+            if (!RagdollModeSystem::instance().queryCorpseHitPart(
+                    point, projectile.radius + 0.35f, corpseId,
+                    corpsePart, corpsePoint))
                 continue;
             const glm::vec3 corpseDir = glm::length(serverVelocity) > 0.001f
                 ? glm::normalize(serverVelocity) : glm::vec3(0, 0, 1);
-            EffectPartSystem::instance().spawnBloodEffect(
-                point, corpseDir, 55.0f, "projectile", corpseId,
-                1.0f, -1.0f, 1.4f);
-            EffectPartSystem::instance().spawnGoreEffect(
-                point, corpseDir, -corpseDir, 55.0f, 30.0f,
-                "torso", 55, false, corpseId);
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::Ragdoll, StructuredLevel::Important,
-                "corpse.hit", corpseId, "client corpse bullet feedback", 0,
-                nlohmann::json{{"position", {point.x, point.y, point.z}},
-                               {"direction", {corpseDir.x, corpseDir.y, corpseDir.z}},
-                               {"sweep_step", sweep}, {"source", "spawn_sweep"}});
+            RagdollModeSystem::instance().applyCorpseHit(
+                corpseId, corpsePart, 65, corpsePoint, corpseDir,
+                30.0f, "projectile");
             projectile.exploded = true;
         }
     }
@@ -2360,23 +2354,18 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
             // still punch holes and spray blood when the player shoots it.
             if (!projectile.exploded) {
                 std::string corpseId;
-                const glm::vec3 corpsePoint = glm::length(step.hitPosition) > 0.001f
+                int corpsePart = -1;
+                glm::vec3 corpsePoint(0.0f);
+                const glm::vec3 probePoint = glm::length(step.hitPosition) > 0.001f
                     ? step.hitPosition : projectile.position;
-                if (RagdollModeSystem::instance().queryCorpseHit(
-                        corpsePoint, projectile.radius + 0.75f, corpseId)) {
+                if (RagdollModeSystem::instance().queryCorpseHitPart(
+                        probePoint, projectile.radius + 0.75f, corpseId,
+                        corpsePart, corpsePoint)) {
                     const glm::vec3 corpseDir = glm::length(projectile.velocity) > 0.001f
                         ? glm::normalize(projectile.velocity) : glm::vec3(0,0,1);
-                    EffectPartSystem::instance().spawnBloodEffect(
-                        corpsePoint, corpseDir, 55.0f, "projectile", corpseId,
-                        1.0f, -1.0f, 1.4f);
-                    EffectPartSystem::instance().spawnGoreEffect(
-                        corpsePoint, corpseDir, -corpseDir, 55.0f, 30.0f,
-                        "torso", 55, false, corpseId);
-                    StructuredLogger::instance().writeEvent(
-                        StructuredCategory::Ragdoll, StructuredLevel::Important,
-                        "corpse.hit", corpseId, "client corpse bullet feedback", 0,
-                        nlohmann::json{{"position", {corpsePoint.x, corpsePoint.y, corpsePoint.z}},
-                                       {"direction", {corpseDir.x, corpseDir.y, corpseDir.z}}});
+                    RagdollModeSystem::instance().applyCorpseHit(
+                        corpseId, corpsePart, 65, corpsePoint, corpseDir,
+                        30.0f, "projectile");
                     projectile.exploded = true;
                 }
             }
@@ -2615,23 +2604,17 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
                 const glm::vec3 point = glm::mix(segmentStart, projectile.position,
                     (float)sweep / (float)kCorpseSweepSteps);
                 std::string corpseId;
-                if (!RagdollModeSystem::instance().queryCorpseHit(
-                        point, projectile.radius + 0.75f, corpseId))
+                int corpsePart = -1;
+                glm::vec3 corpsePoint(0.0f);
+                if (!RagdollModeSystem::instance().queryCorpseHitPart(
+                        point, projectile.radius + 0.75f, corpseId,
+                        corpsePart, corpsePoint))
                     continue;
                 const glm::vec3 corpseDir = glm::length(projectile.velocity) > 0.001f
                     ? glm::normalize(projectile.velocity) : glm::vec3(0, 0, 1);
-                EffectPartSystem::instance().spawnBloodEffect(
-                    point, corpseDir, 55.0f, "projectile", corpseId,
-                    1.0f, -1.0f, 1.4f);
-                EffectPartSystem::instance().spawnGoreEffect(
-                    point, corpseDir, -corpseDir, 55.0f, 30.0f,
-                    "torso", 55, false, corpseId);
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Ragdoll, StructuredLevel::Important,
-                    "corpse.hit", corpseId, "client corpse bullet feedback", 0,
-                    nlohmann::json{{"position", {point.x, point.y, point.z}},
-                                   {"direction", {corpseDir.x, corpseDir.y, corpseDir.z}},
-                                   {"sweep_step", sweep}});
+                RagdollModeSystem::instance().applyCorpseHit(
+                    corpseId, corpsePart, 65, corpsePoint, corpseDir,
+                    30.0f, "projectile");
                 projectile.exploded = true;
                 break;
             }
@@ -2856,7 +2839,7 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
         // the weapon definition.  This remains visible even when the texture
         // path used by the shared mesh renderer is unavailable.
         renderProjectile(camera, projectile.renderPosition, projectile.renderRotation, cfg);
-        if (fadeDef && fadeDef->grenadeEffect.enabled) {
+        if (fadeDef) {
             const glm::vec3 lightOffset(
                 cp(fadeDef, "projectileLightOffsetX", 0.0f),
                 cp(fadeDef, "projectileLightOffsetY", 0.0f),
