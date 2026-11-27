@@ -343,11 +343,17 @@ Capsule Player::getCapsule() const
     float s = std::max(sizeScale, 0.001f);
     c.r = (movementCapsule.radius > 0.0f ? movementCapsule.radius : PLAYER_RADIUS) * s;
 
-    float height = (movementCapsule.height > 0.0f ? movementCapsule.height : PLAYER_HEIGHT) * s;
+    float standHeight = (movementCapsule.height > 0.0f ? movementCapsule.height : PLAYER_HEIGHT) * s;
+    const float crouchScale = crouching
+        ? std::clamp(animationRuntimeSettings().crouchHeightScale, 0.1f, 1.0f)
+        : 1.0f;
+    float height = standHeight * crouchScale;
     float half = height * 0.5f;
     glm::vec3 center = movementCapsule.position;
     if (glm::length(center - pos) > 0.0001f)
         center = pos;
+    // Crouch shrinks height while keeping the capsule bottom on the ground.
+    center.z -= (standHeight - height) * 0.5f;
     c.a = center - glm::vec3(0,0,half - c.r);
     c.b = center + glm::vec3(0,0,half - c.r);
 
@@ -358,8 +364,12 @@ OBB Player::getOBB() const
 {
     OBB b;
     float s = std::max(sizeScale, 0.001f);
+    const float crouchScale = crouching
+        ? std::clamp(animationRuntimeSettings().crouchHeightScale, 0.1f, 1.0f)
+        : 1.0f;
     b.center = pos;
-    b.halfSize = glm::vec3(PLAYER_WIDTH,PLAYER_DEPTH,PLAYER_HEIGHT) * 0.5f * s;
+    b.center.z -= PLAYER_HEIGHT * s * (1.0f - crouchScale) * 0.5f;
+    b.halfSize = glm::vec3(PLAYER_WIDTH,PLAYER_DEPTH,PLAYER_HEIGHT * crouchScale) * 0.5f * s;
     b.orientation = glm::rotate(glm::mat4(1.0f),
                                 glm::radians(-yaw),
                                 glm::vec3(0,0,1));

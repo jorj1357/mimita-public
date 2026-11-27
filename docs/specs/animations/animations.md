@@ -272,6 +272,11 @@ tick for each fixed 60 Hz simulation tick. Movement speed, `speedMultiplier`,
 not scale that clock. The profile is still sampled once per simulation tick, and
 render-pose interpolation remains presentation-only.
 
+Remote replicas must advance by the elapsed server-tick delta, not by one render
+frame and not by a single fixed step per snapshot. A snapshot gap advances the
+clip by the number of ticks that actually elapsed, clamped to a bounded catch-up.
+A repeated snapshot with the same server tick must not retime the clip.
+
 This is an NPC-only option. The local player and remote human players using the
 same avatar keep normal playback. NPC profiles without `npcTickLocked` keep their
 existing playback behavior. Remote NPC replicas use the same flag because they
@@ -292,8 +297,20 @@ the avatar's own `include` and inline `states`, so avatar values still win.
   landing below locomotion, hurt above locomotion/landing, and death highest.
 - `hurtTierMode`: `1` uses percent of max HP at hit time, `2` uses fixed damage.
 - `hurtPercent` / `hurtFixed`: small/normal thresholds. The next tier is large.
-- `rootTranslationMode`: `1` keeps authored part translation; `2` zeroes it.
-  A clip may override this with its own `rootTranslationMode`.
+- `rootTranslationMode`: `1` keeps authored part translation; `2` keeps rotation
+  and soft-tethers every part's local translation to its socket budget. A clip may
+  override this with its own `rootTranslationMode`.
+- `rootTranslationLimits`: per-part tether budget in metres. Current default is
+  `0.01` for torso, head, both arms, and both legs so the visible limb cannot
+  drift far from the torso socket. Values are JSON-configurable.
+- `animationAdvanceMode`: `1` advances by frame dt; `2` advances by elapsed
+  authoritative server ticks. Mode 2 is the default for remote actors so every
+  client advances clips at the same 60 Hz tick rate regardless of FPS.
+- `crouchHeightScale`: crouch capsule height relative to standing. Default `0.5`;
+  the capsule bottom stays on the ground and the camera eye height follows.
+- `crouchLegSocketLiftM`: leg socket lift toward mid-torso while crouched.
+  Default `0.35` m, configurable.
+- `crouchSocketBlendSeconds`: blend time for the crouch socket lift.
 - `renderPoseInterpolation`: when true, presentation blends between the last two
   fixed-tick poses. Gameplay, collision, and hitboxes still use the fixed pose.
 - `deathPresentation`: `auto`, `animation`, `ragdoll`, or `disappear`. A mode may
@@ -1020,6 +1037,21 @@ part, plus the special key `plrOrigin` for whole-body root motion.
 - The library is intentionally non-avatar-specific so a flying body, a crawling
   body, or a giant can share wing/tail/gait clips.
 
+## Crouch and capsule
+
+Crouch is a shared gameplay state, not a melee-only pose:
+
+- Input is the shared `crouch` action (Left Ctrl by default) in every mode.
+- `Player::crouching` selects the crouch/crouchWalk clip and is replicated in
+  `NET_STATE_CROUCHING`.
+- The actor capsule height scales by `crouchHeightScale` (default 0.5) and keeps
+  its bottom anchored on the ground; radius is unchanged.
+- The camera eye height follows the same scale.
+- Leg sockets lift toward mid-torso by `crouchLegSocketLiftM` (default 0.35 m),
+  blended over `crouchSocketBlendSeconds`.
+- The server and client use the same crouch state and capsule scale for hit
+  detection. A crouched actor must not be hit where the standing body used to be.
+
 ## State machine
 
 States are logical; clips are concrete. The machine is evaluated once per fixed
@@ -1182,6 +1214,27 @@ contact resolver. An action without `arm_physics` keeps its fixed clip.
   emit one bounded warning; never propagate NaN.
 - Ragdoll/hybrid mode continues to own the final transform while active; when it
   releases, animation resumes from the current state.
+
+## Visual and hit-pose parity
+
+The visible limb pose is the damage/hit pose. A separate invisible limb hitbox is
+not allowed for ordinary actor damage.
+
+- Hit capsules are derived from the same fixed-tick part transforms used to
+  build the render pose and the socket hierarchy: torso, head, one capsule per
+  arm, one capsule per leg.
+- The server builds the same shapes from authoritative fixed-tick poses; the
+  client uses the same function for prediction and hit feedback.
+- A hit resolves to the visible part and maps to that limb's health. Do not
+  resolve a limb hit against a single root box when the visible limb is elsewhere.
+- Crouch shortens the capsule (`crouchHeightScale`, default 0.5) with the bottom
+  anchored on the ground, so the crouched body cannot be hit where it no longer
+  visually exists.
+- Interpolation remains presentation-only: it may smooth the rendered limb, but
+  it must not create a hit shape different from the authoritative fixed pose.
+- Replacing every actor's movement/world collision with per-limb capsules is
+  deferred to the monster/big-avatar collision work. This section owns damage and
+  hit detection now.
 
 ## Rendering arbitrary parts
 

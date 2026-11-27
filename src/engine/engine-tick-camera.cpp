@@ -30,6 +30,11 @@ struct VehicleCameraSettings
     float pitchDeg = -7.0f;
     float fovDeg = 110.0f;
     float stiffness = 1.0f;
+    // Rocket League stiffness is expressed in car lengths of trailing at top
+    // speed: 1.0 glued, 0.5 three lengths, 0.0 six. Six Octane bodies
+    // (1.18 m) is 7.08 m; the profile top speed is 23 m/s.
+    float stiffnessLagMaxM = 7.08f;
+    float topSpeedMps = 23.0f;
     float transitionSpeed = 10.0f;
     float swivelSpeed = 10.0f;
     float ballCamSnap = 0.5f;
@@ -64,6 +69,10 @@ const VehicleCameraSettings& vehicleCameraSettings()
                     settings.pitchDeg = root.value("pitchDeg", settings.pitchDeg);
                     settings.fovDeg = root.value("fovDeg", settings.fovDeg);
                     settings.stiffness = root.value("stiffness", settings.stiffness);
+                    settings.stiffnessLagMaxM = root.value(
+                        "stiffnessLagMaxM", settings.stiffnessLagMaxM);
+                    settings.topSpeedMps = root.value(
+                        "topSpeedMps", settings.topSpeedMps);
                     settings.transitionSpeed = root.value(
                         "transitionSpeed", settings.transitionSpeed);
                     settings.swivelSpeed = root.value(
@@ -98,9 +107,16 @@ const VehicleCameraSettings& vehicleCameraSettings()
     return settings;
 }
 
+// Stiffness follow state. It lives here, outside the localVehicle block,
+// because the seated third-person camera branch is a sibling of that block.
+glm::vec3 sVehicleCameraFollowTarget{0.0f};
+bool sVehicleCameraFollowInitialised = false;
+float sVehicleCameraFollowLogTimer = 0.0f;
+
 } // namespace
 #include "world/world.h"
 #include "entities/player.h"
+#include "entities/player-avatar-animations.h"
 #include "entities/aimbody-config.h"
 #include "entities/aim-fov.h"
 #include "gamemode/gamemode.h"
@@ -1235,6 +1251,8 @@ void engineTickCamera(Engine& engine, float dt)
                          {"pitch_deg", cam.pitchDeg},
                          {"fov_deg", cam.fovDeg},
                          {"stiffness", cam.stiffness},
+                         {"stiffness_lag_max_m", cam.stiffnessLagMaxM},
+                         {"top_speed_mps", cam.topSpeedMps},
                          {"transition_speed", cam.transitionSpeed},
                          {"swivel_speed", cam.swivelSpeed},
                          {"ball_cam_snap", cam.ballCamSnap}},
@@ -1328,15 +1346,67 @@ void engineTickCamera(Engine& engine, float dt)
                 const glm::vec3 target = VehicleSystem::instance().localVehiclePosition();
                 const glm::vec3 offset(0.0f, -vehicleCam.distanceM,
                                        vehicleCam.heightM);
-                camera.follow(target, offset, vehicleCam.stiffness);
-                camera.smoothCollision(target, world, dt,
-                    vehicleCam.stiffness, true, true, true, 0.3f);
+
+                // Rocket League stiffness: 1.0 is 1:1 (no trailing lag and no
+                // hidden spring), 0.5 trails three car lengths at top speed,
+                // 0.0 trails six. The trailing lag is a first-order follow with
+                // tau = (1 - stiffness) * lagMax / topSpeed, so steady-state
+                // extra distance is speed * tau. Collision stays rigid: the
+                // stiffness value owns all lag, so 1.0 cannot acquire jitter.
+                const float stiffness =
+                    glm::clamp(vehicleCam.stiffness, 0.0f, 1.0f);
+                const float lagTau = (1.0f - stiffness) *
+                    vehicleCam.stiffnessLagMaxM /
+                    std::max(1.0f, vehicleCam.topSpeedMps);
+                if (!sVehicleCameraFollowInitialised) {
+                    sVehicleCameraFollowInitialised = true;
+                    sVehicleCameraFollowTarget = target;
+                } else if (glm::length(target - sVehicleCameraFollowTarget) >
+                           20.0f) {
+                    // Respawn, teleport, or replay jump: do not drag the
+                    // camera across the arena.
+                    sVehicleCameraFollowTarget = target;
+                } else if (lagTau > 1e-4f) {
+                    const float alpha = 1.0f - std::exp(-dt / lagTau);
+                    sVehicleCameraFollowTarget = glm::mix(
+                        sVehicleCameraFollowTarget, target, alpha);
+                } else {
+                    sVehicleCameraFollowTarget = target;
+                }
+                camera.follow(sVehicleCameraFollowTarget, offset, stiffness);
+                camera.smoothCollision(sVehicleCameraFollowTarget, world, dt,
+                    stiffness, false, true, true, 0.3f);
+
+                sVehicleCameraFollowLogTimer += dt;
+                if (sVehicleCameraFollowLogTimer >= 3.0f) {
+                    sVehicleCameraFollowLogTimer = 0.0f;
+                    const float speed = localVehicle ? glm::length(glm::vec3(
+                        localVehicle->originVelocity.x,
+                        localVehicle->originVelocity.y, 0.0f)) : 0.0f;
+                    StructuredLogger::instance().writeEvent(
+                        // The client logger does not emit the Camera category
+                        // (vehicle.camera.applied already uses Gui for the same
+                        // reason), so the evidence sample must be Gui.
+                        StructuredCategory::Gui, StructuredLevel::Important,
+                        "vehicle.camera.follow", "vehicle-camera",
+                        "vehicle camera stiffness follow distance", 0,
+                        {{"stiffness", stiffness},
+                         {"lag_tau_s", lagTau},
+                         {"speed_mps", speed},
+                         {"extra_distance_m", glm::length(
+                             sVehicleCameraFollowTarget - target)},
+                         {"expected_extra_m", speed * lagTau}},
+                        __FILE__, __LINE__, __func__);
+                }
             }
         }
     } else if (!camera.thirdPerson) {
         // First-person camera at eye height
         camera.fov = CamConfig::instance().effectiveData().fov;
-        float eyeHeight = PLAYER_HEIGHT * 0.52f;
+        const float crouchScale = player.crouching
+            ? std::clamp(animationRuntimeSettings().crouchHeightScale, 0.1f, 1.0f)
+            : 1.0f;
+        float eyeHeight = PLAYER_HEIGHT * 0.52f * crouchScale;
         camera.pos = player.pos + glm::vec3(0.0f, 0.0f, eyeHeight);
         // Apply punch for weapon recoil
         camera.pos += camera.front * glm::vec3(0.0f, 0.0f, 0.0f); // no offset

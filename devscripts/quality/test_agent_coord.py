@@ -667,6 +667,125 @@ class AgentCoordTests(unittest.TestCase):
         self.assertIn("planning", summary["phases_ms"])
         self.assertGreaterEqual(summary["phases_ms"]["planning"], 0)
 
+    def test_build_auto_approves_when_alone(self) -> None:
+        self.begin("solo")
+        request = self.store.build_request(
+            "solo", paths=["AGENTS.md"], why="solo test", expected_seconds=10)
+        policy = self.store.build_policy(
+            "solo", request["request"], ttl_minutes=5,
+            simulate="no_peers", max_cpu=100.0, min_ram_mb=0.0)
+        self.assertEqual(policy["decision"], "approve")
+        self.assertEqual(policy["reason"], "no_peers")
+        result = self.store.build_auto_approve(
+            "solo", request["request"], ttl_minutes=5, simulate="no_peers",
+            max_cpu=100.0, min_ram_mb=0.0)
+        self.assertTrue(result["applied"])
+        self.assertEqual(result["status"], "approved")
+        rows = self.store.conn.execute(
+            "SELECT actor,role,reason FROM build_approvals WHERE request_id=?",
+            (request["request"],)).fetchall()
+        self.assertEqual(rows[0]["actor"], "auto:no_peers")
+        self.assertEqual(rows[0]["role"], "auto")
+
+    def test_build_auto_approves_idle_peer(self) -> None:
+        self.begin("solo")
+        self.begin("idle")
+        request = self.store.build_request("solo", paths=["AGENTS.md"])
+        policy = self.store.build_policy(
+            "solo", request["request"], ttl_minutes=5,
+            max_cpu=100.0, min_ram_mb=0.0)
+        self.assertEqual(policy["decision"], "approve")
+        self.assertEqual(policy["reason"], "peers_idle")
+
+    def test_build_asks_working_peer_then_peer_approves(self) -> None:
+        self.begin("solo")
+        self.begin("worker")
+        self.store.activity_set("worker", phase="editing",
+                                activity="editing a file")
+        request = self.store.build_request("solo", paths=["AGENTS.md"])
+        policy = self.store.build_policy(
+            "solo", request["request"], ttl_minutes=5,
+            max_cpu=100.0, min_ram_mb=0.0)
+        self.assertEqual(policy["decision"], "ask")
+        self.assertEqual(policy["reason"], "peer_active")
+        with self.assertRaises(CoordError):
+            self.store.build_approve("solo", request["request"])
+        approved = self.store.build_approve(
+            "worker", request["request"], reason="ok")
+        self.assertEqual(approved["status"], "approved")
+
+    def test_build_path_lease_asks_holder(self) -> None:
+        self.begin("solo")
+        self.begin("holder")
+        self.store.edit_begin("holder", "AGENTS.md")
+        request = self.store.build_request("solo", paths=["AGENTS.md"])
+        policy = self.store.build_policy(
+            "solo", request["request"], ttl_minutes=5,
+            max_cpu=100.0, min_ram_mb=0.0)
+        self.assertEqual(policy["decision"], "ask")
+        self.assertEqual(policy["reason"], "path_lease")
+        self.assertEqual(policy["ask"][0]["agent"], "holder")
+        self.store.edit_abort("holder", "AGENTS.md")
+
+    def test_build_waits_for_active_build(self) -> None:
+        self.begin("solo")
+        first = self.store.build_request("solo", paths=["AGENTS.md"])
+        self.store.build_update("solo", first["request"], "approved")
+        second = self.store.build_request("solo", paths=["AGENTS.md"])
+        policy = self.store.build_policy(
+            "solo", second["request"], ttl_minutes=5,
+            max_cpu=100.0, min_ram_mb=0.0)
+        self.assertEqual(policy["decision"], "wait")
+        self.assertEqual(policy["reason"], "build_in_progress")
+
+    def test_build_release_unblocks_stuck_building(self) -> None:
+        self.begin("solo")
+        self.begin("peer")
+        request = self.store.build_request("solo", paths=["AGENTS.md"])
+        self.store.build_update("solo", request["request"], "approved")
+        self.store.build_update("solo", request["request"], "building")
+        released = self.store.build_release(
+            "peer", request["request"], reason="no dev-loop attempt; stuck")
+        self.assertEqual(released["status"], "superseded")
+        rows = self.store.build_list()
+        self.assertEqual(rows[0]["status"], "superseded")
+
+    def test_build_reaps_stale_active_request(self) -> None:
+        self.begin("solo")
+        old = self.store.build_request("solo", paths=["AGENTS.md"])
+        self.store.build_update("solo", old["request"], "approved")
+        with self.store.conn:
+            self.store.conn.execute(
+                "UPDATE build_requests SET updated_utc=? WHERE request_id=?",
+                ("2026-01-01T00:00:00Z", old["request"]))
+        second = self.store.build_request("solo", paths=["AGENTS.md"])
+        result = self.store.build_auto_approve(
+            "solo", second["request"], ttl_minutes=5, stale_minutes=30,
+            max_cpu=100.0, min_ram_mb=0.0)
+        self.assertTrue(result["applied"])
+        rows = {row["request_id"]: row for row in self.store.build_list()}
+        self.assertEqual(rows[old["request"]]["status"], "superseded")
+
+    def test_build_no_response_after_two_asks(self) -> None:
+        self.begin("solo")
+        self.begin("worker")
+        self.store.activity_set("worker", phase="editing")
+        request = self.store.build_request("solo", paths=["AGENTS.md"])
+        first = self.store.build_auto_approve(
+            "solo", request["request"], ttl_minutes=5,
+            max_cpu=100.0, min_ram_mb=0.0)
+        self.assertEqual(first["decision"], "ask")
+        self.assertEqual(first["asks"], 0)
+        second = self.store.build_auto_approve(
+            "solo", request["request"], ttl_minutes=5,
+            max_cpu=100.0, min_ram_mb=0.0)
+        self.assertEqual(second["asks"], 1)
+        third = self.store.build_auto_approve(
+            "solo", request["request"], ttl_minutes=5,
+            no_response=True, max_cpu=100.0, min_ram_mb=0.0)
+        self.assertTrue(third["applied"])
+        self.assertEqual(third["actor"], "auto:no_response")
+
 
 if __name__ == "__main__":
     unittest.main()

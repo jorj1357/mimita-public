@@ -7,10 +7,17 @@
   "heightM": 0.90,
   "pitchDeg": -7.0,
   "fovDeg": 110.0,
-  // "stiffness": 1.0,
-  // "stiffness": 10.0,
+  // Rocket League stiffness, 0.0-1.0. 1.0 = glued to the car with no
+  // trailing lag and no sway. 0.5 = three car lengths of trailing at top
+  // speed. 0.0 = six car lengths (loose).
+  // "stiffness": 0.5,
   // "stiffness": 0.0,
-  "stiffness": 999.0,
+  "stiffness": 1.0,
+  // Stiffness tuning: six Octane bodies (6 x 1.18 m) of trailing at the
+  // profile top speed of 23 m/s. 0.5 therefore trails 3.54 m, 0.0 trails
+  // 7.08 m at 23 m/s.
+  "stiffnessLagMaxM": 7.08,
+  "topSpeedMps": 23.0,
   // Swivel and ball-cam transition speed, 0-10 on the Rocket League scale.
   "transitionSpeed": 10.0,
   "swivelSpeed": 10.0,

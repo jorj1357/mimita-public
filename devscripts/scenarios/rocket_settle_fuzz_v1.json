@@ -56,6 +56,18 @@
     {
       "type": "event_field_all_at_most",
       "event": "vehicle.fuzz.report",
+      "field": "nose_rests",
+      "value": 0
+    },
+    {
+      "type": "event_field_all_at_most",
+      "event": "vehicle.fuzz.report",
+      "field": "tail_rests",
+      "value": 0
+    },
+    {
+      "type": "event_field_all_at_most",
+      "event": "vehicle.fuzz.report",
       "field": "escapes",
       "value": 0
     },

@@ -59,6 +59,10 @@ struct AdsBodyPoseState {
     std::string lastWeapon;
 };
 static std::unordered_map<const Player*, AdsBodyPoseState> gAdsBodyPoses;
+// Presentation-only crouch socket blend per player. The capsule shrink is
+// authoritative via Player::crouching; this only moves the leg socket upward
+// toward mid-torso so the crouch clip does not stretch the legs.
+static std::unordered_map<const Player*, float> gCrouchSocketBlends;
 
 static float shortestAngleDeg(float from, float to)
 {
@@ -707,6 +711,17 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         respawnAnimTimer = std::max(0.0f, respawnAnimTimer - dt);
     animPrevDead = dead;
     const AnimationRuntimeSettings& animSettings = animationRuntimeSettings();
+
+    // Crouch socket blend. The torso socket stays fixed; only the leg sockets
+    // lift toward mid-torso, configurable in animation settings.
+    float& crouchSocketBlend = gCrouchSocketBlends[this];
+    {
+        const float target = crouching ? 1.0f : 0.0f;
+        const float blendSeconds = animSettings.crouchSocketBlendSeconds;
+        const float rate = blendSeconds > 0.0001f ? dt / blendSeconds : 1.0f;
+        crouchSocketBlend += glm::clamp(target - crouchSocketBlend, -rate, rate);
+        crouchSocketBlend = glm::clamp(crouchSocketBlend, 0.0f, 1.0f);
+    }
 
     // Death is a hard animation reset: discard the interrupted action and all
     // transient state so no weapon/reload/dash pose can resume during this life.
@@ -1591,6 +1606,11 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
         // Apply to skeleton for rendering
         glm::mat4 restM = perfectPoseSkeleton.restLocalTransforms[part.nodeIndex];
+        if (crouchSocketBlend > 0.001f &&
+            (part.name == "leftLeg" || part.name == "rightLeg")) {
+            const float lift = animSettings.crouchLegSocketLiftM * crouchSocketBlend;
+            restM = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, lift, 0.0f)) * restM;
+        }
         glm::mat4 poseM = poseMatrix(part.pose);
         {
             // Body-aim: limbs follow the camera look pitch (up/down). Per limb

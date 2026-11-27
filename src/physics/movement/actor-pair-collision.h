@@ -34,7 +34,8 @@ inline constexpr std::uint64_t actorPairKey(ActorPairKind kind, std::uint32_t id
 // dead_capsule_length_m == 0 derives the dead length from standing height.
 Capsule actorPairCapsuleFor(const ActorCollisionProfile& profile,
                             const glm::vec3& pos, float yaw,
-                            float sizeScale, bool dead);
+                            float sizeScale, bool dead,
+                            float heightScale = 1.0f);
 
 struct ActorPairCollisionActor
 {
@@ -46,6 +47,9 @@ struct ActorPairCollisionActor
     glm::vec3 externalImpulse{0.0f};
     float yaw = 0.0f;
     float sizeScale = 1.0f;
+    // Crouch/presentation height scale. The radius stays constant; only the
+    // capsule height shrinks, anchored so the bottom remains on the ground.
+    float heightScale = 1.0f;
     bool dead = false;
     // Dead/corpse actors and client-only remote replicas never move or receive
     // an impulse from this solver. They remain solid support/collision shapes.

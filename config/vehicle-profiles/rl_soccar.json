@@ -183,11 +183,15 @@
   },
 
   "settle": {
+    // Rocket League has no guaranteed no-input righting; use the RocketSim
+    // auto-roll/auto-flip/sticky model instead.
+    "manualRightingEnabled": false,
     // Sticky force is 0.5 * gravity, rising toward 1.5 * gravity on walls.
     "stickyForceGravityScale": 0.5,
-    // CAR_AUTOFLIP_IMPULSE 200 uu/s, torque 50 (4.8 rad/s^2), time 0.4 s.
+    // CAR_AUTOFLIP_IMPULSE 200 uu/s = 2 m/s, CAR_AUTOFLIP_TORQUE 50 rad/s^2
+    // applied for 0.4 s scaled by the roll angle.
     "autoFlipImpulseMps": 2.0,
-    "autoFlipAngularAccel": 4.8,
+    "autoFlipAngularAccel": 50.0,
     "autoFlipSeconds": 0.4,
     "autoFlipNormalZThreshold": 0.7071,
     "autoFlipRollThresholdRad": 2.8,

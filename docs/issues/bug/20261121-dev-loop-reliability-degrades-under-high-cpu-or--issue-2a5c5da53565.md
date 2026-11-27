@@ -469,3 +469,33 @@ Direct observation from .dev/build-timings/game-dll-20261127T013823160277Z-8b377
 The waited-on build was real work and succeeded: generation 750, total 186.672s, changed src/vehicles/vehicle-system.cpp compiled in 88.292s, changed_source_preflight 88.421s, link 66.219s. The 60.319s wait fired mid-TU-compile, so this is not a stalled build. Correlation only; CPU saturation is expected from a 10-job compile and low free memory is a candidate contributor, but without a matched pre-build baseline do NOT treat pressure as the proven cause of the >60s wait. The partial sidecar (sampler thread did not stop) is itself the known sampler defect. No duplicate issue created and no fix claimed.
 
 Evidence: {"build_attempt_id": "game-dll-20261127T013823160277Z-8b3773", "build_outcome": "success", "build_total_seconds": 186.672, "duration_seconds": 186.657, "error": "sampler background thread did not stop before timeout", "gap_key": "build-resource-sampling:game-dll-20261127T013823160277Z-8b3773", "generation": 750, "host_logical_cpus": 12, "host_total_memory_bytes": 16802918400, "mean_host_cpu_percent": 99.191, "minimum_available_memory_bytes": 370589696, "peak_host_cpu_percent": 100.0, "process_discovery_wall_ms_total": 116438.742, "run_id": "20261127_011757", "sample_count": 127, "sampler_thread_cpu_ms": 34578.125, "status": "partial", "wait_id": "game-dll-build:2026-11-27T01:38:23.090Z", "wait_issue": "issue-e99701641a1c"}
+
+## Agent suggestion
+
+### 2026-11-27T18:24:37.945Z — build-wait-reviewer
+
+Resource-pressure evidence (build-wait-reviewer, 2026-11-27T18:2xZ), read-only observation, cross-linked from issue-6e15970df117 and issue-9a4503f6ed68.
+
+Direct observation (UTC 2026-11-27T17:27:27Z to 17:45:29Z, ~1082s):
+- Host: mean_host_cpu_percent 99.91, peak_host_cpu_percent 100.0, minimum_available_memory_bytes 25,292,800 (~24.1 MiB), 694 samples @1.0s, provider windows_kernel32_host_and_process, sample status partial. Source (.dev/build-timings/exe-build-20261127T122727-eaad2173.resource.json).
+- Competing work: root dev-loop run 20261127_172726 was running a full EXE build (attempt exe-build-20261127T122727-eaad2173) whose build_script phase alone took 1048.061s of 1082.086s total; a live game run (mode 45) was also active. runtime_alignment=unavailable (fresh_server_and_client_journal_evidence_not_matched), so exact live FPS/tick under load is unverified.
+- Consequence of the pressure relevant to this issue: the dev-loop wait-incident path's inline wake launch (build_friction.wake_reviewer -> agent-wake.py run --once, timeout=30) hit TimeoutExpired at 17:29:18.821Z, so dev-loop.wait.issue-failed was written instead of dev-loop.wait.over_budget/reviewer-wake. The same saturation inflated the EXE build to ~18 minutes.
+- Secondary sampler defects in the same artifact: sampler background thread did not stop before timeout; final sample skipped; cap_render_gate failed open after 4s; runtime_alignment unavailable.
+
+Inference (not direct): host CPU/memory exhaustion from concurrent build + live run is the dominant driver of the 18-minute EXE build and the 30s inline-wake timeout. Unknown: per-process attribution and the exact frame/tick rate of the live run during the window (unavailable fields listed in the summary). This is the "dev-loop reliability degrades under high CPU or memory use" case: a longer timeout would not fix it; the inline launch should be non-fatal and the record/evidence events emitted independently, and builds/launches should be serialized under resource limits. No fix claimed here.
+
+## Agent suggestion
+
+### 2026-11-27T18:29:20.573Z — build-wait-reviewer
+
+Cross-link from issue-4ddfb305b25b (game-dll-build wait, gen 799). Build resource sampling gap for the same attempt: gap_key build-resource-sampling:game-dll20261127T170504574022Z-3ad5f1 (see .dev/build-timings/game-dll-20261127T170504574022Z-3ad5f1.json). Unavailable fields: matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation. Observed at wait time: peak host CPU 100%, min free memory 53.8 MB, queue_wait_max 311s, server-gamemode.cpp compile 622.8s. The 100% CPU/free-memory number is a direct sample; tying it causally to the slow TU needs the three missing fields. Smallest useful next check: capture those three fields for the next >60s game-DLL build and record them in the wait evidence. Unowned here; needs the dev-loop/build-resource owner to claim.
+
+## Agent discussion and suggestions
+
+### 2026-11-27T18:29:39.894Z — build-wait-reviewer
+
+Message: `msg-3ab18c3a537a` (message)
+
+Subject: Build resource sampling gap (gen-799 wait)
+
+Gap handoff for build-resource sampling (gap_key build-resource-sampling:game-dll-20261127T170504574022Z-3ad5f1). The gen-799 game-DLL build waited 60.8s (issue-4ddfb305b25b) and took 700.6s total: server-gamemode.cpp 622.8s, queue_wait_max 311s, peak host CPU 100%, min free memory 53.8 MB. Sampler could not record matched_prebuild_resource_baseline, host_commit_charge_and_limit, or client_mode_independent_confirmation, so host pressure causing the slow TU is inference, not proof. I appended the gap to issue-2a5c5da53565. Please confirm whether build-resource telemetry is yours or redirect to the dev-loop/build-resource owner; smallest next check is capturing those three fields for the next >60s game-DLL build. I am not editing source.

@@ -261,6 +261,7 @@ void serverMarkAuthoredGeometryApplied()
     d.pendingGeometrySignature = 0;
     authoredBlockAuthorityMarkApplied(
         authoredNonBlockGeometrySignature(config), nowMs());
+    authoredNpcBlockStateInvalidate();
 }
 
 void serverSeedAuthoredCache(const HeadlessWorld& authoredWorld)
@@ -8459,6 +8460,9 @@ void markAuthoredParityForAppliedSignature(uint64_t appliedSignature)
         // change must go through a full rebuild to re-establish the baseline.
         authoredBlockAuthorityReset();
     }
+    // A structural rebuild swaps in a new NPC world, so the incremental block
+    // ranges no longer describe it.
+    authoredNpcBlockStateInvalidate();
 }
 
 // Apply a block-only authored edit to the live authoritative collision and its
@@ -8490,26 +8494,67 @@ bool applyAuthoredBlockDeltaNow(
     const double authoredMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - authoredStart).count();
 
-    World candidateNpc;
-    const std::vector<CollisionTriangle> noDestructibleSurfaces;
+    const std::vector<AuthoredBlock>& liveBlocks =
+        MapConfigRegistry::instance().current().blocks;
+    std::string npcFailure;
+    std::string npcPatchFailure;
+    bool npcFullRebuild = false;
+    bool npcCompacted = false;
     const auto npcStart = std::chrono::steady_clock::now();
-    if (!buildNpcWorldCollisionDetached(
-            candidateNpc, world, noDestructibleSurfaces,
-            /*buildRecast=*/false, NavigationAgentProfile{}, nullptr)) {
+    const std::vector<CollisionTriangle> noDestructibleSurfaces;
+    auto fullNpcBuild = [&](const char* reason) -> bool {
+        World candidateNpc;
+        if (!buildNpcWorldCollisionDetached(
+                candidateNpc, world, noDestructibleSurfaces,
+                /*buildRecast=*/false, NavigationAgentProfile{}, nullptr)) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Errors,
+                "map.geometry.block-delta.failed", d.mapId,
+                "NPC collision mirror rebuild failed; old authoritative world kept",
+                tick,
+                nlohmann::json{{"map", d.mapId}, {"signature", signature},
+                               {"npc_patch_failure", npcFailure},
+                               {"npc_full_reason", reason}},
+                __FILE__, __LINE__, __FUNCTION__);
+            return false;
+        }
+        authoredNpcBlockStateCapture(candidateNpc, world, liveBlocks);
+        clearDeferredServerWorldImpacts(world);
+        std::swap(npcWorld, candidateNpc);
+        npcFullRebuild = true;
         StructuredLogger::instance().writeEvent(
-            StructuredCategory::World, StructuredLevel::Errors,
-            "map.geometry.block-delta.failed", d.mapId,
-            "NPC collision mirror rebuild failed; old authoritative world kept",
-            tick,
-            nlohmann::json{{"map", d.mapId}, {"signature", signature}},
+            StructuredCategory::World, StructuredLevel::Verbose,
+            "map.geometry.block-delta.npc-full", d.mapId,
+            "NPC mirror full build; incremental ranges captured", tick,
+            nlohmann::json{{"map", d.mapId},
+                           {"signature", signature},
+                           {"npc_full_reason", reason},
+                           {"npc_patch_failure", npcFailure}},
             __FILE__, __LINE__, __FUNCTION__);
-        return false;
+        return true;
+    };
+    if (!authoredNpcBlockDeltaApply(npcWorld, world, liveBlocks, npcFailure)) {
+        npcPatchFailure = authoredNpcBlockStateLastFailure();
+        if (!fullNpcBuild("fallback"))
+            return false;
+    } else {
+        clearDeferredServerWorldImpacts(world);
+        if (authoredNpcBlockNeedsCompaction(npcWorld)) {
+            if (!fullNpcBuild("compaction"))
+                return false;
+            npcCompacted = true;
+        }
     }
     const double npcMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - npcStart).count();
 
-    clearDeferredServerWorldImpacts(world);
-    std::swap(npcWorld, candidateNpc);
+    glm::vec3 dirtyMin(0.0f);
+    glm::vec3 dirtyMax(0.0f);
+    if (!npcFullRebuild &&
+        authoredNpcBlockTakeDirtyBounds(dirtyMin, dirtyMax)) {
+        RecastNavigationBackend::instance().markDirtyTiles(dirtyMin, dirtyMax);
+    }
+
     serverInfiniteCollisionReset();
 
     d.appliedGeometrySignature = signature;
@@ -8534,6 +8579,9 @@ bool applyAuthoredBlockDeltaNow(
                        {"npc_triangles", npcWorld.collisionMesh.triangles.size()},
                        {"authored_ms", authoredMs},
                        {"npc_ms", npcMs},
+                       {"npc_full_rebuild", npcFullRebuild},
+                       {"npc_compacted", npcCompacted},
+                       {"npc_patch_failure", npcPatchFailure},
                        {"duration_ms", durationMs}},
         __FILE__, __LINE__, __FUNCTION__);
 

@@ -1147,3 +1147,31 @@ Observed: two auto-created build-friction issues now share the identical human_q
 Measurable addition to the existing target: at wait-issue creation in devscripts/build_friction.py, when an open issue with the same kind+stage+human_quote hash exists, still create the per-occurrence issue (preserve the "one issue per wait occurrence" acceptance) but (a) append its wait_id/attempt/elapsed to the canonical (oldest open) issue as an occurrence, (b) record related_issue=<canonical> on the new issue, and (c) have the review scheduler never select a duplicate-quote issue while its canonical is open. Target: over the next 10 same-quote wait issues, 10/10 carry a reciprocal canonical link within 24h and 0 duplicate-quote issues are independently reviewed in place of the canonical; baseline from this sample is 0/2 linked.
 
 Smallest experiment: add only the link + occurrence append (no budget or policy change), then verify on the next real over-budget wait that the new issue's evidence contains related_issue and the canonical issue shows the new occurrence. Read-only review; I made no source edit, build, or fix claim, and the build-friction owner (issue-dc6792df3815 owner rocket-league-input-fix) retains ownership.
+
+## Agent suggestion
+
+### 2026-11-27T15:59:25.937Z — issue-review-sweeper
+
+Development-process review (read-only) - issue-review-sweeper, 2026-11-27T16:00Z, from the bounded review of issue-cf9cd77eb056.
+
+Repeated friction, evidence: seven consecutive independent reviews of issue-cf9cd77eb056 (review ids 53, 96, 229, 337, 429, 477, and the 2026-11-27 sweep) each had to establish the same two facts by hand before reviewing anything else: `proof list --issue issue-cf9cd77eb056` returned [] (no proof linked) and related_build still named EXE 2026-11-22T02:37:06Z game generation 446 while the artifact under review was generation 794. Every review therefore spent its budget re-deriving evidence currentness and could not assume a cold reader would see the gap. This is repeated missing evidence plus an avoidable retry, not a one-off.
+
+Proposal (safe AI capability): add a read-only `evidence_current` field to `issue readiness` and the board row, computed as: (a) proof_count for the issue > 0, and (b) related_build generation == the latest published game generation (and related_run exists in logs/). Render it as `proof=missing` / `build=stale(gen 446 -> 794)` next to ready=true. Do not change issue state, proof records, or any file.
+
+Measurable target: for the next 3 sweeps of this issue, the review preamble can cite the field instead of hand-deriving currentness, and 0 of the 3 report an empty proof list or a stale related_build without it already being flagged. Secondary: cut reviewer pre-review currentness checks from ~2 journal/metadata passes to 1 field read.
+
+Smallest experiment: compute the field for the 10 highest-traffic in_review issues, diff it against a manual check for those 10, and confirm it flags issue-cf9cd77eb056 before any code or schema change. This is within AI capability (read-only metadata), has no human-only step, and does not change shared authority.
+
+## Agent suggestion
+
+### 2026-11-27T18:05:16.167Z — issue-review-sweeper
+
+Process proposal from bounded independent review of issue-c4f2df8edeba (issue-review-sweeper, wake-96876ff17951, 2026-11-27T18:04Z). Read-only; no source, build, or fix performed.
+
+Evidence (repeatable avoidable retry): on 2026-11-27 the same stale generated packet registry blocked two unrelated agents. events seq 22067 (16:28:41.869Z) and seq 22135 (16:44:25.818Z) both report wait_reason "codegen check failed: packet_registry_codegen.py"; attempt game-dll-20261127T164418202582Z-35c5b8 failed stage codegen:packet_registry_codegen.py exit 1 after 2.7s; requester notes show manual "packet ledger refreshed" retries at 16:30:26, 16:31:22 (rocket-rl-settle), 16:33:31, and 16:46:42. Two distinct agents lost ~18 minutes across >=4 requests, and the record names only the generator script, never the interfering agent or the specific stale output path. devscripts/dev_loop/game_build.py:1720-1754 already runs `--check` and refuses to build, but does no attribution and no deterministic auto-regen from the pinned source snapshot.
+
+Gap: a stale deterministic generated artifact is discovered only by a failed build, and the failure is not attributed to the owner who left it stale. This is the same class of manual, trial-and-error recovery the cross-agent-interference issue tracks.
+
+Measurable target: over the next 10 codegen-input edit/build cycles where a packet-registry input changes, 0 builds fail with an unattributed "codegen check failed"; 100% either auto-regenerate from the pinned build snapshot (deterministic generator, manifest revision stable) or fail with the owning agent(s) + exact stale path + handoff message; stale-codegen retry count in that window = 0; a cold reviewer resolves the interfering owner from the build/board record in <2 minutes.
+
+Smallest experiment: before `run_stage(codegen --check)`, when `--check` returns stale, run the generator once against the already-pinned source snapshot, then re-run the existing validation fingerprint and `--check`; record `codegen.auto_regenerated` with script, stale paths, manifest revision, and generator/input hashes. Attribute changed packet-registry inputs from the manifest diff to agents via active edit leases/build-note timestamps near the save; if unknown, emit the exact stale path and "unknown owner" rather than guessing. Abort auto-regen (keep the existing "codegen inputs changed while checking" failure) if the fingerprint changes between checks, so a concurrent edit cannot be masked. Prove with the bounded two-agent scenario in issue-c4f2df8edeba: Agent A edits a packet-registry input without regenerating, Agent B builds; require either an auto-repair record or an owner+path-attributed failure, plus the emitted interference count. This is a proposal; no shared-authority change is made here.

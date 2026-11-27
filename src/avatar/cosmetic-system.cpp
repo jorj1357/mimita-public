@@ -218,12 +218,14 @@ void CosmeticSystem::renderCosmetics(const Player& player,
     if (alphaCutoffLoc >= 0) r::uniform1f(alphaCutoffLoc, 0.0f);
     if (debugViewLoc >= 0) r::uniform1i(debugViewLoc, 0);
 
-    // Find attachment point transforms from player skeleton
+    // Find attachment point transforms from player skeleton. Use the same
+    // interpolated pose function as the body so cosmetics cannot follow a
+    // different (raw fixed-tick) path and visibly split from the actor.
     auto findNodeTransform = [&](const std::string& name) -> glm::mat4 {
         for (const auto& part : player.physicalBody.parts)
         {
             if (part.name == name)
-                return part.worldTransform;
+                return playerRenderPartTransform(player, part);
         }
         for (const auto& node : player.perfectPoseSkeleton.nodes)
         {

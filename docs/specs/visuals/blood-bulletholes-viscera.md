@@ -286,6 +286,12 @@ movable shapes and receive force based on the impact damage/force, so stronger
 hits throw them farther or faster. The exact sound or sound set and the GLB
 assets for organ, meat, and bone shapes are TODOs to choose.
 
+Flesh, bone, and organ chunks must use their configured material, texture, color,
+and size. A chunk with no usable texture must fall back to its configured chunk
+color and configured chunk size; it must never render as an untextured
+default-white or default-sized box. Players read plain white blocks on a hit as
+a bug, not as gore (issue-48c90c86187d).
+
 Blood should spill onto the ground and form both small puddles and large pools.
 At extreme damage, use a visibly large, fast, high-volume spray. As an initial
 art target, a 5000-damage impact against a part with 100 health should put about

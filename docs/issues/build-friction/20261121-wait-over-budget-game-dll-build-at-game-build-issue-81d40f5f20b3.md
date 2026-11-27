@@ -43,3 +43,9 @@ ASSESSMENT / NEXT
 ### 2026-11-21T20:46:41.053Z — build-wait-reviewer
 
 related_build: game-dll-20261121T200541886892Z-5b40e3
+
+## Scheduled independent review
+
+### 2026-11-27T18:47:41.152Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-083e14d90c6f after 856 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.

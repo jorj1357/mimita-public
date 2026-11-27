@@ -42,6 +42,13 @@
 
 namespace {
 
+// Recorded by the headless authored apply so the incremental NPC mirror can
+// locate the authored block tail without re-deriving triangle counts. Thread
+// local: the rebuild worker also calls the headless apply on its own thread.
+thread_local size_t gHeadlessBlockTailFirst = 0;
+thread_local size_t gHeadlessBlockTailCount = 0;
+thread_local bool gHeadlessBlockTailValid = false;
+
 // Exact id match is the fast path. When a GLB re-export moves node indices, the
 // hot map-geometry module may match a saved index-based override by its display
 // name or explicit source id.
@@ -871,6 +878,29 @@ uint64_t authoredGeometrySignature(const MapObjectiveConfig& config)
 uint64_t authoredNonBlockGeometrySignature(const MapObjectiveConfig& config)
 {
     return authoredGeometrySignatureImpl(config, false);
+}
+
+size_t authoredBlockTriangleCount(const AuthoredBlock& block)
+{
+    if (!block.enabled || !finiteVec(block.position) || !finiteVec(block.size))
+        return 0;
+    if (block.size.x <= 0.0001f || block.size.y <= 0.0001f ||
+        block.size.z <= 0.0001f)
+        return 0;
+    if (shape_geometry::isCurvedShape(block.shape)) {
+        std::vector<CollisionTriangle> triangles;
+        if (!shape_geometry::buildShapeTriangles(block, triangles))
+            return 0;
+        return triangles.size();
+    }
+    return 12;  // buildBoxCollisionTriangles: six quads, two triangles each
+}
+
+bool authoredHeadlessBlockTail(size_t& first, size_t& count)
+{
+    first = gHeadlessBlockTailFirst;
+    count = gHeadlessBlockTailCount;
+    return gHeadlessBlockTailValid;
 }
 
 uint64_t authoredGeometrySignatureLive(const MapObjectiveConfig& config)
@@ -1831,6 +1861,9 @@ bool applyAuthoredMapGeometryHeadless(MimitaNet::HeadlessWorld& world,
     applyHeadlessGLBObjectOverridesImpl(world, config.glbObjects,
                                         finalizeCollision);
     applyGLBObjectClones(world, config.glbObjects);
+    gHeadlessBlockTailValid = true;
+    gHeadlessBlockTailFirst = world.triangles.size();
+    gHeadlessBlockTailCount = 0;
     size_t added = 0;
     for (const AuthoredBlock& block : config.blocks) {
         if (!block.enabled || !finiteVec(block.position) || !finiteVec(block.size))
@@ -1853,6 +1886,7 @@ bool applyAuthoredMapGeometryHeadless(MimitaNet::HeadlessWorld& world,
                                                false);
         ++added;
     }
+    gHeadlessBlockTailCount = world.triangles.size() - gHeadlessBlockTailFirst;
     size_t chunkPartsAdded = 0;
     if (config.worldMode == "static" || config.worldMode == "mixed") {
         for (const AuthoredChunk& chunk : config.chunks) {
@@ -1889,6 +1923,8 @@ bool applyAuthoredMapGeometryHeadless(MimitaNet::HeadlessWorld& world,
                                                   &removalStats);
     else
         MimitaNet::buildHeadlessCollisionChunksWithoutSubGrids(world);
+    if (finalizeCollision)
+        gHeadlessBlockTailValid = false;  // LOD rewrote the authored tail indices
 
     // Authored spawnpoint entities extend the GLB spawn list. The base count
     // keeps repeated map rebuilds from duplicating them.

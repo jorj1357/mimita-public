@@ -1825,6 +1825,21 @@ void VehicleSystem::updateWheel(VehicleState& state, const VehicleSpec& spec,
                        (1.0f - spec.tire.loadSensitivity *
                                    (wheel.load - spec.tire.nominalLoad));
             mu = std::clamp(mu, 0.05f, spec.tire.mu * state.gripScale * 2.0f);
+            // RocketSim NON_STICKY_FRICTION_FACTOR_CURVE: with no throttle,
+            // wheel friction drops to 0.1 on a wall, 0.5 at 45 degrees, and 1.0
+            // on the floor. This is what lets a car slide along a wall or roof
+            // without catching while still gripping a flat floor.
+            if (std::fabs(state.throttle) < 0.05f)
+            {
+                const float nz = std::clamp(
+                    std::fabs(wheel.contactNormal.z), 0.0f, 1.0f);
+                const float nonSticky =
+                    nz < 0.7075f
+                        ? 0.1f + (0.5f - 0.1f) * (nz / 0.7075f)
+                        : 0.5f + (1.0f - 0.5f) *
+                                     ((nz - 0.7075f) / (1.0f - 0.7075f));
+                mu *= nonSticky;
+            }
             const float speed01 =
                 std::clamp(std::fabs(longSpeed) / lowSpeed, 0.0f, 1.0f);
             mu *= spec.tire.lowSpeedGrip +
@@ -2122,23 +2137,39 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
 
     if (jumpPressed)
     {
-        if (!supported && state.upDotWorldUp < 0.20f)
+        // RocketSim `_UpdateAutoFlip`: jump while inverted on a floor-like
+        // contact. The impulse lifts the car off the surface; a timed
+        // forward-axis torque rolls it back toward the wheels. No pose is set.
+        const glm::vec3 autoFlipNormal =
+            glm::length(entity.lastContactNormal) > 1e-5f
+                ? glm::normalize(entity.lastContactNormal)
+                : glm::vec3(0.0f, 0.0f, 1.0f);
+        const float autoFlipRoll =
+            std::atan2(glm::dot(right, glm::vec3(0.0f, 0.0f, 1.0f)),
+                       glm::dot(up, glm::vec3(0.0f, 0.0f, 1.0f)));
+        if (entity.lastContactedWorld &&
+            autoFlipNormal.z > profile.settle.autoFlipNormalZThreshold &&
+            std::fabs(autoFlipRoll) > profile.settle.autoFlipRollThresholdRad)
         {
-            // Rocket League auto-flip: pressing jump while resting on the roof
-            // rolls the car back onto its wheels. Impulse plus torque, no pose
-            // set, so it can still be interrupted by physics.
-            const glm::vec3 rollAxis =
-                glm::normalize(glm::cross(glm::vec3(0.0f, 0.0f, 1.0f), up));
-            applyPhysicalEntityImpulse(entity, up * (2.0f * mass), com);
-            entity.angularVelocity += rollAxis * 4.8f;
+            applyPhysicalEntityImpulse(
+                entity, -up * (profile.settle.autoFlipImpulseMps * mass), com);
+            state.isAutoFlipping = true;
+            state.autoFlipTimer =
+                profile.settle.autoFlipSeconds *
+                (std::fabs(autoFlipRoll) / glm::pi<float>());
+            state.autoFlipTorqueScale = autoFlipRoll >= 0.0f ? 1.0f : -1.0f;
             state.jumpCount = 2;
             state.isJumping = false;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Physics, StructuredLevel::Important,
                 "vehicle.autoflip", std::to_string(state.id),
-                "auto-flip from an inverted rest", tick,
+                "auto-flip from an inverted contact", tick,
                 {{"vehicle_id", state.id},
-                 {"up_dot", state.upDotWorldUp}},
+                 {"up_dot", state.upDotWorldUp},
+                 {"roll_rad", autoFlipRoll},
+                 {"normal_z", autoFlipNormal.z},
+                 {"impulse_mps", profile.settle.autoFlipImpulseMps},
+                 {"angular_accel", profile.settle.autoFlipAngularAccel}},
                 __FILE__, __LINE__, __func__);
             state.jumpHeldPrev = state.jumpHeld;
         }
@@ -2344,6 +2375,114 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
 
     state.jumpHeldPrev = state.jumpHeld;
 
+    // ── RocketSim auto-flip timer ───────────────────────────────────────
+    if (state.isAutoFlipping)
+    {
+        if (state.autoFlipTimer <= 0.0f)
+        {
+            state.isAutoFlipping = false;
+            state.autoFlipTimer = 0.0f;
+        }
+        else
+        {
+            const float invI =
+                glm::dot(forward,
+                         physicalEntityInverseInertiaWorld(entity, forward));
+            const float inertia = invI > 1e-6f ? 1.0f / invI : 1.0f;
+            applyPhysicalEntityAngularImpulse(
+                entity, forward * (profile.settle.autoFlipAngularAccel *
+                                   state.autoFlipTorqueScale * inertia * dt));
+            state.autoFlipTimer -= dt;
+        }
+    }
+
+    // ── RocketSim sticky force ──────────────────────────────────────────
+    // Wheel contact only. At rest this is 0.5 g into the surface; with
+    // throttle or forward speed the wall/ceiling term rises to 1.5 g, which is
+    // what keeps a car on a curved wall while boosting.
+    glm::vec3 groundUp(0.0f);
+    int wheelContacts = 0;
+    for (const VehicleWheelState& wheel : state.wheels)
+    {
+        if (!wheel.grounded)
+            continue;
+        groundUp += wheel.contactNormal;
+        ++wheelContacts;
+    }
+    if (wheelContacts > 0 && glm::length(groundUp) > 1e-5f)
+    {
+        groundUp = glm::normalize(groundUp);
+        const bool fullStick = std::fabs(state.throttle) > 0.05f ||
+                               std::fabs(state.speed) > 0.25f;
+        float scale = profile.settle.stickyForceGravityScale;
+        if (fullStick)
+            scale += 1.0f - std::fabs(groundUp.z);
+        applyPhysicalEntityImpulse(
+            entity, groundUp * (scale * gravity * mass * dt), com);
+    }
+
+    // ── RocketSim auto-roll ─────────────────────────────────────────────
+    // Throttle only (not boost). Partial wheel contact or body contact. The
+    // torque is relative to the contact normal, so it works on floors, walls,
+    // slopes and ceilings.
+    if (std::fabs(state.throttle) > 0.05f &&
+        ((wheelContacts > 0 && wheelContacts < wheelCount) ||
+         entity.lastContactedWorld))
+    {
+        glm::vec3 rollUp = groundUp;
+        if (glm::length(rollUp) < 1e-5f && entity.lastContactedWorld &&
+            glm::length(entity.lastContactNormal) > 1e-5f)
+            rollUp = glm::normalize(entity.lastContactNormal);
+        if (glm::length(rollUp) > 1e-5f)
+        {
+            const glm::vec3 groundDown = -rollUp;
+            const glm::vec3 crossRight = glm::cross(rollUp, forward);
+            const glm::vec3 crossForward = glm::cross(groundDown, crossRight);
+            const float rightFactor = 1.0f - std::clamp(
+                glm::dot(right, crossRight), 0.0f, 1.0f);
+            const float forwardFactor = 1.0f - std::clamp(
+                glm::dot(forward, crossForward), 0.0f, 1.0f);
+            const glm::vec3 torqueDirRight =
+                forward * (glm::dot(right, rollUp) >= 0.0f ? -1.0f : 1.0f);
+            const glm::vec3 torqueDirForward =
+                right * (glm::dot(forward, rollUp) >= 0.0f ? 1.0f : -1.0f);
+            const glm::vec3 torqueDir =
+                torqueDirRight * rightFactor + torqueDirForward * forwardFactor;
+            if (glm::length(torqueDir) > 1e-5f)
+            {
+                const glm::vec3 axis = glm::normalize(torqueDir);
+                const float invI = glm::dot(
+                    axis, physicalEntityInverseInertiaWorld(entity, axis));
+                const float inertia = invI > 1e-6f ? 1.0f / invI : 1.0f;
+                applyPhysicalEntityImpulse(
+                    entity, groundDown * (profile.settle.autoRollForceMps2 *
+                                          mass * dt), com);
+                applyPhysicalEntityAngularImpulse(
+                    entity, axis * (profile.settle.autoRollAngularAccel *
+                                    inertia * dt));
+                static uint64_t sLastAutoRollLogTick = 0;
+                if (tick - sLastAutoRollLogTick >= 30u)
+                {
+                    sLastAutoRollLogTick = tick;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Physics, StructuredLevel::Important,
+                        "vehicle.autoroll", std::to_string(state.id),
+                        "RocketSim auto-roll force and torque applied", tick,
+                        {{"vehicle_id", state.id},
+                         {"wheel_mask", state.wheelMask},
+                         {"ground_up", {rollUp.x, rollUp.y, rollUp.z}},
+                         {"right_factor", rightFactor},
+                         {"forward_factor", forwardFactor},
+                         {"axis", {axis.x, axis.y, axis.z}},
+                         {"force_mps2", profile.settle.autoRollForceMps2},
+                         {"angular_accel", profile.settle.autoRollAngularAccel},
+                         {"throttle", state.throttle}},
+                        __FILE__, __LINE__, __func__);
+                }
+            }
+        }
+    }
+
     // ── Boost: force along the car's nose ───────────────────────────────
     if (state.boostInput > 0.01f && state.boostCharge > 0.0f)
     {
@@ -2387,7 +2526,7 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
     // impulse already granted is kept.
     const bool stall =
         glm::dot(state.flipAxisWorld, state.flipAxisWorld) < 1e-6f;
-    bool airControlAllowed = !state.isFlipping;
+    bool airControlAllowed = !state.isFlipping && !state.isAutoFlipping;
     if (state.isFlipping)
     {
         // A dodge is a fixed 360 degree flip. Stop the torque when the flip has
@@ -3068,14 +3207,16 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
         const bool supported = state.wheelMask != 0 || grounded > 0 ||
                                entity.lastContactedWorld || entity.sleeping;
         const bool still = restSpeed < 0.5f && restAngular < 0.5f;
-        if (supported && still && !upright && !roof)
+        if (profile.settle.manualRightingEnabled && supported && still &&
+            !upright && !roof)
             ++state.sideRestTicks;
         else
         {
             state.sideRestTicks = 0;
             state.sideRecoveryLogged = false;
         }
-        if (state.sideRestTicks >= 15u)
+        if (profile.settle.manualRightingEnabled &&
+            state.sideRestTicks >= 15u)
         {
             // Rotate the up axis toward world up about the shorter arc.
             glm::vec3 axis = glm::cross(up, glm::vec3(0.0f, 0.0f, 1.0f));
@@ -3296,6 +3437,19 @@ void VehicleSystem::update(float dt, const World& world)
     // passive drop.
     static VehicleInput sFuzzAirInput;
     static uint32_t sFuzzAirTicks = 0;
+    // The kick window also exercises jump -> dodge and boost on/off. Throttle
+    // is applied late in the window so auto-roll has input once the car lands.
+    static bool sFuzzBoostOn = false;
+    static bool sFuzzThrottleOn = false;
+    // The probe models a player holding throttle through the recovery, which
+    // is what Rocket League's throttle-conditional auto-roll needs. The
+    // budget starts at each new wheel contact and lasts 2 s so the car can
+    // still come to rest and be classified instead of driving forever.
+    static uint32_t sFuzzRecoveryTicks = 0;
+    static bool sFuzzWasWheelContact = false;
+    static bool sFuzzDriveEnabled = false;
+    static uint64_t sFuzzJumpAtTick = 0;
+    static uint64_t sFuzzDodgeAtTick = 0;
 
     for (VehicleState& state : mVehicles)
     {
@@ -3327,12 +3481,37 @@ void VehicleSystem::update(float dt, const World& world)
         const uint64_t simulationTick =
             PhysicalEntitySystem::instance().simulationTick();
 
-        if (sFuzzEnv && state.id == 1 && sFuzzAirTicks > 0)
+        if (sFuzzEnv && state.id == 1 && sFuzzDriveEnabled)
         {
-            VehicleSystem::instance().setInput(state.id, sFuzzAirInput);
-            --sFuzzAirTicks;
-            if (sFuzzAirTicks == 0)
-                VehicleSystem::instance().setInput(state.id, VehicleInput{});
+            VehicleInput fuzzInput{};
+            if (sFuzzAirTicks > 0)
+            {
+                fuzzInput = sFuzzAirInput;
+                fuzzInput.boost = sFuzzBoostOn && sFuzzAirTicks > 90 ? 0.6f : 0.0f;
+                if (simulationTick == sFuzzJumpAtTick ||
+                    simulationTick == sFuzzDodgeAtTick)
+                    fuzzInput.jumpHeld = true;
+                --sFuzzAirTicks;
+            }
+            // Every fresh wheel contact gets a 2 s throttle recovery window.
+            // This is the input Rocket League's auto-roll requires; releasing
+            // throttle at the end of the kick alone allowed legal no-input side
+            // rests (run 20261127_180452, up_dot 0.40 on one wheel).
+            const bool wheelContact = state.wheelMask != 0;
+            if (wheelContact && !sFuzzWasWheelContact)
+                sFuzzRecoveryTicks = 120;
+            sFuzzWasWheelContact = wheelContact;
+            // Stop driving once the body is upright or on its roof: the probe
+            // then measures the rest instead of holding throttle forever.
+            const bool needsRecovery =
+                state.upDotWorldUp < 0.95f && state.upDotWorldUp >= -0.90f;
+            if (!needsRecovery)
+                sFuzzRecoveryTicks = 0;
+            if (sFuzzRecoveryTicks > 0)
+                --sFuzzRecoveryTicks;
+            fuzzInput.throttle =
+                (sFuzzAirTicks > 0 || sFuzzRecoveryTicks > 0) ? 1.0f : 0.0f;
+            VehicleSystem::instance().setInput(state.id, fuzzInput);
         }
 
         // A randomized kick can put the car through the goal mouth and behind
@@ -3349,7 +3528,10 @@ void VehicleSystem::update(float dt, const World& world)
             // |x| = 60). A car behind the back wall outside the mouth, or past
             // a side wall, has escaped and would otherwise sit in a pocket and
             // freeze the settle probe.
-            const bool inField = absX <= 51.2f && absY <= 40.96f;
+            // Small contact overlap with the 1 m wall is normal; only count a
+            // real escape beyond the wall face. The old exact 40.96 threshold
+            // respawned a car merely 0.14 m into the wall.
+            const bool inField = absX <= 51.4f && absY <= 41.2f;
             const bool inGoalMouth = absX <= 60.0f && absY <= 8.93f;
             if ((!inField && !inGoalMouth) || probePosition.z < -3.0f ||
                 probePosition.z > 25.0f)
@@ -3367,6 +3549,9 @@ void VehicleSystem::update(float dt, const World& world)
                 state.originVelocity = glm::vec3(0.0f);
                 state.originAngularVelocity = glm::vec3(0.0f);
                 sFuzzAirTicks = 0;
+                sFuzzDriveEnabled = false;
+                sFuzzRecoveryTicks = 0;
+                sFuzzWasWheelContact = false;
                 VehicleSystem::instance().setInput(state.id, VehicleInput{});
                 ++sFuzzEscapes;
                 StructuredLogger::instance().writeEvent(
@@ -3402,9 +3587,12 @@ void VehicleSystem::update(float dt, const World& world)
             // actually stopped.
             static uint32_t sFuzzKicks = 0;
             static uint32_t sFuzzWheels = 0;
+            static uint32_t sFuzzUprightPartial = 0;
             static uint32_t sFuzzTilted = 0;
             static uint32_t sFuzzRoof = 0;
             static uint32_t sFuzzSide = 0;
+            static uint32_t sFuzzNose = 0;
+            static uint32_t sFuzzTail = 0;
             static uint32_t sFuzzSettleHold = 0;
             static float sFuzzWorstUpDot = 1.0f;
             if (settled)
@@ -3414,26 +3602,46 @@ void VehicleSystem::update(float dt, const World& world)
             // The acceptance is "a side rest that survives 0.4 s". Classifying
             // the first settled frame kicked the car before the recovery rule
             // could act, so hold a supported rest for ~0.5 s first.
-            if (sFuzzSettleHold >= 30u)
+            const bool classify = sFuzzSettleHold >= 30u;
+            const bool timeoutKick =
+                simulationTick - sLastFuzzTick >= 480u;
+            if (classify || timeoutKick)
             {
                 sFuzzSettleHold = 0;
                 sLastFuzzTick = simulationTick;
-                ++sFuzzKicks;
-                const uint32_t fullMask =
-                    (1u << std::max(0, static_cast<int>(state.wheels.size()))) - 1u;
-                if (state.upDotWorldUp > 0.95f &&
-                    state.wheelMask == fullMask)
-                    ++sFuzzWheels;
-                else if (state.upDotWorldUp < -0.90f)
-                    ++sFuzzRoof;
-                else
+                if (classify)
                 {
-                    // Not wheels, not roof: a side rest. This is the failure.
-                    ++sFuzzTilted;
-                    ++sFuzzSide;
-                    sFuzzWorstUpDot = std::min(sFuzzWorstUpDot,
-                                               state.upDotWorldUp);
-                }
+                    ++sFuzzKicks;
+                    const uint32_t fullMask =
+                        (1u << std::max(0, static_cast<int>(state.wheels.size()))) - 1u;
+                    // Pose is judged by the body up vector first. A car resting
+                    // upright against a wall can have only two or three wheels
+                    // in contact without being "on its side"; that is reported
+                    // separately, never as a side rest.
+                    if (state.upDotWorldUp > 0.95f)
+                    {
+                        if (state.wheelMask == fullMask)
+                            ++sFuzzWheels;
+                        else
+                            ++sFuzzUprightPartial;
+                    }
+                    else if (state.upDotWorldUp < -0.90f)
+                        ++sFuzzRoof;
+                    else
+                    {
+                        // Not upright, not roof: a side/nose/tail rest. This is
+                        // the failure the probe exists to find.
+                        const glm::vec3 restForward =
+                            state.orientation * glm::vec3(1.0f, 0.0f, 0.0f);
+                        if (restForward.z < -0.85f)
+                            ++sFuzzNose;
+                        else if (restForward.z > 0.85f)
+                            ++sFuzzTail;
+                        ++sFuzzTilted;
+                        ++sFuzzSide;
+                        sFuzzWorstUpDot = std::min(sFuzzWorstUpDot,
+                                                   state.upDotWorldUp);
+                    }
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Physics, StructuredLevel::Important,
                     "vehicle.fuzz.report", std::to_string(state.id),
@@ -3442,9 +3650,15 @@ void VehicleSystem::update(float dt, const World& world)
                     {{"vehicle_id", state.id},
                      {"kicks", sFuzzKicks},
                      {"wheels_landings", sFuzzWheels},
+                     {"upright_partial_rests", sFuzzUprightPartial},
                      {"tilted_rests", sFuzzTilted},
                      {"roof_rests", sFuzzRoof},
                      {"side_rests", sFuzzSide},
+                     {"nose_rests", sFuzzNose},
+                     {"tail_rests", sFuzzTail},
+                     {"position", {entity->transform[3].x,
+                                   entity->transform[3].y,
+                                   entity->transform[3].z}},
                      {"settled_up_dot", state.upDotWorldUp},
                      {"settled_wheel_mask", state.wheelMask},
                      {"last_contacted_world", entity->lastContactedWorld},
@@ -3453,6 +3667,27 @@ void VehicleSystem::update(float dt, const World& world)
                      {"escapes", sFuzzEscapes},
                      {"worst_settled_up_dot", sFuzzWorstUpDot}},
                     __FILE__, __LINE__, __func__);
+                }
+                else
+                {
+                    // A car can be pinned in a non-accepted pose without ever
+                    // satisfying the "supported settle" test. Kick it anyway so
+                    // the probe keeps sampling instead of freezing for minutes.
+                    // This also makes the fuzz run bounded after any collision
+                    // that leaves the car resting on the ball instead of the
+                    // world; the kick cycles it back into the probe.
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Physics, StructuredLevel::Important,
+                        "vehicle.fuzz.timeout", std::to_string(state.id),
+                        "fuzz settle timeout, forcing the next kick",
+                        static_cast<uint32_t>(simulationTick),
+                        {{"vehicle_id", state.id},
+                         {"up_dot_world_up", state.upDotWorldUp},
+                         {"wheel_mask", state.wheelMask},
+                         {"supported", supported},
+                         {"speed_mps", state.speed}},
+                        __FILE__, __LINE__, __func__);
+                }
                 std::uniform_real_distribution<float> vy(-8.0f, 8.0f);
                 std::uniform_real_distribution<float> vz(4.0f, 9.0f);
                 // Edge-biased tumble: enough to land on a corner or side
@@ -3469,8 +3704,17 @@ void VehicleSystem::update(float dt, const World& world)
                 sFuzzAirInput.roll = ctrl(sFuzzRng);
                 sFuzzAirInput.pitch = ctrl(sFuzzRng);
                 sFuzzAirInput.yaw = ctrl(sFuzzRng);
-                sFuzzAirInput.boost = 0.6f;
-                sFuzzAirTicks = 45;
+                std::uniform_int_distribution<int> chance(0, 1);
+                sFuzzBoostOn = chance(sFuzzRng) != 0;
+                sFuzzThrottleOn = true;
+                std::uniform_int_distribution<int> jumpDelay(1, 8);
+                std::uniform_int_distribution<int> dodgeDelay(10, 28);
+                sFuzzJumpAtTick = simulationTick + jumpDelay(sFuzzRng);
+                sFuzzDodgeAtTick = simulationTick + dodgeDelay(sFuzzRng);
+                sFuzzAirTicks = 180;
+                sFuzzDriveEnabled = true;
+                sFuzzRecoveryTicks = 0;
+                sFuzzWasWheelContact = false;
                 entity->velocity = kick;
                 entity->angularVelocity = spinVel;
                 entity->sleeping = false;
@@ -3484,6 +3728,10 @@ void VehicleSystem::update(float dt, const World& world)
                      {"velocity", {kick.x, kick.y, kick.z}},
                      {"angular_velocity",
                       {spinVel.x, spinVel.y, spinVel.z}},
+                     {"boost_on", sFuzzBoostOn},
+                     {"throttle_on", sFuzzThrottleOn},
+                     {"jump_at_tick", sFuzzJumpAtTick},
+                     {"dodge_at_tick", sFuzzDodgeAtTick},
                      {"up_dot_world_up", state.upDotWorldUp}},
                     __FILE__, __LINE__, __func__);
             }
@@ -3834,11 +4082,14 @@ void VehicleSystem::update(float dt, const World& world)
                     ++grounded;
             const bool allGrounded =
                 grounded == static_cast<int>(state.wheels.size());
-            // A tilted body must not fall asleep. Sleep is what turned a
-            // half-finished tip over a corner into a permanent "settled" pose.
-            // An upright car may still sleep; an inverted one stays awake but
-            // stationary, which costs one idle body and is correct.
-            if (up.z <= 0.90f && entity->sleeping)
+            // A body may only sleep in an accepted pose: all four wheels
+            // upright, or the roof. Any other supported pose stays awake so the
+            // recovery rule can act. The old up.z <= 0.90 gate allowed a car at
+            // 0.91-0.95 to sleep and be counted as a side rest.
+            const bool acceptedPose =
+                (up.z > 0.95f && grounded == static_cast<int>(state.wheels.size())) ||
+                up.z < -0.90f;
+            if (!acceptedPose && entity->sleeping)
             {
                 entity->sleeping = false;
                 entity->sleepTicks = 0;

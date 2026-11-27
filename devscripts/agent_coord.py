@@ -62,6 +62,41 @@ def new_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
+def parse_utc(text: str) -> datetime.datetime | None:
+    try:
+        value = datetime.datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=datetime.timezone.utc)
+    return value
+
+
+def age_minutes(text: str, now: datetime.datetime | None = None) -> float:
+    stamp = parse_utc(text)
+    if stamp is None:
+        return 1.0e9
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return (now - stamp).total_seconds() / 60.0
+
+
+def until_minutes(text: str, now: datetime.datetime | None = None) -> float:
+    stamp = parse_utc(text)
+    if stamp is None:
+        return -1.0
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return (stamp - now).total_seconds() / 60.0
+
+
+def paths_overlap(left: str, right: str) -> bool:
+    first = str(left).replace("\\", "/").strip().rstrip("/")
+    second = str(right).replace("\\", "/").strip().rstrip("/")
+    if not first or not second:
+        return False
+    return (first == second or first.startswith(second + "/")
+            or second.startswith(first + "/"))
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     try:
@@ -470,6 +505,8 @@ class CoordStore:
                 paths TEXT NOT NULL DEFAULT '[]',
                 overlay_paths TEXT NOT NULL DEFAULT '[]',
                 priority TEXT NOT NULL DEFAULT 'normal',
+                why TEXT NOT NULL DEFAULT '',
+                expected_seconds INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'proposed',
                 wait_reason TEXT NOT NULL DEFAULT '',
                 generation INTEGER NOT NULL DEFAULT 0,
@@ -478,6 +515,15 @@ class CoordStore:
                 build_attempt_id TEXT NOT NULL DEFAULT '',
                 created_utc TEXT NOT NULL,
                 updated_utc TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS build_approvals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'peer',
+                reason TEXT NOT NULL DEFAULT '',
+                evidence TEXT NOT NULL DEFAULT '{}',
+                created_utc TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS runtime_registry (
                 runtime_id TEXT PRIMARY KEY,
@@ -542,6 +588,7 @@ class CoordStore:
         self._ensure_task_columns()
         self._ensure_agent_columns()
         self._ensure_work_columns()
+        self._ensure_build_columns()
         self._ensure_message_receipts()
         self._ensure_issue_review_scheduler_columns()
         completed_sessions = int(self.conn.execute(
@@ -661,6 +708,19 @@ class CoordStore:
                 self.conn.execute(
                     "ALTER TABLE work_sessions ADD COLUMN resume_phase "
                     "TEXT NOT NULL DEFAULT ''")
+
+    def _ensure_build_columns(self) -> None:
+        existing = {str(row[1]) for row in self.conn.execute(
+            "PRAGMA table_info(build_requests)")}
+        additions = {
+            "why": "TEXT NOT NULL DEFAULT ''",
+            "expected_seconds": "INTEGER NOT NULL DEFAULT 0",
+        }
+        with self.conn:
+            for name, definition in additions.items():
+                if name not in existing:
+                    self.conn.execute(
+                        f"ALTER TABLE build_requests ADD COLUMN {name} {definition}")
 
     # ── audit ────────────────────────────────────────────────────────────
     def event(self, name: str, agent: str = "", **fields) -> int:
@@ -3274,7 +3334,8 @@ class CoordStore:
     def build_request(self, agent: str, *, kind: str = "integration",
                       issue_id: str = "", base_generation: int = 0,
                       paths=None, overlay_paths=None,
-                      priority: str = "normal", cohort: str = "") -> dict:
+                      priority: str = "normal", cohort: str = "",
+                      why: str = "", expected_seconds: int = 0) -> dict:
         self.require_agent(agent)
         if kind not in ("integration", "preview"):
             raise CoordError("build kind must be integration or preview", 2)
@@ -3283,15 +3344,17 @@ class CoordStore:
         with self.conn:
             self.conn.execute(
                 "INSERT INTO build_requests(request_id,agent,cohort,issue_id,kind,"
-                "base_generation,paths,overlay_paths,priority,created_utc,"
-                "updated_utc) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "base_generation,paths,overlay_paths,priority,why,expected_seconds,"
+                "created_utc,updated_utc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (request_id, agent, cohort, issue_id, kind, int(base_generation),
                  json.dumps([str(item) for item in (paths or [])]),
                  json.dumps([str(item) for item in (overlay_paths or [])]),
-                 priority, now, now))
+                 priority, " ".join(str(why or "").split())[:240],
+                 max(0, int(expected_seconds or 0)), now, now))
         self.event("coord.build.requested", agent, request=request_id,
                    kind=kind, issue=issue_id, base_generation=base_generation,
-                   priority=priority, session=agent)
+                   priority=priority, why=why, expected_seconds=expected_seconds,
+                   session=agent)
         return {"request": request_id, "agent": agent, "kind": kind,
                 "status": "proposed"}
 
@@ -3334,6 +3397,11 @@ class CoordStore:
         self.event("coord.build.updated", agent, request=request_id,
                    status=status, generation=generation, wait_reason=wait_reason,
                    session=agent)
+        if status in ("published", "failed", "rejected", "superseded",
+                      "excluded"):
+            self.event("coord.build.finished", agent, request=request_id,
+                       status=status, generation=generation,
+                       wait_reason=wait_reason, session=agent)
         return {"request": request_id, "status": status}
 
     def build_wait(self, agent: str, request_id: str, reason: str,
@@ -3347,6 +3415,406 @@ class CoordStore:
                    reason=reason, seconds=seconds, session=agent)
         return {"request": request_id, "wait_reason": reason,
                 "seconds": seconds}
+
+    # ── build auto-approval policy ───────────────────────────────────────
+    def _build_request_row(self, request_id: str) -> sqlite3.Row:
+        row = self.conn.execute(
+            "SELECT * FROM build_requests WHERE request_id=?", (request_id,)
+        ).fetchone()
+        if row is None:
+            raise CoordError(f"unknown build request {request_id!r}", 2)
+        return row
+
+    def _build_halt(self) -> dict:
+        row = self.conn.execute("SELECT * FROM halt WHERE id=1").fetchone()
+        return dict(row) if row else {"active": 0}
+
+    def _build_active_request(self, request_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT request_id,agent,status,priority,created_utc,updated_utc "
+            "FROM build_requests "
+            "WHERE status IN ('approved','queued','building') AND request_id<>? "
+            "ORDER BY id DESC LIMIT 1", (request_id,)).fetchone()
+        return dict(row) if row else None
+
+    def _build_peers(self, requester: str, ttl_minutes: float) -> list[dict]:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        peers: list[dict] = []
+        rows = self.conn.execute(
+            "SELECT * FROM agents WHERE status='active' AND agent<>? ORDER BY agent",
+            (requester,)).fetchall()
+        for row in rows:
+            age = age_minutes(row["last_seen_utc"], now)
+            if age > ttl_minutes:
+                continue
+            activity = self.conn.execute(
+                "SELECT * FROM activity WHERE agent=?", (row["agent"],)).fetchone()
+            phase = str(activity["phase"]) if activity else ""
+            activity_age = age_minutes(activity["updated_utc"], now) if activity else 1.0e9
+            leases: list[dict] = []
+            for lease in self.conn.execute(
+                    "SELECT lease_id,path,region,expires_utc FROM leases "
+                    "WHERE holder=? AND state='active'", (row["agent"],)):
+                if until_minutes(lease["expires_utc"], now) > 0:
+                    leases.append(dict(lease))
+            runtime = self.conn.execute(
+                "SELECT runtime_id,state,updated_utc FROM runtime_registry "
+                "WHERE agent=? AND state IN ('online','starting','running') "
+                "ORDER BY updated_utc DESC LIMIT 1", (row["agent"],)).fetchone()
+            runtime_live = bool(runtime) and age_minutes(
+                runtime["updated_utc"], now) <= ttl_minutes
+            working = bool(leases) or runtime_live or phase in {
+                "building", "build", "editing", "edit", "implementing",
+                "testing", "test", "debugging", "running", "review"}
+            peers.append({
+                "agent": str(row["agent"]),
+                "phase": phase,
+                "heartbeat_age_minutes": round(age, 2),
+                "activity_age_minutes": (round(activity_age, 2)
+                                         if activity_age < 1.0e9 else None),
+                "leases": leases,
+                "runtime": dict(runtime) if runtime else None,
+                "working": working,
+            })
+        return peers
+
+    def _build_resource_state(self, max_cpu: float,
+                              min_ram_mb: float) -> dict:
+        try:
+            import psutil  # optional local dependency
+        except Exception:
+            return {"available": False, "reason": "psutil_unavailable"}
+        try:
+            cpu = float(psutil.cpu_percent(interval=0.2))
+            memory = psutil.virtual_memory()
+            available_mb = round(memory.available / (1024 * 1024), 1)
+        except Exception as error:  # noqa: BLE001 - report, never crash a build gate
+            return {"available": False, "reason": f"sample_failed: {error}"}
+        return {
+            "available": True,
+            "cpu_percent": round(cpu, 2),
+            "available_ram_mb": available_mb,
+            "max_cpu_percent": max_cpu,
+            "min_available_ram_mb": min_ram_mb,
+            "over_limit": cpu > max_cpu or available_mb < min_ram_mb,
+        }
+
+    def build_policy(self, agent: str, request_id: str, *,
+                     ttl_minutes: float = 5.0, max_cpu: float = 90.0,
+                     min_ram_mb: float = 1024.0, simulate: str = "",
+                     stale_minutes: float = 30.0,
+                     reap_stale: bool = False) -> dict:
+        """Decide whether a request may build without waiting for a human.
+
+        Decision values: approve, ask, wait, reject, none.
+        Reasons: halt, build_in_progress, resource_pressure, path_lease,
+        peer_active, peers_idle, no_peers, already_decided.
+        """
+        row = self._build_request_row(request_id)
+        requester = str(row["agent"])
+        request_paths: list[str] = []
+        for key in ("paths", "overlay_paths"):
+            try:
+                request_paths.extend(json.loads(row[key] or "[]"))
+            except (TypeError, json.JSONDecodeError):
+                pass
+
+        halt = self._build_halt()
+        peers = self._build_peers(requester, ttl_minutes)
+        active = self._build_active_request(request_id)
+        resource = self._build_resource_state(max_cpu, min_ram_mb)
+        conflicts: list[dict] = []
+        for peer in peers:
+            for lease in peer.get("leases", []):
+                if any(paths_overlap(str(lease.get("path", "")), path)
+                       for path in request_paths):
+                    conflicts.append({
+                        "agent": peer["agent"],
+                        "path": str(lease.get("path", "")),
+                        "expires_utc": str(lease.get("expires_utc", "")),
+                    })
+
+        if simulate in {"no_peers", "peers_idle", "peer_active", "path_lease",
+                        "pressure", "build_idle"}:
+            active = None
+        elif simulate == "build_in_progress":
+            active = {"request_id": "simulated-build", "agent": "simulated-peer",
+                      "status": "building"}
+        if simulate == "no_peers":
+            peers = []
+            conflicts = []
+        elif simulate == "peers_idle":
+            for peer in peers:
+                peer["working"] = False
+                peer["leases"] = []
+            if not peers:
+                peers.append({"agent": "simulated-peer", "phase": "waiting",
+                              "working": False, "heartbeat_age_minutes": 0.5,
+                              "activity_age_minutes": 0.5, "leases": [],
+                              "runtime": None})
+            conflicts = []
+        elif simulate == "peer_active" and not any(p.get("working") for p in peers):
+            peers.append({
+                "agent": "simulated-peer", "phase": "editing", "working": True,
+                "heartbeat_age_minutes": 0.5, "activity_age_minutes": 0.5,
+                "leases": [], "runtime": None,
+            })
+        elif simulate == "path_lease" and not conflicts:
+            conflicts.append({
+                "agent": "simulated-peer",
+                "path": request_paths[0] if request_paths else "src/simulated.cpp",
+                "expires_utc": utc_after(5),
+            })
+            if not peers:
+                peers.append({"agent": "simulated-peer", "phase": "editing",
+                              "working": True, "heartbeat_age_minutes": 0.5,
+                              "activity_age_minutes": 0.5, "leases": [],
+                              "runtime": None})
+        elif simulate == "pressure":
+            resource = {
+                "available": True,
+                "cpu_percent": max_cpu + 1,
+                "available_ram_mb": max(min_ram_mb - 1, 0),
+                "max_cpu_percent": max_cpu,
+                "min_available_ram_mb": min_ram_mb,
+                "over_limit": True,
+            }
+
+        reaped: dict | None = None
+        if active and reap_stale:
+            age = age_minutes(str(active.get("updated_utc", "")))
+            if age > stale_minutes:
+                # A request left in approved/queued/building for far longer than
+                # any build must not wedge the tree. Record who reaped it and why.
+                self.build_update(
+                    agent, str(active["request_id"]), "superseded",
+                    wait_reason="stale_no_update")
+                self.event("coord.build.superseded", agent,
+                           request=str(active["request_id"]),
+                           reason="stale_no_update",
+                           age_minutes=round(age, 1), session=agent)
+                reaped = {"request": str(active["request_id"]),
+                          "age_minutes": round(age, 1)}
+                active = self._build_active_request(request_id)
+
+        working = [peer for peer in peers if peer.get("working")]
+        ask_targets: list[dict] = []
+        if conflicts:
+            for conflict in conflicts:
+                ask_targets.append({"agent": conflict["agent"],
+                                    "reason": "path_lease",
+                                    "path": conflict["path"]})
+        else:
+            for peer in working:
+                ask_targets.append({"agent": peer["agent"],
+                                    "reason": "peer_active",
+                                    "phase": peer.get("phase", "")})
+
+        evidence = {
+            "request": request_id,
+            "requester": requester,
+            "paths": request_paths,
+            "ttl_minutes": ttl_minutes,
+            "peers": peers,
+            "working_peers": [peer["agent"] for peer in working],
+            "path_conflicts": conflicts,
+            "active_build": active,
+            "reaped_stale": reaped,
+            "resource": resource,
+            "simulate": simulate,
+        }
+
+        def decision(value: str, reason: str) -> dict:
+            return {"decision": value, "reason": reason, "evidence": evidence,
+                    "ask": ask_targets, "request": request_id}
+
+        if halt.get("active"):
+            return decision("reject", "halt")
+        if str(row["status"]) not in ("proposed", "approved"):
+            return decision("none", "already_decided")
+        if active:
+            return decision("wait", "build_in_progress")
+        if resource.get("over_limit"):
+            return decision("wait", "resource_pressure")
+        if conflicts:
+            return decision("ask", "path_lease")
+        if working:
+            return decision("ask", "peer_active")
+        if peers:
+            return decision("approve", "peers_idle")
+        return decision("approve", "no_peers")
+
+    def _record_build_approval(self, request_id: str, actor: str, role: str,
+                               reason: str, evidence: dict) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO build_approvals(request_id,actor,role,reason,"
+                "evidence,created_utc) VALUES (?,?,?,?,?,?)",
+                (request_id, actor, role, " ".join(str(reason or "").split()),
+                 json.dumps(evidence, sort_keys=True), utc_now()))
+
+    def build_approve(self, agent: str, request_id: str, *, reason: str = "",
+                      role: str = "peer") -> dict:
+        self.require_agent(agent)
+        row = self._build_request_row(request_id)
+        if str(row["agent"]) == agent:
+            raise CoordError(
+                "the requester cannot approve its own build request", 2)
+        if str(row["status"]) not in ("proposed", "approved"):
+            raise CoordError(
+                f"build request status is {row['status']}", 2)
+        self._record_build_approval(request_id, agent, role, reason, {})
+        self.build_update(agent, request_id, "approved", wait_reason="")
+        self.event("coord.build.approved", agent, request=request_id,
+                   actor=agent, role=role, reason=reason, session=agent)
+        return {"request": request_id, "status": "approved", "actor": agent,
+                "role": role, "reason": reason}
+
+    def build_reject(self, agent: str, request_id: str, *,
+                     reason: str = "") -> dict:
+        self.require_agent(agent)
+        row = self._build_request_row(request_id)
+        if str(row["status"]) not in ("proposed", "approved"):
+            raise CoordError(
+                f"build request status is {row['status']}", 2)
+        self._record_build_approval(request_id, agent, "objection", reason, {})
+        self.build_update(agent, request_id, "rejected", wait_reason=reason)
+        self.event("coord.build.rejected", agent, request=request_id,
+                   actor=agent, reason=reason, session=agent)
+        return {"request": request_id, "status": "rejected", "actor": agent,
+                "reason": reason}
+
+    def build_release(self, agent: str, request_id: str, *,
+                      reason: str = "") -> dict:
+        """Release a stuck approved/queued/building request."""
+        self.require_agent(agent)
+        if not str(reason or "").strip():
+            raise CoordError("release reason is required", 2)
+        row = self._build_request_row(request_id)
+        if str(row["status"]) not in ("approved", "queued", "building"):
+            raise CoordError(
+                f"build request status is {row['status']}", 2)
+        self._record_build_approval(request_id, agent, "release", reason, {})
+        self.build_update(agent, request_id, "superseded",
+                          wait_reason=reason)
+        self.event("coord.build.released", agent, request=request_id,
+                   actor=agent, reason=reason, session=agent)
+        return {"request": request_id, "status": "superseded",
+                "actor": agent, "reason": reason}
+
+    def build_auto_approve(self, agent: str, request_id: str, *,
+                           ttl_minutes: float = 5.0, dry_run: bool = False,
+                           simulate: str = "", ask_peers: bool = True,
+                           no_response: bool = False,
+                           stale_minutes: float = 30.0,
+                           max_cpu: float = 90.0,
+                           min_ram_mb: float = 1024.0) -> dict:
+        self.require_agent(agent)
+        row = self._build_request_row(request_id)
+        if str(row["agent"]) != agent:
+            raise CoordError(
+                "only the requester may auto-approve this build request", 2)
+        policy = self.build_policy(
+            agent, request_id, ttl_minutes=ttl_minutes, max_cpu=max_cpu,
+            min_ram_mb=min_ram_mb, simulate=simulate,
+            stale_minutes=stale_minutes, reap_stale=not dry_run)
+        result = {
+            "request": request_id,
+            "agent": agent,
+            "decision": policy["decision"],
+            "reason": policy["reason"],
+            "dry_run": dry_run,
+            "approved": False,
+            "policy": policy,
+        }
+        if dry_run or policy["decision"] == "none":
+            return result
+
+        if policy["decision"] == "approve":
+            actor = f"auto:{policy['reason']}"
+            self._record_build_approval(
+                request_id, actor, "auto", policy["reason"], policy["evidence"])
+            self.build_update(agent, request_id, "approved", wait_reason="")
+            self.event("coord.build.approved", agent, request=request_id,
+                       actor=actor, reason=policy["reason"],
+                       evidence=json.dumps(policy["evidence"], sort_keys=True),
+                       session=agent)
+            result.update({"status": "approved", "actor": actor,
+                           "applied": True})
+            return result
+
+        if policy["decision"] == "ask" and ask_peers:
+            ask_rows = self.conn.execute(
+                "SELECT role, COUNT(*) AS total FROM build_approvals "
+                "WHERE request_id=? AND role IN ('ask','objection') "
+                "GROUP BY role", (request_id,)).fetchall()
+            ask_counts = {str(row["role"]): int(row["total"] or 0)
+                          for row in ask_rows}
+            asks = ask_counts.get("ask", 0)
+            objections = ask_counts.get("objection", 0)
+            if no_response and asks >= 2 and objections == 0:
+                actor = "auto:no_response"
+                self._record_build_approval(
+                    request_id, actor, "auto", "no_response",
+                    {"asks": asks, "policy": policy["evidence"]})
+                self.build_update(agent, request_id, "approved", wait_reason="")
+                self.event("coord.build.approved", agent, request=request_id,
+                           actor=actor, reason="no_response", asks=asks,
+                           session=agent)
+                result.update({"status": "approved", "actor": actor,
+                               "applied": True})
+                return result
+            targets: list[str] = []
+            for item in policy.get("ask", [])[:3]:
+                target = str(item.get("agent", ""))
+                if not target or target == agent or target.startswith("simulated"):
+                    continue
+                targets.append(target)
+            messages: list[dict] = []
+            if targets:
+                paths_text = ", ".join(policy["evidence"]["paths"][:8]) or "(none listed)"
+                body = (
+                    f"Build request {request_id} from {agent} is waiting for a peer "
+                    f"decision.\n\nPaths: {paths_text}\n"
+                    f"Expected seconds: {int(row['expected_seconds'] or 0)}\n"
+                    f"Why: {row['why'] or '(not recorded)'}\n\n"
+                    f"Reply with `agent-coord.py build approve {request_id}` or "
+                    f"`agent-coord.py build reject {request_id} --reason \"...\"`."
+                )
+                for target in targets:
+                    reply = self.send(
+                        agent, target,
+                        f"Build approval requested: {request_id}", body,
+                        kind="build-approval", requires_response=True,
+                        issue_id=str(row["issue_id"] or ""))
+                    messages.append({"agent": target,
+                                     "message": reply.get("message", "")})
+                self._record_build_approval(
+                    request_id, "auto:ask", "ask", policy["reason"],
+                    {"targets": targets, "round": asks + 1})
+                self.event("coord.build.approval.requested", agent,
+                           request=request_id, peers=targets,
+                           messages=[item["message"] for item in messages],
+                           reason=policy["reason"], asks=asks + 1,
+                           session=agent)
+            result.update({
+                "status": "proposed",
+                "asks": asks,
+                "objections": objections,
+                "messages": messages,
+                "next": (f"agent-coord.py build wait {request_id} --reason "
+                         f"peer-approval; then sync/inbox. After two asks with "
+                         f"no response, retry with --no-response."),
+            })
+            return result
+
+        self.event("coord.build.wait", agent, request=request_id,
+                   reason=policy["reason"],
+                   evidence=json.dumps(policy["evidence"], sort_keys=True),
+                   session=agent)
+        result.update({"status": str(row["status"]),
+                       "next": f"retry when {policy['reason']} clears"})
+        return result
 
     def runtime_register(self, agent: str, runtime_id: str, *,
                          cohort: str = "", issue_id: str = "",
@@ -4530,15 +4998,57 @@ def create_parser() -> argparse.ArgumentParser:
     b.add_argument("--overlay", nargs="*", default=[])
     b.add_argument("--priority", default="normal")
     b.add_argument("--cohort", default="")
+    b.add_argument("--why", default="")
+    b.add_argument("--expected-seconds", type=int, default=0)
+    b.add_argument("--auto", action="store_true",
+                   help="create and evaluate auto-approval immediately")
+    b.add_argument("--dry-run", action="store_true")
+    b.add_argument("--simulate", default="",
+                   choices=("", "no_peers", "peers_idle", "peer_active",
+                            "path_lease", "build_in_progress", "build_idle",
+                            "pressure"))
+    b.add_argument("--ttl-minutes", type=float, default=5.0)
+    b.add_argument("--stale-minutes", type=float, default=30.0)
+    b.add_argument("--max-cpu", type=float, default=90.0)
+    b.add_argument("--min-ram-mb", type=float, default=1024.0)
     b = bsub.add_parser("list")
     b.add_argument("--status", default="")
     b = bsub.add_parser("owner")
     b.add_argument("--set", default="")
     b = bsub.add_parser("approve")
     b.add_argument("request_id")
+    b.add_argument("--reason", default="")
+    b.add_argument("--role", default="peer")
     b = bsub.add_parser("reject")
     b.add_argument("request_id")
     b.add_argument("--reason", default="")
+    b = bsub.add_parser("release")
+    b.add_argument("request_id")
+    b.add_argument("--reason", required=True)
+    b = bsub.add_parser("auto-approve")
+    b.add_argument("request_id")
+    b.add_argument("--dry-run", action="store_true")
+    b.add_argument("--simulate", default="",
+                   choices=("", "no_peers", "peers_idle", "peer_active",
+                            "path_lease", "build_in_progress", "build_idle",
+                            "pressure"))
+    b.add_argument("--ttl-minutes", type=float, default=5.0)
+    b.add_argument("--stale-minutes", type=float, default=30.0)
+    b.add_argument("--no-ask-peers", action="store_true")
+    b.add_argument("--no-response", action="store_true",
+                   help="approve after two recorded asks with no objection")
+    b.add_argument("--max-cpu", type=float, default=90.0)
+    b.add_argument("--min-ram-mb", type=float, default=1024.0)
+    b = bsub.add_parser("policy")
+    b.add_argument("request_id")
+    b.add_argument("--simulate", default="",
+                   choices=("", "no_peers", "peers_idle", "peer_active",
+                            "path_lease", "build_in_progress", "build_idle",
+                            "pressure"))
+    b.add_argument("--ttl-minutes", type=float, default=5.0)
+    b.add_argument("--stale-minutes", type=float, default=30.0)
+    b.add_argument("--max-cpu", type=float, default=90.0)
+    b.add_argument("--min-ram-mb", type=float, default=1024.0)
     b = bsub.add_parser("wait")
     b.add_argument("request_id")
     b.add_argument("--reason", required=True)
@@ -4932,21 +5442,50 @@ def run(args: argparse.Namespace) -> object:
             return store.wake_check(agent)
         if command == "build":
             if args.build_command == "request":
-                return store.build_request(
+                created = store.build_request(
                     agent, kind=args.kind, issue_id=args.issue,
                     base_generation=args.base_generation, paths=args.paths,
                     overlay_paths=args.overlay, priority=args.priority,
-                    cohort=args.cohort)
+                    cohort=args.cohort, why=args.why,
+                    expected_seconds=args.expected_seconds)
+                if not args.auto:
+                    return created
+                decision = store.build_auto_approve(
+                    agent, created["request"], ttl_minutes=args.ttl_minutes,
+                    dry_run=args.dry_run, simulate=args.simulate,
+                    stale_minutes=args.stale_minutes,
+                    max_cpu=args.max_cpu, min_ram_mb=args.min_ram_mb)
+                return {"request": created["request"], "created": created,
+                        "auto": decision,
+                        "approved": bool(decision.get("applied"))}
             if args.build_command == "list":
                 return store.build_list(status=args.status)
             if args.build_command == "owner":
                 return store.build_owner(args.set)
             if args.build_command == "approve":
-                return store.build_update(agent, args.request_id, "approved")
+                return store.build_approve(
+                    agent, args.request_id, reason=args.reason,
+                    role=args.role)
             if args.build_command == "reject":
-                return store.build_update(
-                    agent, args.request_id, "rejected",
-                    wait_reason=args.reason)
+                return store.build_reject(
+                    agent, args.request_id, reason=args.reason)
+            if args.build_command == "release":
+                return store.build_release(
+                    agent, args.request_id, reason=args.reason)
+            if args.build_command == "auto-approve":
+                return store.build_auto_approve(
+                    agent, args.request_id, ttl_minutes=args.ttl_minutes,
+                    dry_run=args.dry_run, simulate=args.simulate,
+                    ask_peers=not args.no_ask_peers,
+                    no_response=args.no_response,
+                    stale_minutes=args.stale_minutes,
+                    max_cpu=args.max_cpu, min_ram_mb=args.min_ram_mb)
+            if args.build_command == "policy":
+                return store.build_policy(
+                    agent, args.request_id, ttl_minutes=args.ttl_minutes,
+                    stale_minutes=args.stale_minutes,
+                    max_cpu=args.max_cpu, min_ram_mb=args.min_ram_mb,
+                    simulate=args.simulate)
             return store.build_wait(
                 agent, args.request_id, args.reason, args.seconds)
         if command == "runtime":

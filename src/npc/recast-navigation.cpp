@@ -223,7 +223,8 @@ dtPolyRef nearestPolyEscalated(dtNavMeshQuery* query, const dtQueryFilter* filte
     return 0;
 }
 
-bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
+[[maybe_unused]] bool buildNavMesh(const World& world,
+                                  const NavigationAgentProfile& profile,
                   dtNavMesh*& outMesh, RecastNavigationResult& diag,
                   std::string& error)
 {
@@ -770,6 +771,7 @@ struct RecastNavigationBackend::State
     glm::vec3 recastBoundsMax{0.0f};
     std::unordered_map<uint64_t, dtTileRef> tileRefs;
     std::unordered_set<uint64_t> dirtyTiles;
+    bool explicitDirtyTiles = false;
     glm::vec3 tileOrigin{0.0f};
     int tileCountX = 0;
     int tileCountY = 0;
@@ -857,9 +859,55 @@ void RecastNavigationBackend::invalidate()
     mState->triangleCount = 0;
     mState->tileRefs.clear();
     mState->dirtyTiles.clear();
+    mState->explicitDirtyTiles = false;
     mState->tileCountX = 0;
     mState->tileCountY = 0;
     mState->tiled = false;
+}
+
+void RecastNavigationBackend::markDirtyTiles(const glm::vec3& boundsMin,
+                                             const glm::vec3& boundsMax)
+{
+    if (!mState) mState = new State();
+    if (!mState->mesh || !mState->tiled || mState->tileCountX <= 0 ||
+        mState->tileCountY <= 0)
+        return;
+    const auto toTile = [](float value, float origin) {
+        return static_cast<int>(std::floor(
+            (value - origin) / kNavTileSize));
+    };
+    const int maxX = mState->tileCountX - 1;
+    const int maxY = mState->tileCountY - 1;
+    const int x0 = std::max(0, std::min(maxX,
+        toTile(boundsMin.x, mState->tileOrigin.x)));
+    const int x1 = std::max(0, std::min(maxX,
+        toTile(boundsMax.x, mState->tileOrigin.x)));
+    const int y0 = std::max(0, std::min(maxY,
+        toTile(boundsMin.y, mState->tileOrigin.y)));
+    const int y1 = std::max(0, std::min(maxY,
+        toTile(boundsMax.y, mState->tileOrigin.y)));
+    const int64_t count = static_cast<int64_t>(x1 - x0 + 1) *
+                          static_cast<int64_t>(y1 - y0 + 1);
+    if (count <= 0)
+        return;
+    if (count <= 256) {
+        for (int y = y0; y <= y1; ++y)
+            for (int x = x0; x <= x1; ++x)
+                mState->dirtyTiles.insert(navTileKey(x, y));
+    } else {
+        for (int y = 0; y <= maxY; ++y)
+            for (int x = 0; x <= maxX; ++x)
+                mState->dirtyTiles.insert(navTileKey(x, y));
+    }
+    mState->explicitDirtyTiles = true;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Verbose,
+        "npc.navmesh.tiles.marked", "recast",
+        "authored edit marked navmesh tiles for incremental rebuild", 0,
+        nlohmann::json{{"x0", x0}, {"x1", x1}, {"y0", y0}, {"y1", y1},
+                       {"marked", count},
+                       {"dirty_total", mState->dirtyTiles.size()}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 namespace {
@@ -909,6 +957,10 @@ struct RecastNavMeshCandidate::Impl
     NavigationAgentProfile profile;
     std::uint64_t contentHash = 0;
     std::size_t triangleCount = 0;
+    std::unordered_map<uint64_t, dtTileRef> tileRefs;
+    glm::vec3 tileOrigin{0.0f};
+    int tileCountX = 0;
+    int tileCountY = 0;
 
     ~Impl()
     {
@@ -938,8 +990,12 @@ RecastNavMeshCandidate RecastNavMeshCandidate::build(
     candidate.mImpl->contentHash = collisionContentHash(world, profile);
     candidate.mImpl->triangleCount = world.collisionMesh.triangles.size();
     std::string error;
-    if (!buildNavMesh(world, profile, candidate.mImpl->mesh,
-                      candidate.mImpl->diagnostics, error)) {
+    if (!buildTiledNavMesh(world, profile, candidate.mImpl->mesh,
+                           candidate.mImpl->tileRefs,
+                           candidate.mImpl->tileOrigin,
+                           candidate.mImpl->tileCountX,
+                           candidate.mImpl->tileCountY,
+                           candidate.mImpl->diagnostics, error)) {
         candidate.mImpl->diagnostics.failure = error;
         return candidate;
     }
@@ -1005,6 +1061,14 @@ bool RecastNavigationBackend::adopt(const World& world,
     mState->navMeshVertCount = candidate.mImpl->diagnostics.navMeshVertCount;
     mState->recastBoundsMin = candidate.mImpl->diagnostics.recastBoundsMin;
     mState->recastBoundsMax = candidate.mImpl->diagnostics.recastBoundsMax;
+    mState->tileRefs = candidate.mImpl->tileRefs;
+    mState->tileOrigin = candidate.mImpl->tileOrigin;
+    mState->tileCountX = candidate.mImpl->tileCountX;
+    mState->tileCountY = candidate.mImpl->tileCountY;
+    mState->tiled = !mState->tileRefs.empty() &&
+                    mState->tileCountX > 0 && mState->tileCountY > 0;
+    mState->dirtyTiles.clear();
+    mState->explicitDirtyTiles = false;
     ++mState->version;
     return true;
 }
@@ -1030,18 +1094,23 @@ RecastNavigationResult RecastNavigationBackend::prepare(
     if (!needsBuild)
         mState->world = &world;
     if (needsBuild) {
-        const bool incremental = mState->mesh && mState->tiled && contentSame;
+        const bool incremental = mState->mesh && mState->tiled &&
+            (contentSame || mState->explicitDirtyTiles);
         if (incremental) {
+            const bool authoredDirty = mState->explicitDirtyTiles;
             const bool contentChanged =
                 mState->collisionHash != contentHash ||
                 mState->triangleCount != baseCount;
             if (contentChanged) {
-                for (int ty = 0; ty < mState->tileCountY; ++ty)
-                    for (int tx = 0; tx < mState->tileCountX; ++tx)
-                        mState->dirtyTiles.insert(navTileKey(tx, ty));
+                if (!authoredDirty) {
+                    for (int ty = 0; ty < mState->tileCountY; ++ty)
+                        for (int tx = 0; tx < mState->tileCountX; ++tx)
+                            mState->dirtyTiles.insert(navTileKey(tx, ty));
+                }
                 mState->collisionHash = contentHash;
                 mState->triangleCount = baseCount;
             }
+            mState->explicitDirtyTiles = false;
             mimita_navigation_policy::NavigationPolicyV1 policy{};
             policy.version = mimita_navigation_policy::ABI_VERSION;
             policy.structSize = sizeof(policy);
@@ -1061,6 +1130,12 @@ RecastNavigationResult RecastNavigationBackend::prepare(
                 if (!policy.outAllowRebuild)
                     tileBudget = 0;
             }
+            // An authored block edit touches one or two 32 m tiles. Allow one
+            // bounded tile rebuild even when the general navigation policy
+            // defers rebuilds inside the fixed tick; a whole-map bake remains
+            // forbidden.
+            if (tileBudget <= 0 && authoredDirty)
+                tileBudget = 1;
             std::string tileError;
             if (tileBudget > 0)
                 mState->rebuildDirtyTiles(world, profile, tileBudget,
@@ -1303,18 +1378,23 @@ RecastNavigationResult RecastNavigationBackend::query(
     if (!needsBuild)
         mState->world = &world;
     if (needsBuild) {
-        const bool incremental = mState->mesh && mState->tiled && contentSame;
+        const bool incremental = mState->mesh && mState->tiled &&
+            (contentSame || mState->explicitDirtyTiles);
         if (incremental) {
+            const bool authoredDirty = mState->explicitDirtyTiles;
             const bool contentChanged =
                 mState->collisionHash != contentHash ||
                 mState->triangleCount != baseCount;
             if (contentChanged) {
-                for (int ty = 0; ty < mState->tileCountY; ++ty)
-                    for (int tx = 0; tx < mState->tileCountX; ++tx)
-                        mState->dirtyTiles.insert(navTileKey(tx, ty));
+                if (!authoredDirty) {
+                    for (int ty = 0; ty < mState->tileCountY; ++ty)
+                        for (int tx = 0; tx < mState->tileCountX; ++tx)
+                            mState->dirtyTiles.insert(navTileKey(tx, ty));
+                }
                 mState->collisionHash = contentHash;
                 mState->triangleCount = baseCount;
             }
+            mState->explicitDirtyTiles = false;
             mimita_navigation_policy::NavigationPolicyV1 policy{};
             policy.version = mimita_navigation_policy::ABI_VERSION;
             policy.structSize = sizeof(policy);
@@ -1334,6 +1414,12 @@ RecastNavigationResult RecastNavigationBackend::query(
                 if (!policy.outAllowRebuild)
                     tileBudget = 0;
             }
+            // An authored block edit touches one or two 32 m tiles. Allow one
+            // bounded tile rebuild even when the general navigation policy
+            // defers rebuilds inside the fixed tick; a whole-map bake remains
+            // forbidden.
+            if (tileBudget <= 0 && authoredDirty)
+                tileBudget = 1;
             std::string tileError;
             if (tileBudget > 0)
                 mState->rebuildDirtyTiles(world, profile, tileBudget,

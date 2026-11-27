@@ -246,6 +246,10 @@ void pollAnimationRuntimeSettings()
     bool loaded = false;
     if (readJsonFile(path, root) && root.is_object()) {
         next.rootTranslationMode = root.value("rootTranslationMode", next.rootTranslationMode);
+        next.animationAdvanceMode = root.value("animationAdvanceMode", next.animationAdvanceMode);
+        next.crouchHeightScale = root.value("crouchHeightScale", next.crouchHeightScale);
+        next.crouchLegSocketLiftM = root.value("crouchLegSocketLiftM", next.crouchLegSocketLiftM);
+        next.crouchSocketBlendSeconds = root.value("crouchSocketBlendSeconds", next.crouchSocketBlendSeconds);
         next.renderPoseInterpolation = root.value("renderPoseInterpolation", next.renderPoseInterpolation);
         next.deathPresentation = root.value("deathPresentation", next.deathPresentation);
         next.hurtTierMode = root.value("hurtTierMode", next.hurtTierMode);
@@ -280,7 +284,12 @@ void pollAnimationRuntimeSettings()
         loaded = true;
     }
     if (next.rootTranslationMode != 1 && next.rootTranslationMode != 2)
-        next.rootTranslationMode = 1;
+        next.rootTranslationMode = 2;
+    if (next.animationAdvanceMode != 1 && next.animationAdvanceMode != 2)
+        next.animationAdvanceMode = 2;
+    next.crouchHeightScale = std::clamp(next.crouchHeightScale, 0.1f, 1.0f);
+    next.crouchLegSocketLiftM = std::clamp(next.crouchLegSocketLiftM, 0.0f, 2.0f);
+    next.crouchSocketBlendSeconds = std::clamp(next.crouchSocketBlendSeconds, 0.0f, 2.0f);
     if (next.hurtTierMode != 1 && next.hurtTierMode != 2)
         next.hurtTierMode = 1;
     gAnimationSettings = std::move(next);
@@ -293,6 +302,9 @@ void pollAnimationRuntimeSettings()
         loaded ? "animation runtime settings loaded" : "animation runtime settings missing; defaults used",
         0,
         nlohmann::json{{"root_translation_mode", gAnimationSettings.rootTranslationMode},
+                       {"animation_advance_mode", gAnimationSettings.animationAdvanceMode},
+                       {"crouch_height_scale", gAnimationSettings.crouchHeightScale},
+                       {"crouch_leg_socket_lift_m", gAnimationSettings.crouchLegSocketLiftM},
                        {"render_pose_interpolation", gAnimationSettings.renderPoseInterpolation},
                        {"death_presentation", gAnimationSettings.deathPresentation},
                        {"hurt_tier_mode", gAnimationSettings.hurtTierMode},

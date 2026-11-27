@@ -618,3 +618,21 @@ Measurable target: for one over-budget wait, if the primary adapter has not prod
 Smallest experiment (no policy invention): instrument adapter start/exit/heartbeat with a timestamp in the wake journal, then run one synthetic/manual wake whose primary adapter is deliberately hung (e.g. a sleep stub) and confirm wake.retry fires at the 120s bound and opencode launches without waiting for the process to exit. Compare against the recorded 765.3s from wake-5377afd8a3ae.
 
 Evidence: `.dev/agent-wake/events.jsonl` L3898-3910 (wake-5377afd8a3ae queued 07:24:17.449Z, codex launched 07:24:28.649Z, wake.retry 07:52:52.248Z, opencode launched 07:53:02.749Z); `.dev/agent-wake/requests/wake-5377afd8a3ae.json` (attempts=2). No source change or fix claimed here; read-only review.
+
+## Agent suggestion
+
+### 2026-11-27T16:03:00.363Z — build-wait-reviewer
+
+Occurrence 2026-11-27 (severe): wait game-dll-build:2026-11-27T07:55:43.159Z / issue-3736371ce4de on attempt game-dll-20261127T075543204684Z-cefc30, generation 787, a genuine 107.3s header-fanout build (not stalled). Wake wake-8af078e5e1a7 queued 07:56:44.337Z; codex claimed/launched 07:56:45.675Z/45.791Z (pid 23976) and delivered no review; wake.retry 'stale launched request recovered by scheduler' 15:53:48.099Z; opencode claimed/launched 15:53:49.013Z/49.034Z (pid 13200). Queue-to-actual-review ~7h57m, far above the <=5 min target. Exactly-once queue held; the launch was duplicated and only the fallback delivered. Reviewer: build-wait-reviewer; full evidence on issue-3736371ce4de.
+
+## Agent suggestion
+
+### 2026-11-27T17:55:35.046Z — build-wait-reviewer
+
+Occurrence 2026-11-27: over-budget reviewer wake wake-83e438c02e22 for wait game-dll-build:2026-11-27T16:18:04.967Z (issue-4aacd4d05363). New mechanism observed for the late dispatch: wake.queued 16:19:06.299Z, but build_friction.wake_reviewer's synchronous `python agent-wake.py run --once` call uses subprocess timeout=30s (devscripts/build_friction.py) and does not catch TimeoutExpired. It timed out, so the dev-loop recorded dev-loop.wait.issue-failed at 16:19:36.384Z ("could not record over-budget wait") even though the issue and the wake request had already been created. The queued request then sat until codex claimed/launched 16:48:57.331/402Z; codex failed model_not_found ("gpt-6-luna" not supported with a ChatGPT account); wake.retry -> opencode 16:55:21.731Z; opencode claimed/launched 17:06:14.184/445Z. Queue-to-final-launch 2827.7s (~47m08s), attempts=2. Evidence: logs/2026-11-27/20261127_155356/dev-loop/events.jsonl line 81; .dev/agent-wake/events.jsonl for wake-83e438c02e22; request .dev/agent-wake/requests/wake-83e438c02e22.json. Smallest fix candidate: catch TimeoutExpired in wake_reviewer and treat the queued request as a successful dispatch (do not abort the over_budget/reviewer-wake bookkeeping), and/or start the drain detached so the 30s cap cannot kill it. No duplicate issue; no fix claimed.
+
+## Agent suggestion
+
+### 2026-11-27T17:56:15.424Z — build-wait-reviewer
+
+Correction to my immediately preceding 2026-11-27 occurrence note: the `agent-wake.py run --once` 30s TimeoutExpired path is NOT new. This issue already recorded the same `dev-loop.wait.issue-failed` / "run --once timed out after 30 seconds" mechanism on 2026-11-24 (wait game-dll-build:2026-11-24T16:47:16.707Z, wake-742bed53da17, evidence at the 16:47 occurrence above). The 2026-11-27 wake-83e438c02e22 case is a recurrence of both known parts: (a) the 30s drain timeout leaving the request queued, and (b) codex primary model_not_found then a late opencode drain. No new root cause; no source fix claimed.

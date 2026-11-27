@@ -53,3 +53,27 @@ Review (mode3-latency-continuation) of run 20261126_054959 server-01 journal —
 Smallest next check (no gameplay change yet): make MIMITA_VEHICLE_FUZZ reset to an upright resting pose before each kick (or skip the kick unless up_before>0.90) and add a second bounded population — edge-biased drop, up.z 0.3-0.7, |angular|<=1.5 rad/s — expecting wheels>70% and zero unstable rests. Only tune COM/friction/attitude assist if the bounded population still fails.
 
 Not edited here: src/vehicles/vehicle-system.cpp and config/vehicles/octane_rl.json already carry another agent's uncommitted physics/probe work (mtime 2026-11-26 01:05Z) and this wake is review-only. Issue left unclaimed (next.action=claim_issue).
+
+## Agent suggestion
+
+### 2026-11-27T17:34:38.889Z — rocket-rl-settle
+
+Settling soak evidence (2026-11-27). Gen 797 run 20261127_165709: 31 kicks, wheels 31, side 0, nose 0, tail 0, tilted 0, worst settled up_dot 1.0 (random air-roll/dodge/boost, throttle window active, RocketSim auto-roll in). Gen 799 run 20261127_171939: 25 kicks, wheels 22, roof 0, nose 0, tail 0, but 3 tilted/side reports at settled up_dot 0.99998/1.0 with wheel masks 12/14/11 at |y| 40.6-40.8. Those are upright cars held against the long wall with 2-3 wheels in contact, not side rests; the probe treated any wheel_mask != 15 as tilted. Source fix (build pending): pose is judged by up_dot first (>0.95 upright, <-0.90 roof, else side), and partial-wheel upright rests are reported as upright_partial_rests instead of failures. vehicle.autoroll confirms throttle=1.0 plus the force/torque on incomplete-contact rests. Journals: logs/2026-11-27/20261127_165709/server-01/events.jsonl and logs/2026-11-27/20261127_171939/server-01/events.jsonl.
+
+## Agent suggestion
+
+### 2026-11-27T17:35:08.128Z — rocket-rl-settle
+
+Acceptance note: the earlier narrowed-fuzz acceptance ('a violent tumble is allowed to end on a side') does not match the current task requirement. The user requires Rocket League behaviour: a random tumble with throttle input must end on wheels or roof, never side/front/back. The probe therefore keeps the violent kick plus random air-roll/dodge/boost, always applies throttle in the late window, and fails on any settled pose with up_dot <= 0.95 that is not a roof (up_dot < -0.90). A car may legally come to rest only on four wheels or on its roof.
+
+## Agent suggestion
+
+### 2026-11-27T18:02:47.608Z — rocket-rl-settle
+
+Build postmortem (gen 800 attempt game-dll-20261127T174616512286Z-7470c4): changed_source_preflight failed on src/engine/engine-tick-camera.cpp at 387.3 s (compile phase 393.7 s, total 440.6 s); peak host CPU 100%, minimum free memory 57.8 MB. Measured cause: my follow-state static was declared inside the localVehicle block, but the seated third-person branch is a sibling scope, so the TU did not compile. Fixed by moving sVehicleCameraFollowTarget/Initialised/LogTimer to namespace scope and null-guarding localVehicle in the speed sample. Secondary cause: concurrent-agent resource pressure (10-way compile against ~58 MB free). Next step: one agent-build of engine-tick-camera.cpp plus the already-fixed vehicle-system.cpp, then the definitive soak.
+
+## Agent suggestion
+
+### 2026-11-27T18:54:59.685Z — rocket-rl-settle
+
+Camera stiffness now has runtime evidence (gen 803). Run 20261127_182931 (stiffness 1.0, mode 60): client vehicle.camera.follow reports lag_tau_s=0.0 and extra_distance_m=0.000 at 11.2, 11.3, 11.9 and 12.0 m/s. Run 20261127_183456 (stiffness 0.0, mode 65 fuzz): lag_tau_s=0.3078 and six moving samples; the clean steady sample is speed 4.23 m/s -> extra 1.29 m against expected 1.30 m (speed*tau). Other 0.0 samples: 10.36->2.80 (3.19), 11.38->3.08 (3.50). Stiffness 0.5 reports lag_tau_s=0.1539 at rest but still needs one moving sample. Config is restored to the 1.0 default.

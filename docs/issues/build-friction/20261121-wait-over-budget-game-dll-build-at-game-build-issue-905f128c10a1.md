@@ -49,3 +49,60 @@ Verdict: confirmed-build-wait. Genuine over-budget wait; dominant real friction 
 
 related_build: game-dll-20261121T194526468225Z-8036b9
 evidence: {'budget_seconds': 60.0, 'build_id': '2026-11-21T02:26:50.306117Z', 'elapsed_seconds': 60.63, 'generation': None, 'kind': 'game-dll-build', 'reason': '35892.632,"build_attempt_id":"game-dll-20261121T194526468225Z-8036b9","source_generation":1,"generation":429,"revision":"53e012f1fae51d4cae3665debbcb9dcf21d733294f22f6506609928518569f84","progress_write_ms":2.177,"record_overhead_ms":2.825}', 'request_ids': ['auto-1', '2026-11-21T19:45:28.833Z-d8944de6'], 'source_generation': 1, 'stage': 'game_build', 'started_utc': '2026-11-21T19:45:26.326Z', 'wait_id': 'game-dll-build:2026-11-21T19:45:26.326Z', 'review_verdict': 'confirmed-build-wait', 'reviewed_active_build_attempt_id': 'game-dll-20261121T194526468225Z-8036b9', 'reviewed_active_generation': 429, 'reviewed_active_revision': '53e012f1fae51d4cae3665debbcb9dcf21d733294f22f6506609928518569f84', 'reviewed_build_total_seconds': 140.845, 'reviewed_build_worker_total_seconds': 115.88, 'reviewed_dominant_stage': 'object_cache_scan', 'reviewed_dominant_stage_seconds': 74.693, 'reviewed_scan_first_snapshot_seconds': 61.29, 'reviewed_scan_prepass_unaccounted_seconds': 60.99, 'reviewed_compiled': 12, 'reviewed_skipped': 630, 'reviewed_source_count': 642, 'reviewer_wake_id': 'wake-87c5dedf1df2', 'reviewer_wake_launch_latency_seconds': 641}
+
+## Scheduled independent review
+
+### 2026-11-27T16:48:56.864Z — anim-socket-crouch
+
+A bounded independent review was queued as wake wake-e40b9c5b7198 after 846 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (confirmed-build-wait;scan-cause-instrumented-and-not-present-on-current-builds;structured-attribution-and-artifact-durability-gaps-remain;no-fix-claimed)
+
+### 2026-11-27T16:58:19.161Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review by issue-review-sweeper (wake-e40b9c5b7198), 2026-11-27T~16:55Z. Read-only: no source edits, no build, no lease, no close, no fix claimed. Prior review 55 is preserved below/above unchanged.
+
+ISSUE READINESS / PROOF
+- issue readiness: ready=true, missing=[], possible=8, score=8/8, state=in_review, tasks=0. No task-proof record exists (build-friction proof expectation is the dev-loop wait event + issue record + reviewer wake record, not a behavior runtime proof).
+- Acceptance: the issue carries wait_id, stage, reason, elapsed, build/run IDs, evidence; a reviewer wake is queued exactly once for this wait occurrence.
+
+OCCURRENCE (as recorded, unchanged)
+- wait_id game-dll-build:2026-11-21T19:45:26.326Z, budget 60.0s, elapsed 60.63s, source_generation 1, generation 429, attempt game-dll-20261121T194526468225Z-8036b9, request_ids auto-1 + 2026-11-21T19:45:28.833Z-d8944de6.
+
+NEW DURABLE-EVIDENCE GAP (this review)
+- Test-Path is False for both .dev/build-timings/game-dll-20261121T194526468225Z-8036b9.json and .jsonl. The prior review's raw build journal for this attempt is pruned; it can no longer be re-inspected.
+- Only .dev/agent-wake/requests/wake-87c5dedf1df2.json survives. It records status=failed, attempts=2, created 2026-11-21T19:46:27.407Z, launched 2026-11-21T19:57:08.787Z (~641s), error "adapter process exited", issue=issue-905f128c10a1.
+- Net: this occurrence is now re-derivable only from the issue's embedded evidence JSON (which does retain wait_id/gen/elapsed/dominant-stage numbers), not from raw build timings. Confidence high (direct filesystem check).
+
+ORIGINAL DOMINANT CAUSE APPEARS INSTRUMENTED / GONE ON CURRENT BUILDS
+- gen 797 attempt game-dll-20261127T163734215030Z-62cd72 (matches build/game/current.json gen 797): object_cache_scan phase 1570.766ms. scan.dependency_index_prepass duration 478.411ms with sub-timers parse_ms 0.979, path_and_fanout_ms 171.409, path_normalization_ms 130.070, external_classification_ms 6.064, index_load_ms 114.798, index_save_ms 92.496, remaining_loop_work_ms 98.707; scan.unique_dependency_stat_prewarm 354.871ms; first scan.snapshot scan_seconds=0.909 (vs 61.29s on gen 429). Dominant phase compile 30439.166ms (slowest TU src/network/server-gamemode.cpp 30.01s), total 49.445s, status ok.
+- gen 795 attempt game-dll-20261127T161805119364Z-b52361 (the in-flight build behind the newest over-budget wait): object_cache_scan 1844.938ms, prepass 458.533ms, compile 89206.112ms across 22 TUs (slowest map-editor.cpp 69.297s, vehicle-system.cpp 63.188s, main-systems.cpp 58.943s, engine-tick-net.cpp 54.135s), link 6731.130ms, total 107.193s, exit_code 0, generation 795.
+- So the prior ~61s untimed object_cache_scan prepass is not present and is now fully sub-timed: prior recommendation #3 (add sub-timers to the scan prepass) has landed. On these two builds the dominant cost is C++ compile, not scan.
+
+STRUCTURED-ATTRIBUTION GAP PERSISTS AS OF THE NEWEST OCCURRENCE
+- issue-4aacd4d05363 (created 2026-11-27T16:19:05Z, elapsed 60.199s) still records stage="game_build" (flat), generation=794 while the in-flight attempt was gen 795, build_id="2026-11-27T08:12:40.178185Z" (an EXE build), with the true build_attempt_id game-dll-20261127T161805119364Z-b52361 only in the truncated reason tail.
+- Prior recommendation #2 (structured active build_attempt_id, generation, source_generation, dominant substage, last progress) is therefore NOT generally fixed at the generator. A few 2026-11-24 records (e.g. issue-ee3e906c8273) carry richer fields, but that is not universal.
+
+ACCEPTANCE STATUS
+- wait_id, stage, reason, elapsed, evidence, and exactly one reviewer wake (wake-87c5dedf1df2) for this wait are present. related_build was set to the true attempt by the prior review.
+- Build/run-ID acceptance is only partially met structurally: build_id points at the wrong artifact and the true attempt/generation survive only in free text. Raw artifact durability now fails (timings pruned).
+
+INFERENCE / UNCERTAINTY (labeled)
+- Inference, high confidence: the 2026-11-21 dominant scan cause is fixed/instrumented; two current attempts show sub-2s scan with complete sub-timers.
+- Inference, medium: the current over-budget cause is multi-TU compile, not a scan stall. Only two samples; not proven chronic.
+- Unknown: whether server-gamemode.cpp is chronically ~30s or edit-specific (gen 797 changed source was src/map/authored-block-rebuild.cpp; server-gamemode was rebuilt as a dependency).
+- Unknown: the exact retention policy that pruned the 2026-11-21 timings; the directory holds ~1139 files but only one game-dll-2026-11-2*, so the original occurrence cannot be re-measured.
+
+CONTRARY EVIDENCE
+- The original wait was genuine (prior review: attempt total 140.845s), and the family still fires: 84 non-terminal "Wait over budget: game-dll-build at game_build" issues exist now (up from 46 on 2026-11-23), most clustered at 60.0-62.6s. The wait traffic/policy is not resolved even though the original dominant substage is.
+- Not all over-budget waits are benign boundary crossings: several are materially over (69.89s, 90.18s, 151.855s). Do not classify the family as false positives without per-occurrence stage evidence.
+
+NEXT DISCRIMINATING CHECK (bounded, read-only)
+- On the next >60s game_build wait after gen 797, pull its attempt .jsonl and record: (a) object_cache_scan duration (expect <2-3s and fully sub-timed), (b) dominant phase + slowest TU, (c) whether the structured wait record now names build_attempt_id/generation/dominant stage (expect still flat stage=game_build, so recommendation #2 remains open). Immediate baseline: issue-4aacd4d05363 / attempt b52361 (compile 89.2s dominant). If the flat 60s budget keeps firing only on genuine multi-TU compile, the fix belongs to the stage/progress-aware budget under issue-e044a931c54b, not to object_cache_scan.
+
+DEVELOPMENT-PROCESS REVIEW
+- No NEW process improvement is supported beyond what is already recorded. The two applicable proposals already exist with measurable targets and smallest experiments: (1) stage/progress-aware wait budget + occurrence rollup under issue-e044a931c54b, whose evidence has strengthened (family 46->84; worst overruns 69.9/90.2/151.9s); (2) build/journal artifact retention under issue-3f776ce60511 / the launch evidence-loss finding, which this review reinforces (the gen-429 .dev/build-timings is now pruned). I am not duplicating them. Confidence high these are the same root causes, not new ones.
+
+VERDICT: confirmed-build-wait; original-scan-cause-instrumented-and-not-present-on-current-builds; structured-wait-attribution-and-raw-artifact-durability gaps remain; no fix claimed.

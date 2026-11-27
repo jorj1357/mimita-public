@@ -25,14 +25,22 @@ Read these gates before doing anything else:
    1. Before the first compiler-input save, queue the DLL change note with
       `build-note.py --changes ... --why ... --expected-seconds ...` (gate 6).
    2. File a durable request with
-      `agent-coord.py build request --kind integration --paths <changed paths>
-      --issue <id>` and post the request ID, paths, expected duration, and the
-      current resource state on the board/issue.
-   3. The rotating build owner (`agent-coord.py build owner`) approves with
-      `agent-coord.py build approve <request>`. If no owner is set, two active
-      agents that are not the requester must confirm in the issue/board and at
-      least one records the approval. A requester never self-approves; if the
-      requester is the build owner, a different agent approves.
+      `agent-coord.py build request --auto --kind integration --why <why>
+      --expected-seconds <n> --paths <changed paths> --issue <id>`.
+      `--auto` applies the peer/resource policy immediately and records the
+      decision and evidence in `build_approvals`.
+   3. AUTO-APPROVAL (2026-11-27 human rule): no human approval is required.
+      - No active peer within 5 minutes, or peers active but idle (no unexpired
+        edit lease, no live run, no build phase): auto-approve as
+        `auto:no_peers` or `auto:peers_idle`.
+      - A peer is actively editing/running/building: the requester messages those
+        peers. One non-requester approval (`agent-coord.py build approve
+        <request>`) or the build owner approves. After two asks with no response,
+        record both asks and "no response" and auto-approve as
+        `auto:no_response`; do not sleep or poll between asks.
+      - A peer lease on a requested path, an active build, resource pressure,
+        halt, or freeze still wins: wait or amend.
+      - A requester never approves its own request; `auto:*` is the policy actor.
    4. Only an `approved` request may build:
       `dev-loop.py --request agent-build --build-request <request>`. The
       dev-loop rejects unknown or unapproved `agent-build` requests. Use this
@@ -40,17 +48,11 @@ Read these gates before doing anything else:
       `--request game-dll` are owner/human seal actions; record an approved
       request first, then seal once. Never start a second request while one is
       approved, queued, or building; amend or wait.
-   5. EVENT-DRIVEN APPROVAL, NO TIMER WAITING (human rule, 2026-11-27): ask the
-      build owner and peers through coordinator events (`send`/`ask` plus the
-      wake/inbox path). If no response event arrives after **two** asks, record
-      both asks and "no response" on the request/issue, then the requester may
-      auto-approve and seal this one build. Do not sleep, poll, or wait on a
-      clock between asks. A response event (approve/object), an active build,
-      halt, or freeze still wins. The no-response seal is an explicit
-      human-authorized exception for this one build, not a general permission to
-      self-approve. Prefer `build.approved` / `build.finished` events, the wake
-      adapter, and issue discussion threads over timers. A human approval is
-      recorded with the human as the approving actor.
+   5. EVENT-DRIVEN, NO TIMER WAITING: if the request returns `ask`, send the asks
+      and continue other work. `sync`/`inbox` and the wake path deliver the
+      approve/reject event; the no-response rule decides if none arrives. Do not
+      sleep or poll on a clock. A human approval is recorded with the human as
+      the approving actor.
    6. After every build, read `game-generation.ready.postmortem`, append the
       measured cause and suggestion to the issue, and act on the largest cause
       before requesting the next build.
@@ -364,6 +366,10 @@ Read these gates before doing anything else:
   executable's `events.jsonl`. Repeat with better owner-level evidence when
   the journal does not prove the expected result. A gate or synthetic check
   does not replace this live evidence.
+- Prefer automatic measurement extraction: run
+  `python devscripts/measure-events.py <run> --preset <name> --out <path>` and
+  paste the persisted report into the issue or changelog. Journals are pruned,
+  so the persisted report and the quoted numbers are the durable evidence.
 - Record source, build, test, runtime, deployment, and human-review evidence
   as separate claims.
 - Every repository-touching AI session creates exactly one final changelog.

@@ -24,7 +24,11 @@ void parseAvatarRigJson(const nlohmann::json& root, AvatarRig& out);
 
 // Runtime animation settings, hot-reloaded from config/animations/settings.json.
 struct AnimationRuntimeSettings {
-    int rootTranslationMode = 1;
+    int rootTranslationMode = 2;
+    int animationAdvanceMode = 2;
+    float crouchHeightScale = 0.5f;
+    float crouchLegSocketLiftM = 0.35f;
+    float crouchSocketBlendSeconds = 0.12f;
     bool renderPoseInterpolation = true;
     std::string deathPresentation = "auto";
     int hurtTierMode = 1;

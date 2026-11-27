@@ -415,6 +415,8 @@ bool VehicleProfileRegistry::loadFile(const std::string& path,
     if (root.contains("settle") && root["settle"].is_object())
     {
         const json& settle = root["settle"];
+        profile.settle.manualRightingEnabled = settle.value(
+            "manualRightingEnabled", profile.settle.manualRightingEnabled);
         profile.settle.stickyForceGravityScale = readFloat(
             settle, "stickyForceGravityScale",
             profile.settle.stickyForceGravityScale, 0.0f, 5.0f);

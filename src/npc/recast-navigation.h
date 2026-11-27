@@ -131,6 +131,11 @@ public:
 
     void invalidate();
 
+    // Mark only the navmesh tiles overlapping these world-space bounds for an
+    // incremental rebuild on the next prepare/query. Used by authored block
+    // edits so a small block does not trigger a whole-map Recast bake.
+    void markDirtyTiles(const glm::vec3& boundsMin, const glm::vec3& boundsMax);
+
     // Current published navmesh version (0 when nothing is built). Used by the
     // navigator to invalidate cached corridors when the navigation data changes.
     std::uint64_t navmeshVersion() const;

@@ -139,6 +139,42 @@ from 2.4 s to at most 1.7 s without reducing defuse completions" is.
 - Lesson: measure the failure itself; a bad test gate can look like a gameplay
   regression.
 
+## 4a. Automatic extraction (preferred)
+
+Do not hand-write journal parsers. Use `devscripts/measure-events.py` so the
+identity (run id, generation, mode/map, journal paths) and the statistics are
+pinned the same way every time.
+
+```text
+# one run with a preset
+python devscripts/measure-events.py 20261127_021425 \
+  --preset authored-block-parity --out .dev/metrics-021425.md
+
+# explicit events/fields plus A->B latency
+python devscripts/measure-events.py <run> \
+  --event map.geometry.block-delta.applied \
+  --field authored_ms --field npc_ms --field duration_ms \
+  --latency-a map-editor.object.deleted \
+  --latency-b map.geometry.block-delta.applied
+
+# before/after
+python devscripts/measure-events.py <before-run> --compare <after-run> \
+  --preset server-tick --out .dev/metrics-compare.md
+```
+
+The report includes count, min, mean, p50, p95, max, and sum, plus the pinned
+identity, so one aggregate is not mistaken for the whole distribution. Use
+`--json` for machine consumption and `--out` to persist the report beside the
+issue or changelog.
+
+**Persist the report.** Journals are pruned; a cited `events.jsonl` path can
+disappear after the run. The number quoted in the issue and the `--out` report
+are the durable evidence. If the tool says "No matching run journal found",
+check retention before assuming the scenario did not run.
+
+The tool reads journals only. It does not prove compilation, visuals, or
+gameplay acceptance; pair it with the real runtime scenario.
+
 ## 5. Recursive AI self-improvement loop
 
 1. Observe a user report, journal anomaly, or metric plateau.
@@ -202,6 +238,7 @@ come first.
 - [ ] Pre-registered expected metric and threshold.
 - [ ] After run ID, generation/SHA, journal.
 - [ ] Real before/after numbers with units and sample size.
+- [ ] Extracted with `devscripts/measure-events.py` and persisted with `--out`.
 - [ ] Confounders and limitations.
 - [ ] Decision and next hypothesis.
 - [ ] Evidence recorded in the right issue/feature/regression/changelog.

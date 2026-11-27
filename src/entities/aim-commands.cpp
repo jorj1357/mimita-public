@@ -11,6 +11,7 @@
 #include "entities/aim-commands.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 
@@ -21,6 +22,8 @@
 #include "terminal/terminal-state.h"
 
 namespace {
+
+std::string gAnimPreviewClip;
 
 void dumpAimbody()
 {
@@ -213,7 +216,149 @@ void registerAimCommands()
         }
     }, "2026-11-26", CommandCategory::Player);
 
-    // ── Body rig editor (2026-11-27) ───────────────────────────────
+    // ── Animation editor backend (2026-11-27) ─────────────────────
+    // GUI/stateful editor is the next layer; these commands are the stable
+    // surface: list numbered clips, play/loop, stop, scrub a tick, choose gizmo.
+    Terminal::instance().registerCommand({
+        "anim_editor",
+        "Toggle the animation editor preview surface (terminal backend)",
+        "anim_editor [0|1]",
+        [](const std::vector<std::string>& args) {
+            static bool active = false;
+            active = args.empty() ? !active : args[0] != "0";
+            Terminal::instance().addLog(std::string("[ANIM] editor ") +
+                (active ? "ON" : "OFF") + " (map editor animation tab)");
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "anim.editor", THE_PLAYER.avatarName(),
+                "animation editor toggle", 0,
+                {{"command", "toggle"}, {"active", active}});
+        }
+    }, "2026-11-27", CommandCategory::Player);
+
+    Terminal::instance().registerCommand({
+        "anim_list",
+        "List the local avatar animation clips by stable number and id",
+        "anim_list",
+        [](const std::vector<std::string>&) {
+            const AvatarAnimationSet* set =
+                AvatarAnimationRegistry::instance().getAnimationSet(
+                    THE_PLAYER.avatarName());
+            std::vector<std::string> ids;
+            if (set) {
+                ids.reserve(set->clips.size());
+                for (const auto& entry : set->clips) ids.push_back(entry.first);
+            }
+            std::sort(ids.begin(), ids.end());
+            if (ids.empty()) {
+                Terminal::instance().addLog("[ANIM] no clips for avatar " +
+                    THE_PLAYER.avatarName());
+                return;
+            }
+            for (std::size_t i = 0; i < ids.size(); ++i)
+                Terminal::instance().addLog("[ANIM] " + std::to_string(i + 1) +
+                    "  " + ids[i]);
+        }
+    }, "2026-11-27", CommandCategory::Player);
+
+    Terminal::instance().registerCommand({
+        "anim_play",
+        "Play/loop a local avatar animation by number or clip id",
+        "anim_play <number|clip> [loop 0|1]",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[ANIM] usage: anim_play <number|clip> [loop 0|1]");
+                return;
+            }
+            const AvatarAnimationSet* set =
+                AvatarAnimationRegistry::instance().getAnimationSet(
+                    THE_PLAYER.avatarName());
+            std::string clip = args[0];
+            if (set && !clip.empty() &&
+                std::all_of(clip.begin(), clip.end(),
+                    [](unsigned char c) { return std::isdigit(c) != 0; })) {
+                std::vector<std::string> ids;
+                for (const auto& entry : set->clips) ids.push_back(entry.first);
+                std::sort(ids.begin(), ids.end());
+                const int index = std::atoi(clip.c_str());
+                if (index < 1 || index > (int)ids.size()) {
+                    Terminal::instance().addLog("[ANIM] index out of range");
+                    return;
+                }
+                clip = ids[(std::size_t)index - 1];
+            }
+            const bool loop = args.size() < 2 || args[1] != "0";
+            gAnimPreviewClip = clip;
+            THE_PLAYER.playOneShot(clip, loop);
+            Terminal::instance().addLog("[ANIM] play " + clip +
+                (loop ? " loop" : " once"));
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "anim.editor", THE_PLAYER.avatarName(),
+                "animation editor play", 0,
+                {{"command", "play"}, {"clip", clip}, {"loop", loop}});
+        }
+    }, "2026-11-27", CommandCategory::Player);
+
+    Terminal::instance().registerCommand({
+        "anim_stop",
+        "Stop the animation editor preview",
+        "anim_stop",
+        [](const std::vector<std::string>&) {
+            THE_PLAYER.clearOneShot();
+            gAnimPreviewClip.clear();
+            Terminal::instance().addLog("[ANIM] stop");
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "anim.editor", THE_PLAYER.avatarName(),
+                "animation editor stop", 0, {{"command", "stop"}});
+        }
+    }, "2026-11-27", CommandCategory::Player);
+
+    Terminal::instance().registerCommand({
+        "anim_scrub",
+        "Scrub the current preview clip to a tick",
+        "anim_scrub <tick>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[ANIM] usage: anim_scrub <tick>");
+                return;
+            }
+            const int tick = std::max(0, std::atoi(args[0].c_str()));
+            if (gAnimPreviewClip.empty()) {
+                Terminal::instance().addLog("[ANIM] scrub: play a clip first");
+                return;
+            }
+            THE_PLAYER.playOneShotAtTick(gAnimPreviewClip, tick);
+            Terminal::instance().addLog("[ANIM] scrub " + gAnimPreviewClip +
+                " tick " + std::to_string(tick));
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "anim.editor", THE_PLAYER.avatarName(),
+                "animation editor scrub", 0,
+                {{"command", "scrub"}, {"clip", gAnimPreviewClip},
+                 {"tick", tick}});
+        }
+    }, "2026-11-27", CommandCategory::Player);
+
+    Terminal::instance().registerCommand({
+        "anim_mode",
+        "Select the animation editor gizmo mode",
+        "anim_mode <move|rotate|scale>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[ANIM] usage: anim_mode <move|rotate|scale>");
+                return;
+            }
+            Terminal::instance().addLog("[ANIM] gizmo " + args[0]);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "anim.editor", THE_PLAYER.avatarName(),
+                "animation editor gizmo mode", 0,
+                {{"command", "mode"}, {"mode", args[0]}});
+        }
+    }, "2026-11-27", CommandCategory::Player);
+
     // Socket = point, torso→part line = parent link, transform axes + quad =
     // orientation/face. Live preview applies to the local player immediately;
     // rig_editor_save persists per avatar in config/rig-sockets.json.

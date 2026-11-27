@@ -317,3 +317,9 @@ Smallest experiment
 
 Owner/unknowns
 - Suggested owner: build-coordinator or whoever owns issue-7d3dcfd7433b; not claimed here. Unknown: whether a cause key can be derived cheaply from the wait payload without new build coupling; if not, the fallback is grouping only by kind+stage.
+
+## Agent suggestion
+
+### 2026-11-27T17:49:17.946Z — build-wait-reviewer
+
+Occurrence (build-wait-reviewer, 2026-11-27T17:4xZ, read-only): wait game-dll-build:2026-11-27T16:54:14.303Z (issue-795749b08e31, attempt game-dll-20261127T165414319868Z-c53bb1, run 20261127_165709, generation 798). Wait record identity is stale: evidence.build_id=2026-11-27T08:12:40.178185Z (prior EXE artifact) and generation=null, with no run_id; the in-flight target was generation 798 / source_generation 3, recoverable only from the corrupted reason tail. The wait was a true positive, not a stall: success at 435.208s total (compile 402.929s = 92.6%, link 20.275s, publish 0.615s), 23 compiled / 624 skipped after src/entities/player-avatar-animations.h fanout, max per-TU queue_wait 186.851s, mean host CPU 97.735%, min free memory ~37 MiB during a live vehicle_freeplay pair (server pid 22280, client pid 5736). The flat 60s budget crossed mid-compile. Existing asks unchanged: record the active game-build attempt id + target generation + run_id in the wait record (instead of self.latest_build), and consider progress-gated rather than wall-clock-only budget. No source edit claimed.

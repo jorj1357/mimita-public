@@ -88,45 +88,49 @@ requesting agent/cohort files.
 - Preview proof cannot close an issue.
 - Promotion to integration is a separate integration request.
 
+## Build approval policy (2026-11-27)
+
+Approval is policy-driven; no human approval is required. The requester runs
+`agent-coord.py build request --auto`; the brain evaluates the request and
+records the decision and evidence in `build_approvals`.
+
+- Active peers are agents with `status='active'` and a heartbeat
+  (`last_seen_utc` / `activity.updated_utc`) within **5 minutes**, excluding the
+  requester.
+- An idle peer (no unexpired edit lease, no live registered runtime, not in a
+  building/editing/testing phase) does not block.
+- A working peer or a lease on a requested path produces `ask`: the requester
+  messages the peers. One non-requester approval or the build owner approves.
+  After two asks with no response, record both asks and `no_response`, then
+  approve as `auto:no_response`. Do not sleep or poll between asks.
+- Another request in `approved`, `queued`, or `building` produces `wait`
+  (`build_in_progress`). Amend the active request; do not open a duplicate.
+  An active request whose `updated_utc` is older than the stale window
+  (default 30 minutes) is proven abandoned by the coordination tools and is
+  superseded by the next auto-approval with a `coord.build.superseded` event;
+  the reaping request, age, and reason are recorded in the evidence.
+- CPU above 90% or less than 1024 MB available RAM produces `wait`
+  (`resource_pressure`), rechecked on the next request or `build.finished`.
+- `halt` or `freeze` produces `reject`.
+- No active peers produces `auto:no_peers`; active-but-idle peers produces
+  `auto:peers_idle`.
+
+Every approval and rejection is an append-only `build_approvals` row with the
+actor (`auto:*`, `peer:<agent>`, `owner:<agent>`, `human`), reason, and evidence.
+The requester never approves its own request.
+
 ## Rotating build owner
 
-One agent holds the `build-owner` role at a time.
+The owner remains a tie-breaker, auditor, and resource monitor; it is not a gate.
 
 - Rotation occurs after publish/failure or a configured short interval.
 - The role is visible on `agent-coord board`.
 - The role does not grant compiler authority or permission to edit another
   agent's files.
-- The owner records every approval, rejection, coalescing, wait, and resource
-  decision.
-
-### Auto-approval
-
-The owner may auto-approve when all are true:
-
-- the request touches only the requester's claimed/announced files;
-- no host ABI, EXE-owned source, packet/wire format, or shared build input is
-  touched;
-- no overlapping build or preview is active, approved, or queued;
-- host memory, CPU, disk, and runtime capacity are above the configured reserve;
-- no higher-priority integration build is waiting;
-- no halt or freeze applies.
-
-### Single-flight and timeout
-
-- At most one integration request may be approved or unconsumed per checkout.
-  New requests wait or amend the active request; do not open a duplicate.
-- One approval is enough when the build owner acts, but the owner must not be
-  the requester; otherwise a different agent approves. Without an owner, two
-  active agents other than the requester must confirm on the issue/board and at
-  least one records the approval.
-- If no owner or peer responds within 5 minutes, the requester posts one final
-  notice. After 10 minutes of silence, with no objection, halt/freeze, or
-  active/approved build, the requester may self-approve and records
-  `approval=timeout` plus the waited seconds. A timeout never preempts an active
-  build and never overrides a halt or freeze.
-- After publish or failure, read `game-generation.ready.postmortem` and append
-  the largest measured cause plus the next action to the issue before the next
-  request.
+- The owner records/objects to approvals, rejections, coalescing, waits, and
+  resource decisions.
+- A requester that is also the owner still needs a different agent to approve a
+  peer-active request; the alone case is `auto:*` and does not need the owner.
 
 ### Owner/agent/user consultation
 

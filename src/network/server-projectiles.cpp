@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "entities/player-avatar-animations.h"
 #include "network/server-contact.h"
 #include "network/server-gamemode.h"
 #include "network/network-weapons.h"
@@ -521,10 +522,15 @@ public:
             glm::vec3 targetPos = player.pos;
             if (mTargetTick != 0)
                 getPositionAtTick(player, mTargetTick, targetPos);
+            const float crouchScale =
+                (player.inputStateFlags & NET_STATE_CROUCHING) != 0
+                    ? std::clamp(animationRuntimeSettings().crouchHeightScale, 0.1f, 1.0f)
+                    : 1.0f;
+            const float hitHeight = PLAYER_HEIGHT * crouchScale;
             cap.a = targetPos + glm::vec3(0.0f, 0.0f,
-                                           -PLAYER_HEIGHT * 0.5f + PLAYER_RADIUS);
+                                           -hitHeight * 0.5f + PLAYER_RADIUS);
             cap.b = targetPos + glm::vec3(0.0f, 0.0f,
-                                           PLAYER_HEIGHT * 0.5f - PLAYER_RADIUS);
+                                           hitHeight * 0.5f - PLAYER_RADIUS);
             cap.radius = PLAYER_RADIUS;
 
             AABB capsuleBounds;

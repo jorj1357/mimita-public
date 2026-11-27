@@ -129,6 +129,9 @@ struct VehicleBallHitProfile {
 
 // Surface behaviour that keeps cars on their wheels without a scripted pose.
 struct VehicleSettleProfile {
+    // Non-RL fallback. Rocket League has no guaranteed no-input righting; this
+    // remains available for experiments but is off in the RL profiles.
+    bool manualRightingEnabled = false;
     float stickyForceGravityScale = 0.5f;
     float autoFlipImpulseMps = 2.0f;
     float autoFlipAngularAccel = 4.8f;

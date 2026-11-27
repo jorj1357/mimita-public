@@ -12,8 +12,13 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
+
+#include <glm/glm.hpp>
 
 #include "gamemode/map-config.h"
+
+struct World;
 
 namespace MimitaNet {
 struct HeadlessWorld;
@@ -36,6 +41,38 @@ uint64_t authoredNonBlockGeometrySignature(const MapObjectiveConfig& config);
 bool rebuildAuthoredBlocksForAuthority(MimitaNet::HeadlessWorld& world,
                                        const std::string& mapId,
                                        bool allowStreamedFootprint);
+
+// Deterministic collision triangle count for one authored block, using the
+// same builders the headless apply uses. Used to locate the authored block tail
+// that was appended after the pristine GLB base.
+size_t authoredBlockTriangleCount(const AuthoredBlock& block);
+
+// Locate the authored block tail recorded by the last non-finalized headless
+// authored apply. Returns false when LOD rewrote indices or no tail exists.
+bool authoredHeadlessBlockTail(size_t& first, size_t& count);
+
+// Incremental NPC collision mirror. Ranges are captured once after a full
+// non-finalized authored apply, then later edits hide removed block triangles
+// and append added/changed block triangles copied from the headless tail.
+// Returns false (without mutating) when the stored ranges cannot be trusted;
+// the caller then does one full build and captures again.
+bool authoredNpcBlockDeltaApply(
+    World& npcWorld, const MimitaNet::HeadlessWorld& headless,
+    const std::vector<AuthoredBlock>& blocks, std::string& failure);
+void authoredNpcBlockStateCapture(
+    const World& npcWorld, const MimitaNet::HeadlessWorld& headless,
+    const std::vector<AuthoredBlock>& blocks);
+void authoredNpcBlockStateInvalidate();
+const std::string& authoredNpcBlockStateLastFailure();
+
+// World-space bounds of the block triangles hidden/appended by the last patch.
+// Consumed by the caller to mark only the touched Recast tiles.
+bool authoredNpcBlockTakeDirtyBounds(glm::vec3& outMin, glm::vec3& outMax);
+
+// True when hidden authored triangles have accumulated enough that one full
+// NPC rebuild (which also restores smooth topology) is cheaper than carrying
+// them indefinitely.
+bool authoredNpcBlockNeedsCompaction(const World& npcWorld);
 
 // Parity bookkeeping for the block-only fast path.
 void authoredBlockAuthorityReset();

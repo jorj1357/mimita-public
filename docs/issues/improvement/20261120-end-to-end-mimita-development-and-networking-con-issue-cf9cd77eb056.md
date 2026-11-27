@@ -1974,3 +1974,56 @@ Proposal: add a dev-loop managed-connection outcome record plus crash-run journa
 - Measurable target: for 100% of managed client runs, when the client journal reaches a terminal ReconnectFailed, or has no network.client.snapshot.applied for >5s after Connected, the run's dev-loop journal writes one dev-loop.connection.outcome line naming the first missing event (e.g. network.client.snapshot.received), the server snapshot.build gap start/end, terminal reason, and run/build ids. And 100% of runs with a non-empty .dev/crashes/<run> retain their server/client/dev-loop journals.
 - Smallest experiment: implement only a read-only post-run classifier over existing runs, starting with 20261126_225234 and the four 2026-11-26 arena1 crash runs. Parse client+server events.jsonl for the first missing snapshot/reconnect event and the server snapshot.build gap, emit one dev-loop.connection.outcome line, and record whether journals exist. Then apply it to the next 5 managed reconnect/stall runs and confirm each detected failure gets exactly one outcome record with no false positive on sibling same-build successes.
 No source, build, or runtime change was made by this reviewer.
+
+## Scheduled independent review
+
+### 2026-11-27T15:53:48.753Z — map-authored-parity
+
+A bounded independent review was queued as wake wake-22782aa290d4 after 842 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (evidence-gap: gen-794 payload join clean but client NpcLifeReset stall 307ms, server physical_contact tick 884ms, world_load 8.4s, proof unlinked)
+
+### 2026-11-27T15:59:09.226Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (read-only) - issue-review-sweeper - 2026-11-27T15:58Z, wake-22782aa290d4. No source, config, build, stop, or runtime mutation by this reviewer. I read the live dashboard-launched run 20261127_155356 journals and metadata only; I did not touch its processes.
+
+Scope and readiness
+- Issue state in_review, owner root-connection-reliability, readiness ready=true score=8 missing=[], 12 tasks, now 6 prior reviews.
+- `proof list --issue issue-cf9cd77eb056` returns [] again. No proof record is linked; task rows remain result=unproven (payload-cart-transform-telemetry, client-window-health-status).
+- related_build still names EXE 2026-11-22T02:37:06.972018Z (game generation 446). Current evidence is the published artifact 2026-11-27T08:12:40.178185Z, EXE sha 2b2a3ea4..., game generation 794. related_build is therefore ~5 days / 348 generations behind the artifact under review.
+
+Observed facts (from the live run 20261127_155356)
+1. Launch and identity. Dashboard request dashboard-9f30ffb0, launch_mode 56, map funworld3, mode "Payload - funworld3 respawn performance". Server PID 21324 and client PID 26816 both run EXE 2b2a3ea4... (build 2026-11-27T08:12:40.178185Z), game generation 794, build_match=true, and run.json reports both instances online. Launch args still carry a duplicate mode: `--mode ssbm ... --npcs 1 ... --mode payload --gamemode payload --npcs 0`; the resolved policy is payload with npc_count=0, so the last value won here. `server.policy.startup` gamemode=payload map=funworld3 npc_count=0; `network.room.registered` startup_npc_count=0 room_code=D9NPD4W.
+2. Startup latency (`server.startup.stage`). configuration_load 3014.84 ms; world_load 8408.85 ms (triangle_count 44352, spawn_count 7); network_bind 0.85 ms; map_config_load 1.54 ms; room_register 525.35 ms (attempt_count 1, room_code D9NPD4W). Dashboard `dev-loop.launch.stage` server_gameplay_readiness elapsed_ms=12269.2. Room registration meets the user's <=1 s target (525 ms), but process-start-to-gameplay-readiness is ~12.3 s, dominated by world_load (8.4 s) and configuration_load (3.0 s).
+3. Connection. Client `network.connection-state.changed` Connecting->Connected exactly once, at t=10.03 s. Zero `network.client.reconnect.scheduled`, zero `network.client.snapshot.gap`, zero Disconnected/ConnectionFailed; server has 0 player.removed and 0 timeout/reconnect/stale events. Two `network.client.join.accepted` welcome records at t=10.032 and t=10.441 (duplicate-welcome class still present). `network.join.map-required-missing` fires once at t=8.96 with required_map_id="" snapshots_received=0 before the welcome, the same pre-welcome ordering seen in earlier reviews.
+4. Snapshot cadence. 74 `network.client.snapshot.applied`: snapshot_interarrival_ms min 0, p50 1021, p95 1154, max 1302; zero intervals >=2500. Server logged 208 snapshot.build/send events. This is consistent ~1 Hz snapshot delivery with no outage.
+5. Client frame stalls FAIL the review acceptance "no >250 ms client stall". 356 `performance.frame-slice` windows: 7 with frame_max_ms >250 and 17 >100. After the 7683.8 ms first-frame startup (profiler Frame 1), steady-state >250 ms frames are t=12.47 s 425.3 ms (Networking 392.9 ms, PlayerAnimation 384.7 ms), t=17.02 s 317.6 ms (Networking 309.2 ms, Network::SnapshotApply::NpcLifeReset 307.6 ms), t=23.59 s 270.3 ms (Rendering 264.9 ms), plus t=32.51 s 285.6 ms, t=33.10 s 407.8 ms and t=33.39 s 286.3 ms (Simulation::Lifecycle ~220 ms).
+6. Server tick stalls. 76 `performance.server-tick-stall` events. Worst is tick 904 at t=28.64 s, total_ms 886.72, npc_ms 872.18, 23 NPCs. The matching `server.world-phase-window` tick 904 attributes it to physical_contact_ms 884.57 with npc_sim_ms only 47.29 and moved_npcs 23. Sampled `npc.tick-cost` worst totals are tick 630 at 503.7 ms dominated by npc_adoption_ms 479.5 (ai 11.7) and tick 1726 at 213.1 ms dominated by npc_ai_ms 210.7 (worst actor 100020 at 74.9 ms). So in this run the worst stall is the physical-contact phase; an additional class is NPC adoption at first spawn plus AI updates.
+7. Payload telemetry is present but unlinked. 100 `payload.cart-state` events include cart_transform_columns, cart_position, cart_size, cart_velocity_mps, distance and state (e.g. cart_position [140.0,-13.149,311.36], cart_size [5,5.5,5], state 0/3). This event shape has no NPC grounding or sample-count field. 1659 `npc.collision.fall-sample` rows exist, all grounded_this_tick=false by construction (src/physics/movement/physics-collision-glb-main.cpp:615 emits only when !groundedThisFrame && vel.z<-5.0, rate-limited to 30 ticks/actor). Positive grounding appears in `npc.trace`: 648 actor samples in the retained tail, grounded true 317/648, world_contact true 385/648, inside_solid false 648/648; per-actor grounded ranges 43-53% and z ranges roughly 310.6-406.9 while the cart stays at z~311.36. This reviewer did not visually confirm NPC floating; that remains issue-1d1b9c62ac08.
+8. Journal volume in the ~40 s window: server events.jsonl 6.80 MB, client 6.38 MB. This is a performance-cost observation, not a networking failure.
+
+Inference and uncertainty
+- The connection/snapshot path is healthy on gen 794 in this direct dashboard launch: one clean transition and no false reconnect. The remaining acceptance failure here is client frame stalls, not reconnect.
+- The 307.6 ms Network::SnapshotApply::NpcLifeReset snapshot-apply scope is a concrete first divergence for the >250 ms client-stall acceptance in this run; PlayerAnimation (384.7 ms) and Simulation::Lifecycle (~220 ms) are separate scopes. I did not confirm the stall is user-visible.
+- The tick-904 physical_contact_ms 884.6 attribution is direct from server.world-phase-window; the exact callsite owner is inferred from the phase name, not confirmed with a per-callsite profile.
+- Room registration meets <=1 s, but total dashboard start-to-playable is ~12.3 s; I cannot say whether 8.4 s world_load is normal for funworld3 or a regression.
+- The duplicate `--mode`/`--npcs` launch args and duplicate welcome remain, but neither broke this launch; their user-visible risk is unproven.
+
+Contrary evidence
+- This run has no reconnect, no snapshot gap, no disconnect, no player removal; the gen-583 server-hang and gen-688 vehicle_freeplay startup-crash classes are NOT reproduced.
+- room_code metadata is consistent here (run.json D9NPD4W = journal network.room.registered D9NPD4W), so the earlier empty-room_code defect is absent for this launch; the run uses a temp --room-file, and logs/2026-11-27/20261127_155356/room-code.txt does not exist.
+- Many NPCs are grounded in npc.trace, so the all-false fall-sample rows are a sampling property, not proof of persistent floating.
+
+Next discriminating checks (bounded, one primary)
+1. Primary: on the next pinned payload/funworld3 run, split the client >250 ms frames by scope and specifically break the 307.6 ms Network::SnapshotApply::NpcLifeReset scope into its sub-work; if NpcLifeReset dominates, that is the first owner for the acceptance clause. In the same run capture the `server.world-phase-window` physical_contact sub-cost for the worst tick.
+2. Secondary: record world_load and configuration_load stage timings over 3 consecutive payload/funworld3 starts to decide whether 8.4 s / 3.0 s is a stable baseline or a regression against the "get into gamemode under 1 s" target.
+3. Link at least one proof record for this artifact (gen 794, run 20261127_155356) with required events and journal paths, or record a reasoned exemption; the empty proof list and gen-446 related_build cannot support a cold handoff.
+
+Confidence: high on quoted event values and run/build identities; medium on the NpcLifeReset causal interpretation (scope timing only) and on physical_contact ownership; low on whether world_load 8.4 s is anomalous.
+
+Cold handoff
+- Start from logs/2026-11-27/20261127_155356/{server-01,client-01,dev-loop} and run.json. Artifact 2026-11-27T08:12:40.178185Z (EXE 2b2a3ea4..., game gen 794), mode payload/funworld3, server PID 21324, client PID 26816. Connection and snapshots are clean; the open acceptance failures are client >250 ms frames (NpcLifeReset 307.6 ms scope) and the server physical-contact tick stall (884.6 ms), plus 8.4 s world_load. proof list empty; related_build stale.
+
+Verdict: evidence-gap and partial progress - gen-794 payload launch joins once cleanly with ~1 Hz snapshots and 525 ms room registration, but the no->250 ms-client-stall acceptance fails (NpcLifeReset 307.6 ms scope), the worst server tick is physical_contact (884.6 ms), world_load is 8.4 s, the GUI button path is not exercised, and no proof is linked.

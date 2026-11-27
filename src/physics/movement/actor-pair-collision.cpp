@@ -28,11 +28,12 @@
 // A zero dead_capsule_length_m means "derive from the standing capsule height".
 Capsule actorPairCapsuleFor(const ActorCollisionProfile& profile,
                             const glm::vec3& pos, float yaw,
-                            float sizeScale, bool dead)
+                            float sizeScale, bool dead, float heightScale)
 {
     const float scale = std::max(sizeScale, 0.001f);
     const float radius = std::max(profile.capsuleRadiusM * scale, 0.01f);
-    const float height = std::max(profile.capsuleHeightM * scale, radius * 2.0f);
+    const float height = std::max(profile.capsuleHeightM * scale *
+        std::clamp(heightScale, 0.1f, 1.0f), radius * 2.0f);
 
     if (dead)
     {
@@ -165,7 +166,7 @@ Capsule makeActorCapsule(const ActorPairCollisionActor& actor,
     if (!actor.profile)
         return Capsule{pos, pos, 0.7f};
     return actorPairCapsuleFor(*actor.profile, pos, actor.yaw,
-                               actor.sizeScale, actor.dead);
+                               actor.sizeScale, actor.dead, actor.heightScale);
 }
 
 Capsule translated(const Capsule& cap, const glm::vec3& move)

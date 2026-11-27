@@ -20,6 +20,13 @@ never invoke a compiler, `build.py`, a module worker, or a second loop. The
 root dev-loop remains the only build authority. One EXE build runs at a time;
 candidate game-DLL builds and pinned test runs are bounded by PC resources.
 
+Build approval is policy-driven. `agent-coord.py build request --auto`
+auto-approves when no peer has been active within 5 minutes or active peers are
+idle (no lease, live run, or build phase); it asks working peers or a path-lease
+holder instead, and waits for an active build or resource pressure. Human
+approval is not required. The policy, evidence, and `build_approvals` audit are
+specified in `agent-build-queue.md`.
+
 The coordination brain is advisory except for active edit leases, `halt`, and
 `freeze`. It is not an access-control or security boundary.
 

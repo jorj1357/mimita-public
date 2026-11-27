@@ -2,19 +2,26 @@
   "version": 1,
   // 2026 10 28 0948 root mode 1 = limbs use authored translation
   // mode 2 = 2026-11-26 soft tether; see rootTranslationLimits below
-  "rootTranslationMode": 1,
-  // "rootTranslationMode": 2,
-  // Mode 2 (2026-11-26) is a soft limb tether, not a hard zero. Rotations
-  // still animate; each part's local translation is saturated smoothly at its
-  // budget so a limb cannot drift far from its socket. These are metres.
+  // "rootTranslationMode": 1,
+  "rootTranslationMode": 2,
+  // Mode 2 keeps rotations and saturates each part's local translation at its
+  // socket budget. All six parts share the 0.01 m cap unless overridden.
   "rootTranslationLimits": {
-    "torso": 0.005,
-    "head": 0.005,
+    "torso": 0.01,
+    "head": 0.01,
     "leftArm": 0.01,
     "rightArm": 0.01,
     "leftLeg": 0.01,
     "rightLeg": 0.01
   },
+  // 1 = frame-dt animation advance, 2 = advance by elapsed server ticks.
+  // Mode 2 keeps remote/NPC clips moving at the 60 Hz tick rate regardless of FPS.
+  "animationAdvanceMode": 2,
+  // Crouch presentation/capsule policy. Height scale is relative to standing;
+  // leg sockets lift toward mid-torso by this many metres when crouched.
+  "crouchHeightScale": 0.5,
+  "crouchLegSocketLiftM": 0.35,
+  "crouchSocketBlendSeconds": 0.12,
   "renderPoseInterpolation": true,
   "deathPresentation": "auto",
   "hurtTierMode": 1,

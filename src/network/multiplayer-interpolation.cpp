@@ -17,6 +17,8 @@
 #include "config/networking-config.h"
 #include "config/ragdoll-death-config.h"
 #include "avatar/avatar.h"
+#include "entities/player.h"
+#include "entities/player-avatar-animations.h"
 #include "config/player-settings.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "combat/death-system.h"
@@ -2094,8 +2096,23 @@ void updateRenderedReplica(
     {
         const bool tickLockedNpc = player.isNpcActor && player.animationSet &&
                                    player.animationSet->npcTickLocked;
+        const AnimationRuntimeSettings& animSettings = animationRuntimeSettings();
+        float advanceDt = dt;
+        if (animSettings.animationAdvanceMode == 2) {
+            // Advance by the number of authoritative ticks since the previous
+            // animation update, not by render frames. Clamp catch-up so a
+            // snapshot gap cannot fast-forward the whole clip.
+            const uint32_t tickDelta =
+                render.serverTick > interpolation.lastAnimationServerTick
+                    ? render.serverTick - interpolation.lastAnimationServerTick
+                    : 1u;
+            advanceDt = GAMEPLAY_FIXED_DT *
+                static_cast<float>(std::clamp<uint32_t>(tickDelta, 1u, 6u));
+        } else if (tickLockedNpc) {
+            advanceDt = GAMEPLAY_FIXED_DT;
+        }
         player.updateProceduralAnimation(
-            tickLockedNpc ? GAMEPLAY_FIXED_DT : dt,
+            advanceDt,
             player.aimDirection,
             player.pos,
             remoteWalking

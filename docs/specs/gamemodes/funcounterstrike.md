@@ -170,6 +170,16 @@ Required presentation:
   winner.
 - No two competing countdowns may be shown at once.
 
+### Team readability
+
+Team state reads through the friendly healthbar, not team-colored outlines.
+`presentation.friendly_healthbars` is `true` and
+`presentation.enemy_healthbars` is `false`, so teammates carry a healthbar and
+enemies carry none. `presentation.player_outlines` and
+`presentation.friendly_outlines` are `false`; do not reintroduce red/green
+outlines as the primary team read. These are per-mode JSON fields and remain
+hot-reloadable without a build.
+
 Mode objective timers are authoritative. Map `bomb` timers are fallback only
 when the mode omits a value; the effective source and values are logged as
 `objective.timers.resolved`.

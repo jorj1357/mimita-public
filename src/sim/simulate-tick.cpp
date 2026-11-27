@@ -16,6 +16,8 @@
 #include "perf/perf-spike.h"
 #include "input/input-state.h"
 #include "physics/physics-mini.h"
+#include "physics/config.h"
+#include "physics/physics-types.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/actor-final-pose.h"
@@ -266,6 +268,32 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                         {"actor_velocity", {sim.player->vel.x, sim.player->vel.y, sim.player->vel.z}},
                         {"aimbody_mode", AimBodyConfig::instance().mode()}
                     },
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
+
+        // One crouch policy for every actor: local input, seated pose, and the
+        // replicated state flag all select the same animation and capsule scale.
+        if (!sim.player->dead)
+            sim.player->crouching = frame.crouchHeld;
+        {
+            static bool lastCrouch = false;
+            if (sim.player->crouching != lastCrouch) {
+                lastCrouch = sim.player->crouching;
+                const Capsule cap = sim.player->getCapsule();
+                const float standHeight = PLAYER_HEIGHT *
+                    std::max(sim.player->sizeScale, 0.001f);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Physics, StructuredLevel::Important,
+                    "crouch.capsule", sim.player->username,
+                    "crouch capsule height and bottom anchor",
+                    static_cast<uint32_t>(sim.player->movementSimulationTick),
+                    {{"crouching", sim.player->crouching},
+                     {"stand_height_m", standHeight},
+                     {"capsule_height_m", (cap.b.z - cap.a.z) + cap.r * 2.0f},
+                     {"capsule_bottom_z", std::min(cap.a.z, cap.b.z) - cap.r},
+                     {"height_scale", animationRuntimeSettings().crouchHeightScale},
+                     {"socket_lift_m", animationRuntimeSettings().crouchLegSocketLiftM}},
                     __FILE__, __LINE__, __FUNCTION__);
             }
         }
@@ -590,6 +618,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         localActor.externalImpulse = sim.player->externalImpulse;
         localActor.yaw = sim.player->yaw;
         localActor.sizeScale = sim.player->sizeScale;
+        localActor.heightScale = sim.player->crouching
+            ? std::clamp(animationRuntimeSettings().crouchHeightScale, 0.1f, 1.0f)
+            : 1.0f;
         localActor.dead = sim.player->dead;
         localActor.staticCollider = localRagdollStatic;
         localActor.onGround = sim.player->ground.onGround;
@@ -638,6 +669,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 actor.vel = remote.vel;
                 actor.yaw = remote.yaw;
                 actor.sizeScale = remote.sizeScale;
+                actor.heightScale = remote.crouching
+                    ? std::clamp(animationRuntimeSettings().crouchHeightScale, 0.1f, 1.0f)
+                    : 1.0f;
                 actor.dead = remote.dead;
                 actor.staticCollider = true;
                 actor.onGround = remote.ground.onGround;
@@ -657,6 +691,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 actor.vel = remote.vel;
                 actor.yaw = remote.yaw;
                 actor.sizeScale = remote.sizeScale;
+                actor.heightScale = remote.crouching
+                    ? std::clamp(animationRuntimeSettings().crouchHeightScale, 0.1f, 1.0f)
+                    : 1.0f;
                 actor.dead = remote.dead;
                 actor.staticCollider = true;
                 actor.onGround = remote.ground.onGround;

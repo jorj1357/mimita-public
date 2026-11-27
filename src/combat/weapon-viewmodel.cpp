@@ -474,8 +474,10 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             customRot = glm::rotate(customRot, glm::radians(rotEuler.z), glm::vec3(0,0,1));
         }
 
-        // Build the base weapon transform from arm attachment
-        weaponTransform = part.worldTransform *
+        // Build the base weapon transform from the same interpolated arm pose
+        // the body uses, so the grip cannot trail the visible arm.
+        const glm::mat4 armRenderTransform = playerRenderPartTransform(player, part);
+        weaponTransform = armRenderTransform *
                            glm::translate(glm::mat4(1.0f), handPoint) *
                            glm::mat4_cast(gripRotation) *
                            customRot *

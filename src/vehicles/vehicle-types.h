@@ -320,6 +320,11 @@ struct VehicleState {
     // Consecutive ticks resting on the chassis (not wheels, hips, roof).
     uint32_t sideRestTicks = 0;
     bool sideRecoveryLogged = false;
+    // RocketSim-style auto-flip: a timed forward-axis torque after a jump press
+    // while inverted on a floor-like contact.
+    bool isAutoFlipping = false;
+    float autoFlipTimer = 0.0f;
+    float autoFlipTorqueScale = 0.0f;
     uint64_t lastTelemetryTick = 0;
     uint64_t lastHeadingTick = 0;
     float boostInput = 0.0f;

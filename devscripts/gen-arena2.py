@@ -295,9 +295,14 @@ def main() -> int:
         ("back_w", (-half_length, 0.0, 0.0), 180.0),
     ]
     # Simple straight walls: one lower ramp, one band, one upper ramp each.
+    # The span is the playfield corner cut, NOT the goal-back length: using
+    # 2*corner_plane - 2*half_length (58.88 m) left a ~10 m open gap between the
+    # long wall end (x=29.44) and the corner wall start (x=39.99), which is where
+    # the ball escaped at x~30, y~-40.9.
+    long_span = 2 * (corner_plane - half_width)
     straight = [
-        ("long_pos", (0.0, half_width, 0.0), 90.0, 2 * corner_plane - 2 * half_length),
-        ("long_neg", (0.0, -half_width, 0.0), -90.0, 2 * corner_plane - 2 * half_length),
+        ("long_pos", (0.0, half_width, 0.0), 90.0, long_span),
+        ("long_neg", (0.0, -half_width, 0.0), -90.0, long_span),
     ]
     for name, pos, yaw, span in straight:
         add(f"{name}_ramp_lower", "profile", pos, (1.0, span, 1.0), "wallv2",

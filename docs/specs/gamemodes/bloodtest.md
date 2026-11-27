@@ -481,6 +481,9 @@ movement, projectile, damage, camera, or match owners.
     ramp, stamina, and living collision capsule differ as configured.
 14. Repeating the same saved projectile recipe produces correlated contact,
     part transition, and blood-effect records and a visually reviewable result.
+15. Gore chunk debris renders with its configured flesh, bone, or organ material,
+    color, and size; no hit produces an untextured near-white block, and bone
+    shards never draw as flat white boxes (`issue-48c90c86187d`).
 
 Body-layer exposure, part destruction, replicated part state, and force-scaled
 blood remain runtime and human-review acceptance items. Build and configuration

@@ -231,6 +231,80 @@ void engineTickReplay(Engine& engine, float dt)
     }
     setReplayCaptureEnabled(!replayPlaybackActive);
 
+    // Freecam is a camera-only state: the fixed-tick body simulation below is
+    // skipped while it is active, so the authoritative server body keeps moving
+    // under damage knockback while the local transform stays frozen at the
+    // entry position. On exit, install the latest authoritative transform before
+    // simulation resumes so the client does not resume from (and re-report) the
+    // stale entry position. mpApplyAuthoritativeTransform also clears the
+    // accumulated external impulse, which bounds the damage backlog to one
+    // reconcile instead of replaying every buffered hit at once.
+    if (!replayPlaybackActive)
+    {
+        const bool freecamActiveNow = freecamEnabled;
+        const bool networked =
+            mpContext.active && mpContext.connected &&
+            mpContext.hasLocalServerPosition;
+        if (networked)
+        {
+            static bool sFreecamWasActive = false;
+            const bool freecamJustExited = sFreecamWasActive && !freecamActiveNow;
+            const bool freecamJustEntered = !sFreecamWasActive && freecamActiveNow;
+            if (freecamJustEntered)
+            {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "freecam.enter", "local_player",
+                    "freecam entered; fixed-tick body simulation is now skipped",
+                    mpContext.latestLocalSnapshotTick,
+                    {{"actor_id", mpContext.localPlayerId},
+                     {"local_position", {player.pos.x, player.pos.y, player.pos.z}},
+                     {"camera_position", {camera.pos.x, camera.pos.y, camera.pos.z}},
+                     {"pending_victim_health",
+                      static_cast<uint32_t>(mpContext.pendingVictimHealth.size())},
+                     {"pending_knockbacks",
+                      static_cast<uint32_t>(mpContext.pendingKnockbacks.size())},
+                     {"external_impulse", {player.externalImpulse.x,
+                                           player.externalImpulse.y,
+                                           player.externalImpulse.z}},
+                     {"server_tick", mpContext.latestServerTick},
+                     {"server_epoch", (uint32_t)mpContext.localServerEpoch}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+            if (freecamJustExited &&
+                !mpContext.pendingAuthoritativeSpawn.has_value())
+            {
+                const glm::vec3 frozenPosition = player.pos;
+                const glm::vec3 frozenImpulse = player.externalImpulse;
+                MimitaNet::mpApplyAuthoritativeTransform(mpContext, player);
+                mpContext.lastAppliedEpoch = mpContext.localServerEpoch;
+                mpContext.localPlayerReconciled = true;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "freecam.exit.reconciled", "local_player",
+                    "freecam exit installed the latest authoritative transform",
+                    mpContext.latestLocalSnapshotTick,
+                    {{"actor_id", mpContext.localPlayerId},
+                     {"frozen_position", {frozenPosition.x, frozenPosition.y,
+                                          frozenPosition.z}},
+                     {"authoritative_position", {player.pos.x, player.pos.y,
+                                                 player.pos.z}},
+                     {"position_error_m", glm::length(player.pos - frozenPosition)},
+                     {"pending_victim_health",
+                      static_cast<uint32_t>(mpContext.pendingVictimHealth.size())},
+                     {"pending_knockbacks",
+                      static_cast<uint32_t>(mpContext.pendingKnockbacks.size())},
+                     {"discarded_external_impulse", {frozenImpulse.x,
+                                                     frozenImpulse.y,
+                                                     frozenImpulse.z}},
+                     {"server_tick", mpContext.latestServerTick},
+                     {"server_epoch", (uint32_t)mpContext.localServerEpoch}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+            sFreecamWasActive = freecamActiveNow;
+        }
+    }
+
     // Fixed-tick simulation accumulator.
     // Cap the accumulated backlog so a stall can never queue more than
     // gSimMaxCatchupTicks of simulation time; excess real time is dropped so

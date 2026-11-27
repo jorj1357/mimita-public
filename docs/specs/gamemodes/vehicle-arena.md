@@ -463,6 +463,13 @@ Floor and ceiling are tiled at 10 m rather than one field-sized slab: a single
 quad pair dropped the ball through the floor (run `20261126_231000`, ball resting
 at z = -1.31).
 
+2026-11-27 wall gap fix: `gen-arena2.py` built the straight long walls with span
+`2*corner_plane - 2*half_length = 58.88 m`, which ended at `x=±29.44` while the
+corner walls begin at `x≈±39.99`. That left a ~10 m opening on each long wall;
+the ball escaped through it at `x≈30, y≈-40.9` at only ~7 m/s (runs
+`20261127_080709`, `20261127_080920`). The span is now the playfield corner cut,
+`2*(corner_plane - half_width) = 79.36 m`, so the long wall reaches the corner.
+
 The arena declares materials per surface (`grass` floor, `wallv2` walls,
 `wallv4` ceiling and goal) with tints above 1, because arena1's blocks had
 `material: ""` and rendered untextured. arena1 now declares `grass`, `wallv2` and
@@ -767,28 +774,57 @@ Full 5-minute bot-vs-bot run `20261126_200435` on generation 729: clock 0 to
 client with `client_tick`, 23 aerials, 2 dodges, 91 air rolls, 34 landings with
 28 on wheels and 0 tilted rests.
 
-### 17.7 Settling contract (2026-11-27)
+### 17.7 Settling contract (2026-11-27, RocketSim reference)
 
 A body is **settled** when its speed is below 0.5 m/s and its angular speed is
 below 0.5 rad/s. Wheels (`up_dot_world_up > 0.95` with the full wheel mask) and
-roof (`up_dot_world_up < -0.90`) are the only accepted settled poses.
+roof (`up_dot_world_up < -0.90`) are the only accepted settled poses. A body may
+not sleep in any other pose; sleep is gated by the accepted-pose test, not by
+`up.z <= 0.90`.
 
-- A supported car that is still, but in any other pose (edge, corner, side,
-  partial tip), receives a righting impulse after 15 vehicle updates (0.25 s):
-  an angular velocity of 7.5 rad/s about the shorter arc toward world up, plus a
-  1.2 m/s hop when a surface is carrying it. This is the same outcome a player
-  produces by flipping out of an edge; it is not a second collision solver and
-  it does not run while the car is airborne without support.
-- The fuzz probe kicks with random velocity, random spin, random air roll and
-  random boost, then classifies only after a supported settle has held for 0.5 s
-  (30 updates), so a pose that the righting rule fixes is not counted as a
-  failure. A car that leaves the arena bounds is respawned and counted in
-  `escapes`; it is not a rest.
-- Acceptance: `side_rests == 0`, `tilted_rests == 0`, wheels landings dominate
-  roof rests, and every escape is logged. `vehicle.side.recovery` carries
-  `up_dot_world_up`, `wheel_mask`, `grounded`, `last_contacted_world`,
-  `sleeping`, `speed_mps`, `angular_speed`, `rest_ticks`, `angular_impulse`,
-  `hop_mps`, and the righting axis.
+The mode uses the RocketSim model, not a scripted righting rule:
+
+- **Auto-roll** runs only while throttle is applied and the car has partial wheel
+  contact (1-3 wheels) or chassis contact. It uses the contact normal, not world
+  up:
+  - `groundUp = normalize(sum grounded wheel contact normals)` or the body
+    contact normal,
+  - force `-groundUp * autoRollForceMps2 * mass * dt` (`1.0 m/s^2`),
+  - torque toward wheels about the two surface-relative axes
+    (`autoRollAngularAccel`, 7.68 rad/s^2).
+  It is not triggered by boost alone, matching Rocket League.
+- **Auto-flip** runs when jump is pressed while touching a floor-like surface
+  (`normal.z > 0.7071`) with `|roll| > 2.8 rad`:
+  - impulse `-up * 2.0 m/s`,
+  - forward-axis torque `50 rad/s^2` for `0.4 s` scaled by `|roll| / pi`.
+- **Sticky force** runs when any wheel contacts:
+  - `scale = 0.5`, plus `1 - |upwards.z|` when throttle or forward speed is
+    present (up to `1.5 g` into a wall/ceiling),
+  - impulse `upwards * scale * gravity * mass * dt`.
+- **Non-sticky wheel friction**: with no throttle, tire friction is scaled by
+  `0.1` on a wall, `0.5` at 45 degrees, `1.0` on the floor, so roof/wall sliding
+  does not catch.
+- **Body friction** is the Rocket League car-world value `0.3`, restitution
+  `0.3`. Tire grip remains in the separate tire model.
+- **Boost** always acts along the car's local forward axis, independent of
+  orientation, so upside-down boost thrusts forward.
+
+The old manual righting impulse is retained in code but disabled in the RL
+profiles (`settle.manualRightingEnabled=false`). A guaranteed no-input
+side/front/back rest correction is a later option, not current behaviour; Rocket
+League itself allows a no-input side rest.
+
+The fuzz probe kicks with random velocity, random spin, random roll/pitch/yaw,
+random dodge (jump then second jump), random boost on/off, and a late random
+throttle window so auto-roll has input after landing. It classifies only after a
+supported settle has held for 0.5 s (30 updates). Acceptance with throttle:
+`side_rests == 0`, `nose_rests == 0`, `tail_rests == 0`, `tilted_rests == 0`,
+`wheels_landings + roof_rests == kicks`, and every escape is logged.
+
+`vehicle.fuzz.report` carries `wheels_landings`, `roof_rests`, `side_rests`,
+`nose_rests`, `tail_rests`, `tilted_rests`, `worst_settled_up_dot`, and
+`escapes`. `vehicle.drop.fuzz` records `boost_on`, `throttle_on`,
+`jump_at_tick`, and `dodge_at_tick`.
 
 ## 18. Presentation contract (2026-11-27)
 
@@ -881,11 +917,30 @@ units converted to metres/degrees:
 | Height | 0.90 m |
 | Pitch | -7 deg |
 | FOV | 110 deg |
-| Stiffness | 1.0 |
+| Stiffness | 1.0 (0.0-1.0, see below) |
 | Swivel speed | 10.0 (scaled to deg/s in the file) |
 | Transition speed | 10.0 |
 | Ball-cam snap | 0.5 |
 | Look-behind | 180 deg |
+
+**Stiffness semantics (Rocket League).** Stiffness is the trailing distance the
+camera allows behind the rigid chase pose at the profile top speed, measured in
+Octane body lengths (1.18 m each):
+
+| Stiffness | Extra trailing at 23 m/s | Behaviour |
+|---|---|---|
+| 0.0 | 7.08 m (6 car lengths) | Loose, maximum lag |
+| 0.5 | 3.54 m (3 car lengths) | Half lag |
+| 1.0 | 0 m | 1:1, no trailing lag, no sway/jitter |
+
+The implementation is a first-order follow of the chase target with time
+constant `tau = (1 - stiffness) * stiffnessLagMaxM / topSpeedMps`, so the
+steady-state extra distance is `speed * tau`. `stiffnessLagMaxM` is 6 x 1.18 m =
+7.08 m and `topSpeedMps` is 23.0 from `rl_soccar.json`. Collision push is kept
+rigid so the stiffness value owns all lag and 1.0 cannot acquire a hidden spring.
+A jump larger than 20 m (respawn, teleport, replay seek) snaps the follow target.
+`vehicle.camera.follow` samples every 3 s with the effective `stiffness`,
+`lag_tau_s`, `speed_mps`, `extra_distance_m`, and `expected_extra_m`.
 
 The camera path applies these values for the local seated vehicle only. It logs
 `vehicle.camera.applied` once per load with every effective value. Ball cam eases
@@ -1007,13 +1062,13 @@ Rules:
 | Spin bounce | modes 69/70 | mirrored horizontal deflection | proven (prior build) |
 | Dodge 360 | `rocket_dodge_360_v1` | `rotation_deg_total`, `cancelled` | proven |
 | Landing | `rocket_landing_flat_v1` | `up_dot`, `wheel_mask`, penetration | proven |
-| Settle fuzz | `rocket_settle_fuzz_v1` | `side_rests`, `wheels_landings` | not re-proven after the sphere fix |
+| Settle fuzz | mode 65 runs `20261127_165709`, `20261127_171939`, `20261127_180452` | `side_rests`, `wheels_landings`, `upright_partial_rests` | partial: 31/31 and 22/25 kicks clean; run `20261127_180452` found one real rest at up_dot 0.399 because throttle ended before the late settle. Recovery-window probe in gen 805 is the re-test. |
 | NPC vs NPC | mode 66 | clock, goals, `arena.match.over` | proven (prior build) |
 | NPC aerial | mode 67 | jump, boost, air roll, dodge, aerial goal | proven (prior build) |
 | NPC freestyle | mode 72 run `20261127_081833`, gen 794 | `vehicle.flip.reset`, freestyle goal | partial: car reaches `z=2.18` above a `z=1.18` ball and boosts, but ends landed with 0 resets |
 | Arena HUD | mode 60 run `20261127_080234`; mode 67 run `20261127_080258` | `vehicle.hud hud_mode=arena`, `arena.hud.snapshot` with phase/score/clock | HUD active and scoreboard data present; goal flash pending a scored goal |
 | Speed/rpm default | mode 60 run `20261127_080234` | `vehicle.preferences hud_speed=false`; `vehicle.preference` on command; `vehicle.hud hud_speed=true` after | proven |
-| Camera | mode 60 run `20261127_080131` | `vehicle.camera.applied` distance 2.2, height 0.9, pitch -7, fov 110, stiffness 1.0 | proven |
+| Camera | mode 60 run `20261127_182931` (stiffness 1.0); mode 65 run `20261127_183456` (stiffness 0.0) | `vehicle.camera.follow`: `lag_tau_s`, `speed_mps`, `extra_distance_m`, `expected_extra_m` | 1.0 proven: lag_tau 0.0 and extra 0.000 m at 11-12 m/s. 0.0 proven: lag_tau 0.3078 s, extra 1.29 m at 4.23 m/s (expected 1.30). 0.5 has the measured tau 0.1539 s but still needs a moving sample. |
 | Tick VFX | mode 60 | one event per cue, rate limit | not started |
 
 ## Related specifications
