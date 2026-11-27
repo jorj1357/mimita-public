@@ -171,10 +171,39 @@ process ownership or start a second loop.
 - Idle cleanup never kills unrelated processes.
 - Resource caps prevent test starvation.
 
+## Lease v2: prove why it is alive
+
+Every runtime carries a lease that names its purpose and its release event.
+The full contract is
+[`process-lifecycle-and-release-events.md`](process-lifecycle-and-release-events.md).
+
+```text
+lease_id, pid, role, run_id
+owner_agent, owner_session
+purpose, issue_id, proof_target
+keep_until: issue.proven | task.ended | owner.session.ended | run.superseded
+window_policy: hidden | taskbar | visible
+audio_policy: muted | on
+journal, executable, build_id, started_utc
+```
+
+Rules:
+
+- A process without a lease is a defect.
+- `keep_until` is an event expression, never a duration.
+- When the release event fires, the owner stops the run and verifies exit.
+- If the owner session ended, `process-guard` may stop the run after identity
+  verification.
+- A stale journal or old start time raises `NEEDS_REVIEW`; it does not by
+  itself authorize a kill.
+- Agent runs default to `taskbar` window policy and muted audio.
+- A hidden or taskbar run MUST NOT initialize an audio device unless its lease
+  says `audio_policy: on`.
+
 ## Open review questions
 
 - Should warm runtimes be the default, or explicitly requested?
-- What idle TTL should stop a test runtime?
 - Should a runtime be allowed to auto-relaunch after a crash, or always preserve
   and require an explicit retry?
 - What is the maximum concurrent runtime count on the reference laptop?
+- Which proof targets are strong enough to fire `issue.proven` automatically?

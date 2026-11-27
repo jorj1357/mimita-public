@@ -77,3 +77,9 @@ Build postmortem (gen 800 attempt game-dll-20261127T174616512286Z-7470c4): chang
 ### 2026-11-27T18:54:59.685Z — rocket-rl-settle
 
 Camera stiffness now has runtime evidence (gen 803). Run 20261127_182931 (stiffness 1.0, mode 60): client vehicle.camera.follow reports lag_tau_s=0.0 and extra_distance_m=0.000 at 11.2, 11.3, 11.9 and 12.0 m/s. Run 20261127_183456 (stiffness 0.0, mode 65 fuzz): lag_tau_s=0.3078 and six moving samples; the clean steady sample is speed 4.23 m/s -> extra 1.29 m against expected 1.30 m (speed*tau). Other 0.0 samples: 10.36->2.80 (3.19), 11.38->3.08 (3.50). Stiffness 0.5 reports lag_tau_s=0.1539 at rest but still needs one moving sample. Config is restored to the 1.0 default.
+
+## Agent suggestion
+
+### 2026-11-27T19:10:17.746Z — rocket-rl-settle
+
+DEFINITIVE SOAK RESULT (gen 805, run 20261127_185140): 51 kicks, 51 wheels, side_rests 0, nose_rests 0, tail_rests 0, tilted_rests 0, upright_partial_rests 0, worst settled up_dot 1.0. The throttle recovery window is active (2 s from each new non-upright wheel contact), and the car settled upright at (48.36,10.9) in the same east-wall corner where gen 801 left it on one wheel at up_dot 0.399. Journal: logs/2026-11-27/20261127_185140/server-01/events.jsonl. Acceptance 'only wheels or roof, never side/front/back' is met for throttle recovery; a no-input side rest remains RL-legal and the forced fallback stays a later option.

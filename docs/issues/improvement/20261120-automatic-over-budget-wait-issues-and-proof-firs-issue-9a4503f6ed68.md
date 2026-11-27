@@ -760,3 +760,36 @@ After the adapter process exits, look up whether the target issue gained a build
 ### 2026-11-27T18:24:37.899Z — build-wait-reviewer
 
 Occurrence (build-wait-reviewer, wake-ca3c45e6a7a8, 2026-11-27T18:2xZ): the known wake_reviewer inline-timeout defect fired again for wait exe-build:42:2026-11-27T17:27:27.229Z (issue-6e15970df117). Direct observations from run 20261127_172726 (logs/2026-11-27/20261127_172726/dev-loop/events.jsonl): the only journal event for this wait_id is line 3 at 17:29:18.821Z dev-loop.wait.issue-failed with reason "could not record over-budget wait" and error "agent-wake.py run --once timed out after 30 seconds"; there is no dev-loop.wait.over_budget and no dev-loop.wait.reviewer-wake, even though the record and queue both succeeded (issue-6e15970df117 created 17:28:37.692Z; exactly one wake-ca3c45e6a7a8 wake.queued 17:28:48.090Z, .dev/agent-wake/events.jsonl:3963). First divergence unchanged: build_friction.wake_reviewer runs "agent-wake.py run --once" inline with timeout=30 and no try/except (devscripts/build_friction.py:242-249); dev-loop.check_wait_budget wraps record_wait_incident + wake_reviewer in one try (devscripts/dev-loop.py:3905-3930) so TimeoutExpired skips over_budget/reviewer-wake and is mislabeled a record failure. reported_wait_ids already holds the wait_id, so no retry and this wait's journal half of the proof is permanently lost. Context: the waiting build was a legitimate 1082.086s EXE rebuild (attempt exe-build-20261127T122727-eaad2173, published 2026-11-27T17:45:19.700118Z) on a host at mean CPU 99.91% / peak 100% and min free memory 25,292,800 B (~24.1 MiB), i.e. the same saturation that makes the inline drain exceed 30s. Wake delivery: attempts=2 (codex claimed/launched 17:30:26.329Z pid 27456, wake.retry 17:55:34.362Z, opencode claimed/launched 17:57:37.504Z pid 20704). Suggested smallest fix unchanged: emit dev-loop.wait.over_budget immediately after a successful record, and make the inline run --once best-effort (catch TimeoutExpired and return launch_error, as agent_coord.py:1170-1176 already does). Not claimed here; recurrence appended by build-wait-reviewer.
+
+## Agent suggestion
+
+### 2026-11-27T19:15:33.976Z — issue-review-sweeper
+
+PROPOSAL (from the 2026-11-27 independent review of issue-81d40f5f20b3): make the over-budget wait budget stage-aware and progress-aware, and coalesce by build attempt instead of per-attempt wait start time. Add to this issue's acceptance; do not implement without the owner.
+
+EVIDENCE
+- gen 805 (game-dll-20261127T184102743581Z-55292b) changed 1 leaf source (645 skipped) and still took 427.963s: preflight 286.041s, compile 290.658s, link 119.636s. It minted issue-003b412c0836 at elapsed 60.845s from the normal build-start line (.dev/build-timings/...; logs/2026-11-27/20261127_174537/dev-loop/events.jsonl).
+- The flat 60s threshold (devscripts/dev-loop.py:114-115, applied at 3885-3901) fires on wall-clock age only. wait_id embeds the per-attempt start (dev-loop.py:3890), so every >60s attempt mints a new issue and wakes a reviewer even though build_friction dedupes the exact wait_id (build_friction.py:131-140).
+- This has repeated for 6 days: ~90 open "Wait over budget: game-dll-build at game_build" issues now, up from 127 counted on 2026-11-22 in this issue's prior review. That is avoidable retry/agent-wake waste, and it can also drain an older queued wake instead of the current one (issue-84c584957e65).
+
+MEASURABLE TARGET (falsifiable)
+- Healthy builds that exceed 60s produce 0 new wait issues and 0 reviewer wakes. Baseline today: >=1 per such build.
+- A stage with no progress event for N seconds still produces exactly 1 issue + 1 wake.
+- At most 1 wait issue per build_attempt_id/generation, keyed to the attempt, not the start timestamp.
+
+SMALLEST EXPERIMENT
+1. Read-only first: in the wait check, compute seconds_since_last_stage_progress from the existing [GAME_STAGE] event stream and record it plus the current stage's recent p50/p90 in the wait evidence; do not change the threshold yet.
+2. Replay one observed >60s healthy build (gen 805 or its successor) and one deliberately stalled stage; confirm the metric separates them (healthy: recent stage progress; stalled: no progress).
+3. Only then gate the issue on "no progress for N seconds OR elapsed > max(stage p90 * 1.5, 120s)" and key dedupe to build_attempt_id. Compare new-issue count per day and time-to-first-correct-alarm before/after on the same workload.
+
+## Agent suggestion
+
+### 2026-11-27T19:17:02.346Z — issue-review-sweeper
+
+RECONCILIATION (issue-review-sweeper, 2026-11-27). After appending the proposal above I re-read this thread: it restates existing proposals already recorded here (e.g. the entries targeting <=1 new game_build wait issue per (kind, stage) per day/attempt and the ">600s with no advancement still yields exactly one" variant). Treat the 2026-11-27 text as fresh recurrence evidence for that pending decision, not a new design. Unique delta from this sweep: gen 805 total 427.963s (up from 340.795s at the 2026-11-21 pinned attempt), and the wait's reviewer-wake launch_result named a different issue (issue-796a7430913c) than the issue field (issue-003b412c0836). Owner/human should choose one canonical variant and record the decision; do not implement several.
+
+## Agent suggestion
+
+### 2026-11-27T20:36:16.131Z — issue-review-sweeper
+
+Process proposal from the independent review of issue-31ab18dedc96 (2026-11-27, ready generation 805). The identity-carry and reason-tail defects are already filed here and in issue-6e08d89b55e3; this is only a measurable target plus smallest experiment for the existing "carry active game-build attempt id/generation" suggestion, not a new defect report. Observed: on the newest comparable wait (issue-2aa79d9fe477, wait game-dll-build:2026-11-27T00:23:02.531Z) generation is still null and build_id is still the last EXE artifact, so ~6 days later reviewers are still manually re-deriving the same identity correction each sweep. Measurable target: over the next 10 auto-created game-dll wait issues, structured build_attempt_id and in-flight generation are non-null and correct in >=9/10, and reviewer identity-correction occurrences fall to 0. Smallest experiment: at check_wait_budget (dev-loop.py:3897-3900) source build_attempt_id/generation from the active attempt the dev-loop already parses in _record_game_build_output ([GAME_NOTE]/[GAME_STAGE] build_attempt_id), and at the build terminal result append one occurrence with attempt id + status to that wait issue; verify against the next real over-budget wait. Keep the flat-budget/stall change separate in issue-136d4553ff92. This reviewer made no source edit.

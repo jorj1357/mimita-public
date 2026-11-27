@@ -636,3 +636,41 @@ Occurrence 2026-11-27: over-budget reviewer wake wake-83e438c02e22 for wait game
 ### 2026-11-27T17:56:15.424Z — build-wait-reviewer
 
 Correction to my immediately preceding 2026-11-27 occurrence note: the `agent-wake.py run --once` 30s TimeoutExpired path is NOT new. This issue already recorded the same `dev-loop.wait.issue-failed` / "run --once timed out after 30 seconds" mechanism on 2026-11-24 (wait game-dll-build:2026-11-24T16:47:16.707Z, wake-742bed53da17, evidence at the 16:47 occurrence above). The 2026-11-27 wake-83e438c02e22 case is a recurrence of both known parts: (a) the 30s drain timeout leaving the request queued, and (b) codex primary model_not_found then a late opencode drain. No new root cause; no source fix claimed.
+
+## Agent suggestion
+
+### 2026-11-27T19:04:47.851Z — build-wait-reviewer
+
+Occurrence (build-wait-reviewer, from review of issue-d17523339353): over-budget reviewer wake dispatched late again. wait_id game-dll-build:2026-11-27T17:56:33.046Z, issue-d17523339353, wake-538c984b697a. .dev/agent-wake/events.jsonl: wake.queued 2026-11-27T17:57:36.566Z (adapter codex); wake.launched codex 17:57:37.475Z (pid 27756); reached 18:34:04.733Z as wake.retry "previous adapter process exited; trying fallback" (opencode); opencode only claimed/launched 18:42:09.856Z (pid 8496). Effective delivery ~44.7 min after queue. Same shape as the 2026-11-22 sample: primary codex launch did not survive, fallback retry sat queued until a later run drained it. DM: at 17:57:37 the same run --once also launched older stale wake-ca3c45e6a7a8 (pid 20704, 17:57:37.535Z) for issue-6e15970df117. No source edit or build made.
+
+## Agent discussion and suggestions
+
+### 2026-11-27T19:11:12.749Z — build-wait-reviewer
+
+Message: `msg-4bf34d025152` (note)
+
+Subject: Occurrence: 30s run --once timeout + 54m45s dispatch delay (issue-fdbac689adea)
+
+New occurrence for the late-dispatch defect, from wait game-dll-build:2026-11-27T17:46:16.304Z / issue-fdbac689adea (reviewed by build-wait-reviewer).
+
+NEW MECHANISM EVIDENCE: the synchronous drain in devscripts/build_friction.py:244-246 (`agent-wake.py run --once`, timeout=30) raised TimeoutExpired with no guard. The dev-loop caught it at devscripts/dev-loop.py:3927-3931 and logged dev-loop.wait.issue-failed at 2026-11-27T17:47:55.167Z with error "Command [...agent-wake.py, run, --once] timed out after 30 seconds" and reason "could not record over-budget wait". The issue and wake WERE recorded (issue-fdbac689adea created 17:47:18.967Z; wake-53293a27a9c5 created 17:47:24.471Z, wake.queued 17:47:24.479Z), so the reason is misleading. Because the exception aborts lines 3913-3921, this occurrence has NO dev-loop.wait.over_budget or dev-loop.wait.reviewer-wake journal rows (only wait.issue-failed), so the issue's "dev-loop wait event plus issue record and reviewer wake record" proof is incomplete.
+
+DISPATCH TIMELINE (wake-53293a27a9c5.json, attempts=2, .dev/agent-wake/events.jsonl):
+- wake.queued 17:47:24.479Z (exactly once)
+- codex claimed 17:57:37.324Z / launched 17:57:37.404Z pid 30232 (drained ~10m after queue by the NEXT over-budget wait, not by its own run --once)
+- wake.retry -> opencode 18:34:04.697Z "previous adapter process exited; trying fallback"
+- opencode claimed 18:42:09.705Z / launched 18:42:09.779Z pid 31952
+- queue-to-final-launch 3285.3s (~54m45s); two wake.launched events for one wait (exactly-once queue held, single-launch target did not)
+- same 30s run --once timeout recurred 4x in this run: 17:47:55, 18:18:16, 18:22:42, 18:34:04
+
+Underlying attempt game-dll-20261127T174616512286Z-7470c4 was real work and failed on a genuine compile error after 440.8s (engine-tick-camera.cpp sVehicleCamera), so this is dispatch/journaling, not a stalled build. Suggested owner fix (not implemented by me): guard TimeoutExpired and still write the wait events, or launch the reviewer asynchronously. Cross-links: issue-9a4503f6ed68, issue-6e2d7b91e7d9.
+
+## Agent suggestion
+
+### 2026-11-27T20:34:45.082Z — build-wait-reviewer
+
+Occurrence (recurrence of this dispatch defect), observed by build-wait-reviewer for wait issue-796a7430913c:
+- Wake wake-dda0fc4bb16b: wake.queued 2026-11-27T18:22:12.063Z; codex claimed/launched 18:42:10.202/18:42:10.246Z pid 16940 -- i.e. drained ~20 min later by the NEXT over-budget wait's run --once, not its own (its own run --once had timed out at 18:22:42, one of 4 such 30s timeouts in run 20261127_174537).
+- wake.retry to opencode 18:47:45.506Z ("previous adapter process exited; trying fallback"); opencode claimed/launched only 20:29:58.074/20:29:58.092Z pid 9344.
+- Queue-to-final-launch 18:22:12 -> 20:29:58 = 7666s (~2h07m46s); two wake.launched events for one wait.
+Same mechanism as the issue summary: no persistent agent-wake daemon drains a retried fallback; it waits for the next run --once. Evidence: .dev/agent-wake/events.jsonl lines for wake-dda0fc4bb16b; dev-loop journal logs/2026-11-27/20261127_174537/dev-loop/events.jsonl; request .dev/agent-wake/requests/wake-dda0fc4bb16b.json (attempts=2, created 18:22:12.059Z, launched 20:29:58.089Z). Suggest prioritizing a persistent wake daemon (or draining due retries on every loop tick) so a queued fallback cannot sit for hours. No code fix claimed here.

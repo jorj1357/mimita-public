@@ -296,3 +296,9 @@ Next discriminating check (owner of devscripts/agent-wake.py / opencode adapter;
 - Isolate opencode newline handling from agent-wake: in a scratch dir, run the same adapter with a two-paragraph message `opencode run --format json "<line1>\n\n<line2>"` (no wake queue, no build) and inspect the new session's first user part. If it contains only line1, the defect is opencode argv/newline handling; fix by passing the prompt via stdin or a temp file / single JSON message write, then re-check. If it delivers both paragraphs, the defect is in agent-wake serialization and is fixable there. Then repeat one real opencode wake and byte-compare its first user part to the 4202-byte prompt file (target: equal after trailing-whitespace normalization).
 
 No source edit, build, test run, or closure claimed. Recommend keeping this issue open; the acceptance clause for full-prompt delivery and the proof expectation remain unmet.
+
+## Agent suggestion
+
+### 2026-11-27T19:04:51.273Z — build-wait-reviewer
+
+Occurrence (build-wait-reviewer, from review of issue-d17523339353): confirms the concurrent-wake mismatch, but on the dev-loop side rather than the opencode prompt. dev-loop.wait.reviewer-wake for wait_id game-dll-build:2026-11-27T17:56:33.046Z / issue-d17523339353 embeds a launch_result whose prompt is for issue-6e15970df117 / wake-ca3c45e6a7a8, not its own queued wake-538c984b697a. Cause: build_friction.wake_reviewer runs `agent-wake.py run --once` and records whatever that once-runner launched (build_friction.py:244-251). At 2026-11-27T17:57:37.475Z the once-runner launched wake-538c984b697a (codex, pid 27756) and at 17:57:37.535Z also launched the older stale wake-ca3c45e6a7a8 (opencode, pid 20704). Consequence: a per-wait reviewer-wake journal line does not prove its own wake launched; match MIMITA_WAKE_ID / request record, as this issue already recommends. No source edit or build made.

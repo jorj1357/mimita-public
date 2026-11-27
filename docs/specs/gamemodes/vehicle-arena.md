@@ -1062,7 +1062,7 @@ Rules:
 | Spin bounce | modes 69/70 | mirrored horizontal deflection | proven (prior build) |
 | Dodge 360 | `rocket_dodge_360_v1` | `rotation_deg_total`, `cancelled` | proven |
 | Landing | `rocket_landing_flat_v1` | `up_dot`, `wheel_mask`, penetration | proven |
-| Settle fuzz | mode 65 runs `20261127_165709`, `20261127_171939`, `20261127_180452` | `side_rests`, `wheels_landings`, `upright_partial_rests` | partial: 31/31 and 22/25 kicks clean; run `20261127_180452` found one real rest at up_dot 0.399 because throttle ended before the late settle. Recovery-window probe in gen 805 is the re-test. |
+| Settle fuzz | mode 65 runs `20261127_165709`, `20261127_171939`, `20261127_180452`, `20261127_185140` | `side_rests`, `wheels_landings`, `upright_partial_rests` | proven with throttle recovery: gen 805 run `20261127_185140` 51/51 kicks on wheels, side/nose/tail/tilted 0, upright_partial 0, worst settled up_dot 1.0. Run `20261127_180452` found the one real rest (up_dot 0.399) that motivated the 2 s throttle recovery window. |
 | NPC vs NPC | mode 66 | clock, goals, `arena.match.over` | proven (prior build) |
 | NPC aerial | mode 67 | jump, boost, air roll, dodge, aerial goal | proven (prior build) |
 | NPC freestyle | mode 72 run `20261127_081833`, gen 794 | `vehicle.flip.reset`, freestyle goal | partial: car reaches `z=2.18` above a `z=1.18` ball and boosts, but ends landed with 0 resets |

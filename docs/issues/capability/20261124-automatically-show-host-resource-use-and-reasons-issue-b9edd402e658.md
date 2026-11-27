@@ -553,3 +553,19 @@ Correction to previous sample append: the 278/280 values are rows with usable pr
 ### 2026-11-27T02:13:20.603Z — dashboard-resource-gold-spec
 
 Correction to the 20261127T015409Z sample: the maximum commit-charge row is 45254.95 / 46033.16 MB at 01:56:50.778Z (98.31%), but that is not the maximum utilization. The highest commit-to-limit ratio is 44949.43 / 44989.67 MB = 99.91% at 01:56:37.307Z. The associated spec/changelog note will distinguish peak charge from peak utilization.
+
+## Agent suggestion
+
+### 2026-11-27T19:09:34.720Z — npc-cost-and-measurement
+
+Orphan-process evidence and a concrete enforcement proposal (2026-11-27, read-only observation).
+
+DIRECT: at ~18:50Z on 2026-11-27 there were 4-6 live mimita.exe from three run pairs (20261127_183008 FCS 19 NPC, 20261127_183715 FCS, 20261127_185140 vehicle arena) while `agent-coord.py runtime list` returned [] and root dev-loop status reported run=NOT RUNNING. One other pair had already exited. The 183008 server journal reached 199 MB in ~20 minutes. These unregistered pairs, not one visible run, were the dominant load (MiMITA 40.8% of a 12-logical-CPU host, host at 100%, alongside blender/obs/firefox).
+
+PROPOSAL (smallest that answers "no MiMITA process left alive without a clear reason"):
+1. Reaper in the root dev-loop daemon, every 30 s: enumerate mimita.exe and compiler/build-worker processes; for each resolve (run_id, role, start time, parent PID, command line, last journal write, registered runtime, owning agent activity). Kill only when ALL hold: no runtime registration, journal idle >= 5 min, no owning agent activity/lease, not pinned for an open proof. Otherwise keep and journal a reason.
+2. Write one event per decision (process.reaped with the reason, or process.kept with the blocking reason) so it is visible in the run journal.
+3. Expose `python devscripts/orphans.py --json` (report) and `--reap` (act) so any agent or human can run the same policy, and surface the report in the dashboard as "processes with no clear reason".
+4. Make `agent-coord end` refuse to finish while the agent's own registered runs are alive, listing the PIDs, so the rule is enforced at the task boundary rather than remembered.
+
+Acceptance: after a 24 h window there are zero mimita.exe/compiler processes with no registration, no journal write, and no owner; every surviving process has a recorded reason.

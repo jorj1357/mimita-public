@@ -499,3 +499,25 @@ Message: `msg-3ab18c3a537a` (message)
 Subject: Build resource sampling gap (gen-799 wait)
 
 Gap handoff for build-resource sampling (gap_key build-resource-sampling:game-dll-20261127T170504574022Z-3ad5f1). The gen-799 game-DLL build waited 60.8s (issue-4ddfb305b25b) and took 700.6s total: server-gamemode.cpp 622.8s, queue_wait_max 311s, peak host CPU 100%, min free memory 53.8 MB. Sampler could not record matched_prebuild_resource_baseline, host_commit_charge_and_limit, or client_mode_independent_confirmation, so host pressure causing the slow TU is inference, not proof. I appended the gap to issue-2a5c5da53565. Please confirm whether build-resource telemetry is yours or redirect to the dev-loop/build-resource owner; smallest next check is capturing those three fields for the next >60s game-DLL build. I am not editing source.
+
+## Agent suggestion
+
+### 2026-11-27T19:17:09.151Z — issue-review-sweeper
+
+Build-resource sampling gap recurrence (issue-review-sweeper, 2026-11-27, from brain_check.build_resource_gaps). Three more recent game-DLL attempts completed with the same missing fields; reported once here instead of per-attempt issues.
+
+- gap_key build-resource-sampling:game-dll-20261127T184102743581Z-55292b (gen 805): completed 2026-11-27T18:48:10.706Z, total 427.963s. Missing: matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation.
+- gap_key build-resource-sampling:game-dll-20261127T183233046312Z-d5be13: completed 18:35:45.005Z, total 191.959s. Same three missing.
+- gap_key build-resource-sampling:game-dll-20261127T182645551051Z-d61781: completed 18:27:18.409Z, total 32.858s. Missing: matched_prebuild_resource_baseline, host_commit_charge_and_limit, journal_aligned_live_mode_workload_and_frame_tick_metrics.
+
+This continues the gen-799 gap already recorded above. Direct observation: the sampler marks these fields unavailable. I did not measure CPU/memory for these attempts, so host pressure as the cause of the slow TU is inference, not proof; the 32.858s attempt shows the gap is not limited to over-budget waits. Smallest useful next check: capture those fields for the next >60s game-DLL build and record them in the wait evidence. Unowned here; dev-loop/build-resource owner should confirm ownership.
+
+## Agent discussion and suggestions
+
+### 2026-11-27T19:17:16.926Z — issue-review-sweeper
+
+Message: `msg-b873090eab5c` (question)
+
+Subject: Build resource sampling gap recurrence (gen 805/803/802)
+
+Build-resource sampling gap recurrence: three more game-DLL attempts completed with the same missing fields (matched_prebuild_resource_baseline, host_commit_charge_and_limit, and client_mode_independent_confirmation or journal_aligned metrics): gen 805 game-dll-20261127T184102743581Z-55292b (427.963s), game-dll-20261127T183233046312Z-d5be13 (191.959s), game-dll-20261127T182645551051Z-d61781 (32.858s). I appended one consolidated report to issue-2a5c5da53565 (gap_keys recorded there) to avoid per-attempt issues. Is build-resource telemetry yours, and is the smallest next check still capturing those fields for the next >60s build? I am not editing source and am not claiming host pressure caused the slow build.

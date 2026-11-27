@@ -323,3 +323,19 @@ Owner/unknowns
 ### 2026-11-27T17:49:17.946Z — build-wait-reviewer
 
 Occurrence (build-wait-reviewer, 2026-11-27T17:4xZ, read-only): wait game-dll-build:2026-11-27T16:54:14.303Z (issue-795749b08e31, attempt game-dll-20261127T165414319868Z-c53bb1, run 20261127_165709, generation 798). Wait record identity is stale: evidence.build_id=2026-11-27T08:12:40.178185Z (prior EXE artifact) and generation=null, with no run_id; the in-flight target was generation 798 / source_generation 3, recoverable only from the corrupted reason tail. The wait was a true positive, not a stall: success at 435.208s total (compile 402.929s = 92.6%, link 20.275s, publish 0.615s), 23 compiled / 624 skipped after src/entities/player-avatar-animations.h fanout, max per-TU queue_wait 186.851s, mean host CPU 97.735%, min free memory ~37 MiB during a live vehicle_freeplay pair (server pid 22280, client pid 5736). The flat 60s budget crossed mid-compile. Existing asks unchanged: record the active game-build attempt id + target generation + run_id in the wait record (instead of self.latest_build), and consider progress-gated rather than wall-clock-only budget. No source edit claimed.
+
+## Agent suggestion
+
+### 2026-11-27T20:34:52.079Z — build-wait-reviewer
+
+Occurrence (build-wait-reviewer, 2026-11-27T20:3xZ, read-only; per-wait issue issue-003b412c0836 already auto-created, so no new issue here).
+
+Wait: wait_id game-dll-build:2026-11-27T18:41:02.539Z; budget 60.0s; woke 60.845s; stage game_build; source_generation 85; request build-request-1625350243a7. In-flight attempt game-dll-20261127T184102743581Z-55292b (gen 805, revision fc7d555a...) SUCCEEDED: total 427.963s, published 18:48:09.805Z; compile wall 290.658s, link 119.636s (646 inputs, 506,491,744 object bytes), object_cache_scan 0.052s, publish 0.544s; 2 compiled / 645 skipped of 646, jobs 10.
+
+True positive, not a stall: src/npc/recast-navigation.cpp alone took 285.963s (compile_max 285963ms), so the flat 60s WAIT_ISSUE_SECONDS is below this TU's natural compile time and fires deterministically on any save to it. Same class as vehicle-system.cpp / main-systems.cpp / server-gamemode.cpp exemplars.
+
+Concurrency (correlation only): a live pinned run 20261127_183715 (tdm-validation, dust2cyberiav4, EXE gen 804) overlapped the build (ready 18:38:02Z, stopped 18:52:16Z); server npc.server-phase-window ai_ms 238-399ms per 21-tick window at 19 NPCs; host mean CPU 99.95%, peak 100%, min free memory 508.8MB. The prior build of the same TU (gen 804, no live run yet) compiled it in 123.472s with 2672.2MB free; gen 805 took 285.963s (2.32x). Inference only: contention likely inflated the TU; no matched baseline, so no causal claim.
+
+Identity defect reproduced: wait record build_id=2026-11-27T17:45:19.700118Z (prior EXE artifact, the one pinned in run 20261127_183715), generation=804 (last published DLL), no run_id; true in-flight was gen 805 / ...55292b, recoverable only from build-timings and adjacent events. Autowire was clean otherwise: exactly one issue (coord event 22564) and one reviewer wake (wake-3acc6701f327, agent-wake events:4032).
+
+Existing tracker asks unchanged: record in-flight attempt id + target generation + run_id in the wait record instead of self.latest_build; prefer progress/stage-gated budget (or p100 single-TU) over flat 60s; dedupe by (kind, stage, active attempt). Latency target for the owning feature: recast-navigation.cpp is a 1623-line ~286s TU (split/reduce includes). No source edited, no fix claimed. Details: .dev/build-timings/game-dll-20261127T184102743581Z-55292b.json; logs/2026-11-27/20261127_183715/{dev-loop,server-01}/events.jsonl.

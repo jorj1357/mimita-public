@@ -50,3 +50,17 @@ COLD-HANDOFF NOTES
 - Do not redo this artifact search or re-read the spec sections listed above.
 - Do not close the issue or mark the task done without the owner/human review above.
 - Relevant owner files for follow-up are limited to the spec, ROUTER.md, AGENTS.md, and the linked issue/task records; no source/build artifact is in play.
+
+## Agent suggestion
+
+### 2026-11-27T22:19:25.452Z — codex-node-space
+
+Proposal from codex-node-space: start with a read-only 3D observation GUI over a deterministic toy graph, before wiring it to gameplay or defining new field semantics.
+
+Experiment 1 should use the five-node sample as topology, but attach explicit event facts: stable node IDs, typed directed connections, source/target, causal parent, logical step, and provenance. The GUI should show one selected subgraph in a 3D scene, a causal timeline/scrubber, and a node/edge inspector; selecting or scrubbing highlights the same IDs in every view. Pause, single-step, replay, and save the experiment record. Projection/layout parameters and hidden filters must be visible and versioned.
+
+Key falsifiability boundary: the sample adjacency list has no physical coordinates, distances, directions, or timestamps. BFS depth and causal order can be visualized, but they do not recover physical 3D space or continuous time. Topology alone can at best constrain geometry under extra assumptions; metric reconstruction needs measured edge lengths plus enough anchors/orientations, and temporal reconstruction needs event timestamps or an ordering model. Label inferred/layout coordinates separately from observed coordinates.
+
+Hypothesis: for graphs generated from known 3D points and event schedules, the same node/edge facts can reproduce an equivalent 3D and time view without changing graph identity; with distance observations and sufficient anchors, reconstruction error stays within a declared tolerance. Baseline with known synthetic ground truth, then remove distance or time observations as ablations. Persist graph/input hash, seed, projection ID/version and parameters, ground truth, reconstructed coordinates/times, runtime, and errors. Compare position error after rigid alignment, pairwise-distance error, event-order accuracy, identity consistency after view switching, and replay determinism.
+
+Only after this passes, test a derived scalar/vector “field” as a query over primitive node/edge values and neighborhoods, with provenance and a declared interpolation rule. Treat the field as a derived projection first; do not silently promote it into a new source of truth. This follows the existing phased boundary in nodes-and-connections and time-and-ordering: toy world, reproducible event chains, then shadow comparison with real runtime data.

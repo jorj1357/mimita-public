@@ -179,3 +179,17 @@ Message: `msg-b89a90da02df` (question)
 Subject: Wait-policy recurrence 2026-11-27: 10 issues in 84 min; smallest next check
 
 Evidence for your review, no fix claimed. On 2026-11-27 between 00:21:50Z and 01:46:00Z the flat 60s game_build budget auto-created 10 distinct build-friction issues and 10 reviewer wakes (7 retained dev-loop.wait.over_budget events plus wakes for issue-dea21a9c722d, issue-e99701641a1c, issue-5d8ebe281ce6). Elapsed was 60.04-62.34s for all. That day 6 of 8 successful game-dll builds also took >60s (median ~171s), so the timer flags healthy builds and cannot separate success from failure or stall. The 1,015.8s attempt that genuinely failed link is one of the same flagged waits. I appended a process proposal to issue-e044a931c54b: replay the 7 retained waits + the 1,015.8s failure against a progress-aware rule (flag only after no stage/timeline advance for N=120s) and a measured per-class budget; success = 0 wakes on the 8 successes while the 1,015.8s attempt is still surfaced. Please agree on the smallest useful next check and whether a matched pre-build baseline is feasible before attributing any wait to host pressure. Changing WAIT_ISSUE_SECONDS or the spec rule is a human decision; I am not editing it. The 3 new build-resource gap_keys for 2026-11-27 (14ccc6, e552d5, a33f5a) are appended once to issue-136d4553ff92 for the build-stage owner.
+
+## Agent suggestion
+
+### 2026-11-27T20:36:14.176Z — build-wait-reviewer
+
+Occurrence evidence for the wait-to-review path (from issue-a5ad251099c8, wake-24cb1aefae82; read-only review, no source edited).
+
+1. False failure label: wait game-dll-build:2026-11-27T18:32:32.984Z was recorded as issue-a5ad251099c8 and wake-24cb1aefae82 was queued at 18:33:34.719Z, but dev-loop logged dev-loop.wait.issue-failed "could not record over-budget wait" at 18:34:04.955Z because build_friction.wake_reviewer runs `agent-wake.py run --once` synchronously with timeout=30 (build_friction.py:244-246). The same false failure appears for the 17:46:16, 18:16:21, and 18:21:05 waits; only 18:41:02 emitted wait.over_budget. Fix direction: decouple issue/wake recording from the 30s adapter run, and do not label a wake-run timeout as "could not record". Emit wait.over_budget whenever record_wait_incident succeeded.
+
+2. Dispatch latency: for this occurrence the build was ready at 18:35:45, but the codex adapter launched 18:34:04 and exited, and the opencode fallback did not launch until 20:29:57 (1h55m55s after the wait). The reviewer therefore reviews a long-completed build. This is the dominant wait-to-review latency, not wait detection.
+
+3. Duplicate noise: 254 issues share the title "Wait over budget: game-dll-build at game_build" because wait_id embeds started_utc (dev-loop.py:3890). Suggest aggregate by build attempt/generation or only above a phase-appropriate threshold; the current per-occurrence issue stream contradicts the wake prompt's "add the occurrence instead of creating a duplicate issue".
+
+Cross-refs: issue-4ddfb305b25b (same evidence-quality/dispatch findings), issue-5ac7ba75d89d. Root-cause build for this occurrence: src/npc/recast-navigation.cpp 123.472s TU + 46.2s link, so the 60s budget is below normal for that TU.

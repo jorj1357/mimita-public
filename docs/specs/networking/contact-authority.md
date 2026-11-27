@@ -613,3 +613,16 @@ client reject authoritative damage.
 Acceptance: valid client claims are accepted and confirmed; invalid claims are
 rejected with a recorded reason; both client and server journals agree on the
 result.
+
+## Visible hit volume contract
+
+The one-geometry-owner direction in the geometry roadmap is specified in
+[`visible-hit-volumes.md`](visible-hit-volumes.md).
+
+That spec makes `ActorHitVolume` the single geometry owner for hitscan,
+projectile, melee, splash, deathball, and claim validation. It is built from the
+fixed-tick visible pose, cached once per actor per tick, and used by both client
+prediction and server authority.
+
+It does not change the contact/damage ownership in this document. It supplies
+the geometry those owners query.

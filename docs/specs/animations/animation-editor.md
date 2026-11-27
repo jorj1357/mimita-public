@@ -94,3 +94,14 @@ The same panel provides a weapon layer:
 - Acceptance: `anim_list`/`anim_play`/`anim_stop`/`anim_scrub` work live in a
   pinned run; a moved limb is visible at the edited tick; save/reload survives a
   restart; no gameplay authority changes while previewing.
+
+## Fold-in scope
+
+The command backend in this document is the first milestone. The finished
+editor is one mode of the map editor, including the weapon/hand pose editor and
+per-tick tracks. That combined target is
+[`animation-and-weapon-pose-editor.md`](animation-and-weapon-pose-editor.md).
+
+This document remains authoritative for the animation clip list, transport,
+scrub, and override-save semantics. The combined spec adds the editor shell,
+selection, gizmos, timeline, and weapon pose.

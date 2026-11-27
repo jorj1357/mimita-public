@@ -421,3 +421,33 @@ Read-only inspection of run `20261127_014331` found dashboard PID 29964 visible 
 ### Commit-limit correction
 
 For sample `20261127T015409Z`, the maximum charge and its same-row limit were 45254.95/46033.16 MB at 01:56:50.778Z (98.31%). The highest charge-to-limit ratio was a different row: 44949.43/44989.67 MB (99.91%) at 01:56:37.307Z. Keep peak charge and peak utilization as separate metrics.
+
+## Client frame-cap baseline (2026-11-27)
+
+The host CPU cost of an idle test client is dominated by its render loop, not
+by audio or simulation.
+
+Observed:
+
+- `config/video-settings.json` had `"maxFrames": 999`.
+- One client journal reported `performance.fps` at `avg_frame_ms 3.55`
+  (~282 FPS).
+- At that rate a client consumes roughly 0.85–1.0 logical core.
+- `Audio::AudioUpdate` median self time was under 1 ms in steady state; the
+  100–270 ms values were first-play decode spikes on the main thread.
+
+Normative baseline:
+
+- Agent test clients MUST run at 60 FPS unless a test explicitly needs more.
+- Human clients MAY run at 144 or 240 FPS.
+- VSync remains forced off; the cap is software pacing.
+- `performance.fps` and `performance.frame-budget` MUST record the frame cap in
+  use, so a sample can be normalized.
+- A client over 0.25 logical core while idle is a resource defect.
+- Audio first-play decode MUST move off the main thread; a decode spike is a
+  hitch defect, not a CPU baseline.
+
+See [`process-lifecycle-and-release-events.md`](process-lifecycle-and-release-events.md)
+for the per-run audio policy and
+[`build-performance-budget.md`](build-performance-budget.md) for the per-client
+budget.

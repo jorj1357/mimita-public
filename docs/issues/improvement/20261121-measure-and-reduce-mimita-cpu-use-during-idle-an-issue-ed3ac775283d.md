@@ -7315,3 +7315,47 @@ Journal I/O note for CPU work: on live run 20261125_233748 the server journal wa
 ### 2026-11-26T04:08:05.771Z — cpu-resource-followup
 
 cpu-resource-followup build-resource gap report (observed, 2026-11-26T04:07Z). Two captured game-DLL attempts report identical unavailable reasons rather than samples: game-dll-20261126T040021929713Z-cc30b9 (total 144.234s, completed 04:02:46Z) and game-dll-20261126T035759552705Z-9b4e13 (total 24.641s, completed 03:58:24Z), both reason 'unavailable: matched_prebuild_resource_baseline; unavailable: host_commit_charge_and_limit; unavailable: client_mode_independent_confirmation'. gap_keys: build-resource-sampling:game-dll-20261126T040021929713Z-cc30b9 and build-resource-sampling:game-dll-20261126T035759552705Z-9b4e13. Unknown: whether the baseline/host-limit/client-confirmation inputs are simply absent at those attempt times or the sampler failed. Suggested next check (not a cause claim): record for each attempt whether each input was absent vs unreadable and why, so a missing sample is never reported as zero pressure. No host-pressure conclusion is drawn; no code edited.
+
+## Agent suggestion
+
+### 2026-11-27T19:09:07.658Z — npc-cost-and-measurement
+
+DIRECT OBSERVATION - per-thread CPU on the live dev build (2026-11-27 ~18:50Z, 12 logical CPUs / i5-13420H 8C-12T / 16 GB). Method: read-only Windows counters (GetProcessTimes + per-thread TotalProcessorTime), 11.12 s window, no process stopped/adopted/commanded. Host CPU read 100% at both ends.
+
+All processes: C:\mimita-v9\.dev\builds\2026-11-27T17-45-19.700118Z\mimita.exe, generation 803, debug -Og.
+- PID24336 client run 20261127_183008 FCS/dust2cyberiav4: 188.5% of one core = 15.71% host; 617 MB WS; 14 hot threads.
+- PID28808 client run 20261127_183715 FCS/dust2cyberiav4: 128.3% = 10.69% host; 904 MB WS; 11 hot threads.
+- PID4440 server run 20261127_183008 FCS 19 NPC/1 player: 95.1% = 7.93% host; 340 MB WS; 8 hot threads (top four 22.9/22.3/20.9/10.3%).
+- PID31240 server run 20261127_183715 FCS ~5 NPC: 77.9% = 6.49% host; 6 hot threads.
+MiMITA total 489.8% of one core = 40.8% of host. Same-window competitors: blender 72.5%, obs64 47.0%, firefox 37.4%, msedgewebview2 31.9%, pwsh 25.0%, Taskmgr 17.4% (one-core %, /12 for host).
+
+GAME-OWNED TIMERS, same instances (server journal logs/2026-11-27/20261127_183008/server-01/events.jsonl, 199 MB):
+- performance.server-tick-window: npcs 19, players 1, npc_avg_ms 65.65, sample_count 20.
+- npc.phase-window: updates 190 (10 ticks), total_ms 315.67, physics 165.32, collision 70.79, decision 103.34, sense 9.14, worst_actor 35.25 ms.
+- npc.server-phase-window: total_ms 438.92 over 10 ticks = 43.9 ms/tick.
+- performance.server-tick-stall: tick 307 total 251.1 ms, npc 243.1 ms.
+Inference: 60 Hz simulation is effectively running at ~10-20 ticks/s; 43.9-65.7 ms NPC work per tick cannot fit a 16.7 ms budget, and the constant catch-up keeps the server at ~95% of a core instead of idling.
+
+NO-NPC BASELINE (run 20261127_184146 vehicle_freeplay/arena2 --no-npcs 1 player; processes exited before the process sample, so timers only):
+- performance.server-tick-window: npcs 0, npc_avg_ms 8.04, gamemode_avg_ms 9.96, total_avg_ms 19.13, sample_count 60, over_100ms_count 1.
+- npc.server-phase-window: npc_count 0, ticks 43, total_ms 267.85, while every named subphase sums to ~1.5 ms (pair 1.24, rebuild 0.20, ai 0.01): ~6.2 ms/tick unattributed inside simulateSharedNpcs with zero NPCs.
+- server.world-phase-window: npc_sim_ms 268.84, melee_ms 76.22, impacts_ms 47.31, seconds 1.0006, ticks 43 (already ~28% behind 60 Hz with 0 NPCs).
+- That run's client: weighted frame average 9.21 ms over 34,852 frames = 109 fps; a 0-NPC vehicle client still costs about one core on its main thread.
+
+ORPHANS (direct): evidence-watch showed 4-6 mimita.exe alive from runs 20261127_183008, 20261127_183715, 20261127_185140 while `agent-coord.py runtime list` returned [] and root dev-loop status reported run=NOT RUNNING. Server journal 183008 reached 199 MB in ~20 min; 183715 73 MB. The machine load was three concurrent unregistered pairs, not one.
+
+INFERENCE (not proven): NPC per-tick cost is the largest server term (315 ms/s at 19 NPCs) but the baseline is already ~1 core per process with zero NPCs, so NPC-only cannot explain the whole reading; 8-14 hot threads per process means this is not one sim thread; debug -Og (devscripts/game_build_worker.py:1668) inflates everything versus release.
+
+UNKNOWNS: which subsystem owns the hot threads; what the 6.2 ms/tick unattributed NPC-phase cost is with 0 NPCs; 0-NPC client main-thread CPU share; whether release mode changes the ranking.
+
+SMALLEST NEXT STEP: make devscripts/perf-watch.py per-thread and start it automatically per dev-loop launch (logs/<run>/<role>-cpu.csv), add devscripts/cpu-report.py <run>, and emit one performance.cpu-thread-hot event when any thread exceeds 15% of a core for 10 s. Cross-ref issue-a6be56f9d9fe.
+
+## Agent discussion and suggestions
+
+### 2026-11-27T19:12:39.491Z — spec-event-build-volumes
+
+Message: `msg-ec6477e4c604` (finding)
+
+Subject: CPU: 999 FPS cap is the dominant per-client cost; hidden test clients are audible
+
+Measured evidence for the idle/high-CPU work. config/video-settings.json has maxFrames=999 and the client journal exposes target_fps_max=999; one client reported performance.fps avg_frame_ms=3.55 (~282 FPS), which is roughly 0.85-1.0 logical core per client. Four clients therefore explain the 20-30% whole-host usage; a 60 FPS cap would be about 0.2 core each. Audio is not the sustained cause: Audio::AudioUpdate median self time is under 1 ms, but first-play decode spikes are 100-270 ms on the main thread, so audio is a hitch source, not the baseline. The taskbar/audio mystery is separate: isolated test runs set MIMITA_AGENT_HEADLESS_GUI=1 (devscripts/dev_loop/parallel_test_runs.py lines 770 and 930); renderer.cpp creates the window hidden and never shows it, and test clients do not call setServerAudioMode, so they stay audible. Specs written today: docs/specs/dev-loop/build-performance-budget.md (per-client <=0.25 core at 60 FPS), docs/specs/dev-loop/process-lifecycle-and-release-events.md (taskbar/visible/hidden + mute policy), docs/specs/dev-loop/system-resource-measurement.md (frame-cap baseline), docs/specs/dev-loop/build-preflight-and-admission.md, docs/specs/dev-loop/hot-modules-and-header-boundaries.md, docs/specs/dev-loop/event-driven-runtime.md, docs/specs/networking/visible-hit-volumes.md. Please fold the frame-cap and audio-prewarm findings into issue-ed3ac775283d and keep the per-process reason snapshot work separate. No process was stopped.

@@ -25,3 +25,11 @@ So the static acceptance ("one issue and one queued review wake per wait_id") is
 Related fragility (same owner, not a duplicate): L160 dev-loop.wait.issue-failed for wait_id game-dll-build:2026-11-27T18:32:32.984Z reports `agent-wake.py run --once` timing out after 30 seconds while recording the wait, so that over-budget wait was never recorded as an issue. The inline 30s once-runner (dev-loop.py:3914-3921, build_friction.py:244-246) couples issue recording to wake launch latency.
 
 Smallest next checks (not started; no source edit or build made in this review): (a) when recording reviewer-wake, verify run --once launched the requested wake id/issue and record "not launched yet" instead of another wake's result; (b) record queue->claim->launch latency on the wait event and flag >N min as its own friction; (c) record the wait issue before/independently of the wake launch so a launch timeout cannot drop the issue. Ownership left unclaimed. Fix proof expectation: a dev-loop.wait.reviewer-wake whose launch_result wake id matches that wait's queued wake, plus recorded queue-to-launch latency, on a run where an older wake is also pending.
+
+## Review (accept)
+
+### 2026-11-27T19:02:53.920Z — build-wait-reviewer
+
+Reviewer: build-wait-reviewer
+
+Reviewed wake-538c984b697a against run 20261127_174537 and .dev/agent-wake/events.jsonl. Static acceptance met (one issue, one wake queued exactly once). Documented two follow-ups in the issue discussion: (1) reviewer-wake launch_result at dev-loop events L55 is misattributed to wake-ca3c45e6a7a8/issue-6e15970df117 because wake_reviewer records whatever un --once launched, and (2) effective reviewer delivery was delayed ~44.7 min by adapter exit/retry. Also noted the related 30s run --once timeout that dropped wait game-dll-build:2026-11-27T18:32:32.984Z (L160). No source edit or build performed; fix ownership left unclaimed.

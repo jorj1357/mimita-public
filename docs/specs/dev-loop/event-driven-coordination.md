@@ -51,6 +51,43 @@ issue.reopened           issue id, reason
 - A resolution requires evidence or a recorded human decision; the last message
   is not a decision.
 
+## Process, check, and broadcast events
+
+The same model applies to processes, checks, and messages.
+
+```text
+check.requested / started / stage / passed / failed / invalidated
+admission.blocked / admission.cleared
+process.leased / process.released / process.stop_requested
+process.stale / process.orphan.detected
+run.ready / run.proven / run.superseded
+agent.announce / agent.question / agent.reply
+context.user.added / context.moved
+```
+
+Rules:
+
+- A process lease names the event that releases it
+  (`issue.proven`, `task.ended`, `owner.session.ended`, `run.superseded`).
+- A check names the revision it validated; a build refuses an invalid check.
+- An announcement or user context wakes every agent whose paths or issue match.
+- No process is stopped on a timer alone; time only raises `process.stale`.
+
+## No-polling implementation rules
+
+These are normative for every script and agent workflow:
+
+- No `sleep`-then-check loop for build, check, run, approval, or issue state.
+- No `--wait-for-build` that polls; use `wait --event`.
+- No fixed timeout that assumes success. A timeout emits `wait.timeout` and
+  ends the activation.
+- Background shell work is allowed; a foreground bounded sleep is not.
+- The owner records a wait reason before ending, so the next activation can
+  resume from the event.
+
+The target is described in
+[`event-driven-runtime.md`](event-driven-runtime.md).
+
 ## Acceptance
 
 - A build request goes from proposed to finished through approval/finish
