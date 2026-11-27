@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "id": "rocket_settle_fuzz_v1",
+  "description": "Random settling probe: the car is thrown with random velocity, random spin, and a window of random air roll and boost. Every supported body that comes to rest must rest on all four wheels (up_dot > 0.95, full wheel mask) or its roof (up_dot < -0.90), never balanced on an edge, corner, or side for more than 0.5 s. Settled means speed < 0.5 m/s and angular speed < 0.5 rad/s. Out-of-arena throws are respawned and counted as escapes.",
+  "launch": {
+    "launch_mode": 65,
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {
+      "id": "profile",
+      "wait_for_event": "vehicle.profile.applied",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "seated",
+      "wait_for_event": "vehicle.entered",
+      "timeout_seconds": 60
+    },
+    {
+      "id": "fuzz",
+      "wait_seconds": 55
+    }
+  ],
+  "steps": [
+    {
+      "id": "observe",
+      "wait_for_event": "vehicle.fuzz.report",
+      "timeout_seconds": 30
+    }
+  ],
+  "assertions": [
+    {
+      "type": "event_present",
+      "event": "vehicle.drop.fuzz"
+    },
+    {
+      "type": "event_field_at_least",
+      "event": "vehicle.fuzz.report",
+      "field": "kicks",
+      "value": 4
+    },
+    {
+      "type": "event_field_all_at_most",
+      "event": "vehicle.fuzz.report",
+      "field": "side_rests",
+      "value": 0
+    },
+    {
+      "type": "event_field_all_at_most",
+      "event": "vehicle.fuzz.report",
+      "field": "tilted_rests",
+      "value": 0
+    },
+    {
+      "type": "event_field_all_at_most",
+      "event": "vehicle.fuzz.report",
+      "field": "escapes",
+      "value": 0
+    },
+    {
+      "type": "event_field_at_least",
+      "event": "vehicle.fuzz.report",
+      "field": "wheels_landings",
+      "value": 2
+    }
+  ],
+  "timeout_seconds": 180
+}

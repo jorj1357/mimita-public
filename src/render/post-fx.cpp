@@ -28,6 +28,47 @@ PostFX gPostFX;
 
 PostFX& PostFX::instance() { return gPostFX; }
 
+int PostFX::effectiveLensMode() const
+{
+    if (mLensModeOverride)
+        return std::clamp(*mLensModeOverride, 1, 5);
+    if (mBodycamLensOverride)
+        return std::clamp(mBodycamLensOverride->lensMode, 1, 5);
+    return mData.chromaticAberration != 0.0f ? 1 : 3;
+}
+
+float PostFX::effectiveChromaticAberration() const
+{
+    if (effectiveLensMode() == 3)
+        return 0.0f;
+    if (mChromaticAberrationOverride)
+        return *mChromaticAberrationOverride;
+    if (mBodycamLensOverride)
+        return mBodycamLensOverride->chromaticAberration;
+    return mData.chromaticAberration;
+}
+
+void PostFX::setLensModeOverride(int mode)
+{
+    if (mode < 1 || mode > 5) {
+        mLensModeOverride.reset();
+        return;
+    }
+    mLensModeOverride = mode;
+}
+
+const char* PostFX::lensModeName(int mode)
+{
+    switch (mode) {
+    case 1: return "mixed";
+    case 2: return "world_only";
+    case 3: return "normal";
+    case 4: return "world_and_ui";
+    case 5: return "bodycam_special";
+    default: return "unknown";
+    }
+}
+
 static uint64_t fileModifiedTime(const std::string& path)
 {
     std::error_code ec;
@@ -525,19 +566,23 @@ void PostFX::render()
         data.colorTemperature = mData.colorTemperature;
     }
     if (mBodycamLensOverride) {
-        data.chromaticAberration = mBodycamLensOverride->chromaticAberration;
+        const int lensMode = effectiveLensMode();
+        // The bodycam lens (fisheye, vignette, peripheral blur) belongs to the
+        // bodycam presentations only. Modes 2/3/4 are clean presentations.
+        const bool lensOn = lensMode == 1 || lensMode == 5;
+        data.chromaticAberration = effectiveChromaticAberration();
         data.chromaticAberrationRadial = mBodycamLensOverride->radialChromaticAberration;
-        data.chromaticAberrationBackgroundOnly =
-            mBodycamLensOverride->chromaticAberrationBackgroundOnly;
-        data.vignette = mBodycamLensOverride->vignette;
-        data.lensDistortion = mBodycamLensOverride->distortion;
+        data.chromaticAberrationBackgroundOnly = lensMode == 1;
+        data.vignette = lensOn ? mBodycamLensOverride->vignette : 0.0f;
+        data.lensDistortion = lensOn ? mBodycamLensOverride->distortion : 0.0f;
         data.lensDistortionCurve = mBodycamLensOverride->curve;
         data.lensDistortionZoom = mBodycamLensOverride->zoom;
         data.lensDistortionEdgeMode = mBodycamLensOverride->edgeMode;
         data.lensDistortionEdgeRadius = mBodycamLensOverride->edgeRadius;
         data.lensDistortionEdgeSoftness = mBodycamLensOverride->edgeSoftness;
         data.lensDistortionEdgeDarkness = mBodycamLensOverride->edgeDarkness;
-        data.lensDistortionPeripheralBlur = mBodycamLensOverride->peripheralBlur;
+        data.lensDistortionPeripheralBlur = lensOn
+            ? mBodycamLensOverride->peripheralBlur : 0.0f;
     }
     setUniforms(mBypass ? PostFXData{} : data, "");
 
@@ -766,12 +811,16 @@ void PostFX::setCameraLensDistortion(float amount, float curve, float zoom,
     if (!std::isfinite(edgeSoftness)) edgeSoftness = 0.30f;
     if (!std::isfinite(edgeDarkness)) edgeDarkness = 1.0f;
     if (!std::isfinite(peripheralBlur)) peripheralBlur = 1.0f;
-    mData.lensDistortion = std::clamp(amount, 0.0f, 10000.0f);
-    mData.lensDistortionCurve = std::clamp(curve, 0.05f, 8.0f);
-    mData.lensDistortionZoom = std::clamp(zoom, 0.1f, 5.0f);
+    // 2026-11-26: the lens ranges are no longer artistic gates. Keep only
+    // finite guards so a NaN cannot poison the shader; pass finite values
+    // through unchanged, including values outside the old 0..10000 / 0.05..8 /
+    // 0.1..5 bands.
+    mData.lensDistortion = amount;
+    mData.lensDistortionCurve = curve;
+    mData.lensDistortionZoom = zoom;
     mData.lensDistortionEdgeMode = std::clamp(edgeMode, 0, 4);
-    mData.lensDistortionEdgeRadius = std::clamp(edgeRadius, 0.05f, 1.2f);
-    mData.lensDistortionEdgeSoftness = std::clamp(edgeSoftness, 0.0f, 1.0f);
-    mData.lensDistortionEdgeDarkness = std::clamp(edgeDarkness, 0.0f, 1.0f);
-    mData.lensDistortionPeripheralBlur = std::clamp(peripheralBlur, 0.0f, 4.0f);
+    mData.lensDistortionEdgeRadius = edgeRadius;
+    mData.lensDistortionEdgeSoftness = edgeSoftness;
+    mData.lensDistortionEdgeDarkness = edgeDarkness;
+    mData.lensDistortionPeripheralBlur = peripheralBlur;
 }

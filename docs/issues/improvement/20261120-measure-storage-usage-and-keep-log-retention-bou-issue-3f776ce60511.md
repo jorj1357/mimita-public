@@ -294,3 +294,11 @@ Measurable target: at run end, every instance journal_path in run.json either ex
 Smallest experiment: a read-only scan of existing run.json files that classifies each missing journal_path as (a) directory never created, (b) pruned whole date root, or (c) file removed inside a surviving root, and reports counts only. No deletion and no source change in the experiment.
 
 Confidence: the 145/365 count and the 20261125_152203 server-journal absence are directly observed; the cause of each absence is unknown and not inferred.
+
+## Agent suggestion
+
+### 2026-11-27T02:04:52.439Z — issue-review-sweeper
+
+Process evidence from issue-87d8c9c7ffb1 review #6 (2026-11-27): the only on-disk journal that ever contained the required collision.arcade_entity.sweep event (logs/2026-11-24/20261124_150432/client-01/events-0018.jsonl, read during review id 406 on 2026-11-25) was deleted by the newest-three-date log prune (devscripts/dev_loop/game_build.py:936 _prune_logs, called with keep_days=3 at :1455 and keep_days=2 under disk pressure at :1463; devscripts/prune-builds.py --keep-log-days default 3). Between reviews the 2026-11-24 date root disappeared, so independent re-inspection of proof-relevant runtime evidence is now impossible even though the proof task stayed open/unproven for ~130h.
+
+Proposal (measurable): protect journals referenced by open unproven proof tasks from the date-folder prune. Smallest experiment: when proof task-add/record stores a journal_path, copy that exact journal segment to a protected store (e.g. .dev/evidence/<task_id>/) or mark its date root prune-exempt while the task is unproven; verify it survives prune-builds.py --logs-only (dry-run then real). Target metric: 0 open-unproven proof tasks whose recorded journal is missing on the next sweep; currently >=1 (issue-87d8c9c7ffb1, sole sweep sample). Disk impact bounded by open-proof count (98 unproven board tasks at this sweep) and only the pinned segments. Leave for owner review; do not change retention policy without human/root approval.

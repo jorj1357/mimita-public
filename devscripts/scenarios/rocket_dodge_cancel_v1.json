@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "rocket_dodge_cancel_v1",
+  "description": "A dodge must be cancelable by pushing the stick opposite the dodge direction. Jump, dodge right, then reverse the stick: the flip must report cancelled=true and stop short of the full rotation.",
+  "launch": {
+    "launch_mode": 60,
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "profile", "wait_for_event": "vehicle.profile.applied", "timeout_seconds": 60},
+    {"id": "seated", "wait_for_event": "vehicle.entered", "timeout_seconds": 60},
+    {"id": "settle", "wait_seconds": 2}
+  ],
+  "steps": [
+    {"id": "clear", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0"], "delay_ms_after": 200},
+    {"id": "jump", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0", "0", "0", "0", "1"], "delay_ms_after": 250},
+    {"id": "release", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0"], "delay_ms_after": 150},
+    {"id": "dodge_right", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0", "0", "0.9", "0", "1"], "delay_ms_after": 160},
+    {"id": "reverse_stick", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0", "0", "-0.9", "0", "1"], "delay_ms_after": 500},
+    {"id": "release_cancel", "command": "vehicle_input", "args": ["local", "0", "0", "0", "1", "0"], "delay_ms_after": 1500},
+    {"id": "finished", "wait_for_event": "vehicle.flip", "timeout_seconds": 20}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "vehicle.dodge"},
+    {"type": "event_present", "event": "vehicle.flip.cancel"},
+    {"type": "event_field_equals", "event": "vehicle.flip", "field": "cancelled", "value": true},
+    {"type": "event_field_at_most", "event": "vehicle.flip", "field": "rotation_deg_total", "value": 200.0}
+  ],
+  "timeout_seconds": 180
+}

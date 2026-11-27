@@ -256,3 +256,64 @@ Message: `msg-25e5298193f9` (question)
 Subject: Wait issue-3385f308560f: false-positive 60s budget + identity defects
 
 Bounded review request: wait game-dll-build:2026-11-26T06:17:59.474Z (issue-3385f308560f) is another false positive of the flat 60s budget - attempt game-dll-20261126T061759578653Z-67ec90 (gen 688) succeeded in 107.875s; at the crossing both changed TUs were still compiling (weapon-viewmodel 46.407s, explosion-fx 41.993s), then a 27.203s link. Record defects reproduced: build_id=prior EXE 2026-11-26T06:10:41.962780Z, generation=null vs 688; reason was readable this time ('[GAME BUILD] ...'), so JSON-tail corruption did not reproduce; wake launch_result still carries full prompt text. Dispatch was fast this time (~3s queue-to-launch, one wake). Occurrence appended to issue-7d3dcfd7433b. Please review and agree the smallest next check for a stage/progress-gated budget and dedup by (kind, stage, active attempt) plus in-flight attempt/generation identity. No source changed; shared dev-loop change needs human approval.
+
+## Agent suggestion
+
+### 2026-11-26T17:25:37.441Z — build-wait-reviewer
+
+Occurrence 2026-11-26 gen 698 / issue-4fb7a24c54b0: evidence build_id=2026-11-26T16:48:56.265247Z (last successful artifact) with generation=null and stage hardcoded 'game_build' (dev-loop.py:3884-3900, literal stage at 3891), while the in-flight attempt was game-dll-20261126T165624137995Z-32c560, generation 698, source_generation 20. Sibling issue-404bd5b44b6e (gen 696 attempt game-dll-20261126T164918058647Z-26c738) carries the identical build_id, confirming the identity collision. The correct attempt id appears only inside the truncated reason.
+
+## Agent suggestion
+
+### 2026-11-26T17:41:06.259Z — build-wait-reviewer
+
+Fresh wait-record identity occurrence for wait game-dll-build:2026-11-26T17:13:10.456Z (issue-24863e1f595e; full evidence appended to issue-9a4503f6ed68 and the issue review). The wait record stores build_id=2026-11-26T16:59:26.767416Z and generation=702 (last published artifact) with no run_id, while the in-flight attempt was game-dll-20261126T171310909318Z-faf8c7, generation 703, source_generation 10, revision 5eb31cd568eb9799724c6551dff363d6545634d3110f55b88affc7cb091a1374, run 20261126_170323, status ok, total 137.203s. The attempt id was recoverable only from adjacent dev-loop.game-build.started lines and the reason revision. Direct from .dev/build-timings/game-dll-20261126T171310909318Z-faf8c7.json and logs/2026-11-26/20261126_170323/dev-loop/events.jsonl. Same wait-record identity gap as issue-7d3dcfd7433b; no source fix claimed.
+
+## Agent suggestion
+
+### 2026-11-26T17:48:03.885Z — build-wait-reviewer
+
+Occurrence (issue-a02e5a6588db review): wait game-dll-build:2026-11-26T17:20:46.773Z recorded build_id 2026-11-26T16:59:26.767416Z (last published EXE artifact) and generation 703, but the in-flight attempt was game-dll-20261126T172047133775Z-30f81f -> generation 704 (source_generation 12, run 20261126_170323); no run_id was stored. Same stale-identity defect as previous occurrences; true attempt recoverable only from adjacent dev-loop.game-build.started lines and the reason revision. Owner: put active build_attempt_id/generation/run into the wait record.
+
+## Agent suggestion
+
+### 2026-11-26T22:51:51.346Z — build-wait-reviewer
+
+Recurring `game-dll-build at game_build` wait — occurrence evidence (build-wait-reviewer, read-only; per-wait issue issue-99494df70b20 already auto-created, so no new issue here).
+
+Occurrence: wait_id `game-dll-build:2026-11-26T19:27:11.618Z`; budget 60.0 s; woke at 61.06 s; source_generation 6; request 2026-11-26T19:27:11.399Z-4bb4d8c2:mode3:game; stage game_build.
+
+In-flight attempt `game-dll-20261126T192711707688Z-92a892` (gen 721, revision 73da78d3…) is real progressing work, not a stall: success in 189.218 s (exit 0, no_op false). Phase split: manifest_snapshot 2.234 s, source_snapshot 0.296 s, object_cache_scan 3.125 s, **compile 171.672 s** (90.8% of total), link 4.734 s, coherence 0.656 s, publish 0.454 s. 89 TUs compiled, per-TU compile sum 1607.3 s wall-parallel. Invalidation at compile start: 60 TUs `dependency newer than object: src/network/server.h`, 26 TUs `src/physics/physical-entity.h`, 2 missing/invalid dep file — i.e. the header-fanout rebuild for build note 0cbde5b2a491.
+
+Resource sample (149 samples @1 s): mean host CPU 92.522%, peak 100%, min available memory 39,149,568 B (~37.3 MiB). unavailable: matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation — so host pressure is context only, not a cause.
+
+Confirms the existing finding: the flat 60 s `WAIT_ISSUE_SECONDS` is below the compile cost of an ordinary two-header fanout (here 171.7 s), so the issue+wake is deterministic per header edit. 24 game-dll wait issues on 2026-11-26; 224 in_review all-time. Identity defect also reproduced (wait build_id = prior artifact 2026-11-26T17:45:43.947108Z, generation null, while true attempt is 92a892/gen 721). Existing recommendations in this thread already cover stage/progress-gated budget, dedup by (kind, stage, active attempt), and recording the in-flight attempt/generation; no new recommendation added.
+
+Artifacts: `.dev/build-timings/game-dll-20261126T192711707688Z-92a892.jsonl` (+ `.resource.jsonl`); `logs/2026-11-26/20261126_190324/dev-loop/events.jsonl` lines 84–85. No source changed; shared dev-loop change needs human approval.
+
+## Agent suggestion
+
+### 2026-11-27T00:52:39.047Z — build-wait-reviewer
+
+Occurrence 2026-11-27T00:20:48Z / issue-ee02d14f4ccd: another flat-60s false positive on a real progressing rebuild, not a stall. Run 20261127_001718, attempt game-dll-20261127T002049012082Z-4dffbc (generation 743, source_generation 6). Build began 00:21:15Z with 644 sources, jobs=10; TUs were completing across the 60s crossing (module-identity-provider 7.281s, player-render-mesh 40.355s, avatar-commands 42.899s, vehicle-system 43.62s). Failure cause was a compile error, not the wait: src/vehicles/vehicle-system.cpp:2689 'spec' was not declared (rocket-league-feel note 1a8aa179b70c). Terminal: failed compile 00:22:41Z, total 112.047s, compile 68.844s, 8 compiled / 405 skipped / 644 source_count. Trigger again was header fanout (cache_invalidations on src/entities/player.h and src/vehicles/vehicle-types.h). Identity defects reproduced (wait build_id=prior artifact 2026-11-26T22:52:33.481041Z, generation=null; true attempt only inside the corrupted reason JSON tail). Wake was exactly once (1 over_budget + 1 reviewer-wake). No new recommendation beyond existing asks (stage/progress-gated budget, dedupe by kind/stage/active attempt, record in-flight attempt id + target generation). No fix applied.
+
+## Agent suggestion
+
+### 2026-11-27T05:37:54.665Z — issue-review-sweeper
+
+Proposal from issue-review-sweeper (bounded review of issue-ad873eff97f3, 2026-11-27T05:3xZ).
+
+Evidence of repeated avoidable cost
+- 43 open build-friction issues titled "Wait over budget: game-dll-build at game_build" exist as of 2026-11-27, all state in_review, created 2026-11-21 through 2026-11-27. Two independent reviews (2026-11-21 on issue-ad873eff97f3; 2026-11-27 on issue-4efc86281237) both recommended consolidating repeated waits instead of one issue per wait_id; no change yet.
+- Current generator is explicit: devscripts/build_friction.py:143-199 documents "a new wait gets another issue even when its stage and reason are identical"; devscripts/dev-loop.py:3850-3922 fires on wall-clock only (WAIT_ISSUE_SECONDS=60, dev-loop.py:114-115). The same code also creates the reviewer wake only when result.created is true.
+
+Measurable target
+- Reduce NEW "Wait over budget" build-friction issues from ~43 in 6 days to <=2 per 24h (~80% reduction) while preserving coverage: every distinct wait_id is still recorded and each distinct dominant cause still gets at least one reviewer wake per 6h window. Success is counted from coord events, not opinion.
+
+Smallest experiment
+- In devscripts/build_friction.py record_wait_incident: before creating a new issue, look up an open issue with the same kind+stage and the same normalized cause key (e.g. full_rebuild / object_cache_invalidation / incremental / queue_pending; derive from compiled==0 vs skipped==0 and the cache_invalidations reason). If found, call store.issue_occurrence() on it (as the wait_id-dedupe path already does at :164-168) and set created:false, then let the loop still queue a reviewer wake under a rate limit (one per cause per 6h) instead of per wait_id.
+- Measure for the next 24h: new-wait-issue count, occurrences appended, reviewer wakes, and median reviewer sessions per wait. Keep the current per-wait_id path as a fallback flag so the experiment is reversible.
+- Proof expectation: coord event counts over the window plus one before/after sample of two consecutive waits of the same cause landing on one issue.
+
+Owner/unknowns
+- Suggested owner: build-coordinator or whoever owns issue-7d3dcfd7433b; not claimed here. Unknown: whether a cause key can be derived cheaply from the wait payload without new build coupling; if not, the fallback is grouping only by kind+stage.

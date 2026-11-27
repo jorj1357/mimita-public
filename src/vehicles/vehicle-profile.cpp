@@ -378,6 +378,12 @@ bool VehicleProfileRegistry::loadFile(const std::string& path,
         profile.ground.alignRateDegPerSecond = readFloat(
             ground, "alignRateDegPerSecond",
             profile.ground.alignRateDegPerSecond, 0.0f, 3600.0f);
+        profile.ground.maxYawRateRadPerSecond = readFloat(
+            ground, "maxYawRateRadPerSecond",
+            profile.ground.maxYawRateRadPerSecond, 0.0f, 20.0f);
+        profile.ground.yawAccelRadPerSecond2 = readFloat(
+            ground, "yawAccelRadPerSecond2",
+            profile.ground.yawAccelRadPerSecond2, 0.0f, 200.0f);
     }
 
     if (root.contains("ballHit") && root["ballHit"].is_object())
@@ -544,6 +550,16 @@ VehicleProfileRegistry::ProfilePtr VehicleProfileRegistry::find(
     std::shared_lock<std::shared_mutex> readLock(mProfilesMutex);
     auto it = mProfiles.find(id);
     return it != mProfiles.end() ? it->second : nullptr;
+}
+
+VehicleProfileRegistry::ProfilePtr VehicleProfileRegistry::defaultProfile() const
+{
+    if (ProfilePtr named = find("rl_soccar"))
+        return named;
+    const std::vector<std::string> all = ids();
+    if (all.empty())
+        return nullptr;
+    return find(all.front());
 }
 
 std::vector<std::string> VehicleProfileRegistry::ids() const

@@ -1038,6 +1038,28 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 0.25f, 0.05f, 0.05f);
         }
     }
+    if (PostFX::instance().presentationPatternFrames() > 0) {
+        // Deterministic shader test pattern in the world pass. Every tile is
+        // achromatic (equal R/G/B), so its own colours contribute zero channel
+        // misalignment; any score in the probe therefore comes from the
+        // chromatic-aberration pass. The grid fills the probe's centre window,
+        // so dark and bright samples are dominated by pattern pixels rather
+        // than by level geometry.
+        const glm::vec3 right = glm::normalize(glm::cross(camera.front, camera.up));
+        const glm::vec3 up = glm::normalize(glm::cross(right, camera.front));
+        const glm::vec4 black{0.0f, 0.0f, 0.0f, 1.0f};
+        const glm::vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
+        for (int row = 0; row < 7; ++row) {
+            for (int col = 0; col < 9; ++col) {
+                const bool light = ((row + col) & 1) != 0;
+                const glm::vec3 pos = camera.pos + camera.front * 2.0f +
+                    right * ((float)(col - 4) * 0.22f) +
+                    up * ((float)(row - 3) * 0.20f);
+                DebugVis::drawFilledBillboard(
+                    camera, pos, 0.19f, 0.0f, 1.0f, light ? white : black);
+            }
+        }
+    }
     DebugVis::flushTris(camera);
     DebugVis::flushWeaponLines(camera);
     }

@@ -211,3 +211,42 @@ Evidence: this is the fifth bounded review of the same proof task (review ids 57
 Proposal: make proof tracing a first-class pinned-run option and enforce proof-record consistency. Add one `hitfx_trace` enable step to the dev-profile/test-run path (for example `--start-test-run --trace hitfx` or a profile field) so a run can opt in without hand-editing a client command queue, and have the proof-record path reject `status=runtime_proven` when result != proven, generation == 0, verified_utc is empty, or the cited journal is absent.
 
 Measurable target: on the next 3 rocket-decal proof attempts, 100 percent produce a pinned run with non-zero generation containing at least one impact_decal.spawn plus matching impact_decal.render_submitted for each world terminal and zero for player/lifetime terminals, on the first attempt; zero new reviews blocked only by the trace toggle; zero proof records with status=runtime_proven while result != proven or verified_utc is empty. Smallest experiment: add the one profile field/flag, run one generation>=627 `fun counter strike` instance with tracing on, inspect the exact client journal, and record run_id/generation/DLL sha256. No gameplay change. Cross-ref issue-8e48cd0bc786.
+
+## Agent suggestion
+
+### 2026-11-27T00:10:15.237Z — issue-review-sweeper
+
+Process evidence from issue-e5a086b0a441 review (2026-11-27T00:09Z): the parent capability issue's newest linked evidence is game generation 618 (2026-11-24T20:47Z), while runtime_proven task proofs exist for generations 664, 665, 673, and 676 (task-proof-496419d318a4, -0f72f2609485, -7294189f94c0, -910bc792fb93) and actual runtime journals exist on generation 742. Reviewers therefore re-scan raw journals because the parent issue cannot see that newer runtime evidence exists. The last independent review (2026-11-25T22:05Z) also noted no evidence rows after generation 618, so this is a repeated linkage gap, not a one-off.
+
+Proposal: when `proof task-verify` records runtime_proven, also offer/record a candidate issue-evidence link for each issue already referenced by that task (same run_id, build generation, DLL SHA, and journal path), and make the review scheduler compare each issue's newest evidence generation with the newest runtime_proven proof generation and flag a lag. This reuses existing proof rows; it does not auto-close or auto-prove anything.
+
+Measurable target: for behavior task proofs that succeed on a pinned run, the parent issue's newest evidence generation is within 1 generation of that proof in >=95% of cases; reviewer time to find the newest relevant runtime drops to one coordination query instead of manual journal scans; zero duplicate evidence rows.
+
+Smallest experiment: wire the link suggestion for exactly this issue's next successful rocket-league task proof (gen 742+), then re-run one issue-review sweep and record (a) whether the reviewer still needs raw journal scanning to find the newest run, (b) evidence-generation lag before/after, and (c) duplicate count. Observe for one sweep cycle before changing shared authority.
+
+## Agent suggestion
+
+### 2026-11-27T01:14:55.866Z — issue-review-sweeper
+
+Process evidence from independent review of issue-503f3e410c01 (2026-11-27T00:5xZ, issue-review-sweeper, read-only; no source, build, or run change). This adds one distinct facet to the runtime/build-to-proof proposals here; it does not repeat the game_generation, missing-journal, generation-conflict, or proof-audit items.
+
+NEW OBSERVED EVIDENCE
+- Runs 20261127_000428 and 20261127_001718 both loaded the current artifact build 2026-11-26T22:52:33.481041Z:cb72ee40 (source revision 7176d28a) and game DLL build\game\generation-742\game-g742.dll (sha256 02bd9fa3...). In each, the dashboard-launched client first joined the dedicated server-01 (127.0.0.1:60364, map atdm, server_run_id 20261127_000428), disconnected with reason local_shutdown within ~3s, then emitted network.gui-server.launch and hosted its own server on dust2cyberiav4/team_deathmatch (pid 20596; and pids 4660 then 30816). The accepted player-Mace and NPC->player melee events are emitted by those client-spawned servers (CIM parent: 20596<-24528, 30816<-29544), not by the pinned server-01 (pid 11572), whose journal has 0 NPC->player damage and 0 nonzero-part pose skips.
+- run.json for both runs names only server-01 (11572); it records no joined/validating server pid, endpoint, map, or game generation, so a reviewer must hand-grep network.client.join.accepted and network.gui-server.launch to learn which server actually produced the evidence.
+
+PROPOSAL (smallest experiment, measurable)
+- At run end (or on each join), have run.json record joined_server {pid, endpoint, map, mode, game_generation, dll_path, sha256} for the server the client actually validated against, including client-spawned network.gui-server.launch servers, and have evidence attach refuse to cite a run whose emitting server pid/map is absent from run.json unless an explicit reason is recorded.
+- Measurable target: for the next 3 dashboard-launched runs that re-host, run.json names the joined server pid/endpoint/map/generation and it equals the pid/map in the accepted-event journal; 0 acceptance-evidence attachments whose emitting server is not named in run.json; reviewer time to identify the validating server under 30s (baseline: hand-grepping 2 journals of 60-100MB each).
+- Smallest experiment: write the joined_server block from the existing network.client.join.accepted + network.gui-server.launch + game.host.probe.started events when a run stops, and verify on runs 20261127_001718 (expect 4660->30816, dust2cyberiav4) and 20261127_000428 (expect 20596, dust2cyberiav4) without changing gameplay, build, retention, or proof authority. Cross-ref issue-a5ca672b6628 for the local_shutdown re-host behavior.
+
+## Agent suggestion
+
+### 2026-11-27T01:40:39.803Z — issue-review-sweeper
+
+Evidence update from issue-review-sweeper (read-only; no source edit or build). This is corroboration of this issue's existing unimplemented proposals (proof_add default at ~2026-11-22T0x and the trace-toggle + proof-record-consistency proposal at ~2026-11-26), not a new duplicate proposal.
+
+NEW evidence (2026-11-27T01:24Z review of issue-8e48cd0bc786): the trace-toggle gap now persists on the CURRENT generation in a routine live profile, not just a special scenario. Run 20261127_011757 (game_generation=748, game_dll_sha256=f47559bffec6fb40f9d3ae13fb5ca7862952e05b640bd8dbb2eeda644926b5f6, profile npc-navigation, launch_mode 31, "tdm npc elite") survived on disk with 6 explode-world + 4 explode-player + 2 explode-lifetime rocket terminals and 400 rocket shockwaves in the client journal, yet 0 impact_decal.spawn / 0 impact_decal.render_submitted / 0 hitfx_trace because gHitFxTraceEnabled defaults false (src/effects/hit-effects.cpp:34) and nothing issued the existing `hitfx_trace 1` command (src/effects/hitfx-commands.cpp:194). Also, task-proof-9d05ae9ca4ff is still status=runtime_proven with result=unproven, game_generation=0, verified_utc="", and a nonexistent journal, now on the sixth review where this must be re-flagged; root cause is still devscripts/agent_coord.py:1604-1605 (proof_add defaults status="runtime_proven").
+
+Delta vs the existing proposal: the gap is no longer confined to a hand-run rocket scenario; even a normal NPC TDM run produces world/player/lifetime rocket terminals but cannot prove decal behavior. Measurable target (unchanged but now measurable on a daily profile): within 3 days, one `--start-test-run`/profile field (e.g. a `trace=hitfx` option) enables tracing with zero hand-edited client command files; on the next 3 rocket-decal proof attempts, 100 percent first-attempt pinned gen>=748 journals contain >=1 impact_decal.spawn + matching impact_decal.render_submitted decal_id per world terminal and zero for player/lifetime terminals; 0 proof records with status=runtime_proven while result!=proven or verified_utc/journal absent.
+
+Smallest experiment: add the one profile/CLI trace flag, run one generation>=748 npc-navigation (or fun-counter-strike) instance with it, and inspect the exact client journal for the two decal events; separately flip proof_add's default to unverified and run `proof lint` over .dev/agent-coord/brain.db before/after to confirm the contradiction count drops to 0. No gameplay change; cross-ref issue-8e48cd0bc786.

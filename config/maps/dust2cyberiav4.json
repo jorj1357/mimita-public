@@ -244,6 +244,32 @@
       ],
       "source": "",
       "visible": true
+    },
+    {
+      "clone": false,
+      "collision": true,
+      "deleted": false,
+      "id": "node:149",
+      "instance_id": "",
+      "material": "",
+      "name": "Cube.974",
+      "position": [
+        -621.2803955078125,
+        102.400390625,
+        2348.53564453125
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source": "",
+      "visible": true
     }
   ],
   "interactions": [],

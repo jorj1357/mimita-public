@@ -28,7 +28,8 @@
   "intermission_seconds": 10,
   "results_seconds": 5,
   "maps": [
-    "arena1"
+    "arena1",
+    "arena2"
   ],
   "teams": [
     {

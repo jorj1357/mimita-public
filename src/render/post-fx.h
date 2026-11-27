@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -61,6 +62,16 @@ class PostFX
 public:
     enum class Mode { Full = 0, Minimal = 1, Off = 2 };
 
+    // Chromatic-aberration presentation modes. These are deliberately
+    // exclusive: exactly one compositing policy is active at a time.
+    enum class LensMode : int {
+        Mixed = 1,       // CA only through dark/background pixels
+        WorldOnly = 2,   // CA on the complete world, UI composited normally
+        Normal = 3,      // no CA anywhere; black stays black
+        WorldAndUi = 4,  // CA on the complete world and UI/3D popups
+        BodycamSpecial = 5 // whole-frame CA + fisheye/vignette, UI in scene
+    };
+
     static PostFX& instance();
 
     // Load/save config
@@ -69,6 +80,7 @@ public:
     struct ModeBodycamLensOverride {
         float chromaticAberration = 0.0f;
         bool chromaticAberrationBackgroundOnly = false;
+        int lensMode = 1;
         float vignette = 0.0f;
         float distortion = 0.0f;
         float curve = 2.0f;
@@ -84,6 +96,35 @@ public:
         mBodycamLensOverride = value;
     }
     void clearBodycamLensOverride() { mBodycamLensOverride.reset(); }
+    int effectiveLensMode() const;
+    float effectiveChromaticAberration() const;
+    void setLensModeOverride(int mode);
+    void clearLensModeOverride() { mLensModeOverride.reset(); }
+    bool hasLensModeOverride() const { return mLensModeOverride.has_value(); }
+    // Live CA on/off. An empty override uses the resolved bodycam/config value.
+    void setChromaticAberrationOverride(float strength) {
+        mChromaticAberrationOverride = std::max(0.0f, strength);
+    }
+    void clearChromaticAberrationOverride() {
+        mChromaticAberrationOverride.reset();
+    }
+    bool hasChromaticAberrationOverride() const {
+        return mChromaticAberrationOverride.has_value();
+    }
+    bool chromaticAberrationEnabled() const {
+        return effectiveLensMode() != 3 && effectiveChromaticAberration() > 0.0001f;
+    }
+    const ModeBodycamLensOverride* bodycamLensOverride() const {
+        return mBodycamLensOverride ? &*mBodycamLensOverride : nullptr;
+    }
+    void setPresentationPatternFrames(int frames) {
+        mPresentationPatternFrames = std::max(0, frames);
+    }
+    int presentationPatternFrames() const { return mPresentationPatternFrames; }
+    void consumePresentationPatternFrame() {
+        if (mPresentationPatternFrames > 0) --mPresentationPatternFrames;
+    }
+    static const char* lensModeName(int mode);
     // Camera-owned lens distortion supports values well above 100.
     void setCameraLensDistortion(float amount, float curve, float zoom,
                                  int edgeMode, float edgeRadius,
@@ -153,6 +194,9 @@ private:
 
     PostFXData mData;
     std::optional<ModeBodycamLensOverride> mBodycamLensOverride;
+    std::optional<int> mLensModeOverride;
+    std::optional<float> mChromaticAberrationOverride;
+    int mPresentationPatternFrames = 0;
     PostFXData mTarget; // for presets with animation
 
     std::string mConfigPath;
@@ -209,3 +253,11 @@ private:
 };
 
 extern PostFX gPostFX;
+
+// Deferred presentation probe. Applying a lens mode and reading the pixels
+// back in the same tick would measure the previous mode. Scheduling the
+// capture a couple of frames later keeps mode, test pattern, and readback in
+// one atomic request, so a concurrent game-DLL generation swap cannot drop
+// the mode between two separate commands.
+void requestPresentationProbe(const std::string& tag, int mode);
+void tickPresentationProbeFrame();

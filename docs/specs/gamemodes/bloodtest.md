@@ -385,10 +385,56 @@ movement, projectile, damage, camera, or match owners.
 ## 2026-11-26 presentation pass 2
 
 - **Lens modes:** `presentation.bodycam.lens.chromatic_aberration_mode` is
-  exclusive. `full_world` applies chromatic aberration to the complete final
-  scene; `background_only` masks the shifted image to dark/background pixels.
-  Bloodtest defaults to `full_world`. Do not composite a normal world in front
-  of a separate CA ghost world.
+  exclusive and resolves to exactly one of five modes:
+  `mixed` (1: CA only through dark/background pixels, bright UI stays crisp),
+  `world_only` (2: CA on the complete world, no fisheye/vignette, UI composited
+  after PostFX), `normal` (3: no CA and no lens anywhere, black stays black),
+  `world_and_ui` (4: CA on the complete world plus UI, world UI, 3D popups and
+  PNGs), and `bodycam_special` (5: whole-frame bodycam presentation, described
+  below). `full_world` is retained as an alias for `world_only`, and
+  `background_only` for `mixed`. Bloodtest defaults to `world_only`.
+  The live override is `lens_mode <1|2|3|4|5|config>`; `config` returns
+  ownership to the gamemode JSON. Do not composite a normal world in front of a
+  separate CA ghost world, and do not run a second HUD CA pass: the single
+  PostFX pass owns CA.
+- **Lens mode 5 `bodycam_special`:** the chosen presentation is uniform
+  1024x768 world+UI stretched to the display (Option 1). The world and the HUD
+  are both drawn into the 1024x768 scene target, PostFX runs on that frame
+  (full-world CA when enabled, fisheye distortion, vignette, peripheral blur),
+  and the whole frame is stretched to the output. Consequences: the HUD is
+  stretched and, when CA is enabled, the HUD is CA'd too. `lens_ca on|off`
+  toggles CA without changing the lens; when off, the stretched world and HUD
+  keep the fisheye/vignette. The HUD-safe starting lens is
+  `vignette 0.35`, `distortion 100`, `curve 0.5`, `zoom 1.0`,
+  `edge_mode vignette`, `edge_radius 0.72`, `edge_softness 0.3`,
+  `edge_darkness 0`, `peripheral_blur 4.0`, CA `0.8`.
+  Considered but not implemented:
+  - Option 2: world at 1024x768 stretched, HUD after PostFX at output
+    resolution (crisp HUD, not stretched).
+  - Option 3: world at 1024x768 stretched, HUD rendered at 1024x768 and
+    stretched without CA (whole frame stretched, HUD not CA'd; needs a separate
+    UI target).
+- **Fullscreen mode 6:** fullscreen 6 is the borderless full-frame 1024x768
+  stretched display mode. It is entered explicitly with the console command
+  `fullscreen 6`; it is not the global default. `fullscreen 6` must apply live
+  and keep the selected lens mode. The intentional upscale is currently soft;
+  a sharpening/upscale pass is future work.
+- **Mode 4 and whole-frame:** UI can receive CA only when it is drawn into the
+  scene before PostFX. Mode 4 therefore requires whole-frame composition
+  (`stretchesWholeFrame()`, fullscreen video mode 6). In a windowed launch the
+  UI remains after PostFX and mode 4 is not claimed as proven. An
+  output-resolution UI CA pass is future work.
+- **Modes 2/3/4 and the lens:** the bodycam lens (fisheye, vignette, blur) is
+  active only in modes 1 and 5. Modes 2/3/4 disable it so the clean-CA and
+  normal presentations are not darkened or warped.
+- **Proof:** `presentation_probe <tag> [mode]` applies the mode and a
+  deterministic achromatic world+UI pattern, then reads the presented frame two
+  frames later. The verdict asserts `mode_applied` and the expected world/UI
+  CA scores, so a generation swap between switch and capture fails the record
+  instead of producing mixed evidence. `presentation_stretch_probe` records the
+  scene/output sizes, the stretch factors, the applied fullscreen mode, and a
+  pixel verdict. The 2026-11-26 record is
+  `docs/regressions/presentation/bloodtest-chromatic-aberration-modes-REG-2026-11-26.md`.
 - **Camera:** Bloodtest uses `orientation_mode: mouse`. The bodycam spring
   follows the camera wish yaw/pitch, while the head/eye supplies position only.
   Moving and settled camera angles therefore use the same aim direction.

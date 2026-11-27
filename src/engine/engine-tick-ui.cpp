@@ -126,6 +126,32 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan, bool useOutputFra
     { Perf::ScopedTimer _ui("UI");
     { MIMITA_PERF_SCOPE("UI::Begin"); uiBeginFrame(engine.window(), "game-debug-overlay", true, useOutputFramebuffer); }
 
+    if (PostFX::instance().presentationPatternFrames() > 0) {
+        // UI-side half of the deterministic shader test pattern. A dense
+        // achromatic checkerboard gives many edges, so a chromatic-aberration
+        // shift produces a measurable score even when the UI is stretched.
+        const float centerX = uiScreenW() * 0.5f;
+        const glm::vec4 black{0.0f, 0.0f, 0.0f, 1.0f};
+        const glm::vec4 white{1.0f, 1.0f, 1.0f, 1.0f};
+        const float cell = 12.0f;
+        const int cols = 36;
+        const int rows = 10;
+        const float bandW = cell * (float)cols;
+        // Draw at both possible UI y origins; the probe samples the top and
+        // bottom quarters and one copy is guaranteed to land in each.
+        for (float top : {20.0f, uiScreenH() - 140.0f}) {
+            for (int row = 0; row < rows; ++row) {
+                for (int col = 0; col < cols; ++col) {
+                    const bool light = ((row + col) & 1) != 0;
+                    uiDrawRect({centerX - bandW * 0.5f + (float)col * cell,
+                                top + (float)row * cell, cell, cell},
+                               light ? white : black,
+                               "presentation-test-pattern");
+                }
+            }
+        }
+    }
+
     { MIMITA_PERF_SCOPE("UI::Text"); EffectPartSystem::instance().renderText(camera); }
 
     const MimitaNet::CommunityMatchClient& aftermathMatch =

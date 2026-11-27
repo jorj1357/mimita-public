@@ -11,6 +11,7 @@
 
 #include "duel/duel-queue.h"
 #include "duel/duel-history.h"
+#include "debug/structured-log.h"
 #include "gamemode/gamemode-map-pool.h"
 
 #include <chrono>
@@ -26,6 +27,7 @@
 #include "gui/gui-main.h"
 #include "world/world-gltf-loader.h"
 #include "game/spawn-utils.h"
+#include "physics/physical-entity.h"
 #include "notifications/notifications.h"
 #include "auth/auth-system.h"
 #include "debug/debug-log.h"
@@ -717,6 +719,28 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
     mGoal = pkt.goalValue;
     mMyTeamName = amA ? pkt.teamAName : pkt.teamBName;
     mEnemyTeamName = amA ? pkt.teamBName : pkt.teamAName;
+    // Client-side receipt of a score change. The server logs the authoritative
+    // arena.goal.detected with its tick; this records the same event as the
+    // client observed it, with the client simulation tick.
+    {
+        static uint32_t sLastScoreA = 0;
+        static uint32_t sLastScoreB = 0;
+        if (pkt.scoreA + pkt.scoreB > sLastScoreA + sLastScoreB)
+        {
+            const uint32_t clientTick = static_cast<uint32_t>(
+                PhysicalEntitySystem::instance().simulationTick());
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "arena.goal.received", "arena",
+                "client observed a score change", clientTick,
+                {{"score_a", pkt.scoreA},
+                 {"score_b", pkt.scoreB},
+                 {"server_tick", pkt.header.tick},
+                 {"client_tick", clientTick}});
+        }
+        sLastScoreA = pkt.scoreA;
+        sLastScoreB = pkt.scoreB;
+    }
     mMyScore = amA ? pkt.scoreA : pkt.scoreB;
     mOppScore = amA ? pkt.scoreB : pkt.scoreA;
     mWinnerId = pkt.winnerPlayerId;

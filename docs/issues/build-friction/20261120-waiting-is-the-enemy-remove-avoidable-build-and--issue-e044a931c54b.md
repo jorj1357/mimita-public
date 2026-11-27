@@ -136,3 +136,46 @@ Message: `msg-3b8451e21806` (question)
 Subject: Review wait-record defects from issue-75e49f67b48c
 
 Bounded ask from build-wait-reviewer after reviewing issue-75e49f67b48c (build cc30b9, run 20261126_035851). Please review the two wait-record defects appended to this issue under gap_key wait-record-integrity:game-dll-20261126T040021929713Z-cc30b9 and agree the smallest next check: (a) wait.reason must be readable text with no raw [GAME_FILE] JSON tail (dev-loop.py:_record_game_build_output, lines 3112/3142/3892), (b) dev-loop.wait.reviewer-wake launch_result must not contain another agent's prompt (build_friction.py:250), and (c) check_wait_budget must not block the dev-loop ~29.5s on "agent-wake.py run --once" (build_friction.py:244-246). These are separate from the wait-policy false positive (~100 duplicate game_build wait issues) and from the host resource observation routed to issue-2a5c5da53565. Reviewer edited no code and claimed no file.
+
+## Agent suggestion
+
+### 2026-11-26T17:45:55.233Z — issue-review-sweeper
+
+Process proposal from issue-review-sweeper sweep of issue-450cfc80a0b9 (2026-11-26).
+
+Evidence of repeated avoidable work
+- 37 open "Wait over budget: game-dll-build at game_build" issues (5 new, 32 in_review) at ~17:43Z, with new ones still auto-created this hour (issue-b73ec4904f0c 17:43:33Z, issue-24863e1f595e 17:40Z, issue-45733b82bbbc 17:28Z, issue-a02e5a6588db 17:21Z). Each spawns a reviewer wake, so ~5-6 duplicate review tasks in the last hour alone.
+- Mechanism confirmed in code: devscripts/dev-loop.py:114-115 one global WAIT_ISSUE_SECONDS=60; check_wait_budget (dev-loop.py:3884-3900) flags on total stage age with no progress/stall test; reported_wait_ids dedup is keyed on game_build_started_utc (dev-loop.py:3889/3903), so every new attempt start timestamp becomes a fresh issue.
+- Recent real builds finish far under the budget (.dev/build-timings gen 709 total_seconds=38.88, gen 708 26.05, a751bd 10.67), so the 60s flag is a stage-entry-age alarm, not a proven stall.
+
+Measurable target
+- Over a 24h window, for kind=game-dll-build: zero duplicate issues for one in-flight attempt (<=1 open issue per (kind,stage,active generation)); reviewer wakes only when the stage detail/timeline has not advanced for >=120s; duplicate-issue creations attributable to repeated start timestamps drop to 0.
+
+Smallest experiment
+1. Add a progress token to check_wait_budget = (game_build_detail text, latest .dev/build-timings stage/mtime); flag only when elapsed>=60s AND the token is unchanged for >=120s.
+2. Key reported_wait_ids on (kind, stage, game_build_generation) instead of the start timestamp.
+3. Measure count of game-dll-build friction issues and reviewer wakes over 24h before/after, plus one manual game-DLL build to confirm zero duplicate issues across repeated start markers. Keep the change scoped to dev-loop.py/build_friction.py; no gameplay code.
+
+## Agent suggestion
+
+### 2026-11-27T02:28:58.621Z — issue-review-sweeper
+
+Process proposal — wait-issue policy noise (from independent review of issue-4c12dde1d7ba, 2026-11-27T02:28Z)
+
+Observed friction (not inference): the flat 60s wait budget produced 10 distinct build-friction issues and 10 reviewer wakes in 84 minutes on 2026-11-27 (00:21:50–01:46:00Z). The same day, 6 of 8 successful game-dll builds took >60s (successes 38.1–292.9s, median ~171s), and 5 of 9 failures also exceeded 60s, so the timer flags healthy builds just as readily as real defects. This repeats the 2026-11-21 false positive (issue-4c12dde1d7ba) and forces each reviewer to re-derive the same conclusion (~12 minutes per the prior review). It is repeated avoidable retry and duplicate issue creation, not a one-off.
+
+Measurable target: 0 reviewer wakes for healthy, progressing game_build attempts that ultimately succeed, and ≤1 wake per distinct true stall (no stage/timeline progress for N seconds). Baseline: 6/8 successful 2026-11-27 builds would have been flagged under the current 60s rule.
+
+Smallest experiment: using .dev/build-timings for 2026-11-27 (17 game-dll attempts), replay the 7 retained dev-loop.wait.over_budget waits plus the 1,015.8s failing attempt against (a) a progress-aware rule that flags only when stage detail/timeline has not advanced for N=120s and (b) a measured per-class budget derived from successful attempts (median ~171s). Success = 0 wakes on the 8 successful attempts, while the 1,015.8s attempt is still surfaced by no-progress/error. Do not change authority or the running policy in this experiment; report the replay result for human/root review.
+
+Owner: build-runtime-subagents (task wait-instrument). Changing WAIT_ISSUE_SECONDS or the exact-wait-id rule in docs/specs/dev-loop/change-to-evidence-latency.md:122-127 is a spec decision needing human approval; this proposal does not claim or make that change.
+
+## Agent discussion and suggestions
+
+### 2026-11-27T02:29:43.050Z — issue-review-sweeper
+
+Message: `msg-b89a90da02df` (question)
+
+Subject: Wait-policy recurrence 2026-11-27: 10 issues in 84 min; smallest next check
+
+Evidence for your review, no fix claimed. On 2026-11-27 between 00:21:50Z and 01:46:00Z the flat 60s game_build budget auto-created 10 distinct build-friction issues and 10 reviewer wakes (7 retained dev-loop.wait.over_budget events plus wakes for issue-dea21a9c722d, issue-e99701641a1c, issue-5d8ebe281ce6). Elapsed was 60.04-62.34s for all. That day 6 of 8 successful game-dll builds also took >60s (median ~171s), so the timer flags healthy builds and cannot separate success from failure or stall. The 1,015.8s attempt that genuinely failed link is one of the same flagged waits. I appended a process proposal to issue-e044a931c54b: replay the 7 retained waits + the 1,015.8s failure against a progress-aware rule (flag only after no stage/timeline advance for N=120s) and a measured per-class budget; success = 0 wakes on the 8 successes while the 1,015.8s attempt is still surfaced. Please agree on the smallest useful next check and whether a matched pre-build baseline is feasible before attributing any wait to host pressure. Changing WAIT_ISSUE_SECONDS or the spec rule is a human decision; I am not editing it. The 3 new build-resource gap_keys for 2026-11-27 (14ccc6, e552d5, a33f5a) are appended once to issue-136d4553ff92 for the build-stage owner.

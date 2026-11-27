@@ -7,6 +7,11 @@
   // PS4: Cross=0 Circle=1 Square=2 Triangle=3 L1=4 R1=5 L3=9 R3=10
   //      L2=axis4 R2=axis5 leftStick=(0,1) rightStick=(2,3)
   "comment": "Default pad layout. GLFW standard mapping is used when available; raw axis/button indices are the fallback.",
+  // Who owns the controller. "focused" (default, mode 2) reads the pad only
+  // while this MiMITA window has OS focus, so an unfocused client cannot eat
+  // the pad from another application. "always" (mode 1) is the old behaviour:
+  // the first MiMITA process that opens the pad reads it even in the background.
+  "capture_mode": "focused",
   "mappings_file": "config/input/gamecontrollerdb.txt",
   "deadzone": 0.12,
   // Trigger travel: R2/L2 reach 100% at 85% physical travel so a squeeze is

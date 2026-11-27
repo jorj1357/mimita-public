@@ -404,6 +404,61 @@ void drawPlayerArchitectureDebug(const Player& player, const Camera& camera)
     drawLine(camera, player.origin.position, player.movementCapsule.position, white);
 }
 
+// Live body-socket rig editor overlay (2026-11-27). Point = socket, line =
+// torso→part parent link, axes + quad = socket orientation/face. Drawn only
+// while rig_editor is active; ungated so it works without debug visuals.
+void drawRigEditorOverlay(const Player& player, const Camera& camera)
+{
+    const glm::vec4 socketColor{1.0f, 0.85f, 0.1f, 1.0f};
+    const glm::vec4 selectedColor{0.25f, 1.0f, 0.35f, 1.0f};
+    const glm::vec4 lineColor{1.0f, 0.45f, 0.1f, 0.95f};
+    const glm::vec4 faceColor{0.2f, 0.65f, 1.0f, 0.9f};
+    const char* partNames[] = {"head", "leftArm", "rightArm", "leftLeg", "rightLeg"};
+
+    auto findNode = [&](const char* base) {
+        for (int i = 0; i < (int)player.perfectPoseSkeleton.nodes.size(); ++i)
+            if (playerBodyPartBaseName(player.perfectPoseSkeleton.nodes[i].name) == base)
+                return i;
+        return -1;
+    };
+
+    const int torso = findNode("torso");
+    if (torso < 0)
+        return;
+    const glm::vec3 torsoPos =
+        glm::vec3(player.perfectPoseSkeleton.nodes[torso].worldTransform[3]);
+    drawPointCross(camera, torsoPos, 0.07f, socketColor);
+    drawWireSphere(camera, torsoPos, 0.05f, socketColor);
+    drawWorldLabel(torsoPos + glm::vec3(0.0f, 0.0f, 0.16f), "torso(socket root)",
+                   socketColor);
+
+    const std::string& selected = playerRigEditorSelected();
+    for (const char* partName : partNames) {
+        const int idx = findNode(partName);
+        if (idx < 0)
+            continue;
+        const glm::mat4& world = player.perfectPoseSkeleton.nodes[idx].worldTransform;
+        const glm::vec3 p = glm::vec3(world[3]);
+        const bool isSelected = selected == partName;
+        const glm::vec4 color = isSelected ? selectedColor : socketColor;
+        drawPointCross(camera, p, isSelected ? 0.1f : 0.06f, color);
+        drawWireSphere(camera, p, isSelected ? 0.07f : 0.045f, color);
+        drawLine(camera, torsoPos, p, lineColor);
+        drawTransformAxes(camera, world, isSelected ? 0.28f : 0.16f);
+        // Orientation face: a small quad in the socket's local XY plane.
+        const glm::vec3 ax = glm::vec3(world[0]) * 0.045f;
+        const glm::vec3 ay = glm::vec3(world[1]) * 0.045f;
+        drawLine(camera, p, p + ax, faceColor);
+        drawLine(camera, p + ax, p + ax + ay, faceColor);
+        drawLine(camera, p + ax + ay, p + ay, faceColor);
+        drawLine(camera, p + ay, p, faceColor);
+        drawWorldLabel(p + glm::vec3(0.0f, 0.0f, 0.12f),
+                       isSelected ? (std::string(partName) + " <").c_str()
+                                  : partName,
+                       color);
+    }
+}
+
 // =====================================================
 // DebugVis namespace wrappers (line/point primitives)
 // =====================================================

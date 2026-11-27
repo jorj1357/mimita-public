@@ -208,6 +208,61 @@ void registerMapEditorCommands()
                 }
                 return;
             }
+            if (command == "block_shape") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 2) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] block_shape <box|profile|cylinder|cone|sphere|wedge>");
+                    return;
+                }
+                if (!editor.setSelectedBlockShape(args[1]))
+                    Terminal::instance().addLog("[MAPEDIT] select a block first");
+                return;
+            }
+            if (command == "block_profile") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 4 || (args.size() % 2) != 0) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] block_profile <u1> <v1> <u2> <v2> ...");
+                    return;
+                }
+                std::vector<glm::vec2> points;
+                bool ok = true;
+                for (size_t i = 1; i + 1 < args.size(); i += 2) {
+                    try {
+                        points.emplace_back(std::stof(args[i]),
+                                            std::stof(args[i + 1]));
+                    } catch (const std::exception&) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok || points.size() < 2) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid profile");
+                    return;
+                }
+                if (!editor.setSelectedBlockProfile(points))
+                    Terminal::instance().addLog("[MAPEDIT] select a block first");
+                return;
+            }
+            if (command == "block_shape_param") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 3) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] block_shape_param <arc|segments|convex|axis|radius_top|flip> <value>");
+                    return;
+                }
+                float value = 0.0f;
+                try {
+                    value = std::stof(args[2]);
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid value");
+                    return;
+                }
+                if (!editor.setSelectedBlockShapeParam(args[1], value))
+                    Terminal::instance().addLog("[MAPEDIT] unknown parameter");
+                return;
+            }
             if (command == "opacity") {
                 if (!editor.active() && !editor.setActive(true)) return;
                 if (args.size() < 2) {
@@ -563,7 +618,8 @@ void registerMapEditorCommands()
                     }
                     editor.addEntity(args[2], args.size() > 3 ? args[3] : "");
                 } else if (kind == "block") {
-                    editor.addBlock(args.size() > 2 ? args[2] : "");
+                    editor.addBlock(args.size() > 2 ? args[2] : "",
+                                    args.size() > 3 ? args[3] : "box");
                 } else if (kind == "vehicle" || kind == "car") {
                     const std::string templateId =
                         args.size() > 2 ? args[2] : "car_sedan";

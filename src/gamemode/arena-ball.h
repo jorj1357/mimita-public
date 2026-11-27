@@ -34,7 +34,8 @@ void setState(PhysicalEntity& ball, const glm::vec3& position,
 // Test surface: apply now when the ball exists, otherwise remember the request
 // and apply it as soon as the arena ball spawns (a server startup command runs
 // before map load finishes).
-void requestState(const glm::vec3& position, const glm::vec3& velocity);
+void requestState(const glm::vec3& position, const glm::vec3& velocity,
+                  const glm::vec3& spin = glm::vec3(0.0f));
 void tick();
 void registerArenaBallCommands();
 }

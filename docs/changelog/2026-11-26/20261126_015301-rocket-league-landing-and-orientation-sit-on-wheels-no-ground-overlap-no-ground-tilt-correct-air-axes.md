@@ -701,3 +701,466 @@ client entered 1. Reload stress in `20261126_161313`: touching a profile file
 mid-run produced registry revision 2 with count 3, zero crashes, server still
 running. Full cause, fix and prevention rules are in
 `docs/regressions/dev-loop/server-crash-frozen-REG-2026-09-27.md` Occurrence 4.
+
+## Follow-up: dodge 360 proven, friction split, NPC-vs-NPC probe
+
+**Dodge 360 — proven.** The real cap was the vehicle template's
+`maxAngularSpeed: 5.5` (the physical entity clamps every dynamic body), not the
+profile. Raising it to 24 and stopping the flip torque at a full turn gives
+`vehicle.flip.rotation_deg_total = 359.85` in run `20261126_164106`
+(`rocket_dodge_360_v1` passes, 300-400 deg window), with `cancelled = false`.
+The earlier spurious cancel (`against -0.12` against a 0.1 threshold) is gone:
+the cancel now compares against the stick direction captured in the car's own
+input axes at dodge start. `vehicle.flip` also reports `flip_limit`,
+`air_limit` and `flip_seconds` so a future clamp regression is attributable.
+
+**Friction.** Normal driving grip raised: `bodyFriction` 0.10 -> 0.65 and
+`bodyWallFriction` 0.03 -> 0.30, keeping `powerslide.gripScale 0.1` for the
+handbrake path, so the old slippery feel is now the powerslide feel and normal
+driving grips.
+
+**Straight-line handling.** A car driving with steer 0 used to rotate ~225 deg
+over 9 s (log: `slip_deg 0.08` but heading changed), so bots missed the ball.
+Grounded cars now damp the yaw rate toward zero (tyre self-aligning torque,
+8/s) and bleed the lateral velocity component when centred. The measured path
+is now a straight line; a residual constant ~7.5 deg heading offset at the
+arena spawn remains and is the next defect.
+
+**NPC vs NPC probe.** Launch mode 66 (`MIMITA_ARENA_BOT_VS_BOT=1`) seats a
+second bot on the other team; run `20261126_165201` shows both seats
+(`vehicle.auto_seat` vehicle 1 npc, vehicle 2 npc + `bot_vs_bot: true`).
+`arena.goal.detected` now carries `scorer_vehicle_id`, `scorer_team`,
+`match_seconds` and `server_tick`; the client logs `arena.goal.received` with
+`server_tick` and `client_tick`. No goal has been scored yet because the cars
+still miss the ball (heading offset), so the scoring proof is pending.
+
+## Follow-up: drivable car, dodge proof, ball roll, and a proven NPC 1v1
+
+**Steering owns the grounded yaw rate.** Contact friction was deciding a
+grounded car's yaw, which integrated a tiny asymmetric ground torque into 4
+degrees of drift while *parked* and 225 degrees of curve over 9 s while driving
+(`slip_deg 0.08` the whole way). The profile now owns
+`ground.maxYawRateRadPerSecond` (3.4) and `ground.yawAccelRadPerSecond2` (14):
+steer sets a target yaw rate scaled by `clamp(speed/1.5, 0, 1)`, the rate is
+rate-limited toward it, and residual below 0.02 rad/s is zeroed. A straight
+drive now holds `yaw_deg = 0.00` from `x = -39` to `x = +32` (run
+`20261126_190324`). The lateral-slide bleed is skipped while powersliding.
+
+**Grip.** `bodyFriction` 0.65 / `bodyWallFriction` 0.30 for normal driving;
+powerslide stays at `gripScale` 0.10, so the old slippery feel is now the
+powerslide feel.
+
+**Dodge 360 proven on the current build.** The template `maxAngularSpeed` was
+the real cap, not the profile flip limit. With 24 and the torque stopping at a
+full turn: `rocket_dodge_360_v1` passes, `rotation_deg_total = 359.85`,
+`cancelled = false`, `flip_limit = 24`.
+
+**Dodge cancel proven, and fixed.** `rocket_dodge_cancel_v1` (new) showed the
+cancel fired (`cancelled = true`) but the car still coasted to 359 degrees: it
+stopped the torque, not the spin. Cancelling now removes the flip-axis angular
+velocity, so the rotation stops at 162 degrees and all four assertions pass.
+
+**Ball keeps rolling.** The ball had two decay constants: `angularDamping` 0.4/s
+against `linearDamping` 0.03/s. Contact friction converted the missing spin into
+a 0.25 m/s^2 drag and a 3.6 m/s roll died in 14 s mid-field. Spin and travel now
+decay together at the ball's single drag constant.
+
+**NPC vs NPC 1v1, 5-minute limit, goals with full attribution.** Launch mode 66
+(`MIMITA_ARENA_BOT_VS_BOT=1`) seats a second bot on the other team, so the
+player's car is driven by an NPC and two NPCs play each other. Run
+`20261126_185723` on generation 720:
+
+- `arena.match.clock` 0 -> 300.0 s, remaining 300 -> 0, score tracked each sample.
+- Five goals by both bots: `match_seconds` 5.0, 172.5, 195.5, 216.2, 230.5;
+  `server_tick` 301, 11328, 12702, 13947, 14805; final 3-2.
+- Every goal carries `scorer_vehicle_id`, `scorer_team`, `scorer_driver_id`,
+  `goal_id`, `goal_team`, `scoring_team`, `match_seconds`, `remaining_seconds`
+  and the score.
+- Every score change is observed by the client as `arena.goal.received` with
+  `server_tick` and `client_tick` (308, 22512, 25260, 27748, 29466).
+- `arena.match.over` `reason = time_limit` `winner_team = 0` at `server_tick`
+  18974 (match start 974), and a goal after the whistle no longer counts.
+- 12 landings in the match, all 12 with `up_dot_world_up > 0.95`, zero
+  `vehicle.rest.tilted`.
+
+**Defects this exposed and fixed.** A goal was tested on the ball's *centre*, but
+the ball's centre stops one radius short of the back net, so a shot into the net
+rested 0.6 m outside the goal volume and scored nothing; the test now uses the
+ball's surface. The scorer was "nearest car at the crossing", which named nobody
+once the shot had left the car; it is now the last car to touch the ball
+(`PhysicalEntity.lastTouchedVehicleNetworkId`). The bot gate treated the
+unseated probe client as a human waiting for a car and shut both bots off at the
+first goal reset.
+
+Evidence paths: `logs/2026-11-26/20261126_185723/{server-01,client-01}/events.jsonl`,
+`logs/2026-11-26/20261126_190324/server-01/events.jsonl`,
+`logs/2026-11-26/20261126_185516/{dev-loop,server-01}/events.jsonl`.
+
+## Follow-up: NPC aerial goal and aerial save, proven with events
+
+**The bot flies.** `MIMITA_ARENA_BOT_VS_BOT` now runs an aerial program: jump,
+point the nose at the ball with a body-rate controller, boost, air-roll on the
+climb, dodge through the ball. All of it is the same `VehicleInput` surface a
+human uses, and every step is an owner event.
+
+Proven sequence, run `20261126_195128` (mode 67, ball placed 5 m over the orange
+goal): `vehicle.npc.aerial` start at `ball_height_m 5.0`, `vehicle.jump`
+`jump_count 1`, `vehicle.boost` + `vehicle.airroll` at 0.49 s, `vehicle.dodge` at
+0.74 s, `arena.ball.contact` at 0.93 s, then `arena.goal.detected` with
+`aerial = true`, `scorer_ball_height_m = 2.74`, `scorer_vehicle_id = 2`,
+`scorer_team = 0`, `server_tick = 98`.
+
+**Aerial save.** `arena.save` is computed from real state: the ball's previous
+velocity must point at the toucher's own goal above 5 m/s, the ball must be
+within 16 m of that goal, and the touch must turn it away. Run
+`20261126_194927`: `ball_speed_before 8.34`, `after 7.05`, `aimed_at_goal 0.93`,
+`still_at_goal -0.55`, `ball_height_m 2.58`, `aerial = true`.
+
+**Roof or wheels, fuzz-proven.** `vehicle.fuzz.report` classifies every settle.
+`rocket_settle_fuzz_v1`, run `20261126_201305`: 55 random throws, **52 settled on
+all four wheels**, **0 tilted rests**, `worst_settled_up_dot 1.0`.
+
+**Spin changes the bounce.** `ball_set` and the ball probe take a spin. Dropping
+the ball with +60 rad/s about y bounced it (+0.62, +0.59, 11.53); with -60 it
+bounced (-0.62, -0.59, 11.53). Same rebound, mirrored deflection.
+
+**5-minute 1v1.** Run `20261126_200435` on generation 729: clock 0 to 300.0 s,
+7 goals, 4-3, `arena.match.over reason=time_limit winner_team=0` at
+`server_tick 19047`, all 7 score changes received by the client with
+`client_tick`, 23 aerials, 2 dodges, 91 air rolls, 34 landings with 28 on wheels
+and 0 tilted rests.
+
+**Defects found and fixed on the way.**
+- A bot's team was a hardcoded index while its car was chosen separately, so the
+  first bot could drive the other team's car and attack its own goal
+  (`VehicleState::origin` is the zero vector before the first physics tick, so
+  every car tied at the arena centre). Team now comes from the car it occupies
+  and the target/own goal are derived from it.
+- The aerial dodge fired after the 1.25 s double-jump window, so no
+  `vehicle.dodge` was ever produced; it now fires inside the window.
+- The aerial's air roll left the car on its side and it never recovered (400
+  landings, 3 on wheels, ball dead for five minutes). The bot now air-rolls only
+  while the ball is over 10 m away and self-rights with air control whenever its
+  up axis is off vertical. Landings then went 34 with 28 on wheels.
+- Attacking aerials now start only from behind the ball, which removed the own
+  goals that came from flying at the ball from the goal side.
+- The client swallowed the first score of a match if it joined just after the
+  goal; the baseline is now zeroed per match and the event reports
+  `first_observation`.
+
+**Build friction.** `_write_json` retried `os.replace` for only 1 s; the retry
+now spans about 10 s with backoff, so the dashboard or antivirus reading
+`progress.json` no longer fails a build (no WinError 5 across generations
+719-730).
+
+Evidence: `logs/2026-11-26/20261126_195128`, `20261126_194927`,
+`20261126_201305`, `20261126_201529`, `20261126_201615`, `20261126_200435`.
+
+## Follow-up: arena2 from the measured Rocket League mesh, curved primitives, textures
+
+**The reference mesh was already in the repo.** `assets/maps/rl/pitch.obj` is the
+standard Soccar collision mesh: 4,384 vertices, 8,028 triangles, Unreal units,
+1 UU = 1 cm. I measured it instead of guessing radii.
+`devscripts/gen-arena2.py` writes `config/reference/arena2-geometry.json` (every
+value labelled DOCUMENTED/MEASURED/DERIVED/ESTIMATED) and generates
+`config/maps/arena2.json`. The mesh is never shipped or loaded by the game.
+
+Measured, not assumed: the lower ramp runs from (-2.56 m inward, 0) to (0,
+3.55 m) in 9 points; the upper ramp from (-6.24, 20.44) to (-0.10, 16.39) in 8
+points, i.e. it starts at y = 34.72 and spans 6.1 m horizontally. The corner
+plane is |x|+|y| = 80.64 exactly. Flat floor is inscribed 2.56 m inside the wall
+planes. Plan dimensions stay documented (81.92 x 102.40, ceiling 20.48, goal
+17.8551 x 6.42775, depth 8.80, net back 60.00).
+
+**Curved primitives.** `AuthoredBlock` gained `shape` support for `profile`,
+`cylinder`, `cone`, `sphere` and `wedge`, plus `profile`, `profile_axis`,
+`profile_flip`, `arc_degrees`, `convex`, `segments`, `radius_top`. One
+tessellator feeds render and collision, so the visible ramp and the collision
+ramp are the same triangles. Profiles auto-orient their normal toward the
+playfield. The editor gained `add block [id] [shape]`, `block_shape`,
+`block_profile` and `block_shape_param`.
+
+**arena2** is the measured arena: 45 degree corner cuts in four rotated corner
+blocks, a `profile` lower and upper ramp on every straight wall and diagonal,
+ramps stopped at the goal mouth, an 8.8 m goal recess with a flat goal floor, and
+tiled 10 m floor/ceiling.
+
+**Textures.** arena1 rendered untextured because every block had `material: ""`
+(`resolveBlockTexture("")` returns no texture). arena1 and arena2 now declare
+`grass` floor, `wallv2` walls and `wallv4` ceiling/goal with tints above 1. A
+presentation probe screenshot confirms the floor, wall and ceiling curves render.
+
+**Three defects found by doing it:**
+- A rotated wall band with `size = (span, 1, h)` became a 79 m wall through the
+  middle of the field (rotation moves local x into world y). The ball fell
+  through the floor at z = -1.31 (run `20261126_231000`). The span now lives on
+  the local y axis.
+- A single field-sized floor quad pair also dropped the ball through; the floor
+  and ceiling are tiled at 10 m.
+- `src/render/postfx-commands.cpp` had a missing brace in
+  `presentation.lens.policy` that blocked every build; fixed the one-character
+  typo.
+
+**Freestyle: implemented, not yet proven.** The bot has a freestyle program
+(pop, track, reset, shot) on one shared `flyAtTarget` law, the goal event now
+reports `freestyle` and `flip_resets_at_shot`, and `vehicle.npc.freestyle` logs
+every phase. It does not yet reach a flip reset: the chase overshoots a falling
+ball (car 7.16 m against a 1.01 m ball) because the controller has no closed-loop
+position term. Recorded as an issue with the run numbers rather than claimed.
+
+Evidence: `logs/2026-11-26/20261126_231000` (ball through floor),
+`20261126_231251` (arena2 playing, goal at 12.68 s),
+`20261126_231947` (freestyle overshoot), `build/presentation-probes/arena2view-mode3-1795733595608.png`.
+
+## Follow-up: RL hitbox parity, steering sign, dodge curve, side recovery, arena2 free play
+
+Changes written and saved; **not yet built or run**. Every game-DLL request since
+23:20 has failed or timed out: the loop is contested and the link itself is now
+failing on symbols that are not from these edits — `PlayerAiController::meleeWeapon`,
+`buildFrame`, `setMeleeWeapon`, `setActive`, and the `ClientCollisionWorldView`
+constructor and vtable. Build attempt `game-dll-20261127T005142888202Z-0200fc`
+(`build/game/progress.log`) leaves generation 742 published. Signalled the owner.
+
+**One hitbox.** `config/vehicles/octane_rl.json` had a second, taller collision
+box: `collisionHeight 0.431` against `height 0.362`. What hit the ball was 7 cm
+taller than the drawn car. It is now 0.362, so the hitbox is the car. Length and
+width already matched RL's Octane exactly (1.1801 x 0.8420 x 0.3616 m), and the
+wheel hubs (y = +-0.36, width 0.12) already reach the 0.842 m width.
+
+**Ground steering sign.** Ground yaw was `steer * maxYawRate` while the wheels
+used `steering.directionSign = -1`, so stick-right turned the body left while the
+wheels pointed right. The yaw now uses the same -1.
+
+**Dodge curve, RL timing.** `maxAngularVelocity` 24 -> 12, `angularAccelPitch/Roll`
+40 -> 70/80 in both RL profiles. The flip now reaches ~12 rad/s in ~0.17 s, holds
+through the 0.65 s torque window, and completes 360 in ~0.6 s instead of 0.3 s.
+
+**Side-rest recovery.** A rule, not geometry: when no wheel is grounded, the
+chassis is the contact surface, speed < 0.6 m/s and `up.z` is between -0.75 and
+0.55 for 24 ticks, a 5 rad/s righting impulse is applied about the shorter arc
+(roof roll when nearly inverted). It logs `vehicle.side.recovery`. This is the
+RL outcome (a car never stays stuck on its side) with an unchanged RL-shaped box.
+
+**Landing debounce.** `vehicle.landing` now needs four consecutive supported
+ticks. Run `20261126_233803` logged 126 landings from a car resting on its side,
+flickering between grounded and airborne at `up_dot -0.21`.
+
+**Free play on arena2.** Launch mode 60 now launches `arena2` on both server and
+client, so free play exercises the measured arena.
+
+Next: build and run the fuzz until `tilted_rests == 0`, then the cruise proof, the
+tick VFX, and the D-pad pass.
+
+## Follow-up: agent liveness rule, and a build-cache defect that blocks the feel work
+
+**AGENTS.md 0b** now carries a LIVENESS rule: ask once with evidence, wait at
+most one build cycle (~10 minutes), and if nobody answers, treat the file as
+released, take the lease, record why, and continue with the smallest change.
+Never leave the shared tree unbuildable; a compile or link failure traced to a
+file you do not own may be fixed minimally and recorded. It also records the
+open design TODO for agent conflict avoidance (same-file edits, silently stale
+build objects, missing shared context) so it is not mistaken for solved.
+
+**Unblocked a link failure that was not mine.** Generation 742 could not build:
+`ld.lld` reported undefined `PlayerAiController::{buildFrame,setActive,meleeWeapon,setMeleeWeapon}`
+and the `ClientCollisionWorldView` constructor and vtable. Touching the two
+source files forced their objects to rebuild and generation 748 linked.
+
+**Then hit a real build defect.** `src/vehicles/vehicle-system.cpp` was edited
+(steering sign, side-rest recovery, landing debounce) before attempt
+`game-dll-20261127T005644836418Z-43dc27`, and that attempt records the file as
+**status=skipped**. Generation 748 therefore shipped without the vehicle changes.
+Filed as a high-severity build-friction issue: a changed TU must never be skipped
+by the object cache.
+
+**Saved but not yet running** (waiting on that build): one hitbox
+(`collisionHeight 0.431 -> 0.362`), ground steering using `directionSign = -1`,
+RL dodge curve (12 rad/s, 70/80 accel), the chassis-only side-rest recovery rule
+(`vehicle.side.recovery`), landing debounce to four ticks, and free play launching
+arena2. Config values (hitbox, dodge) are hot-reloadable; the code paths are not.
+
+## Follow-up: actor hidden while seated, and the input-focus regression
+
+**Actor alpha 0 while seated.** `renderPlayerInternal` returns immediately when
+`player.seatedVehicleId != 0`, so the whole humanoid is not drawn once you are in
+the car (generation 756). No partially transparent body and no shadow pass.
+
+**Input regression recorded.** The user reports keyboard and controller not
+working again. Client journal run `20261127_015112`: the window had focus and
+then lost it; the last `input.state` reports `focused=false`,
+`input_focused=false`, `win32_focused=false` while `keyboard_enabled=true` and
+`key_callback_count=408`. Gamepad calibration is valid (rest 1.5e-5, throttle
+axis 5, brake axis 4), so the devices bind and the loss is OS window focus, not
+input mapping. Filed as a high-severity `regression` issue.
+
+A live relaunch (`20261127_030734`, mode 60 free play on arena2) reproduces it:
+`focus_window` sets the game's own `focused=true` but `input_focused` and
+`win32_focused` stay false and `key_callback_count` is 0, so no key or pad event
+reaches the process. The window has to be clicked once to recover; the permanent
+fix belongs to the focus owner, not to the vehicle code.
+
+## Follow-up: input regression persists, global-key opt-in attempted
+
+Second report of dead keyboard and controller, recorded on the existing regression
+issue (`issue-dbff2cfc9a6c`). Run `20261127_030734`: `focus_window` set the game's
+own `focused=true` while `input_focused` and `win32_focused` stayed false and
+`key_callback_count` was 0. The gate is in `InputRouter::keyDown` /
+`mouseDown`, which return false unless `GetForegroundWindow()` is the game
+window, even though the key state itself comes from `GetAsyncKeyState` and is
+global.
+
+Attempted (generation 757): `MIMITA_INPUT_GLOBAL_KEYS` makes
+`gameWindowFocused()` true and lets key/mouse reads through when a dev-loop
+client cannot take foreground focus. Live run `20261127_032209` on mode 60
+showed `key_callback_count` rise from 0 to 5 and vehicle 2 reached 7.7 m/s with
+the player seated, the first evidence of input reaching the vehicle again, but
+not a clean proof: the env was not set in launch mode 60, so the gate may still
+be intermittent. Not claimed fixed.
+
+**Actor alpha 0 while seated** is in the same build (generation 756): the actor
+model is not drawn when `player.seatedVehicleId != 0`.
+
+## Follow-up: input fault isolated by live test; build cache cannot converge
+
+Live tests on the running client (2026-11-27 03:30-03:50Z):
+
+1. Windows foreground window was `OpenCode` (hwnd 197552), never the game (hwnd
+   1578162). The game therefore had no real foreground at any point.
+2. `SetForegroundWindow` alone fails. `keybd_event(VK_MENU)` then
+   `SetForegroundWindow` **works** (verified: foreground became 1578162). That
+   ALT unlock is the documented foreground-lock workaround, and the game's own
+   `focus_window` does not do it.
+3. With the game genuinely foreground, synthetic W was **seen**: 7 `input.state`
+   samples with `w=true` and `key_callback_count` 347. The keyboard chain
+   (key -> action -> vehicle) works when focus is real.
+4. The pad is never read: `connected=true` with `axis_count=0`,
+   `button_count=0`, `standard_mapping=false`, `raw_fallback=false`, which is
+   only possible through the early `return` on a failed
+   `glfwGetGamepadState`.
+
+Implemented and saved (generation not yet published, see below):
+`focusGameWindow` now does the ALT unlock plus a minimise/restore fallback; the
+pad falls through to raw axes when the gamepad-state read fails (logging
+`input.gamepad.read_failed`); injected input expires after 120 ticks instead of
+latching `inputOverride` forever.
+
+**Build blocker escalated.** The link input list is missing whole TUs and each
+attempt fails on a different undefined symbol (player-ai,
+client-collision-world-view, input-poll, community-match-client,
+map-editor-host-bridge). Touching a file compiles it but link time is 1.6 s, so
+the list is not repaired; content edits just move the failure. `cold-link-trial`
+accepted but has not published. Recorded on the object-cache build-friction issue
+with the requested action (clean rebuild for flags identity
+`b10e3a31b3ae8637`).
+
+## Follow-up: input causes found, build cache rebuilt, self-repair runbook added
+
+**Input isolated by live test.** Windows foreground was `OpenCode` (hwnd 197552),
+never the game (1578162), so `GetForegroundWindow() == game` was false and every
+key read was discarded even though GLFW delivered key events. `SetForegroundWindow`
+alone fails; `keybd_event(VK_MENU)` + `SetForegroundWindow` **works** (verified).
+With real foreground, synthetic W was read: 7 `input.state` samples with `w=true`,
+`key_callback_count` 347. The pad is a separate fault: `connected=true` with
+`axis_count=0`, `button_count=0`, `standard_mapping=false`, `raw_fallback=false`,
+which is only reachable through the early return on a failed
+`glfwGetGamepadState`.
+
+Saved: ALT unlock + minimise/restore in `focusGameWindow`; gamepad falls through
+to raw axes on a failed gamepad-state read (`input.gamepad.read_failed`);
+injected input expires after 120 ticks instead of latching `inputOverride`.
+
+**Build cache quarantined (user-authorized).** The link was omitting whole TUs and
+each attempt failed on a different undefined symbol with `compiled: 0` and a 1.6 s
+link. `build/game/objects/b10e3a31b3ae8637` (4594 files) was **moved** (not
+deleted) to `b10e3a31b3ae8637.bak-20261127-0400` and a full rebuild requested
+through the root dev-loop. Two comment-only content edits were used to force
+relinks of `src/input/input-poll.cpp` and
+`src/network/community-match-client.cpp`; no behaviour changed. No compiler or
+second loop was invoked.
+
+**Documented for agents.** New regression record
+`docs/regressions/dev-loop/game-dll-link-loses-translation-units-REG-2026-11-27.md`
+(symptoms, the symbol-by-symbol sequence, inferred cause, the overrides, five
+prevention points and a self-repair design). A high-severity build-friction issue
+records the same with acceptance criteria. `AGENTS.md` 0b now has a
+BUILD SELF-REPAIR runbook: distinguish cache from code (`compiled: 0` + a symbol
+whose definition exists), use a content edit for one missing TU, quarantine the
+object cache when two attempts fail on different TUs, and verify the publish by
+generation, `changed_sources` and a runtime event.
+
+## Follow-up: the pad was readable all along; the "0 axes" was a connect-time log
+
+`input.gamepad.poll` was added (once per second, regardless of change) because
+`logAxes` only fires when an axis moves by more than 0.15, so a resting pad
+produced no samples after the connect snapshot. The connect snapshot is taken
+**before** the read branch, which is why it always showed `axis_count 0`,
+`standard_mapping false`, `raw_fallback false` — that is not the live state.
+
+Live poll on generation 765, run `20261127_041915`:
+
+```text
+connected=true is_gamepad=true standard_mapping=true
+axis_count=6 button_count=15 raw_fallback=false
+axes=[1.5e-5 x6]  throttle=0.0 brake=0.0
+```
+
+So the DualShock/`Wireless Controller` is fully mapped (6 axes, 15 buttons,
+standard mapping) and readable, Bluetooth included. The mapping is correct for
+Rocket League: steer axis 0, throttle axis 5 (R2, trigger), brake axis 4 (L2),
+jump button 0 (Cross), boost button 4 (L1), powerslide button 5 (R1).
+
+What was actually broken: focus (fixed with the ALT unlock) and, separately, the
+keyboard `walkforward` action state (still open). The controller claim needs a
+physical press to confirm end to end, but the device, mapping and poll are all
+healthy and `gamepad_virtual 1` already drove the car at 8.66 m/s through the
+same path.
+
+## Follow-up: input fixed — the client car had no profile, so key bindings were inactive
+
+The break was not keys, focus, or the pad. The client's local vehicle had **no
+resolved arcade profile**, and the profile owns the key bindings.
+
+Evidence (run `20261127_042504`): `input.state` reported
+`walkforward_held=true` and `w=true` with `keyboard_enabled=true`, while
+`local_vehicle_profile` was empty. A new one-shot diagnostic fired:
+
+```text
+vehicle.input.no_profile  active_profile=""  profile_id=""  vehicle_id=2
+```
+
+`profileFor` therefore returned null, `profileBindingHeld` returned false for
+every action, and `input.throttle` stayed at the pad value only — which is
+exactly why `gamepad_virtual 1` drove the car (8.66 m/s) while W did nothing
+(throttle 0 across 696 samples).
+
+Cause: `CommunityMatchClient::onState` calls
+`VehicleSystem::setActiveProfile(modeConfig.vehicleProfile)`, and when that value
+was empty it wiped `mActiveProfileId` **and every vehicle's `profileId`**.
+
+Fix (generation 767):
+- `setActiveProfile` ignores an empty id when one is already active, logging
+  `vehicle.profile.empty_ignored`.
+- `profileFor` falls back to the active profile, then to a deterministic default
+  (`rl_soccar`, else the first id), so a client always has bindings. Physics
+  stays server-authoritative; this only restores input.
+
+Verified, run `20261127_042814`: no `vehicle.input.no_profile` event,
+`walkforward_held=true`, server `max_throttle 1.0` and speed **8.45 m/s** from a
+synthetic W; with W+A the car reports `steer_input = -1.0` and its yaw moves
+-88.2 -> -83.7 (left), so the steering sign is correct too.
+
+Also in this build: `focus_window` really takes foreground (ALT unlock), the pad
+is confirmed standard-mapped and readable (`input.gamepad.poll`: 6 axes, 15
+buttons), injected input expires after 2 s, and the object cache was quarantined
+for a full rebuild.
+
+## Handoff written
+
+`docs/handoffs/rocket-league-mode-20261127.md`: proven-vs-open status with run
+ids, how to run every launch mode / console command / scenario, the file ownership
+table, twelve hard-won lessons (profile-empty disabling keys, injected-input
+latch, rotated-box span, field-sized floor quads, roof-vs-side classification,
+landing debounce, pad read fallback, focus ALT unlock, build cache), the measured
+arena2 ramps with the one assumption to revisit, a prioritised next-step list
+with acceptance criteria, the build-system state (object cache quarantine path and
+self-repair runbook) and the issue index.

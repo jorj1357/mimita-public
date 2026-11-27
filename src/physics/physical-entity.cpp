@@ -631,8 +631,16 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
                 continue;
             // Rebuild "did this body touch world geometry this step" from the
             // contact pass below. Bodies that skip (sleeping/kinematic-only)
-            // keep the previous value.
-            e.lastContactedWorld = false;
+            // keep the previous value. A body that has come to rest must keep it
+            // too: the zero-velocity early-out below skips the contact gather,
+            // and clearing the flag there made a car resting on its side look
+            // airborne forever (so side recovery never fired, run
+            // 20261127_052415).
+            const bool stationary =
+                glm::dot(e.velocity, e.velocity) <= 1e-8f &&
+                glm::dot(e.angularVelocity, e.angularVelocity) <= 1e-8f;
+            if (!stationary)
+                e.lastContactedWorld = false;
             refreshMassProperties(e);
             if (e.motion == PhysicalEntityMotion::Dynamic)
             {
@@ -787,6 +795,9 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
             // (thousands of triangles re-scanned per pass). One pass is enough
             // for the entity-vs-world correction and the self-tests.
             constexpr int kEntityCollisionPasses = 1;
+            // Contact evidence for the arena ball: a mid-field velocity change
+            // must be attributable to a real world triangle.
+            const glm::vec3 preContactVelocity = e.velocity;
             for (int collisionPass = 0;
                  collisionPass < kEntityCollisionPasses; ++collisionPass)
             {
@@ -818,16 +829,71 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
                     worldTree = &s_objectWorldTree;
                 }
 
-                collectActorMeshContactsInto(
-                    world, s_objectMeshes, s_objectCandidates,
-                    glm::vec3(e.transform[3]), s_objectContacts, true, -1.0f,
-                    worldTree);
+                if (e.shape == PhysicalEntityShape::Sphere)
+                {
+                    // Analytic sphere-vs-world contact. The ball's tessellated
+                    // surface must not act as a mesh: its triangle edges are an
+                    // approximation of a smooth sphere, and treating them as
+                    // rounded ridges launched the ball off every floor seam
+                    // (18-23 m/s velocity changes on flat ground, run
+                    // 20261127_051141).
+                    s_objectContacts.clear();
+                    // Exact authored collision radius. The 5 mm skin this used
+                    // to add made a resting ball hover above the floor and gave
+                    // the correction pass a constant penetration to push against.
+                    const float sphereRadius =
+                        std::max(e.halfExtents.x, 0.01f);
+                    const glm::vec3 center(e.transform[3]);
+                    for (int index : s_objectCandidates)
+                    {
+                        if (index < 0 ||
+                            index >= static_cast<int>(
+                                         world.collisionMesh.triangles.size()))
+                            continue;
+                        const CollisionTriangle& triangle =
+                            world.collisionMesh.triangles[index];
+                        Contact contact;
+                        if (!sphereTriangleContact(center, sphereRadius,
+                                                   triangle, contact))
+                            continue;
+                        // The authored collision normals always point toward
+                        // the playfield (buildBoxCollisionTriangles and the
+                        // inward-oriented profile winder). Never flip by the
+                        // centre side: a ball one sub-step past a ramp would be
+                        // pushed further out of the arena.
+                        contact.normal = triangle.normal;
+                        RecoveryContact recovery;
+                        recovery.normal = contact.normal;
+                        recovery.responseNormal = contact.normal;
+                        recovery.point = contact.point;
+                        recovery.penetration = contact.penetration;
+                        recovery.triangleIndex = index;
+                        recovery.label = "sphereWorld";
+                        s_objectContacts.push_back(recovery);
+                    }
+                }
+                else
+                {
+                    collectActorMeshContactsInto(
+                        world, s_objectMeshes, s_objectCandidates,
+                        glm::vec3(e.transform[3]), s_objectContacts, true, -1.0f,
+                        worldTree, false, MOVEMENT_FEATURE_SMOOTHNESS, nullptr);
+                }
                 if (!s_objectContacts.empty())
                     e.lastContactedWorld = true;
                 if (s_objectContacts.empty())
                     break;
+                // The shared solver adds its slop to the required correction
+                // (penetration + slop). For a sphere that is a 10 mm lift every
+                // contact, so a rolling ball falls, is pushed back up, and
+                // pumps energy through the friction solve: measured rest z
+                // oscillated 0.9093-0.9175 and rolling speed grew inside the
+                // bounce cycle (run 20261127_052258). A sphere needs exact
+                // contact; actors keep the 10 mm allowance.
+                const float correctionSlop =
+                    e.shape == PhysicalEntityShape::Sphere ? 0.0f : 0.01f;
                 const glm::vec3 correction = solveBatchedCorrection(
-                    s_objectContacts, 0.01f, nullptr, nullptr,
+                    s_objectContacts, correctionSlop, nullptr, nullptr,
                     e.velocity * (float)kFixedDt, glm::vec3(e.transform[3]));
                 e.transform[3] += glm::vec4(correction, 0.0f);
                 for (const RecoveryContact& contact : s_objectContacts)
@@ -845,6 +911,67 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
                     // share the load instead of each applying a full impulse.
                     solveEntityWorldContacts(e, s_objectContacts,
                                              (float)kFixedDt);
+                }
+                if (e.persistenceId == "arena-ball" && collisionPass == 0 &&
+                    !s_objectContacts.empty())
+                {
+                    const float deltaSpeed =
+                        glm::length(e.velocity - preContactVelocity);
+                    if (deltaSpeed > 1.0f)
+                    {
+                        const RecoveryContact& contact = s_objectContacts.front();
+                        nlohmann::json triangle = nullptr;
+                        if (contact.triangleIndex >= 0 &&
+                            contact.triangleIndex <
+                                static_cast<int>(
+                                    world.collisionMesh.triangles.size()))
+                        {
+                            const CollisionTriangle& t =
+                                world.collisionMesh.triangles[
+                                    contact.triangleIndex];
+                            triangle = {{"a", {t.a.x, t.a.y, t.a.z}},
+                                        {"b", {t.b.x, t.b.y, t.b.z}},
+                                        {"c", {t.c.x, t.c.y, t.c.z}},
+                                        {"normal",
+                                         {t.normal.x, t.normal.y, t.normal.z}}};
+                        }
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Physics,
+                            StructuredLevel::Important,
+                            "arena.ball.world.contact",
+                            std::to_string(e.networkId),
+                            "arena ball hit a world triangle", 
+                            static_cast<uint32_t>(mSimulationTick),
+                            nlohmann::json{
+                                {"network_id", e.networkId},
+                                {"entity_id", e.id},
+                                {"position",
+                                 {e.transform[3].x, e.transform[3].y,
+                                  e.transform[3].z}},
+                                {"pre_velocity",
+                                 {preContactVelocity.x, preContactVelocity.y,
+                                  preContactVelocity.z}},
+                                {"post_velocity",
+                                 {e.velocity.x, e.velocity.y, e.velocity.z}},
+                                {"delta_speed", deltaSpeed},
+                                {"contact_count", s_objectContacts.size()},
+                                {"triangle_index", contact.triangleIndex},
+                                {"triangle", triangle},
+                                {"normal",
+                                 {contact.normal.x, contact.normal.y,
+                                  contact.normal.z}},
+                                {"response_normal",
+                                 {contact.responseNormal.x,
+                                  contact.responseNormal.y,
+                                  contact.responseNormal.z}},
+                                {"point",
+                                 {contact.point.x, contact.point.y,
+                                  contact.point.z}},
+                                {"penetration", contact.penetration},
+                                {"world_triangles",
+                                 world.collisionMesh.triangles.size()}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
                 }
                 if (glm::dot(correction, correction) < 1e-8f)
                     break;
@@ -1396,6 +1523,12 @@ void resolveEntityPairContact(PhysicalEntity& a, PhysicalEntity& b,
     {
         const PhysicalEntity& ball = arenaBallA ? a : b;
         const PhysicalEntity& other = arenaBallA ? b : a;
+        if (other.persistenceId.rfind("vehicle-", 0) == 0)
+        {
+            PhysicalEntity& ballMutable = arenaBallA ? a : b;
+            ballMutable.lastTouchedVehicleNetworkId = other.networkId;
+            ballMutable.lastTouchedHeightM = ballMutable.transform[3].z;
+        }
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Physics, StructuredLevel::Important,
             "arena.ball.contact", std::to_string(ball.networkId),

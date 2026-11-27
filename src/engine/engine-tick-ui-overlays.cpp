@@ -40,6 +40,8 @@
 #include "gui/hud/player-nameplates.h"
 #include "gui/hud/chat-bubble.h"
 #include "debug/debug-visuals.h"
+#include "debug/structured-log.h"
+#include "physics/physical-entity.h"
 #include "gui/gui-editor.h"
 #include "competitive/competitive-match.h"
 #include "competitive/competitive-ui.h"
@@ -743,10 +745,16 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                 // Team names come from the active gamemode JSON in fixed order;
                 // fall back to legacy RED/BLUE when the mode has no ordered teams.
                 const bool namedTeams = !match.teamName(0).empty();
+                const bool arenaMode = match.mode() == "vehicle_arena" ||
+                                       match.mode() == "vehicle_freeplay";
                 const std::string leftName = namedTeams ? match.teamName(0) : "RED";
                 const std::string rightName = namedTeams ? match.teamName(1) : "BLUE";
-                const int leftScore = namedTeams ? match.roundWins(0) : match.redScore();
-                const int rightScore = namedTeams ? match.roundWins(1) : match.blueScore();
+                const int leftScore = arenaMode
+                    ? match.arenaScoreA()
+                    : (namedTeams ? match.roundWins(0) : match.redScore());
+                const int rightScore = arenaMode
+                    ? match.arenaScoreB()
+                    : (namedTeams ? match.roundWins(1) : match.blueScore());
                 const auto& objective = match.objective();
                 const bool objectivePlanted = objective.active && objective.state == 3;
 
@@ -792,6 +800,77 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                         {"{red_name}", leftName}, {"{red_score}", std::to_string(leftScore)},
                         {"{blue_name}", rightName}, {"{blue_score}", std::to_string(rightScore)},
                         {"{goal}", std::to_string(match.goal())}}));
+                }
+
+                // Arena goal flash: a client-observed score change is
+                // presentation only. The authoritative score remains the
+                // server's; this never decides a goal.
+                if (arenaMode) {
+                    static uint32_t sLastArenaA = 0;
+                    static uint32_t sLastArenaB = 0;
+                    static uint32_t sArenaFlashUntilTick = 0;
+                    static uint32_t sArenaFlashTeam = 0;
+                    static int sLastLoggedA = -1;
+                    static int sLastLoggedB = -1;
+                    static uint8_t sLastLoggedPhase = 0xFF;
+                    static uint64_t sLastHudLogTick = 0;
+                    const uint32_t arenaTick = match.serverTick();
+                    if (leftScore < static_cast<int>(sLastArenaA))
+                        sLastArenaA = static_cast<uint32_t>(leftScore);
+                    if (rightScore < static_cast<int>(sLastArenaB))
+                        sLastArenaB = static_cast<uint32_t>(rightScore);
+                    if (leftScore > static_cast<int>(sLastArenaA)) {
+                        sArenaFlashTeam = 0;
+                        sArenaFlashUntilTick = arenaTick + 120;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Duel, StructuredLevel::Important,
+                            "arena.presentation.goal_flash", match.mode(),
+                            "client arena score change shown", arenaTick,
+                            {{"team", leftName}, {"score_a", leftScore},
+                             {"score_b", rightScore}, {"server_tick", arenaTick},
+                             {"client_tick", PhysicalEntitySystem::instance().simulationTick()}});
+                    } else if (rightScore > static_cast<int>(sLastArenaB)) {
+                        sArenaFlashTeam = 1;
+                        sArenaFlashUntilTick = arenaTick + 120;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Duel, StructuredLevel::Important,
+                            "arena.presentation.goal_flash", match.mode(),
+                            "client arena score change shown", arenaTick,
+                            {{"team", rightName}, {"score_a", leftScore},
+                             {"score_b", rightScore}, {"server_tick", arenaTick},
+                             {"client_tick", PhysicalEntitySystem::instance().simulationTick()}});
+                    }
+                    sLastArenaA = static_cast<uint32_t>(leftScore);
+                    sLastArenaB = static_cast<uint32_t>(rightScore);
+                    if ((leftScore != sLastLoggedA || rightScore != sLastLoggedB ||
+                         match.phase() != sLastLoggedPhase) &&
+                        (sLastHudLogTick == 0 ||
+                         PhysicalEntitySystem::instance().simulationTick() -
+                                 sLastHudLogTick >= 30)) {
+                        sLastLoggedA = leftScore;
+                        sLastLoggedB = rightScore;
+                        sLastLoggedPhase = match.phase();
+                        sLastHudLogTick =
+                            PhysicalEntitySystem::instance().simulationTick();
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Duel, StructuredLevel::Important,
+                            "arena.hud.snapshot", match.mode(),
+                            "arena HUD rendered authoritative snapshot", arenaTick,
+                            {{"phase", match.phase()}, {"score_a", leftScore},
+                             {"score_b", rightScore},
+                             {"time_limit_seconds", match.timeLimitSeconds()},
+                             {"server_tick", arenaTick},
+                             {"match_start_tick", match.matchStartTick()},
+                             {"layout_section", "vehicle_arena"}});
+                    }
+                    if (matchLayout.get("goalText") &&
+                        arenaTick < sArenaFlashUntilTick) {
+                        drawCentered("goalText", textTemplate("goalText", {
+                            {"{team}", sArenaFlashTeam == 0 ? leftName : rightName},
+                            {"{score}", std::to_string(sArenaFlashTeam == 0
+                                                           ? leftScore
+                                                           : rightScore)}}));
+                    }
                 }
 
                 // Intermission text is supplied by the active JSON layout.

@@ -21,6 +21,15 @@ namespace r = mimita::game::render;
 
 extern TextureStore gTextures;
 
+// Default true: the combined body path uses the same interpolated pose as the
+// outline and per-part paths. The terminal command
+// `player_combined_pose 0` restores the raw fixed-tick pose for A/B proof.
+static bool gCombinedBodyInterpolate = true;
+bool combinedBodyInterpolate() { return gCombinedBodyInterpolate; }
+void setCombinedBodyInterpolate(bool enabled) {
+    gCombinedBodyInterpolate = enabled;
+}
+
 std::uint32_t capsuleVAO = 0;
 std::uint32_t capsuleVBO = 0;
 int    capsuleVertCount = 0;
@@ -483,7 +492,9 @@ bool drawCombinedBodyParts(const Player& player, mimita::game::render::ShaderPro
         for (size_t i = 0; i < meshes.size() && partCount < 32; ++i) {
             if (meshes[i].verts.empty())
                 continue;
-            partModels[partCount++] = sourceParts[i].worldTransform;
+            partModels[partCount++] = combinedBodyInterpolate()
+                ? playerRenderPartTransform(player, sourceParts[i])
+                : sourceParts[i].worldTransform;
         }
     };
     appendMatrices(player.physicalBody.parts, player.physicalBody.partMeshes);

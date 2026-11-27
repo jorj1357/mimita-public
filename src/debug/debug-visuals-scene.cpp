@@ -46,6 +46,7 @@ extern void drawWorldLabelFaded(glm::vec3 worldPos, const char* text, glm::vec4 
 extern bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y);
 extern void drawCapsuleApprox(const Player& player, const Camera& camera);
 extern void drawPlayerArchitectureDebug(const Player& player, const Camera& camera);
+extern void drawRigEditorOverlay(const Player& player, const Camera& camera);
 extern void drawCollisionEvents(const Camera& camera);
 extern void drawCapsuleWire(const Camera& camera, const Capsule& c, glm::vec4 color);
 extern void drawTransformAxes(const Camera& camera, const glm::mat4& transform, float scale);
@@ -243,6 +244,10 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 
     if (DebugVis::playerArchitecture()) {
         drawPlayerArchitectureDebug(player, camera);
+    }
+
+    if (playerRigEditorActive()) {
+        drawRigEditorOverlay(player, camera);
     }
 
     if (DebugVis::collision()) {

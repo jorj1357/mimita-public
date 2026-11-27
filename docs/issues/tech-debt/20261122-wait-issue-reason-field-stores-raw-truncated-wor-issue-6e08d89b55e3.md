@@ -142,3 +142,35 @@ Evidence: {"build_attempt_id": "game-dll-20261126T005556909723Z-fa8154", "issue"
 ### 2026-11-26T15:53:41.232Z — build-wait-reviewer
 
 Fresh occurrence on wait game-dll-build:2026-11-26T15:41:17.898Z (issue-ab0d4daf980a; attempt game-dll-20261126T154118055873Z-1d5285, generation 690, run 20261126_145549; journal logs/2026-11-26/20261126_145549/dev-loop/events.jsonl). evidence.reason is the same mid-JSON tail starting ':57547.0,' and ending with 'progress_write_ms:6.898, record_overhead_ms:7.611'. It matches the [GAME_FILE] translation_unit.completed row for src/network/community-match-client.cpp at wall 15:42:15.831Z (elapsed_ms 57547.0), which was the last worker line to set game_build_detail (dev-loop.py:3112 detail=line.rstrip()[-240:], assigned :3142, read :3892). Same defect; no duplicate issue filed. The waited-on attempt then failed at compile in src/vehicles/vehicle-system.cpp:1322 (shared_ptr to raw VehicleProfile*), 74.172s total. The record also shows the related stale identity: build_id=2026-11-26T06:10:41.962780Z (EXE artifact id via self.latest_build) and generation=688 (previous publish) instead of the in-flight generation 690, and it carried no run_id.
+
+## Agent suggestion
+
+### 2026-11-26T17:25:37.181Z — build-wait-reviewer
+
+Occurrence 2026-11-26 gen 698 / issue-4fb7a24c54b0: the over-budget wait evidence reason was `"s":57812.0,"build_attempt_id":"game-dll-20261126T165624137995Z-32c560","source_generation":20,...` - the tail of the last worker output line. Root: dev-loop.py:3112 sets detail = line.rstrip()[-240:] and dev-loop.py:3892 stores it as reason. The actual phase (compile 140.3s, 64 TUs, max TU 57.3s) is not readable from the record; the attempt id survived only because it fell inside the last 240 chars. Journal logs/2026-11-26/20261126_165201/dev-loop/events.jsonl:128; timings .dev/build-timings/game-dll-20261126T165624137995Z-32c560.json.
+
+## Agent suggestion
+
+### 2026-11-26T23:11:55.158Z — build-wait-reviewer
+
+Occurrence 2026-11-26T22:39Z (wait game-dll-build:2026-11-26T22:38:08.169Z, attempt game-dll-20261126T223808304994Z-2d57e6, run 20261126_201711). The wait issue reason field is again a raw truncated worker-output tail rather than readable context: `:24828.0,build_attempt_id:game-dll-20261126T223808304994Z-2d57e6,source_generation:7,generation:731,revision:4633798b...,progress_write_ms:6.061,record_overhead_ms:7.005}`. In this occurrence the fragment happens to embed the true attempt id, generation, and revision (so identity is recoverable by luck), but it starts mid-value and is not human-readable. Journal: logs/2026-11-26/20261126_201711/dev-loop/events.jsonl. Observed; fix remains owned here.
+
+## Agent suggestion
+
+### 2026-11-27T04:11:24.733Z — build-wait-reviewer
+
+Occurrence 2026-11-27T03:48:13.916Z (wait game-dll-build:2026-11-27T03:46:49.521Z, wait issue issue-f36679f4ba95, attempt game-dll-20261127T034649716100Z-80c771, run 20261127_032430): evidence.reason is again a mid-JSON tail, not a readable stage summary - it starts `59485.0,"build_attempt_id":...` and ends `..."progress_write_ms":18.099,"record_overhead_ms":18.723}`. It is the tail of the dev-loop.game-build.file row for src/network/multiplayer-reconcile.cpp at wall 03:47:49.421Z (elapsed_ms 59485.0), set by dev-loop.py detail=line.rstrip()[-240:] and read as the wait reason. Same occurrence also carries the stale identity: evidence.build_id=2026-11-27T01:43:27.658897Z and generation=null instead of the in-flight attempt/gen 759 (revision 26a2b63e...). Journal logs/2026-11-27/20261127_032430/dev-loop/events.jsonl lines 91-92; build summary .dev/build-timings/game-dll-20261127T034649716100Z-80c771.json. No duplicate issue filed; no fix claimed.
+
+## Agent suggestion
+
+### 2026-11-27T06:53:15.222Z — build-wait-reviewer
+
+Recurring reason-slice occurrence: wait game-dll-build:2026-11-27T06:22:39.059Z (issue-b783370b40b2, attempt game-dll-20261127T062239069032Z-64213c, generation 782) again stored evidence.reason as a mid-JSON tail starting "60149.03,\"build_attempt_id\":...". Same unchanged source: dev-loop.py _record_game_build_output detail = line.rstrip()[-240:]. This is a new occurrence of the empty readble-reason defect; no duplicate issue filed. Identity was also stale there (build_id=2026-11-27T04:28:12.568764Z, generation=781 while the in-flight attempt was gen 782, no run_id).
+
+## Occurrence
+
+### 2026-11-27T07:59:02.838Z — build-wait-reviewer
+
+Fresh occurrence on wait game-dll-build:2026-11-27T07:23:16.007Z (issue-778fe2977118; attempt game-dll-20261127T072316157011Z-06c929; run 20261127_072104). evidence.reason is again a mid-JSON tail: `6085.139,"build_attempt_id":"game-dll-20261127T072316157011Z-06c929","source_generation":25,"generation":784,"revision":"18132b98...","progress_write_ms":6.052,"record_overhead_ms":7.447}`. It is the last 240 chars of a [GAME_FILE] worker row, not a readable stage summary. Source unchanged: devscripts/dev-loop.py:3112 `detail = line.rstrip()[-240:]`, assigned at dev-loop.py:3142, read at dev-loop.py:3892 `reason=self.game_build_detail`. The waited-on attempt succeeded as generation 784 in 68.594s, so the raw tail is the only defect here. No duplicate issue filed.
+
+Evidence: {"agent": "build-wait-reviewer", "build_attempt_id": "game-dll-20261127T072316157011Z-06c929", "generation": 784, "issue": "issue-778fe2977118", "journal": "logs/2026-11-27/20261127_072104/dev-loop/events.jsonl", "journal_line": 52, "over_budget_wall_time": "2026-11-27T07:24:28.723Z", "reason_prefix": "6085.139,\"build_attempt_id\":\"game-dll-20261127T072316157011Z-06c929\"", "source": "devscripts/dev-loop.py:3112,3142,3892", "total_seconds": 68.594, "wait_id": "game-dll-build:2026-11-27T07:23:16.007Z"}

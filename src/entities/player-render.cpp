@@ -75,7 +75,7 @@ std::uint32_t bindAvatarTexture(const Player& player, const Mesh::Batch& batch,
 
 extern TextureStore gTextures;
 
-static glm::mat4 renderPartTransform(const Player& player, const PhysicalBodyPart& part)
+glm::mat4 playerRenderPartTransform(const Player& player, const PhysicalBodyPart& part)
 {
     const AnimationRuntimeSettings& settings = animationRuntimeSettings();
     const float alpha = animationRenderAlpha();
@@ -526,7 +526,7 @@ void Player::renderCurrentPose(mimita::game::render::ShaderProgram& shader,
                 renderUploadKey() + "|layer" + std::to_string((int)layer);
             uploadBodyPartMeshPart(*drawMesh, (int)i, uploadKey);
 
-            const glm::mat4 model = renderPartTransform(*this, part);
+            const glm::mat4 model = playerRenderPartTransform(*this, part);
             r::uniformMatrix4fv(uModelLoc, 1, &model[0][0]);
             const int holeCount =
                 (layer == ActorBodyLayer::Skin || part.damageHoleThrough)
@@ -633,7 +633,7 @@ void Player::renderCurrentPose(mimita::game::render::ShaderProgram& shader,
 
             uploadBodyPartMeshPart(mesh, (int)(physicalBody.parts.size() + i), renderUploadKey());
 
-            const glm::mat4 model = renderPartTransform(*this, part);
+            const glm::mat4 model = playerRenderPartTransform(*this, part);
             r::uniformMatrix4fv(uModelLoc, 1, &model[0][0]);
             const int holeCount = part.damageHoleThrough
                 ? part.damageHoleCount : 0;
@@ -850,7 +850,7 @@ void Player::renderDepth(mimita::game::render::ShaderProgram& shadowShader, cons
 
             uploadBodyPartMeshPart(mesh, (int)i, renderUploadKey());
 
-            const glm::mat4 model = renderPartTransform(*this, part);
+            const glm::mat4 model = playerRenderPartTransform(*this, part);
             glm::mat4 mvp = lightViewProj * model;
             if (loc >= 0)
                 r::uniformMatrix4fv(loc, 1, &mvp[0][0]);

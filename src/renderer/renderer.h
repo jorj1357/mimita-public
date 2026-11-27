@@ -26,6 +26,7 @@ struct Renderer {
     void shutdown();
     FullscreenMode applyVideoMode(int gameWidth, int gameHeight, FullscreenMode mode);
     bool stretchesWholeFrame() const { return fullscreenModeStretchesWholeFrame(mAppliedVideoMode); }
+    int appliedVideoMode() const { return static_cast<int>(mAppliedVideoMode); }
     void setVSync(bool on);
     bool vsync() const { return mVSync; }
 

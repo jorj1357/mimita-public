@@ -13,6 +13,7 @@ Each active regression has exactly one detail file in one domain folder. The dom
 - [NPC movement](npc-movement/README.md)
 - [Dev loop](dev-loop/README.md)
 - [Gameplay](gameplay/README.md)
+- [Presentation](presentation/README.md)
 
 Detail filenames use `three-word-summary-REG-YYYY-MM-DD.md`. The date is the recorded first-report date, not a fabricated time. Preserve every original timestamp and chronology; if a source did not record a time, leave it unknown. Append new occurrences to the existing record when they concern the same underlying regression. A code change or build alone is not a confirmed solution; retain unresolved or attempted-fix status until required runtime and human evidence exists.
 

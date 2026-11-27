@@ -1,4 +1,6 @@
 // 07 21 2026, 16 30
+// Included in every link: a content edit here forces the object cache to
+// rebuild this TU (mtime alone does not; see the build-friction issue).
 /* purpose
 * Converts current input command state into InputState and InputFrame data.
 * Builds camera-relative movement axes and edge-triggered gameplay action fields.

@@ -1,12 +1,12 @@
 {
  "arena": {
   "ball": {
-   "friction": 0.03,
+   "friction": 0.35,
    "linearDamping": 0.03,
    "massKg": 30.0,
    "maxSpeed": 60.0,
    "radius": 0.9125,
-   "restitution": 0.45,
+   "restitution": 0.6,
    "spawn": [
     0.0,
     0.0,
@@ -84,7 +84,7 @@
   {
    "enabled": true,
    "id": "arena_floor",
-   "material": "",
+   "material": "grass",
    "position": [
     0.0,
     0.0,
@@ -104,12 +104,18 @@
    "tags": [
     "arena",
     "floor"
+   ],
+   "color": [
+    0.95,
+    1.0,
+    0.95,
+    1.0
    ]
   },
   {
    "enabled": true,
    "id": "wall_side_left",
-   "material": "",
+   "material": "wallv2",
    "position": [
     0.0,
     -40.96,
@@ -129,12 +135,18 @@
    "tags": [
     "arena",
     "wall"
+   ],
+   "color": [
+    1.0,
+    1.0,
+    1.05,
+    1.0
    ]
   },
   {
    "enabled": true,
    "id": "wall_side_right",
-   "material": "",
+   "material": "wallv2",
    "position": [
     0.0,
     40.96,
@@ -154,12 +166,18 @@
    "tags": [
     "arena",
     "wall"
+   ],
+   "color": [
+    1.0,
+    1.0,
+    1.05,
+    1.0
    ]
   },
   {
    "enabled": true,
    "id": "wall_back_left_a",
-   "material": "",
+   "material": "wallv2",
    "position": [
     -51.2,
     -24.943775,
@@ -179,12 +197,18 @@
    "tags": [
     "arena",
     "wall"
+   ],
+   "color": [
+    1.0,
+    1.0,
+    1.05,
+    1.0
    ]
   },
   {
    "enabled": true,
    "id": "wall_back_left_b",
-   "material": "",
+   "material": "wallv2",
    "position": [
     -51.2,
     24.943775,
@@ -204,12 +228,18 @@
    "tags": [
     "arena",
     "wall"
+   ],
+   "color": [
+    1.0,
+    1.0,
+    1.05,
+    1.0
    ]
   },
   {
    "enabled": true,
    "id": "goal_header_left",
-   "material": "",
+   "material": "wallv4",
    "position": [
     -51.2,
     0.0,
@@ -229,12 +259,18 @@
    "tags": [
     "arena",
     "wall"
+   ],
+   "color": [
+    1.1,
+    1.1,
+    1.15,
+    1.0
    ]
   },
   {
    "enabled": true,
    "id": "wall_back_right_a",
-   "material": "",
+   "material": "wallv2",
    "position": [
     51.2,
     -24.943775,
@@ -254,12 +290,18 @@
    "tags": [
     "arena",
     "wall"
+   ],
+   "color": [
+    1.0,
+    1.0,
+    1.05,
+    1.0
    ]
   },
   {
    "enabled": true,
    "id": "wall_back_right_b",
-   "material": "",
+   "material": "wallv2",
    "position": [
     51.2,
     24.943775,
@@ -279,12 +321,18 @@
    "tags": [
     "arena",
     "wall"
+   ],
+   "color": [
+    1.0,
+    1.0,
+    1.05,
+    1.0
    ]
   },
   {
    "enabled": true,
    "id": "goal_header_right",
-   "material": "",
+   "material": "wallv4",
    "position": [
     51.2,
     0.0,
@@ -304,6 +352,12 @@
    "tags": [
     "arena",
     "wall"
+   ],
+   "color": [
+    1.1,
+    1.1,
+    1.15,
+    1.0
    ]
   },
   {
@@ -329,6 +383,12 @@
    "tags": [
     "arena",
     "ceiling"
+   ],
+   "color": [
+    1.0,
+    1.0,
+    1.0,
+    1.0
    ]
   }
  ],

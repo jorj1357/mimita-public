@@ -707,6 +707,8 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
             "MIMITA_PROCESS_ROLE": "server",
             **({"MIMITA_GAME_DLL": str(metadata["game_dll"])}
                if metadata.get("game_dll") else {}),
+            **{str(key): str(value)
+               for key, value in (mode.get("env") or {}).items()},
         }
         server_start_monotonic = time.monotonic()
         server = subprocess.Popen(
@@ -773,6 +775,8 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
             "MIMITA_PROCESS_ROLE": "client",
             **({"MIMITA_GAME_DLL": str(metadata["game_dll"])}
                if metadata.get("game_dll") else {}),
+            **{str(key): str(value)
+               for key, value in (mode.get("env") or {}).items()},
         }
         client = subprocess.Popen(client_args, cwd=ROOT, env=client_env,
                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -801,9 +805,14 @@ def start_parallel_run(profile_name: str, launch_mode_id: str,
         if _wait_event(layout.client_journal, "network.connection-state.changed",
                        client.pid, 45.0, field="to", value="Connected") is None:
             raise RuntimeError(f"test client {client.pid} did not connect to {port}")
-        active = _wait_mode_active(
-            layout.client_journal, layout.server_journal,
-            client.pid, server.pid, client)
+        if profile.get("require_mode_start", True):
+            active = _wait_mode_active(
+                layout.client_journal, layout.server_journal,
+                client.pid, server.pid, client)
+        else:
+            # A free-play profile has no match-start event. The client being
+            # connected and running its first tick is the readiness signal.
+            active = {}
         generation = int(game_identity.get("generation") or 0)
         pinned_game = bool(
             (game_identity.get("source_validation") or {}).get(

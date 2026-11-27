@@ -191,3 +191,39 @@ NEXT DISCRIMINATING CHECK
 - Through the root dev-loop, start an isolated Payload/funworld3 Arcade run (leave shared run 20261126_013852 and any human server untouched) pinned to a generation whose snapshot carries sweep-slide=6b5fd3ce... / physics-types=f3f5ca67... (any recent gen including 664), with a player, using the Payload gamemode profile that emits payload.cart-spawned. Drive the player root capsule into the cart (previously entity id 1). In that exact run journal require all of: game.host.probe.started dll generation with matching source hashes; payload.cart-spawned; >=1 collision.arcade_entity.sweep with actor=<player> and entity_id=<cart id>; player/cart separation stays >= capsule radius across contact (no penetration); static-world Arcade contact unchanged. Report run_id, generation, DLL hash/path, and journal path. Keep the issue open and the proof unproven until that journal exists or an explicit exemption is recorded.
 
 VERDICT: unproven.
+
+## Scheduled independent review
+
+### 2026-11-27T01:55:02.097Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-188533acf54f after 815 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (unproven)
+
+### 2026-11-27T02:04:37.736Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review 2026-11-27T01:5xZ (issue-review-sweeper), sixth review. Scope: brief/readiness, proof status, linked artifacts, latest journals. No source edits, build request, restart, or fix claimed.
+
+OBSERVED FACTS
+- Readiness: ready=true, score 8, state=in_review, missing=[]. One open task payload-cart-arcade-contact, owner payload-arcade-collision-fix still inactive (last board activity 2026-11-21T15:55:08Z, ~130h). No linked build/run records.
+- Source identity unchanged and equal to the proof record source_hashes: sha256(src/physics/movement/physics-collision-glb-sweep-slide.cpp)=6b5fd3cec1d3deab..., sha256(src/physics/physics-types.h)=f3f5ca679e7e59c3.... build/game/current.json: generation 752, status ok, revision e9f5c0f7..., dll build\game\generation-752\game-g752.dll, published 2026-11-27T01:49:27Z. The fix is compiled into the current published generation (build evidence only).
+- Proof task payload-cart-arcade-contact remains result=unproven on the board; no verified journal/run/generation.
+- NEW since the fifth review: the only runtime artifact that ever showed collision.arcade_entity.sweep (12 NPC-actor events, entity_id 2/3, in logs/2026-11-24/20261124_150432/client-01/events-0018.jsonl, cited by review id 406) is NO LONGER ON DISK. `rg --no-ignore -l collision.arcade_entity.sweep logs` returns zero files; logs/2026-11-24 does not exist; logs/11-24-2026 holds only Gameterminal/Server *.txt with no run/events dirs. Earliest surviving run-log date roots are 11-25-2026 / 11-26-2026 / 2026-11-27.
+- payload.cart-spawned still exists only in pre-fix logs 11-12-2026 and 11-13-2026 (7 files).
+- Current live run 20261127_015112: server-01 loaded game-g752.dll (game.host.probe.started, launch_id 2026-11-27T01:51:12.233Z, pid 25844), map=dust2cyberiav4 mode=funcounterstrike, 1 player, 1 NPC, client pid 14572. That server journal has zero payload.* event names, zero cart events, zero arcade_entity events (296 raw 'payload' matches are payload_bytes fields / objective-context text, not Payload mode). Not a Payload/funworld3 run, so it cannot count.
+- dev-loop --status: lifecycle=game_building (new attempt game-dll-20261127T015700314777Z in manifest_validation), build=published_current (gen 752 already carries the fix), run RUNNING 20261127_015112.
+
+INFERENCE / UNCERTAINTY
+- Compilation and identity of the fix in published generation 752 are strongly established. The remaining gap is still activation/proof in the exact reported scenario (Payload cart, Arcade mode, player actor). No Payload/funworld3 run exists after 2026-11-13 (pre-fix).
+- The rotation of the only prior sweep sample means the earlier "the path emits in a real pinned generation" observation now rests on review record id 406 plus coordination messages, not on an artifact I can re-inspect. That does not change the verdict (those 12 events were NPC-vs-box, not player-vs-cart), but it removes our only on-disk confirmation that the code path emits at all, lowering confidence.
+- Unknown: whether entity 2/3 in that Bloodtest map shared the cart's physics archetype; whether funworld3 under a Payload/Arcade gamemode spawns payload.cart-spawned post-fix.
+
+CONTRARY EVIDENCE
+- No evidence supporting success. The only sweep samples were NPC actors (not <player>) against non-cart entities, and are now pruned. No Payload/funworld3 run after 2026-11-13.
+
+NEXT DISCRIMINATING CHECK
+- Through the root dev-loop, start an isolated Payload/funworld3 Arcade run (leave shared run 20261127_015112 and any human server untouched) pinned to generation 752 (or any generation whose snapshot carries sweep-slide=6b5fd3ce... / physics-types=f3f5ca67...), with a player, using the gamemode whose journal emits payload.cart-spawned. Drive the player root capsule into the cart (previously entity id 1). Require in that exact journal: game.host.probe.started dll=generation-752 (or matching); payload.cart-spawned; >=1 collision.arcade_entity.sweep with actor=<player> and entity_id=<cart id>; player/cart separation stays >= capsule radius across contact (no penetration); static-world Arcade contact unchanged. COPY that journal to a protected path before it ages out of the 3-date log retention. Report run_id, generation, DLL hash/path, and journal path. Keep the issue open and the proof unproven until that journal exists or an explicit exemption is recorded.
+
+VERDICT: unproven (compiled in gen 752; activation/proof gap persists; prior sole sweep artifact rotated away).

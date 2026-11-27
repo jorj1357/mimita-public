@@ -228,6 +228,25 @@ struct AuthoredBlock
     bool enabled = true;
     std::vector<std::string> tags;
     std::string name;
+
+    // ── Extruded polyline ("profile") ───────────────────────────────────
+    // A measured or authored cross-section extruded along one local axis, so a
+    // curved wall ramp is 8 points instead of an invented radius. Points are in
+    // the plane perpendicular to profileAxis, relative to position, in metres.
+    // profileAxis: 0 = x, points are (y,z); 1 = y, points are (x,z);
+    // 2 = z, points are (x,y). size[profileAxis] is the extrusion length.
+    std::vector<glm::vec2> profile;
+    int profileAxis = 2;
+    // Reverse the winding when the profile is authored on the other side.
+    bool profileFlip = false;
+
+    // ── Parametric curve primitives ─────────────────────────────────────
+    // cylinder: radius = size.x, length = size[profileAxis], arcDegrees and
+    // convex select the segment. cone: radii from size.x and size.y.
+    float arcDegrees = 360.0f;
+    bool convex = true;
+    int segments = 16;
+    float radiusTop = -1.0f;
 };
 
 // One authored vehicle placement. The template owns chassis/wheel/tuning data;
@@ -480,7 +499,8 @@ public:
     const std::vector<AuthoredBlock>& blocks() const { return mCurrent.blocks; }
     std::vector<AuthoredBlock>& blocksMutable() { return mCurrent.blocks; }
     std::string createBlock(const glm::vec3& position, const glm::vec3& size,
-                            const std::string& requestedId = "");
+                            const std::string& requestedId = "",
+                            const std::string& shape = "box");
     bool deleteBlock(const std::string& id);
     bool deleteChunk(const std::string& id);
 

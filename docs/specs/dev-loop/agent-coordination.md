@@ -532,8 +532,13 @@ the proof stale; history is append-only. See
 ## Build/test permits and self-improvement
 
 An active agent may request a build or isolated test through the root dev-loop
-without human approval. The request records the agent, task, issue, permit/build
-ID, and run ID. Requests are bounded by PC resources; one EXE build at a time.
+without human approval, but an agent build requires an approved coordination
+build request first: file `agent-coord.py build request`, obtain build-owner or
+two-peer approval, then build through
+`dev-loop.py --request agent-build --build-request <id>`. The 5/10-minute timeout
+fallback preserves liveness. The request records the agent, task, issue,
+permit/build ID, and run ID. Requests are bounded by PC resources; one EXE build
+at a time, and no second approved request while one is active.
 A pinned test run uses a specific EXE artifact and game-DLL generation/path and
 does not replace the shared runtime. The build queue, rotating build owner,
 per-agent/cohort DLL pointers, and preview overlays are specified in
@@ -831,7 +836,8 @@ activity; an agent’s build/test request still goes through the root dev-loop.
 - A build/test wait is recorded and an avoidable or over-budget wait is a
   triageable build-friction issue.
 - An active agent can request an isolated build/test through the root dev-loop
-  without human approval or a second loop.
+  without human approval or a second loop after the coordination build-request
+  approval (owner/two-peer, or the recorded timeout fallback).
 - Any agent can propose an improvement or capability; humans remain final for
   shared-authority changes.
 ## Automatic user-context broadcast

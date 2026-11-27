@@ -9,6 +9,7 @@
 */
 
 #include "physics/movement/movement-step.h"
+#include "physics/config.h"
 #include "debug/structured-log.h"
 
 #include <algorithm>
@@ -799,7 +800,8 @@ MovementContactKind classifyMovementContactKindFromNormal(const glm::vec3& norma
         return MovementContactKind::StaticWorld;
 
     const float walkableDot =
-        config.walkableSlopeDot > 0.0f ? config.walkableSlopeDot : 0.7f;
+        config.walkableSlopeDot > 0.0f ? config.walkableSlopeDot
+                                       : MAX_WALKABLE_SLOPE_DOT;
     if (grounded && normal.z > 0.0f)
         return MovementContactKind::Ground;
     if (normal.z > walkableDot)

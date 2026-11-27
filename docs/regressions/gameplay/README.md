@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 44
+Entries: 46
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -341,3 +341,17 @@ Entries: 44
 - Summary: The hot-client key callback toggled the terminal on grave, then GLFW's character callback delivered the same press as text after the terminal had opened.
 - Detail: [console-grave-toggle-REG-2026-11-18.md](console-grave-toggle-REG-2026-11-18.md)
 - Changelog: [Console grave toggle input](../../changelog/2026-11-18/20261118_093329-console-grave-toggle-input.md)
+
+## Entry 45 — Keyboard and controller eaten by repeated ALT presses
+
+- Recorded: 2026-11-27T07:04:00Z
+- Status: FIXED IN GENERATION 783 — physical keyboard/pad acceptance pending
+- Summary: The uncommitted focus fix put `keybd_event(VK_MENU)` inside `cachedWindow()`, which runs from every key/mouse/focus query. When the game window handle was temporarily unresolved it synthesized ALT down/up on every call, spamming the menu key and swallowing keyboard and pad input. HEAD's `cachedWindow()` had no ALT call. ALT now lives only in the explicit `focus_game_window` command, throttled; the query path only rescans the window once per second.
+- Detail: [keyboard-alt-spam-REG-2026-11-27.md](keyboard-alt-spam-REG-2026-11-27.md)
+
+## Entry 46 — Bluetooth DualShock 4 detected but all input axes zero
+
+- Recorded: 2026-11-27T08:30Z
+- Status: FIXED IN GENERATION 794 with the raw-HID fallback — human-confirmed
+- Summary: GLFW 3.4.0 enumerated the Bluetooth DS4 (VID 054C PID 09CC) and reported a standard mapping, but both the gamepad state and the raw joystick state returned zero axes. Windows and Roblox received the pad; `joy.cpl`/DirectInput did not. The game had no alternate backend, and same-day focus/capture/ALT changes masked it. A raw-HID fallback now decodes Bluetooth report 0x11 (and USB 0x01) into the existing bindings, with a read-only probe and live-data logging. Rule: a connected all-zero device is not healthy; a controller is proven only by changing axes/buttons.
+- Detail: [ds4-bluetooth-zero-input-REG-2026-11-27.md](ds4-bluetooth-zero-input-REG-2026-11-27.md)

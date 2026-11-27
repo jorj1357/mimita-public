@@ -199,7 +199,9 @@ MovementConfig defaultMovementConfig()
     config.airFrictionAmount = AIR_FRICTION_AMOUNT;
     config.frictionSizeExponent = -0.5f;
     config.almostZeroSpeed = ALMOST_ZERO;
-    config.walkableSlopeDot = MAX_WALKABLE_SLOPE_DOT;
+    // 0 means "follow MAX_WALKABLE_SLOPE_DOT", which config/collision.json
+    // owns and hot-reloads. Presets may still set a non-zero override.
+    config.walkableSlopeDot = 0.0f;
     config.collisionSkin = CollisionConfig::instance().collisionSkin();
     config.maximumStepHeight = MAX_STEP_HEIGHT;
     config.stableGroundGraceSeconds = 0.08f;

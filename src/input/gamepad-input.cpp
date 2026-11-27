@@ -5,12 +5,19 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 
 #include <GLFW/glfw3.h>
 #include <nlohmann/json.hpp>
+
+#if defined(_WIN32)
+#include <setupapi.h>
+#include <hidsdi.h>
+#endif
 
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
@@ -52,6 +59,331 @@ float applyDeadzone(float value, float deadzone, float upperDeadzone = 1.0f)
     const float scaled = (magnitude - deadzone) / span;
     return std::copysign(std::clamp(scaled, 0.0f, 1.0f), value);
 }
+
+#if defined(_WIN32)
+// Raw DualShock 4 HID fallback.
+//
+// GLFW 3.4's Windows joystick backend can report a Bluetooth DS4 as present and
+// standard-mapped while every axis stays at ~1.5e-05, even though Windows and
+// other applications read the same device. This backend opens the Sony HID
+// interface directly and decodes the DS4 input report into the existing GLFW
+// standard mapping so the rest of the input path is unchanged.
+//
+// USB report 0x01: [id][lx][ly][rx][ry][btns0][btns1][btns2][l2][r2]...
+// Bluetooth 0x11:  [id][0xc0][0x00][lx][ly][rx][ry][btns0][btns1][btns2][l2][r2]...
+// The Bluetooth report is padded to the device's maximum input length; only the
+// leading controller-state bytes are decoded.
+
+uint64_t hidNowMs()
+{
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+}
+
+struct HidDs4Device
+{
+    HANDLE handle = INVALID_HANDLE_VALUE;
+    HANDLE event = nullptr;
+    OVERLAPPED overlapped{};
+    bool readPending = false;
+    bool haveState = false;
+    bool firstReportLogged = false;
+    uint64_t lastAttemptMs = 0;
+    uint64_t lastReportMs = 0;
+    unsigned short vendorId = 0;
+    unsigned short productId = 0;
+    int inputLength = 0;
+    std::string path;
+    unsigned char buffer[1024] = {};
+    float axes[6] = {};
+    unsigned char buttons[15] = {};
+
+    ~HidDs4Device() { close(); }
+
+    void close()
+    {
+        if (handle != INVALID_HANDLE_VALUE)
+        {
+            if (readPending)
+            {
+                CancelIo(handle);
+                readPending = false;
+            }
+            CloseHandle(handle);
+            handle = INVALID_HANDLE_VALUE;
+        }
+        if (event)
+        {
+            CloseHandle(event);
+            event = nullptr;
+        }
+        haveState = false;
+        firstReportLogged = false;
+    }
+};
+
+HidDs4Device& hidDs4()
+{
+    static HidDs4Device device;
+    return device;
+}
+
+bool hidDs4Parse(HidDs4Device& device, const unsigned char* report,
+                 unsigned long length)
+{
+    if (length < 12)
+        return false;
+    int base = 0;
+    const char* mode = "unknown";
+    if (report[0] == 0x01)
+    {
+        base = 1;
+        mode = "usb";
+    }
+    else if (report[0] == 0x11)
+    {
+        base = 3;
+        mode = "bluetooth";
+    }
+    else
+    {
+        return false;
+    }
+    if (length < static_cast<unsigned long>(base + 9))
+        return false;
+
+    const auto stick = [](unsigned char value) {
+        return std::clamp((static_cast<float>(value) - 128.0f) / 127.0f,
+                          -1.0f, 1.0f);
+    };
+    device.axes[0] = stick(report[base + 0]);  // left X
+    device.axes[1] = stick(report[base + 1]);  // left Y (up is negative)
+    device.axes[2] = stick(report[base + 2]);  // right X
+    device.axes[3] = stick(report[base + 3]);  // right Y
+    device.axes[4] = report[base + 7] / 255.0f;  // L2
+    device.axes[5] = report[base + 8] / 255.0f;  // R2
+
+    std::memset(device.buttons, 0, sizeof(device.buttons));
+    const unsigned char b0 = report[base + 4];
+    const unsigned char b1 = report[base + 5];
+    const unsigned char b2 = report[base + 6];
+    if (b0 & 0x10) device.buttons[2] = 1;   // square -> X
+    if (b0 & 0x20) device.buttons[0] = 1;   // cross  -> A
+    if (b0 & 0x40) device.buttons[1] = 1;   // circle -> B
+    if (b0 & 0x80) device.buttons[3] = 1;   // triangle -> Y
+    if (b1 & 0x01) device.buttons[4] = 1;   // L1
+    if (b1 & 0x02) device.buttons[5] = 1;   // R1
+    if (b1 & 0x10) device.buttons[6] = 1;   // share -> back
+    if (b1 & 0x20) device.buttons[7] = 1;   // options -> start
+    if (b2 & 0x01) device.buttons[8] = 1;   // PS -> guide
+    if (b1 & 0x40) device.buttons[9] = 1;   // L3
+    if (b1 & 0x80) device.buttons[10] = 1;  // R3
+    const int dpad = b0 & 0x0F;             // 0=N,1=NE,2=E,...,7=NW,8=released
+    if (dpad != 8)
+    {
+        if (dpad == 0 || dpad == 1 || dpad == 7) device.buttons[11] = 1;
+        if (dpad == 2 || dpad == 1 || dpad == 3) device.buttons[12] = 1;
+        if (dpad == 4 || dpad == 3 || dpad == 5) device.buttons[13] = 1;
+        if (dpad == 6 || dpad == 5 || dpad == 7) device.buttons[14] = 1;
+    }
+    device.haveState = true;
+
+    if (!device.firstReportLogged)
+    {
+        device.firstReportLogged = true;
+        char hex[3 * 16 + 1] = {};
+        const int count = std::min<int>(
+            16, static_cast<int>(length));
+        for (int i = 0; i < count; ++i)
+            std::snprintf(hex + i * 3, 4, "%02x ", report[i]);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "input.gamepad.hid.report", "gamepad",
+            "first raw DualShock 4 HID report decoded", 0,
+            {{"report_id", report[0]},
+             {"mode", mode},
+             {"length", length},
+             {"raw", hex},
+             {"lx", device.axes[0]},
+             {"ly", device.axes[1]},
+             {"rx", device.axes[2]},
+             {"ry", device.axes[3]},
+             {"l2", device.axes[4]},
+             {"r2", device.axes[5]}});
+    }
+    return true;
+}
+
+bool hidDs4TryOpen(HidDs4Device& device)
+{
+    if (device.handle != INVALID_HANDLE_VALUE)
+        return true;
+    const uint64_t now = hidNowMs();
+    if (device.lastAttemptMs != 0 && now - device.lastAttemptMs < 2000)
+        return false;
+    device.lastAttemptMs = now;
+
+    GUID guid{};
+    HidD_GetHidGuid(&guid);
+    HDEVINFO info = SetupDiGetClassDevsA(
+        &guid, nullptr, nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+    if (info == INVALID_HANDLE_VALUE)
+        return false;
+
+    bool opened = false;
+    for (DWORD index = 0; !opened; ++index)
+    {
+        SP_DEVICE_INTERFACE_DATA iface{};
+        iface.cbSize = sizeof(iface);
+        if (!SetupDiEnumDeviceInterfaces(info, nullptr, &guid, index, &iface))
+            break;
+
+        DWORD required = 0;
+        SetupDiGetDeviceInterfaceDetailA(
+            info, &iface, nullptr, 0, &required, nullptr);
+        if (required == 0)
+            continue;
+        std::vector<unsigned char> storage(required);
+        auto* detail = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_A*>(
+            storage.data());
+        detail->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_A);
+        if (!SetupDiGetDeviceInterfaceDetailA(
+                info, &iface, detail, required, &required, nullptr))
+            continue;
+
+        HANDLE probe = CreateFileA(
+            detail->DevicePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr, OPEN_EXISTING, 0, nullptr);
+        if (probe == INVALID_HANDLE_VALUE)
+            continue;
+        HIDD_ATTRIBUTES attributes{};
+        attributes.Size = sizeof(attributes);
+        const bool sony =
+            HidD_GetAttributes(probe, &attributes) &&
+            attributes.VendorID == 0x054C &&
+            (attributes.ProductID == 0x09CC || attributes.ProductID == 0x05C4);
+        CloseHandle(probe);
+        if (!sony)
+            continue;
+
+        HANDLE handle = CreateFileA(
+            detail->DevicePath, GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+            FILE_FLAG_OVERLAPPED, nullptr);
+        if (handle == INVALID_HANDLE_VALUE)
+            handle = CreateFileA(
+                detail->DevicePath, GENERIC_READ,
+                FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                FILE_FLAG_OVERLAPPED, nullptr);
+        if (handle == INVALID_HANDLE_VALUE)
+            continue;
+        HANDLE event = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+        if (!event)
+        {
+            CloseHandle(handle);
+            continue;
+        }
+
+        device.close();
+        device.handle = handle;
+        device.event = event;
+        device.overlapped = OVERLAPPED{};
+        device.overlapped.hEvent = event;
+        device.readPending = false;
+        device.haveState = false;
+        device.firstReportLogged = false;
+        device.lastReportMs = 0;
+        device.vendorId = attributes.VendorID;
+        device.productId = attributes.ProductID;
+        device.inputLength = static_cast<int>(sizeof(device.buffer));
+        device.path = detail->DevicePath;
+        opened = true;
+
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "input.gamepad.hid.selected", "gamepad",
+            "raw DualShock 4 HID selected because GLFW reported an idle device",
+            0,
+            {{"path", device.path},
+             {"vendor_id", device.vendorId},
+             {"product_id", device.productId},
+             {"input_length", device.inputLength}});
+    }
+    SetupDiDestroyDeviceInfoList(info);
+    return opened;
+}
+
+bool hidDs4Read(HidDs4Device& device, float* axes, unsigned char* buttons)
+{
+    if (device.handle == INVALID_HANDLE_VALUE)
+        return false;
+
+    int parsed = 0;
+    for (int i = 0; i < 4; ++i)
+    {
+        if (!device.readPending)
+        {
+            ResetEvent(device.event);
+            device.overlapped = OVERLAPPED{};
+            device.overlapped.hEvent = device.event;
+            DWORD read = 0;
+            if (!ReadFile(device.handle, device.buffer, sizeof(device.buffer),
+                          &read, &device.overlapped))
+            {
+                if (GetLastError() != ERROR_IO_PENDING)
+                {
+                    device.close();
+                    return false;
+                }
+                device.readPending = true;
+            }
+            else
+            {
+                if (read > 0 && hidDs4Parse(device, device.buffer, read))
+                    ++parsed;
+                continue;
+            }
+        }
+        if (!device.readPending)
+            continue;
+        const DWORD wait = WaitForSingleObject(device.event, 0);
+        if (wait == WAIT_TIMEOUT)
+            break;
+        DWORD read = 0;
+        if (wait != WAIT_OBJECT_0 ||
+            !GetOverlappedResult(device.handle, &device.overlapped, &read,
+                                 FALSE))
+        {
+            device.readPending = false;
+            device.close();
+            return false;
+        }
+        device.readPending = false;
+        if (read > 0 && hidDs4Parse(device, device.buffer, read))
+            ++parsed;
+    }
+
+    if (!device.haveState)
+        return false;
+    const uint64_t now = hidNowMs();
+    if (parsed > 0)
+        device.lastReportMs = now;
+    else if (now - device.lastReportMs > 1000)
+    {
+        // The pad stopped sending. Let GLFW try again on the next poll.
+        device.close();
+        return false;
+    }
+
+    for (int i = 0; i < 6; ++i)
+        axes[i] = device.axes[i];
+    for (int i = 0; i < 15; ++i)
+        buttons[i] = device.buttons[i];
+    return true;
+}
+#endif  // _WIN32
 
 }  // namespace
 
@@ -135,6 +467,16 @@ bool GamepadInput::reloadConfig()
             return false;
         }
         mMappingsPath = root.value("mappings_file", mMappingsPath);
+        mCaptureMode = root.value("capture_mode", mCaptureMode);
+        if (mCaptureMode != "always" && mCaptureMode != "focused")
+            mCaptureMode = "focused";
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "input.gamepad.capture_mode", "gamepad",
+            "gamepad capture policy loaded", 0,
+            {{"capture_mode", mCaptureMode},
+             {"default", "focused"},
+             {"config", mConfigPath}});
         const float defaultDeadzone =
             root.value("deadzone", 0.15f);
         if (root.contains("bindings") && root["bindings"].is_object())
@@ -444,6 +786,89 @@ void GamepadInput::poll()
         return;
     }
 
+    // Mode "focused" (default) owns the pad only while the game window has OS
+    // focus. Mode "always" is the old behaviour: the first MiMITA process that
+    // opens the pad reads it even while another application is in front.
+    static bool sPadMuted = false;
+    if (mCaptureMode == "focused" && !mWindowFocused)
+    {
+        if (!sPadMuted)
+        {
+            sPadMuted = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "input.gamepad.muted", "gamepad",
+                "gamepad capture muted while the game window is unfocused", 0,
+                {{"capture_mode", mCaptureMode},
+                 {"window_focused", mWindowFocused}});
+        }
+        for (int i = 0; i < 16; ++i)
+            mAxes[i] = 0.0f;
+        for (int i = 0; i < 32; ++i)
+            mButtons[i] = 0;
+        return;
+    }
+    if (sPadMuted)
+    {
+        sPadMuted = false;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "input.gamepad.resumed", "gamepad",
+            "gamepad capture resumed after focus", 0,
+            {{"capture_mode", mCaptureMode},
+             {"window_focused", mWindowFocused}});
+    }
+
+#if defined(_WIN32)
+    // Raw-HID fallback: a Bluetooth DS4 can be present and standard-mapped in
+    // GLFW while every GLFW axis stays idle. Once selected, the raw HID state
+    // is authoritative and the GLFW path is only a fallback.
+    auto applyHidState = [this]() -> bool
+    {
+        HidDs4Device& hid = hidDs4();
+        if (hid.handle == INVALID_HANDLE_VALUE)
+            return false;
+        if (!hidDs4Read(hid, mAxes, mButtons))
+            return false;
+        mConnected = true;
+        mStandardMapping = false;
+        mRawOnly = false;
+        mDeviceId = -2;
+        mName = "Wireless Controller (raw HID)";
+        mAxisCount = 6;
+        mButtonCount = 15;
+        for (int i = mAxisCount; i < 16; ++i)
+            mAxes[i] = 0.0f;
+        for (int i = mButtonCount; i < 32; ++i)
+            mButtons[i] = 0;
+        if (mCalibratedDeviceId != mDeviceId)
+        {
+            mCalibratedDeviceId = mDeviceId;
+            mCalibrationFrames = 0;
+            for (AxisCalibration& cal : mAxisCal)
+                cal = AxisCalibration{};
+            mLoggedConnectionState = false;
+        }
+        if (!mLoggedConnectionState)
+        {
+            mLoggedConnectionState = true;
+            logState("gamepad connected (raw HID)");
+        }
+        updateTriggerCalibration();
+        logAxes();
+        logPoll();
+        return true;
+    };
+    auto selectHid = [this, &applyHidState]() -> bool
+    {
+        if (!hidDs4TryOpen(hidDs4()))
+            return false;
+        return applyHidState();
+    };
+    if (applyHidState())
+        return;
+#endif
+
     mConnected = false;
     mStandardMapping = false;
     mRawOnly = false;
@@ -463,6 +888,12 @@ void GamepadInput::poll()
     }
     if (device < 0)
     {
+#if defined(_WIN32)
+        // GLFW may not enumerate the pad at all; the raw HID path is
+        // independent of it.
+        if (selectHid())
+            return;
+#endif
         if (mLoggedConnectionState)
         {
             mLoggedConnectionState = false;
@@ -495,18 +926,117 @@ void GamepadInput::poll()
     if (glfwJoystickIsGamepad(device))
     {
         GLFWgamepadstate state{};
-        if (!glfwGetGamepadState(device, &state))
-            return;
+        if (glfwGetGamepadState(device, &state))
+        {
         mStandardMapping = true;
         mAxisCount = GLFW_GAMEPAD_AXIS_LAST + 1;
         mButtonCount = GLFW_GAMEPAD_BUTTON_LAST + 1;
+        bool standardActive = false;
         for (int i = 0; i < mAxisCount && i < 16; ++i)
+        {
             mAxes[i] = state.axes[i];
+            if (std::fabs(mAxes[i]) > 0.2f)
+                standardActive = true;
+        }
         for (int i = 0; i < mButtonCount && i < 32; ++i)
+        {
             mButtons[i] = state.buttons[i];
+            if (mButtons[i])
+                standardActive = true;
+        }
+
+        // A Bluetooth "Wireless Controller" can be present with a standard
+        // mapping while GLFW reports every axis as zero. Read the raw joystick
+        // state too; if it shows activity while the standard state is idle, use
+        // the raw device for the rest of the session. PS4 raw face buttons are
+        // Square, Cross, Circle, Triangle; remap them to the standard
+        // Cross, Circle, Square, Triangle order.
+        static int sRawLatchDevice = -1;
+        static float sPrevRawAxes[16] = {};
+        int rawAxisCount = 0;
+        const float* rawAxes = glfwGetJoystickAxes(device, &rawAxisCount);
+        int rawButtonCount = 0;
+        const unsigned char* rawButtons =
+            glfwGetJoystickButtons(device, &rawButtonCount);
+        bool rawActive = sRawLatchDevice == device;
+        for (int i = 0; i < rawAxisCount && i < 16; ++i)
+        {
+            const float value = rawAxes ? rawAxes[i] : 0.0f;
+            if (i < 4)
+            {
+                if (std::fabs(value) > 0.25f)
+                    rawActive = true;
+            }
+            else if (std::fabs(value - sPrevRawAxes[i]) > 0.15f)
+            {
+                rawActive = true;
+            }
+            sPrevRawAxes[i] = value;
+        }
+        for (int i = 0; i < rawButtonCount && i < 32; ++i)
+            if (rawButtons && rawButtons[i])
+                rawActive = true;
+
+        if (!standardActive && rawActive)
+        {
+            sRawLatchDevice = device;
+            mStandardMapping = false;
+            mRawOnly = true;
+            mAxisCount = std::clamp(rawAxisCount, 0, 16);
+            for (int i = 0; i < mAxisCount; ++i)
+                mAxes[i] = rawAxes ? rawAxes[i] : 0.0f;
+            mButtonCount = std::clamp(rawButtonCount, 0, 32);
+            for (int i = 0; i < 32; ++i)
+                mButtons[i] = 0;
+            const bool ps4 = mName.find("Wireless Controller") !=
+                             std::string::npos;
+            static const int kPs4FaceToStandard[4] = {2, 0, 1, 3};
+            for (int i = 0; i < mButtonCount; ++i)
+            {
+                const unsigned char pressed =
+                    rawButtons ? rawButtons[i] : 0;
+                if (ps4 && i < 4)
+                    mButtons[kPs4FaceToStandard[i]] = pressed;
+                else
+                    mButtons[i] = pressed;
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "input.gamepad.raw.selected", std::to_string(device),
+                "standard gamepad state idle; raw Bluetooth axes selected", 0,
+                {{"device_id", device},
+                 {"name", mName},
+                 {"axis_count", mAxisCount},
+                 {"button_count", mButtonCount},
+                 {"ps4_remap", ps4}});
+            updateTriggerCalibration();
+            logAxes();
+            logPoll();
+            return;
+        }
+#if defined(_WIN32)
+        // GLFW reports this pad as present but idle. Try the raw HID backend
+        // before accepting a zero state as real.
+        if (!standardActive && !rawActive && selectHid())
+            return;
+#endif
+        if (standardActive)
+            sRawLatchDevice = -1;
+
         updateTriggerCalibration();
         logAxes();
+        logPoll();
         return;
+        }
+        // The read failed. Do not give up: fall through to the raw joystick
+        // axes/buttons, which is how a "Wireless Controller" with no GLFW
+        // mapping was detected but never read (axis_count 0, button_count 0,
+        // standard_mapping false, raw_fallback false in the live state).
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "input.gamepad.read_failed", std::to_string(device),
+            "gamepad state read failed; using raw joystick axes", 0,
+            {{"device_id", device}});
     }
 
     mRawOnly = true;
@@ -521,8 +1051,20 @@ void GamepadInput::poll()
     mButtonCount = std::clamp(count, 0, 32);
     for (int i = 0; i < mButtonCount; ++i)
         mButtons[i] = buttons ? buttons[i] : 0;
+#if defined(_WIN32)
+    bool glfwRawActive = false;
+    for (int i = 0; i < mAxisCount; ++i)
+        if (std::fabs(mAxes[i]) > 0.2f)
+            glfwRawActive = true;
+    for (int i = 0; i < mButtonCount; ++i)
+        if (mButtons[i])
+            glfwRawActive = true;
+    if (!glfwRawActive && selectHid())
+        return;
+#endif
     updateTriggerCalibration();
     logAxes();
+    logPoll();
 }
 
 float GamepadInput::axisValue(int axis, bool trigger, bool invert,
@@ -581,6 +1123,40 @@ float GamepadInput::axisValue(int axis, bool trigger, bool invert,
         return remap01(raw);
     }
     return applyDeadzone(value, deadzone, upperDeadzone);
+}
+
+void GamepadInput::logPoll()
+{
+    // Once per second, regardless of whether anything moved: a dead pad and a
+    // pad whose axes GLFW cannot see look identical without this. The device is
+    // a Bluetooth "Wireless Controller", which can be present but expose zero
+    // axes; this records exactly what GLFW reports.
+    static uint64_t sLastMs = 0;
+    const uint64_t nowMs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+    if (nowMs - sLastMs < 1000)
+        return;
+    sLastMs = nowMs;
+    nlohmann::json axes = nlohmann::json::array();
+    for (int i = 0; i < mAxisCount && i < 8; ++i)
+        axes.push_back(mAxes[i]);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "input.gamepad.poll", "gamepad", "raw gamepad poll snapshot", 0,
+        {{"connected", mConnected},
+         {"virtual", mVirtual},
+         {"name", mName},
+         {"device_id", mDeviceId},
+         {"is_gamepad", mDeviceId >= 0 ? glfwJoystickIsGamepad(mDeviceId) != 0 : false},
+         {"standard_mapping", mStandardMapping},
+         {"raw_fallback", mRawOnly},
+         {"axis_count", mAxisCount},
+         {"button_count", mButtonCount},
+         {"axes", axes},
+         {"throttle", value("throttle")},
+         {"brake", value("brake")}});
 }
 
 void GamepadInput::logAxes()

@@ -103,6 +103,11 @@ struct VehicleGroundProfile {
     // the averaged wheel contact normal.
     bool attitudeLock = false;
     bool alignToSurface = true;
+    // Grounded steering owns the yaw rate. A car cannot rotate in place, so a
+    // car stopped or barely rolling turns less; the rate is the steered
+    // maximum scaled by min(1, speed / 6). Radians per second.
+    float maxYawRateRadPerSecond = 3.4f;
+    float yawAccelRadPerSecond2 = 14.0f;
     // Degrees per second the chassis may rotate to follow the surface normal.
     float alignRateDegPerSecond = 480.0f;
 };
@@ -199,6 +204,10 @@ public:
     bool loadDirectory(const std::string& directory = "config/vehicle-profiles");
     bool pollReload();
     ProfilePtr find(const std::string& id) const;
+    // Fallback when nothing named a profile (a client can miss the gamemode's
+    // id and then has no key bindings at all). Deterministic: "rl_soccar" when
+    // it exists, otherwise the first id in sorted order.
+    ProfilePtr defaultProfile() const;
     std::vector<std::string> ids() const;
 
     uint64_t revision() const { return mRevision; }

@@ -963,6 +963,31 @@ public:
 void setAnimationPriorityDebug(bool enabled);
 bool animationPriorityDebug();
 
+// Render-pose interpolation shared by the per-part and combined body paths.
+// The combined path must use the same previous/current/alpha pose as the
+// outline and per-part paths or the body and outline visibly split.
+glm::mat4 playerRenderPartTransform(const Player& player,
+                                    const PhysicalBodyPart& part);
+bool combinedBodyInterpolate();
+void setCombinedBodyInterpolate(bool enabled);
+
+// ── Body socket hierarchy and rig editor (2026-11-27) ─────────────
+// Convert the flat authored root rig (plrOrigin with sibling parts) into a
+// socket hierarchy where the torso owns the head, arms and legs. Preserves
+// every part's rest world transform, then applies per-avatar sockets from
+// config/rig-sockets.json on top. Idempotent per model load.
+void applyAvatarBodyRig(Player& player, const std::string& modelPath);
+
+bool playerRigEditorActive();
+const std::string& playerRigEditorSelected();
+void playerRigEditorToggle(Player& player);
+void playerRigEditorSelect(Player& player, const std::string& part);
+void playerRigEditorNudge(Player& player, const glm::vec3& delta);
+void playerRigEditorRotate(Player& player, const glm::vec3& eulerDeg);
+bool playerRigEditorSave(Player& player);
+void playerRigEditorReset(Player& player);
+void playerRigEditorPrint(const Player& player);
+
 // Upload mesh to shared body-part VAO for ragdoll rendering
 void uploadBodyPartMesh(const Mesh& mesh);
 std::size_t playerModelUploadCacheCount();

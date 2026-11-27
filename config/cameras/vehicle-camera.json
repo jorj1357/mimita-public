@@ -1,6 +1,19 @@
 // Rocket League vehicle camera tuning. Presentation only: none of these
 // values feed back into car controls.
 {
+  // Rocket League camera body. Distance/height are metres, angle is degrees
+  // (negative looks down), fov is degrees. Presentation only.
+  "distanceM": 2.20,
+  "heightM": 0.90,
+  "pitchDeg": -7.0,
+  "fovDeg": 110.0,
+  // "stiffness": 1.0,
+  // "stiffness": 10.0,
+  // "stiffness": 0.0,
+  "stiffness": 999.0,
+  // Swivel and ball-cam transition speed, 0-10 on the Rocket League scale.
+  "transitionSpeed": 10.0,
+  "swivelSpeed": 10.0,
   // Ball cam avoidance speed. 0.0 = slowest ease, 1.0 = fastest, 0.5 default.
   "ballCamSnap": 0.5,
   // Ease rate used when ball cam is off (momentum camera), radians/second.

@@ -18,6 +18,7 @@
 
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "physics/config.h"
 
 using json = nlohmann::json;
 
@@ -170,6 +171,18 @@ bool CollisionConfig::load(const std::string& path, std::uint32_t tick)
         mMaxSubSteps = std::clamp(
             j.value("maxSubSteps", 128), 1, 512);
 
+        // config/collision.json owns the walkable-slope threshold. Physics
+        // owners and the movement classifier read the shared
+        // MAX_WALKABLE_SLOPE_DOT directly, so one clamped assignment keeps
+        // every classifier in agreement without touching another singleton
+        // during this load (movement's default builder reads CollisionConfig).
+        const float walkableSlopeDot = std::clamp(
+            j.value("walkableSlopeDot", MAX_WALKABLE_SLOPE_DOT), 0.0f, 1.0f);
+        const float previousWalkableSlopeDot = MAX_WALKABLE_SLOPE_DOT;
+        const bool slopeChanged =
+            std::fabs(walkableSlopeDot - previousWalkableSlopeDot) > 1e-6f;
+        MAX_WALKABLE_SLOPE_DOT = walkableSlopeDot;
+
         if (j.contains("bounce"))
         {
             const json& b = j["bounce"];
@@ -232,6 +245,16 @@ bool CollisionConfig::load(const std::string& path, std::uint32_t tick)
                  {"max_speed_mps", weaponVsWeapon.knockbackMaxSpeedMps},
                  {"reference_speed_mps",
                   weaponVsWeapon.knockbackReferenceSpeedMps}}}}}});
+
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Collision, StructuredLevel::Important,
+            "collision.slope.config", path,
+            "walkable slope threshold applied to physics and movement", tick,
+            {{"path", path},
+             {"walkable_slope_dot", walkableSlopeDot},
+             {"previous_walkable_slope_dot", previousWalkableSlopeDot},
+             {"changed", slopeChanged},
+             {"applied_tick", tick}});
         return true;
     }
     catch (const std::exception& e)

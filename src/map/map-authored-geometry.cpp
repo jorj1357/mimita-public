@@ -18,6 +18,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <nlohmann/json.hpp>
 
@@ -32,6 +33,7 @@
 #include "worldgen/worldgen-library.h"
 #include "map/map-loader-collision.h"
 #include "map/map-static-union.h"
+#include "map/authored-block-rebuild.h"
 #include "network/server.h"
 #include "physics/physical-entity.h"
 #include "render/world-box-mesh.h"
@@ -176,8 +178,336 @@ glm::mat4 blockTransform(const AuthoredBlock& block)
     return translate * rotate * rotateY * rotateX * scale;
 }
 
+// Placement only. Use this for geometry whose local vertices are already in
+// metres: collision box triangles built from size*0.5 and curved profiles whose
+// points and half-length are metres. blockTransform's scale exists only to turn
+// the render unit cube into the block size; applying it to metre-space geometry
+// scales the block twice (arena2 west goal ceiling at half*size, run
+// 20261127_045051).
+glm::mat4 blockPlacement(const AuthoredBlock& block)
+{
+    const glm::mat4 translate = glm::translate(glm::mat4(1.0f), block.position);
+    const glm::mat4 rotate = glm::rotate(glm::mat4(1.0f),
+        glm::radians(block.rotationEuler.z), glm::vec3(0, 0, 1));
+    const glm::mat4 rotateY = glm::rotate(glm::mat4(1.0f),
+        glm::radians(block.rotationEuler.y), glm::vec3(0, 1, 0));
+    const glm::mat4 rotateX = glm::rotate(glm::mat4(1.0f),
+        glm::radians(block.rotationEuler.x), glm::vec3(1, 0, 0));
+    return translate * rotate * rotateY * rotateX;
+}
+
+
+// ── Curved shape tessellation ───────────────────────────────────────────────
+// One triangle generator feeds render and collision, so a curved wall ramp is
+// the same geometry to physics and to the eye. Profiles carry the measured
+// Rocket League cross-sections; cylinders/cones/spheres cover posts, blends and
+// domes, and a wedge covers plain ramps.
+namespace shape_geometry
+{
+glm::vec3 localPoint(int axis, float u, float v, float t)
+{
+    if (axis == 0) return glm::vec3(t, u, v);
+    if (axis == 1) return glm::vec3(u, t, v);
+    return glm::vec3(u, v, t);
+}
+
+float axisLength(const AuthoredBlock& block, int axis)
+{
+    const glm::vec3 s = glm::abs(block.size);
+    return axis == 0 ? s.x : (axis == 1 ? s.y : s.z);
+}
+
+void pushTriangle(std::vector<CollisionTriangle>& out, const glm::vec3& a,
+                  const glm::vec3& b, const glm::vec3& c, bool flip)
+{
+    glm::vec3 n = glm::cross(b - a, c - a);
+    const float len = glm::length(n);
+    if (len < 1e-7f)
+        return;
+    CollisionTriangle tri;
+    if (flip)
+    {
+        tri.a = a;
+        tri.b = c;
+        tri.c = b;
+        tri.normal = -(n / len);
+    }
+    else
+    {
+        tri.a = a;
+        tri.b = b;
+        tri.c = c;
+        tri.normal = n / len;
+    }
+    out.push_back(tri);
+}
+
+void buildProfile(const AuthoredBlock& block,
+                  std::vector<CollisionTriangle>& out)
+{
+    const auto& pts = block.profile;
+    if (pts.size() < 2)
+        return;
+    const int axis = std::clamp(block.profileAxis, 0, 2);
+    const float half = axisLength(block, axis) * 0.5f;
+    // Auto-orientation: the surface normal must face the playfield. The block
+    // sits on the wall plane, so "inward" is roughly toward the arena centre.
+    // A profile authored on the wrong side produced inverted triangles that
+    // made the static union drop floor collision.
+    const glm::vec2 flat(block.position.x, block.position.y);
+    const float flatLength = glm::length(flat);
+    const glm::vec3 inwardHint =
+        flatLength > 1.0f ? glm::vec3(-flat.x / flatLength, -flat.y / flatLength, 0.0f)
+                          : glm::vec3(0.0f, 0.0f, -1.0f);
+    for (size_t i = 0; i + 1 < pts.size(); ++i)
+    {
+        const glm::vec2 a = pts[i];
+        const glm::vec2 b = pts[i + 1];
+        const glm::vec3 p0 = localPoint(axis, a.x, a.y, -half);
+        const glm::vec3 p1 = localPoint(axis, a.x, a.y, half);
+        const glm::vec3 p2 = localPoint(axis, b.x, b.y, half);
+        const glm::vec3 p3 = localPoint(axis, b.x, b.y, -half);
+        const glm::vec3 normal = glm::cross(p1 - p0, p2 - p0);
+        const bool flip = block.profileFlip !=
+                          (glm::dot(normal, inwardHint) < 0.0f);
+        pushTriangle(out, p0, p1, p2, flip);
+        pushTriangle(out, p0, p2, p3, flip);
+    }
+}
+
+void buildCylinder(const AuthoredBlock& block,
+                   std::vector<CollisionTriangle>& out)
+{
+    const int axis = std::clamp(block.profileAxis, 0, 2);
+    const float radius = glm::max(0.01f, glm::abs(block.size.x));
+    const float half = axisLength(block, axis) * 0.5f;
+    const int segments = std::clamp(block.segments, 3, 128);
+    const float arc = glm::radians(glm::clamp(block.arcDegrees, 1.0f, 360.0f));
+    const bool full = arc >= glm::radians(359.5f);
+    const float step = full ? arc / static_cast<float>(segments)
+                            : arc / static_cast<float>(segments - 1);
+    const bool flip = !block.convex;
+    for (int i = 0; i + 1 < segments; ++i)
+    {
+        const float a0 = i * step;
+        const float a1 = (i + 1) * step;
+        const glm::vec2 c0(std::cos(a0) * radius, std::sin(a0) * radius);
+        const glm::vec2 c1(std::cos(a1) * radius, std::sin(a1) * radius);
+        const glm::vec3 p0 = localPoint(axis, c0.x, c0.y, -half);
+        const glm::vec3 p1 = localPoint(axis, c0.x, c0.y, half);
+        const glm::vec3 p2 = localPoint(axis, c1.x, c1.y, half);
+        const glm::vec3 p3 = localPoint(axis, c1.x, c1.y, -half);
+        pushTriangle(out, p0, p1, p2, flip);
+        pushTriangle(out, p0, p2, p3, flip);
+    }
+    if (!full)
+        return;
+    // Caps: a convex post must be solid from the top and bottom.
+    const glm::vec3 bottom = localPoint(axis, 0.0f, 0.0f, -half);
+    const glm::vec3 top = localPoint(axis, 0.0f, 0.0f, half);
+    for (int i = 0; i + 1 < segments; ++i)
+    {
+        const float a0 = i * step;
+        const float a1 = (i + 1) * step;
+        const glm::vec2 c0(std::cos(a0) * radius, std::sin(a0) * radius);
+        const glm::vec2 c1(std::cos(a1) * radius, std::sin(a1) * radius);
+        pushTriangle(out, bottom, localPoint(axis, c0.x, c0.y, -half),
+                     localPoint(axis, c1.x, c1.y, -half), !flip);
+        pushTriangle(out, top, localPoint(axis, c1.x, c1.y, half),
+                     localPoint(axis, c0.x, c0.y, half), !flip);
+    }
+}
+
+void buildCone(const AuthoredBlock& block,
+               std::vector<CollisionTriangle>& out)
+{
+    const int axis = std::clamp(block.profileAxis, 0, 2);
+    const float half = axisLength(block, axis) * 0.5f;
+    const float rBottom = glm::max(0.0f, glm::abs(block.size.x));
+    const float rTop = glm::max(0.0f, block.radiusTop < 0.0f
+                                           ? glm::abs(block.size.y)
+                                           : block.radiusTop);
+    const int segments = std::clamp(block.segments, 3, 128);
+    const bool flip = !block.convex;
+    for (int i = 0; i < segments; ++i)
+    {
+        const float a0 = glm::two_pi<float>() * i / segments;
+        const float a1 = glm::two_pi<float>() * (i + 1) / segments;
+        const glm::vec3 b0 = localPoint(axis, std::cos(a0) * rBottom,
+                                        std::sin(a0) * rBottom, -half);
+        const glm::vec3 b1 = localPoint(axis, std::cos(a1) * rBottom,
+                                        std::sin(a1) * rBottom, -half);
+        const glm::vec3 t0 = localPoint(axis, std::cos(a0) * rTop,
+                                        std::sin(a0) * rTop, half);
+        const glm::vec3 t1 = localPoint(axis, std::cos(a1) * rTop,
+                                        std::sin(a1) * rTop, half);
+        if (rTop > 1e-4f)
+        {
+            pushTriangle(out, b0, t0, t1, flip);
+            pushTriangle(out, b0, t1, b1, flip);
+        }
+        else
+        {
+            const glm::vec3 apex = localPoint(axis, 0.0f, 0.0f, half);
+            pushTriangle(out, b0, apex, b1, flip);
+        }
+        const glm::vec3 c0 = localPoint(axis, 0.0f, 0.0f, -half);
+        pushTriangle(out, c0, b1, b0, !flip);
+        if (rTop > 1e-4f)
+        {
+            const glm::vec3 c1 = localPoint(axis, 0.0f, 0.0f, half);
+            pushTriangle(out, c1, t0, t1, !flip);
+        }
+    }
+}
+
+void buildSphere(const AuthoredBlock& block,
+                 std::vector<CollisionTriangle>& out)
+{
+    const int axis = std::clamp(block.profileAxis, 0, 2);
+    const glm::vec3 centre = localPoint(axis, 0.0f, 0.0f, 0.0f);
+    const float radius = glm::max(0.01f, glm::abs(block.size.x));
+    const int segments = std::clamp(block.segments, 4, 64);
+    const int rings = glm::max(2, segments / 2);
+    const bool flip = !block.convex;
+    auto point = [&](int ring, int seg) {
+        const float phi = glm::pi<float>() * ring / rings;
+        const float theta = glm::two_pi<float>() * seg / segments;
+        const glm::vec3 n(std::sin(phi) * std::cos(theta),
+                          std::sin(phi) * std::sin(theta), std::cos(phi));
+        glm::vec3 local = n * radius;
+        if (axis == 0) return centre + glm::vec3(local.z, local.x, local.y);
+        if (axis == 1) return centre + glm::vec3(local.x, local.z, local.y);
+        return centre + local;
+    };
+    for (int r = 0; r + 1 < rings; ++r)
+        for (int s = 0; s < segments; ++s)
+        {
+            const int s1 = (s + 1) % segments;
+            pushTriangle(out, point(r, s), point(r + 1, s), point(r + 1, s1),
+                         flip);
+            pushTriangle(out, point(r, s), point(r + 1, s1), point(r, s1), flip);
+        }
+}
+
+void buildWedge(const AuthoredBlock& block,
+                std::vector<CollisionTriangle>& out)
+{
+    // A triangular prism: full height at -u, zero height at +u.
+    const glm::vec3 h = glm::abs(block.size) * 0.5f;
+    const glm::vec3 v[6] = {
+        {-h.x, -h.y, -h.z}, {h.x, -h.y, -h.z}, {-h.x, h.y, -h.z},
+        {-h.x, -h.y, h.z},  {h.x, -h.y, -h.z}, {-h.x, -h.y, h.z}};
+    (void)v;
+    const glm::vec3 backLowL(-h.x, -h.y, -h.z);
+    const glm::vec3 backLowR(-h.x, h.y, -h.z);
+    const glm::vec3 backHighL(-h.x, -h.y, h.z);
+    const glm::vec3 backHighR(-h.x, h.y, h.z);
+    const glm::vec3 tipL(h.x, -h.y, -h.z);
+    const glm::vec3 tipR(h.x, h.y, -h.z);
+    pushTriangle(out, backLowL, backLowR, backHighR, false);
+    pushTriangle(out, backLowL, backHighR, backHighL, false);
+    pushTriangle(out, backLowL, tipL, tipR, true);
+    pushTriangle(out, backLowL, tipR, backLowR, true);
+    pushTriangle(out, backHighL, backHighR, tipR, false);
+    pushTriangle(out, backHighL, tipR, tipL, false);
+    pushTriangle(out, backLowL, backHighL, tipL, true);
+    pushTriangle(out, backLowR, tipR, backHighR, false);
+}
+
+bool buildShapeTriangles(const AuthoredBlock& block,
+                         std::vector<CollisionTriangle>& out)
+{
+    out.clear();
+    if (block.shape == "profile")
+        buildProfile(block, out);
+    else if (block.shape == "cylinder")
+        buildCylinder(block, out);
+    else if (block.shape == "cone")
+        buildCone(block, out);
+    else if (block.shape == "sphere")
+        buildSphere(block, out);
+    else if (block.shape == "wedge")
+        buildWedge(block, out);
+    else
+        return false;
+    return !out.empty();
+}
+
+bool isCurvedShape(const std::string& shape)
+{
+    return shape == "profile" || shape == "cylinder" || shape == "cone" ||
+           shape == "sphere" || shape == "wedge";
+}
+} // namespace shape_geometry
+
+// Render a curved shape. The triangles are the collision triangles, so the
+// visual surface and the physics surface cannot disagree.
+void appendShapeMesh(World& world, const AuthoredBlock& block)
+{
+    std::vector<CollisionTriangle> triangles;
+    if (!shape_geometry::buildShapeTriangles(block, triangles))
+        return;
+    // Curved-shape points and extrusion length are already metres.
+    const glm::mat4 transform = blockPlacement(block);
+    const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(transform)));
+    const size_t objectFirst = world.mesh.verts.size();
+    Mesh::Batch batch;
+    batch.materialName = block.material.empty() ? "default" : block.material;
+    batch.texture = resolveBlockTexture(block.material);
+    batch.tint = block.color;
+    batch.opacity = block.opacity;
+    batch.doubleSided = true;
+    batch.first = objectFirst;
+    batch.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+    batch.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+    batch.hasBounds = true;
+    glm::vec3 boundsMin = batch.boundsMin;
+    glm::vec3 boundsMax = batch.boundsMax;
+    for (const CollisionTriangle& tri : triangles)
+    {
+        const glm::vec3 normal = glm::normalize(normalMatrix * tri.normal);
+        const glm::vec3 an = glm::abs(normal);
+        const bool useX = an.x >= an.y && an.x >= an.z;
+        const bool useY = !useX && an.y >= an.z;
+        for (const glm::vec3& local : {tri.a, tri.b, tri.c})
+        {
+            Vertex vertex;
+            vertex.pos = glm::vec3(transform * glm::vec4(local, 1.0f));
+            vertex.normal = normal;
+            // One texture repeat per 4 m, projected on the dominant axes.
+            const float u = useX ? vertex.pos.y : vertex.pos.x;
+            const float v = useY ? vertex.pos.z : vertex.pos.z;
+            vertex.uv = glm::vec2(u, v) * 0.25f;
+            world.mesh.verts.push_back(vertex);
+            boundsMin = glm::min(boundsMin, vertex.pos);
+            boundsMax = glm::max(boundsMax, vertex.pos);
+        }
+    }
+    batch.count = world.mesh.verts.size() - batch.first;
+    batch.boundsMin = boundsMin;
+    batch.boundsMax = boundsMax;
+    world.mesh.batches.push_back(std::move(batch));
+
+    MapGLBObject object;
+    object.id = "block:" + block.id;
+    object.name = block.id;
+    object.collision = block.collision;
+    object.transform = transform;
+    object.vertexFirst = objectFirst;
+    object.vertexCount = world.mesh.verts.size() - objectFirst;
+    object.boundsMin = boundsMin;
+    object.boundsMax = boundsMax;
+    world.authoredObjects.push_back(std::move(object));
+}
+
 void appendBlockMesh(World& world, const AuthoredBlock& block)
 {
+    if (shape_geometry::isCurvedShape(block.shape))
+    {
+        appendShapeMesh(world, block);
+        return;
+    }
     const glm::mat4 transform = blockTransform(block);
 
     std::array<std::string, 6> faceMaterial;
@@ -397,12 +727,16 @@ void hashVec3(uint64_t& hash, const glm::vec3& value)
 
 } // namespace
 
-uint64_t authoredGeometrySignature(const MapObjectiveConfig& config)
+namespace {
+
+uint64_t authoredGeometrySignatureImpl(const MapObjectiveConfig& config,
+                                       bool includeBlocks)
 {
     uint64_t hash = 1469598103934665603ull;
     hashPod(hash, config.generateWholeWorld);
     hashString(hash, config.worldMode);
 
+    if (includeBlocks)
     for (const AuthoredBlock& block : config.blocks) {
         hashString(hash, block.id);
         hashString(hash, block.shape);
@@ -525,6 +859,18 @@ uint64_t authoredGeometrySignature(const MapObjectiveConfig& config)
     }
 
     return hash ? hash : 1ull;
+}
+
+}  // namespace
+
+uint64_t authoredGeometrySignature(const MapObjectiveConfig& config)
+{
+    return authoredGeometrySignatureImpl(config, true);
+}
+
+uint64_t authoredNonBlockGeometrySignature(const MapObjectiveConfig& config)
+{
+    return authoredGeometrySignatureImpl(config, false);
 }
 
 uint64_t authoredGeometrySignatureLive(const MapObjectiveConfig& config)
@@ -919,8 +1265,12 @@ void applyGLBObjectClones(MimitaNet::HeadlessWorld& world,
     }
 }
 
-void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
-                             const std::vector<MapGLBObjectOverride>& overrides)
+namespace {
+
+void applyHeadlessGLBObjectOverridesImpl(
+    MimitaNet::HeadlessWorld& world,
+    const std::vector<MapGLBObjectOverride>& overrides,
+    bool logEachObject)
 {
     std::vector<bool> claimed(overrides.size(), false);
     std::vector<std::string> objectIds;
@@ -971,7 +1321,7 @@ void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
                 world.solidIds[i] = kRemovedCollisionSolidId;
         }
         object.position = target;
-        if (matched) {
+        if (matched && logEachObject) {
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::World, StructuredLevel::Important,
                 "map.glb-object.applied", object.id,
@@ -1010,6 +1360,14 @@ void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
         }
     }
 }
+}  // namespace
+
+void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
+                             const std::vector<MapGLBObjectOverride>& overrides)
+{
+    applyHeadlessGLBObjectOverridesImpl(world, overrides, true);
+}
+
 void clearAuthoredMapGeometry(World& world)
 {
     if (!world.authoredGeometryApplied) return;
@@ -1021,7 +1379,10 @@ void clearAuthoredMapGeometry(World& world)
     world.mesh.verts.resize(world.authoredBaseVertexCount);
     world.mesh.batches.resize(world.authoredBaseBatchCount);
     world.authoredObjects.clear();
-    world.collisionMesh.clear();
+    // Collision is intentionally left intact: presentation-only rebuilds
+    // (material/color/opacity/shape-preview) must not wipe the client's
+    // collision mesh or leave collisionChunks pointing at freed triangles.
+    // A full collision rebuild clears and rebuilds it below.
     world.renderRevision++;
 }
 
@@ -1099,9 +1460,12 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
     return true;
 }
 
-bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
-                              const std::string& mapId,
-                              bool allowStreamedFootprint)
+namespace {
+
+bool applyAuthoredMapGeometryHeadless(MimitaNet::HeadlessWorld& world,
+                                      const std::string& mapId,
+                                      bool allowStreamedFootprint,
+                                      bool finalizeCollision)
 {
     if (!ensureMapLoaded(mapId)) return false;
     const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
@@ -1464,7 +1828,8 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
             __FILE__, __LINE__, __FUNCTION__);
         break;
     }
-    applyGLBObjectOverrides(world, config.glbObjects);
+    applyHeadlessGLBObjectOverridesImpl(world, config.glbObjects,
+                                        finalizeCollision);
     applyGLBObjectClones(world, config.glbObjects);
     size_t added = 0;
     for (const AuthoredBlock& block : config.blocks) {
@@ -1472,9 +1837,19 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
             continue;
         if (block.size.x <= 0.0001f || block.size.y <= 0.0001f || block.size.z <= 0.0001f)
             continue;
+        if (shape_geometry::isCurvedShape(block.shape))
+        {
+            MimitaNet::HeadlessWorld shape;
+            if (!shape_geometry::buildShapeTriangles(block, shape.triangles))
+                continue;
+            MimitaNet::appendHeadlessWorldInstance(
+                world, shape, blockPlacement(block), false);
+            ++added;
+            continue;
+        }
         MimitaNet::HeadlessWorld cube;
         buildBoxCollisionTriangles(cube.triangles, glm::vec3(0.0f), block.size * 0.5f);
-        MimitaNet::appendHeadlessWorldInstance(world, cube, blockTransform(block),
+        MimitaNet::appendHeadlessWorldInstance(world, cube, blockPlacement(block),
                                                false);
         ++added;
     }
@@ -1501,7 +1876,7 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
                 buildBoxCollisionTriangles(cube.triangles, glm::vec3(0.0f),
                                            block.size * 0.5f);
                 MimitaNet::appendHeadlessWorldInstance(
-                    world, cube, blockTransform(block), false);
+                    world, cube, blockPlacement(block), false);
                 ++chunkPartsAdded;
             }
         }
@@ -1509,8 +1884,11 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
 
     StaticUnionStats unionStats;
     StaticUnionStats removalStats;
-    MimitaNet::finalizeHeadlessWorldCollision(world, &unionStats,
-                                              &removalStats);
+    if (finalizeCollision)
+        MimitaNet::finalizeHeadlessWorldCollision(world, &unionStats,
+                                                  &removalStats);
+    else
+        MimitaNet::buildHeadlessCollisionChunksWithoutSubGrids(world);
 
     // Authored spawnpoint entities extend the GLB spawn list. The base count
     // keeps repeated map rebuilds from duplicating them.
@@ -1549,12 +1927,37 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
                        {"glb_override_count", config.glbObjects.size()},
                        {"static_removed_triangles", unionStats.removedTriangles},
                        {"static_removal_fallback", removalStats.fallback},
+                       {"finalize_collision", finalizeCollision},
                        {"headless", true}},
         __FILE__, __LINE__, __FUNCTION__);
     printf("[MAP AUTHORED] headless map=%s blocks=%zu applied=%zu spawns=+%zu total_spawns=%zu tris=%zu\n",
            mapId.c_str(), config.blocks.size(), added, spawnsAdded,
            world.spawnPoints.size(), world.triangles.size());
     return true;
+}
+
+}  // namespace
+
+bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
+                              const std::string& mapId,
+                              bool allowStreamedFootprint)
+{
+    return applyAuthoredMapGeometryHeadless(world, mapId,
+                                            allowStreamedFootprint, true);
+}
+
+bool rebuildAuthoredBlocksForAuthority(MimitaNet::HeadlessWorld& world,
+                                       const std::string& mapId,
+                                       bool allowStreamedFootprint)
+{
+    // Restore the pristine GLB base and re-append the authored tail without the
+    // whole-world collision LOD pass. The authoritative triangle set is the
+    // same geometry the editor shows; LOD can be reapplied by the next full
+    // rebuild.
+    if (!world.rawBaseValid)
+        return false;
+    return applyAuthoredMapGeometryHeadless(world, mapId,
+                                            allowStreamedFootprint, false);
 }
 
 bool authoredMapGeometrySelfTest(std::string& report)
@@ -1746,3 +2149,4 @@ bool restoreDestructibleMapNode(World& world, int nodeIndex)
          {"ms", ms}});
     return true;
 }
+// map-authored-parity: saved for batch build 2026-11-27T01:45Z

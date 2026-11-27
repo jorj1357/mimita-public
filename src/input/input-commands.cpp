@@ -207,6 +207,8 @@ void InputCommandSystem::update(float dt) {
         GamepadInput::instance().reloadConfig();
         gamepadConfigLoaded = true;
     }
+    GamepadInput::instance().setWindowFocused(
+        InputRouter::gameWindowFocused());
     GamepadInput::instance().poll();
     {
         static std::uint64_t lastGamepadLogMs = 0;

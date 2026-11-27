@@ -23,6 +23,10 @@ struct WeaponAdsConfig {
     glm::vec3 positionOffset{0.0f};
     glm::vec3 rotationDegrees{0.0f};
     float blendRate = 16.0f;
+    // Preferred ADS blend duration in seconds (time to ~95%). When > 0 this
+    // overrides blendRate with rate = 3 / blendSeconds for the camera and body
+    // gesture blend so both stay in lockstep.
+    float blendSeconds = 0.0f;
     float fov = 0.0f;
 };
 

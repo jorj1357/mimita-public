@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -160,6 +161,9 @@ std::uint64_t gAnimationSettingsWrite = 0;
 std::uint64_t gAnimationSettingsPollMs = 0;
 bool gAnimationSettingsLoaded = false;
 float gAnimationRenderAlpha = 1.0f;
+int gRootTranslationModeOverride = 0; // 0 = use JSON
+std::unordered_map<std::string, float> gTetherBudgetOverrides;
+std::string gTetherDiagnosticActor;
 
 void installDefaultPriorities(AnimationRuntimeSettings& s)
 {
@@ -172,6 +176,56 @@ void installDefaultPriorities(AnimationRuntimeSettings& s)
 }
 
 } // namespace
+
+int animationRootTranslationMode()
+{
+    return gRootTranslationModeOverride != 0
+        ? gRootTranslationModeOverride : gAnimationSettings.rootTranslationMode;
+}
+
+float animationTetherBudget(const std::string& part)
+{
+    const auto it = gTetherBudgetOverrides.find(part);
+    if (it != gTetherBudgetOverrides.end())
+        return it->second;
+    if (part == "torso") return gAnimationSettings.tetherTorso;
+    if (part == "head") return gAnimationSettings.tetherHead;
+    if (part == "leftArm") return gAnimationSettings.tetherLeftArm;
+    if (part == "rightArm") return gAnimationSettings.tetherRightArm;
+    if (part == "leftLeg") return gAnimationSettings.tetherLeftLeg;
+    if (part == "rightLeg") return gAnimationSettings.tetherRightLeg;
+    return gAnimationSettings.tetherTorso;
+}
+
+void setAnimationRootTranslationModeOverride(int mode)
+{
+    gRootTranslationModeOverride = (mode == 1 || mode == 2) ? mode : 0;
+}
+
+void setAnimationTetherBudgetOverride(const std::string& part, float meters)
+{
+    if (part.empty()) return;
+    if (!std::isfinite(meters) || meters < 0.0f) {
+        gTetherBudgetOverrides.erase(part);
+        return;
+    }
+    gTetherBudgetOverrides[part] = meters;
+}
+
+void clearAnimationTetherBudgetOverrides()
+{
+    gTetherBudgetOverrides.clear();
+}
+
+void setAnimationTetherDiagnosticActor(const std::string& actor)
+{
+    gTetherDiagnosticActor = actor;
+}
+
+const std::string& animationTetherDiagnosticActor()
+{
+    return gTetherDiagnosticActor;
+}
 
 void pollAnimationRuntimeSettings()
 {
@@ -208,6 +262,21 @@ void pollAnimationRuntimeSettings()
                 if (it.value().is_number_integer())
                     next.statePriorities[it.key()] = it.value().get<int>();
         }
+        if (root.contains("rootTranslationLimits") &&
+            root["rootTranslationLimits"].is_object()) {
+            const auto& limits = root["rootTranslationLimits"];
+            auto readLimit = [&](const char* key, float& dst) {
+                if (!limits.contains(key) || !limits[key].is_number()) return;
+                const float value = limits[key].get<float>();
+                if (std::isfinite(value) && value >= 0.0f) dst = value;
+            };
+            readLimit("torso", next.tetherTorso);
+            readLimit("head", next.tetherHead);
+            readLimit("leftArm", next.tetherLeftArm);
+            readLimit("rightArm", next.tetherRightArm);
+            readLimit("leftLeg", next.tetherLeftLeg);
+            readLimit("rightLeg", next.tetherRightLeg);
+        }
         loaded = true;
     }
     if (next.rootTranslationMode != 1 && next.rootTranslationMode != 2)
@@ -227,6 +296,13 @@ void pollAnimationRuntimeSettings()
                        {"render_pose_interpolation", gAnimationSettings.renderPoseInterpolation},
                        {"death_presentation", gAnimationSettings.deathPresentation},
                        {"hurt_tier_mode", gAnimationSettings.hurtTierMode},
+                       {"tether_budgets", {
+                           {"torso", gAnimationSettings.tetherTorso},
+                           {"head", gAnimationSettings.tetherHead},
+                           {"leftArm", gAnimationSettings.tetherLeftArm},
+                           {"rightArm", gAnimationSettings.tetherRightArm},
+                           {"leftLeg", gAnimationSettings.tetherLeftLeg},
+                           {"rightLeg", gAnimationSettings.tetherRightLeg}}},
                        {"state_priorities", gAnimationSettings.statePriorities}},
         __FILE__, __LINE__, __FUNCTION__);
 }

@@ -558,3 +558,63 @@ Measurable target: over a 7-day window, 0 over-budget wait reviewer wakes end in
 Smallest experiment: add a terminal-completion predicate to the wake journal/scheduler — when a wake reaches `wake.failed`, or is claimed with no review within N minutes, re-queue once and record the outcome; then run one over-budget wait and verify the journal shows either a review append or exactly one bounded re-queue. I suggest adding a "review appended (not just launched)" completion clause to this issue's acceptance.
 
 Cross-links: issue-f995213a15b0 (occurrence), issue-9a4503f6ed68 (budget/coalescing, already filed). No duplicate issue created.
+
+## Agent suggestion
+
+### 2026-11-26T17:25:37.715Z — build-wait-reviewer
+
+Occurrence 2026-11-26 / issue-4fb7a24c54b0, wake-6f86e0fbb409: queued 16:57:27.591Z; codex claimed 16:57:38.649Z and launched pid 19112 at 16:57:38.674Z, then exited; wake.retry -> opencode 17:09:06.725Z; opencode claimed 17:10:10.167Z and launched pid 4136 at 17:10:10.197Z. One wake request for the issue; ~12m43s queue-to-effective-launch, same codex-primary-fails pattern.
+
+## Agent suggestion
+
+### 2026-11-26T17:40:17.274Z — build-wait-reviewer
+
+Fresh late-dispatch occurrence (wake-04a89c03a141; wait game-dll-build:2026-11-26T17:13:10.456Z; issue-24863e1f595e). Sequence (.dev/agent-wake/events.jsonl lines 3571-3573, 3576, 3582-3583): wake.queued 2026-11-26T17:14:21.091Z; codex claimed/launched 17:14:28.226/28.346Z (pid 22576); wake.retry to opencode 17:21:54.669Z; opencode claimed/launched 17:35:26.922/27.010Z (pid 20612). One wake.queued, attempts=2, queue-to-working-launch 1265.9s (~21m06s), missing the <=5 min target. The fallback sat ~13.5 min after wake.retry, i.e. no persistent daemon drained it; same codex-primary/no-daemon mode as the recorded occurrences. No source fix claimed; no duplicate issue filed.
+
+## Agent suggestion
+
+### 2026-11-26T17:48:05.456Z — build-wait-reviewer
+
+Occurrence (issue-a02e5a6588db review): wake-35c5c0492a2a queued once 2026-11-26T17:21:51.344Z; codex claimed/launched 17:21:55.154/17:21:55.294Z (pid 3516) then exited; wake.retry -> opencode 17:35:27.028Z; opencode claimed/launched 17:42:01.823/17:42:01.859Z (pid 33192). Queue-to-effective-launch ~1210.5s (~20m10s), attempts=2, one queued wake. Same late fallback-drain pattern; the review for this wait was only performed by the opencode fallback ~20 min later.
+
+## Agent suggestion
+
+### 2026-11-26T23:35:21.649Z — build-wait-reviewer
+
+Recurrence (2026-11-26 23:06-23:29Z), same primary-codex-stall / opencode-retry pattern. Wake-497e6d80722f for issue-a42b497de2d4 was queued exactly once at 23:06:36.362Z. Primary adapter codex launched at 23:06:41.621Z (pid 31984) and never completed the request. Scheduler emitted wake.retry at 23:29:24.904Z and switched to adapter opencode, which claimed at 23:29:26.279Z and launched at 23:29:26.321Z (pid 2368). The reviewer therefore started about 23 minutes after the wait. Request file .dev/agent-wake/requests/wake-497e6d80722f.json shows attempts=2, adapter=opencode, launched_utc 23:29:26.321Z. Evidence: .dev/agent-wake/events.jsonl wake-497e6d80722f rows; logs/2026-11-26/20261126_230415/dev-loop/events.jsonl dev-loop.wait.reviewer-wake at 23:06:41.741Z. The wake was not duplicated at queue time, but dispatch took two adapters and ~23 min.
+
+## Occurrence
+
+### 2026-11-27T02:10:40.005Z — build-wait-reviewer
+
+Occurrence for wait game-dll-build:2026-11-27T01:38:23.090Z / issue-e99701641a1c, wake-0e4507371e7c (.dev/agent-wake/events.jsonl). Exactly one wake.queued at 2026-11-27T01:39:29.622Z (exactly-once queue held). codex claimed 01:39:41.915 / launched 01:39:42.117 (pid 11340) then exited; wake.retry 'previous adapter process exited; trying fallback' 01:46:15.791; opencode claimed 01:55:03.186 / launched 01:55:03.253 (pid 34076). Queue-to-final-launch 333.631s (~5m33.6s), above the proposed <=5 min bound; two wake.launched events for one wait. requests/wake-0e4507371e7c.json attempts=2. launch_result wake-record misattribution could not be checked because the dev-loop wait event is missing for this occurrence (see issue-6e2d7b91e7d9). The underlying build game-dll-20261127T013823160277Z-8b3773 was real and succeeded (generation 750, 186.672s), so this is dispatch latency, not a stalled build. Reviewer build-wait-reviewer.
+
+Evidence: {"attempts": 2, "build_attempt_id": "game-dll-20261127T013823160277Z-8b3773", "build_outcome": "success", "build_total_seconds": 186.672, "fallback_adapter": "opencode", "fallback_claimed_utc": "2026-11-27T01:55:03.186Z", "fallback_launched_utc": "2026-11-27T01:55:03.253Z", "fallback_pid": 34076, "issue": "issue-e99701641a1c", "launches_for_wait_id": 2, "primary_adapter": "codex", "primary_claimed_utc": "2026-11-27T01:39:41.915Z", "primary_launched_utc": "2026-11-27T01:39:42.117Z", "primary_pid": 11340, "queue_to_final_launch_seconds": 333.631, "retry_reason": "previous adapter process exited; trying fallback", "wait_id": "game-dll-build:2026-11-27T01:38:23.090Z", "wake": "wake-0e4507371e7c", "wake_queued_utc": "2026-11-27T01:39:29.622Z", "wake_retry_utc": "2026-11-27T01:46:15.791Z"}
+
+## Agent suggestion
+
+### 2026-11-27T02:27:27.407Z — build-wait-reviewer
+
+Late-dispatch + misattribution occurrence (build-wait-reviewer) on wait game-dll-build:2026-11-27T01:44:56.218Z (issue-f6177f624ba9). wake-08578d19ed29 queued exactly once at 2026-11-27T01:46:04.240Z (.dev/agent-wake/events.jsonl line 3730). Primary codex claimed/launched 01:46:15.692/15.766Z pid 12000 then exited without a review; wake.retry switched to opencode 01:55:03.147Z; opencode claimed/launched 02:17:51.271/51.322Z pid 34420 (this session). Queue-to-final-launch 1907.08s (~31m47s), attempts=2, one wake.queued and no duplicate queue (exactly-once queue contract held). Misattribution also recurred: the dev-loop.wait.reviewer-wake event at 2026-11-27T01:46:16.187Z (journal logs/2026-11-27/20261127_014331/dev-loop/events.jsonl line 62) is stamped with wait_id game-dll-build:2026-11-27T01:44:56.218Z / issue-f6177f624ba9 but its launch_result embeds wake-c6fb7ac32356 (issue-dea21a9c722d, wait game-dll-build:2026-11-27T01:33:03.139Z), not wake-08578d19ed29, because build_friction.wake_reviewer's `agent-wake.py run --once` drains the oldest pending wake and returns that result. The waited-on build game-dll-20261127T014456458183Z-893a11 was healthy (success generation 751, total 166.0s), so this is not a stalled build. No source fix claimed.
+
+## Occurrence
+
+### 2026-11-27T07:59:02.858Z — build-wait-reviewer
+
+Over-budget wait game-dll-build:2026-11-27T07:23:16.007Z (issue-778fe2977118) reproduced late reviewer dispatch plus a duplicate launch. wake-5377afd8a3ae: wake.queued 2026-11-27T07:24:17.449Z; codex claimed 07:24:28.556Z and launched pid 9236 at 07:24:28.649Z, then exited without producing a review; wake.retry 'previous adapter process exited; trying fallback' at 07:52:52.248Z; opencode claimed 07:53:02.722Z and launched pid 8608 at 07:53:02.749Z (request launched_utc 07:53:02.744Z). Queue-to-final-launch 765.3s (~12m45s), attempts=2 in requests/wake-5377afd8a3ae.json, and two wake.launched events for one wait_id; above the proposed <=5 min bound (the exactly-once queue held; the one-launch target did not). No wake-record misattribution: the dev-loop.wait.reviewer-wake row embeds the correct wake-5377afd8a3ae / pid 9236. Underlying attempt game-dll-20261127T072316157011Z-06c929 was real work and succeeded (generation 784, total 68.594s), so this is dispatch, not a stalled build. Reviewer: build-wait-reviewer.
+
+Evidence: {"agent": "build-wait-reviewer", "attempts": 2, "build_attempt_id": "game-dll-20261127T072316157011Z-06c929", "build_outcome": "success", "build_total_seconds": 68.594, "fallback_adapter": "opencode", "fallback_claimed_utc": "2026-11-27T07:53:02.722Z", "fallback_launched_utc": "2026-11-27T07:53:02.749Z", "fallback_pid": 8608, "generation": 784, "issue": "issue-778fe2977118", "journal": ".dev/agent-wake/events.jsonl", "launches_for_wait_id": 2, "misattribution": false, "primary_adapter": "codex", "primary_claimed_utc": "2026-11-27T07:24:28.556Z", "primary_launched_utc": "2026-11-27T07:24:28.649Z", "primary_pid": 9236, "queue_to_final_launch_seconds": 765.3, "request_file": ".dev/agent-wake/requests/wake-5377afd8a3ae.json", "retry_reason": "previous adapter process exited; trying fallback", "wait_id": "game-dll-build:2026-11-27T07:23:16.007Z", "wake": "wake-5377afd8a3ae", "wake_queued_utc": "2026-11-27T07:24:17.449Z", "wake_retry_utc": "2026-11-27T07:52:52.248Z"}
+
+## Agent suggestion
+
+### 2026-11-27T08:00:29.981Z — issue-review-sweeper
+
+Proposal from issue-review-sweeper's independent review of issue-194c538d7cbc (2026-11-27), refining this issue's still-open dispatch mode.
+
+Gap the existing occurrences do not explain: today's wake-5377afd8a3ae did not fail fast. The primary codex adapter launched at 07:24:28.649Z (pid 9236) and only "exited" at 07:52:52.248Z, a ~28m24s hang, before wake.retry moved to opencode; final launch 07:53:02.749Z, queue-to-final-launch 765.3s. The 2026-11-22/11-26 occurrences describe a model_not_found fail-fast plus no daemon drain; this one is a slow/long-running primary attempt, so a fix aimed only at the model check would not bound it.
+
+Measurable target: for one over-budget wait, if the primary adapter has not produced a review within a fixed per-attempt bound (proposal: <= 120s), wake.retry must be enqueued/executed and a working fallback launched, with at most one live adapter for the wake at any time. Success = queue-to-working-review <= 5 min (this issue's existing target), one wake.queued, and no two simultaneously-started adapters for one wait_id.
+
+Smallest experiment (no policy invention): instrument adapter start/exit/heartbeat with a timestamp in the wake journal, then run one synthetic/manual wake whose primary adapter is deliberately hung (e.g. a sleep stub) and confirm wake.retry fires at the 120s bound and opencode launches without waiting for the process to exit. Compare against the recorded 765.3s from wake-5377afd8a3ae.
+
+Evidence: `.dev/agent-wake/events.jsonl` L3898-3910 (wake-5377afd8a3ae queued 07:24:17.449Z, codex launched 07:24:28.649Z, wake.retry 07:52:52.248Z, opencode launched 07:53:02.749Z); `.dev/agent-wake/requests/wake-5377afd8a3ae.json` (attempts=2). No source change or fix claimed here; read-only review.

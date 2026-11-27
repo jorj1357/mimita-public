@@ -1,4 +1,5 @@
 // 2026-11-01
+// build-cache recovery 2026-11-27: force this TU back into the object cache.
 /* purpose
 * Minimal live-play AI for the real local player used by unattended TDM runs.
 * It selects a hostile replicated actor, approaches/strafes, aims, and fires

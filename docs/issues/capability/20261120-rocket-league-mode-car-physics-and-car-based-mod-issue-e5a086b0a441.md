@@ -290,3 +290,47 @@ Build attempt: game-dll-20261126T013504174400Z-8ca897
 Run: 20261126_013130
 
 This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Scheduled independent review
+
+### 2026-11-27T00:00:51.655Z — codex-launch-exit-investigation
+
+A bounded independent review was queued as wake wake-01170c4407f1 after 804 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (needs-evidence)
+
+### 2026-11-27T00:10:15.203Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent review by issue-review-sweeper (wake wake-01170c4407f1), 2026-11-27T00:09Z. Read-only: no source edit, build, or runtime start; I only read coordination state, source, and existing journals.
+
+READINESS / PROOF STATUS. issue readiness is still false (score 2/8); missing reproduction, expected_behavior, acceptance, paths, proof_expectation, risk. State in_review; owner codex_disaster_rpg_ideas. The issue has 10 integration evidence rows; the newest is evidence-eec582a94504 on game generation 618 (2026-11-24T20:47Z). There is still no issue evidence row for generations 619-742, even though task proofs exist for rocket-league-landing (gen 664, ids 98-102), rocket-league-input-fix (gen 665, id 103), and rocket-league-ball (gen 673/676, ids 104-105). Those task proofs are now marked stale because source changed; none was linked back to this parent issue.
+
+BUILD / EVIDENCE IDENTITY (observed). The published game DLL is generation 742, revision d1989c71d2cb..., built 2026-11-26T23:22:49Z and ready 23:23:02Z (build/ready.json). The newest directly relevant vehicle runtime I found is run 20261126_233803: dev-loop launch 23:38:03Z, map arena1, mode vehicle_freeplay ("Vehicle Arena - Rocket League Free Play"), server PID 21076, client-01 PID 11964, build_match=true, DLL build/game/generation-742/game-g742.dll, first game.host.probe.started 23:38:05Z, journal span t=0.40-1276.98s. Run manifest: logs/2026-11-26/20261126_233803/run.json. Two vehicles were auto-seated to players: player 1 -> vehicle 1 at t=4.05s, player 2 -> vehicle 2 at t=69.52s (vehicle.auto_seat events). Client-01 detected a physical joystick: input.gamepad.device joystick_id=0 name="Wireless Controller" standard_mapping=true. A separate server (PID 5440, arena2, vehicle_freeplay, started 23:47:06Z) is visible to evidence-watch but has no journal; I did not use it and did not touch it (ownership/evidence unknown).
+
+OBSERVED FACTS.
+
+1) Side/chassis landings still occur, mostly on the second driver car. In run 20261126_233803 vehicle 1 had 9 vehicle.landing events: 6 with contact_parts=wheels (settled_on_wheels=true) and 3 with contact_parts=chassis - t=26.27s tilt=103.1deg up_dot=-0.226, t=27.01s tilt=49.3deg up_dot=0.652, t=32.76s tilt=74.5deg up_dot=0.267; it recovered to wheels by t=36.08s (tilt 4.5deg, wheel_mask 8 then 15). Vehicle 2 had 488 vehicle.landing events: only 27 (5.5%) settled_on_wheels=true, 456 were contact_parts=chassis; mean tilt 95.6deg, mean up_dot -0.131. Its last 15 landings (t=1219.5-1276.0s) are all chassis contact at about 102deg with wheel_mask=0.
+
+2) Vehicle 2 stays in a stable non-wheel pose for roughly the last 1000s. vehicle.telemetry at t=929.5s: position [47.27, -17.44, 0.666] (inside arena1), tilt_deg=102.14, up_dot_world_up=-0.210, wheel_mask=0, wheels_contact=0, speed 0.083 m/s, airborne=true, jump_timer=592.28s. The final vehicle.attitude at t=1276.98s is the same pose (grounded=false, tilt 102.25, up_dot -0.212, wheel_mask 0). Grounded sample counts in the run: vehicle 1 23965/24264 (98.8%), vehicle 2 2783/24264 (11.5%). Inference: this is a resting car on its side/roof, not a falling car, and no recovery occurred.
+
+3) The intended recovery event never fired. The gen-742 journal has 0 vehicle.autoflip and 0 vehicle.rest events. Source gate (src/vehicles/vehicle-system.cpp:2078) applies autoflip only when jumpPressed && !supported && upDotWorldUp < 0.20. The same side-rest attitude sample reports supported=true, so inference (medium confidence): a chassis-supported side/roof rest cannot enter the autoflip branch. I did not test a jump press on that car, so I cannot claim the code path is unreachable for every input.
+
+4) Air-roll/turn direction is still inverted in the instrumented check. vehicle.attitude has 147 roll_meaningful samples across both vehicles; 6 have roll_agrees=false (vehicle 1: 4 of 17; vehicle 2: 2 of 130), and there are 23 vehicle.aircontrol.mismatch events. Concrete examples: vehicle 1 at t=26.05s roll_input=+0.956 produced roll_rate_local=-1.429 (and -0.901, -0.959, -1.242 on the next ticks); vehicle 2 at t=246.04s roll_input=-1.0 produced roll_rate_local=+2.543. The player's observed input sign and the local roll-rate sign disagree. This matches the user's "left stick pushed right = car turns left ... just flip the directions" and is contrary to any claim that the direction fix is proven.
+
+5) Ground tilt during driving was NOT reproduced on gen 742. For both vehicles there are 0 grounded attitude samples with tilt_deg > 10deg; max grounded tilt is 5.327deg (vehicle 1) and 4.429deg (vehicle 2); 0 grounded samples with |pitch_rate_local| > 0.2 rad/s. Vehicle 1 had 56 grounded samples with |pitch_input| > 0.05. So the reported "backing up tilts the car backward" was not observed in this run, but this run did not isolate a sustained reverse-throttle maneuver, so the report is not disproven.
+
+6) Reserved ground penetration remains nonzero. max_penetration_m reached 0.005 m (5 mm) for both vehicles. Vehicle 1 had 2819 grounded attitude samples with >1 mm penetration (about 11.8% of grounded samples); vehicle 2 had 8. The user's "a single wheel can't be under ground at all" is therefore not met by the solver's own metric, although 5 mm may or may not be visible and I did not verify it visually.
+
+7) Positive: car-ball contact now occurs on gen 742. The run has 7 arena.ball.contact events at t=77.54-97.79s with other_persistence_id "vehicle-3", contact point, normal, and before/after velocity. The newest contact proof on the issue was generation 583, so this is newer runtime evidence. There are 0 arena.goal events, so no scored goal is proven.
+
+8) Profile tuning ERROR persists unchanged. Two vehicle.config.validation events at t=0.395/0.397s have level=ERRORS, template=octane_rl, warnings ["static compression exceeds 75% of travel","spring bottoms out at rest","tire nominalLoad is far from static corner load","estimated top speed misses speedTargets"], estimatedTopSpeedKmh=128.18 vs targetTopSpeedKmh=82.80, targetZeroTo60KmhSeconds=0.0. This is the same class of residual the 2026-11-25 review saw on gen 648.
+
+INFERENCE / UNCERTAINTY. Vehicle 2 is an auto-seated player (player_id 2), not labeled NPC in this journal; whether it was human or a synthetic driver is not established. The vehicle.telemetry "airborne" flag is true whenever wheel_mask=0, so a side-rest reads as airborne and repeated vehicle.landing events on a resting car are not proof of flight. The roll sign convention could in principle be intentional, but the added agreement instrument reports false and the user independently reported inversion, so "still inverted" is the better explanation. max_penetration_m is a solver metric; user-visible clipping is unverified. The checkout is dirty at revision 7176d28 with many modified files; gen 742 is the published/current build, but uncommitted edits after publication may not equal gen 742 code.
+
+CONTRARY / IMPROVED EVIDENCE. The first driver car ends upright (final tilt 0.14deg, wheel_mask 15, 4 wheels), spends 98.8% of samples grounded, and jumps (542 vehicle.jump events) and air-controls (291 vehicle.airroll events). The physical "Wireless Controller" is detected with standard mapping, so hardware detection/mapping is no longer a total gap. Ball contact is no longer absent.
+
+NEXT DISCRIMINATING CHECK (one pinned run on the published gen 742 or newer sealed generation, arena1, one client pair). (a) On flat ground, full throttle forward 3 s then full reverse 3 s; inspect that run's server vehicle.attitude for grounded tilt and pitch_rate and pass only if no grounded tilt >10deg and no sustained pitch rate. (b) Jump, hold left stick right/left in the air; inspect vehicle.airroll, vehicle.attitude roll_input vs roll_rate_local, and vehicle.aircontrol.mismatch; pass only if mismatch count is 0 for the tested axis. (c) Put the car on its side/roof and press jump; inspect vehicle.autoflip and whether up_dot >= 0.9 with wheel_mask 15 is reached within 3 s. (d) Drive into the ball and require >=1 arena.ball.contact and separately >=1 arena.goal. (e) After each landing require max_penetration_m <= 1 mm on all grounded samples. Record build id/generation, run id, both journals. This one run separates "fixed in 742" from "still broken" per axis.
+
+COLD-HANDOFF STATUS. No fix is claimed. The issue remains needs-evidence and readiness false. The owner should fill the missing readiness fields from the newest user context (ctx-3661c17cacfa) before any completion claim, and should treat air-roll sign inversion and the side-rest/no-autoflip pose as open on gen 742. Confidence: medium-high on the observed gen-742 facts; low on any claim outside this journal.

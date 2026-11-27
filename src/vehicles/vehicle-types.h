@@ -315,6 +315,11 @@ struct VehicleState {
     glm::vec3 lastTelemetryPosition{0.0f};
     uint64_t airborneSinceTick = 0;
     bool airborneLogged = false;
+    // Consecutive supported ticks, so contact flicker cannot fake a landing.
+    uint32_t groundedRunTicks = 0;
+    // Consecutive ticks resting on the chassis (not wheels, hips, roof).
+    uint32_t sideRestTicks = 0;
+    bool sideRecoveryLogged = false;
     uint64_t lastTelemetryTick = 0;
     uint64_t lastHeadingTick = 0;
     float boostInput = 0.0f;
@@ -358,6 +363,10 @@ struct VehicleState {
     int driverSeat = -1;
     bool localDriver = false;
     bool inputOverride = false;
+    // Ticks left on an injected (console/scenario) input. Injected input is a
+    // short command, not a mode: it used to latch forever, so real keyboard and
+    // pad were ignored until the driver reseated.
+    uint32_t inputOverrideTicks = 0;
     uint32_t interactionTargetId = 0;
 
     // Stable origin and per-tick motion telemetry. The future server uses the

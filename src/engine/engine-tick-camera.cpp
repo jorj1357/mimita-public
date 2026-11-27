@@ -25,6 +25,13 @@ namespace {
 // config/cameras/vehicle-camera.json. Presentation only.
 struct VehicleCameraSettings
 {
+    float distanceM = 2.20f;
+    float heightM = 0.90f;
+    float pitchDeg = -7.0f;
+    float fovDeg = 110.0f;
+    float stiffness = 1.0f;
+    float transitionSpeed = 10.0f;
+    float swivelSpeed = 10.0f;
     float ballCamSnap = 0.5f;
     float momentumRate = 4.0f;
     float ballCamMinRate = 1.2f;
@@ -52,6 +59,15 @@ const VehicleCameraSettings& vehicleCameraSettings()
                 const nlohmann::json root = parseJsonConfig(file);
                 if (root.is_object())
                 {
+                    settings.distanceM = root.value("distanceM", settings.distanceM);
+                    settings.heightM = root.value("heightM", settings.heightM);
+                    settings.pitchDeg = root.value("pitchDeg", settings.pitchDeg);
+                    settings.fovDeg = root.value("fovDeg", settings.fovDeg);
+                    settings.stiffness = root.value("stiffness", settings.stiffness);
+                    settings.transitionSpeed = root.value(
+                        "transitionSpeed", settings.transitionSpeed);
+                    settings.swivelSpeed = root.value(
+                        "swivelSpeed", settings.swivelSpeed);
                     settings.ballCamSnap =
                         root.value("ballCamSnap", settings.ballCamSnap);
                     settings.momentumRate =
@@ -108,6 +124,7 @@ const VehicleCameraSettings& vehicleCameraSettings()
 #include "config/camera-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "debug/jitter-probe.h"
 #include "debug/debug-visuals.h"
 #include "game/duel.h"
 #include "network/community-match-client.h"
@@ -1204,7 +1221,24 @@ void engineTickCamera(Engine& engine, float dt)
                 if (!sVehicleCamera.initialised) {
                     sVehicleCamera.initialised = true;
                     sVehicleCamera.baseYaw = camera.yaw;
-                    sVehicleCamera.basePitch = camera.pitch;
+                    sVehicleCamera.basePitch = cam.pitchDeg;
+                }
+                static bool sLoggedVehicleCamera = false;
+                if (!sLoggedVehicleCamera) {
+                    sLoggedVehicleCamera = true;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Gui, StructuredLevel::Important,
+                        "vehicle.camera.applied", "vehicle-camera",
+                        "vehicle camera JSON applied", 0,
+                        {{"distance_m", cam.distanceM},
+                         {"height_m", cam.heightM},
+                         {"pitch_deg", cam.pitchDeg},
+                         {"fov_deg", cam.fovDeg},
+                         {"stiffness", cam.stiffness},
+                         {"transition_speed", cam.transitionSpeed},
+                         {"swivel_speed", cam.swivelSpeed},
+                         {"ball_cam_snap", cam.ballCamSnap}},
+                        __FILE__, __LINE__, __func__);
                 }
 
                 const float ballCamRate = cam.ballCamMinRate +
@@ -1252,8 +1286,7 @@ void engineTickCamera(Engine& engine, float dt)
                     }
                     targetYaw = glm::degrees(std::atan2(direction.y,
                                                         direction.x));
-                    targetPitch = glm::degrees(
-                        std::asin(std::clamp(direction.z, -0.99f, 0.99f)));
+                    targetPitch = cam.pitchDeg;
                     rate = cam.momentumRate;
                 }
                 if (pad.lookBehind())
@@ -1290,14 +1323,14 @@ void engineTickCamera(Engine& engine, float dt)
                 camera.fov = CamConfig::instance().effectiveData().fov;
                 camera.pos = seatPosition + glm::vec3(0.0f, 0.0f, 0.55f);
             } else {
-                const auto camCfg = CamConfig::instance().effectiveData();
-                camera.fov = camCfg.fov;
+                const VehicleCameraSettings& vehicleCam = vehicleCameraSettings();
+                camera.fov = vehicleCam.fovDeg;
                 const glm::vec3 target = VehicleSystem::instance().localVehiclePosition();
-                camera.follow(target, camCfg.offset, camCfg.positionStiffness);
+                const glm::vec3 offset(0.0f, -vehicleCam.distanceM,
+                                       vehicleCam.heightM);
+                camera.follow(target, offset, vehicleCam.stiffness);
                 camera.smoothCollision(target, world, dt,
-                    camCfg.positionStiffness, camCfg.stiffnessEnabled,
-                    camCfg.collisionEnabled, camCfg.collisionPushEnabled,
-                    camCfg.collisionPushback);
+                    vehicleCam.stiffness, true, true, true, 0.3f);
             }
         }
     } else if (!camera.thirdPerson) {
@@ -1880,6 +1913,9 @@ void engineTickCamera(Engine& engine, float dt)
         ve.numericActual = ve.numericExpected;
         StructuredLogger::instance().write(ve);
     }
+
+    JitterProbe::sampleCamera(THE_CAMERA.pos,
+        glm::vec3(THE_CAMERA.pitch, THE_CAMERA.yaw, 0.0f), dt);
 }
 
 

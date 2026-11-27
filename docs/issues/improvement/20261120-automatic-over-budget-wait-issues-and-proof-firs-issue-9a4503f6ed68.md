@@ -671,3 +671,66 @@ Evidence: {"budget_seconds": 60.0, "host_cpu_mean_percent": 97.36, "host_cpu_pea
 Fresh identity-mismatch + reason-tail occurrence for wait game-dll-build:2026-11-26T15:43:01.573Z (issue-28feee119403). DIRECT from the recorded issue evidence and dev-loop journal logs/2026-11-26/20261126_145549/dev-loop/events.jsonl lines 146-147: the in-flight attempt was game-dll-20261126T154301815009Z-41b473, generation 691, source_generation 13, revision 8029c2c70b770842bceca677784928a48d5f050dcc693aa5b14467b88f275a8d, status ok, worker_total 54.766s. The issue record stored build_id=2026-11-26T06:10:41.962780Z (last published artifact) and generation=688 (stale), so the build/run identity is wrong; source_generation and request_ids are correct. The reason field is a mid-JSON tail `:55766.0,"build_attempt_id":"game-dll-20261126T154301815009Z-41b473",...` (issue-6e08d89b55e3). One reviewer wake (wake-3b1d8985a679, opencode) was queued once for this wait and launched ~99s later (created 15:44:03.071Z, launched 15:45:42.502Z) and did produce this review, so delivery worked here. No source fix claimed and no duplicate issue filed.
 
 Evidence: {"actual_generation": 691, "build_attempt_id": "game-dll-20261126T154301815009Z-41b473", "issue": "issue-28feee119403", "journal": "logs/2026-11-26/20261126_145549/dev-loop/events.jsonl", "journal_lines": [146, 147], "reason_is_json_tail": true, "recorded_build_id": "2026-11-26T06:10:41.962780Z", "recorded_generation": 688, "reviewer_wake": "wake-3b1d8985a679", "reviewer_wake_count_for_wait": 1, "revision": "8029c2c70b770842bceca677784928a48d5f050dcc693aa5b14467b88f275a8d", "run_id": "20261126_145549", "source_generation": 13, "wait_elapsed_seconds": 60.025, "wait_id": "game-dll-build:2026-11-26T15:43:01.573Z", "wait_record_utc": "2026-11-26T15:44:06.249Z", "wake_created_utc": "2026-11-26T15:44:03.071Z", "wake_launched_utc": "2026-11-26T15:45:42.502Z"}
+
+## Agent suggestion
+
+### 2026-11-26T17:25:38.287Z — build-wait-reviewer
+
+Recurrence 2026-11-26: three distinct over-budget game-dll-build/game_build issues in ~19 min - issue-404bd5b44b6e (wait 16:49:17.979Z, gen 696, 141.05s), issue-4fb7a24c54b0 (wait 16:56:24.029Z, gen 698, 151.16s), issue-45733b82bbbc (wait 17:07:53.638Z, gen 702, 103.31s); all builds succeeded, all exceeded the flat 60s budget. build_friction.py:143-169 keys uniqueness on wait_id, so each build opens a new same-titled issue, matching this issue's risk note 'noisy wait policy could create duplicate friction issues'. Recommend a decision: per-kind budget (game-DLL full compile is normally 100-150s) and/or a consolidation/cooldown that appends occurrences to one open issue instead of opening a new issue per wait_id. Cross-ref wait-policy owner issue-e044a931c54b.
+
+## Agent suggestion
+
+### 2026-11-26T17:40:10.604Z — build-wait-reviewer
+
+Fresh identity-mismatch occurrence for wait game-dll-build:2026-11-26T17:13:10.456Z (issue-24863e1f595e). The wait record stores build_id=2026-11-26T16:59:26.767416Z and generation=702 (last published artifact) and no run_id, while the in-flight attempt was game-dll-20261126T171310909318Z-faf8c7, generation 703, source_generation 10, revision 5eb31cd568eb9799724c6551dff363d6545634d3110f55b88affc7cb091a1374, run 20261126_170323, status ok, total 137.203s. The actual attempt id is recoverable only from adjacent dev-loop.game-build.started lines and the reason revision; the reason field was clean here (not a JSON tail). One reviewer wake (wake-04a89c03a141) was queued exactly once. Direct from .dev/build-timings/game-dll-20261126T171310909318Z-faf8c7.json and logs/2026-11-26/20261126_170323/dev-loop/events.jsonl. No source fix claimed; no duplicate issue filed.
+
+## Agent suggestion
+
+### 2026-11-26T19:09:16.313Z — issue-review-sweeper
+
+Evidence-retention gap found by an independent review of issue-ca900e60ed4b (2026-11-26). The 2026-11-21 review cited .dev/build-timings/game-dll-20261121T155224262249Z-d0908c.json/.jsonl and .dev/agent-wake/logs/2026-11-21T15-53-24.986Z-build-wait-reviewer.log; by 2026-11-26 all three were gone (oldest retained game-dll timing is 2026-11-24T230934953855Z-9ace92). A scheduled independent reviewer therefore cannot re-verify the prior 122.986s / failed_phase=changed_source_preflight / stage-timeline claims, so the issue is not cold-handoff-verifiable. This is missing evidence created by the wait pipeline itself, not a defect in the build.
+
+Measurable target: 100% of wait issues created by this hook stay independently re-verifiable for >=14 days. Baseline today: 0/1 checked (issue-ca900e60ed4b) re-verifiable from retained artifacts.
+
+Smallest experiment (proposal only; nothing changed in this review): at record_wait_incident() time, copy an immutable compact snapshot from the active attempt's .dev/build-timings/<attempt_id>.json into the issue evidence — total_seconds, success/failed_phase, and the phase-boundary list (phase, start_utc, end_utc) — instead of pointing at the rotating timing files. Then over the next 10 auto-created wait issues measure how many expose a retrievable phase-boundary snapshot (target 10/10) versus the current decay baseline. If the 10/10 target holds and review re-verification time drops, keep it; otherwise revert to pointer-only.
+
+## Occurrence
+
+### 2026-11-26T23:37:57.674Z — build-wait-reviewer
+
+Fresh wake-launch-timeout defect occurrence for wait game-dll-build:2026-11-26T22:56:31.735Z (issue-e87167e20d7d). Unlike the 2026-11-22 success path already reviewed here, the inline `agent-wake.py run --once` drain in build_friction.wake_reviewer (devscripts/build_friction.py:244-246; hard timeout=30; no try/except) exceeded 30 s and raised TimeoutExpired (host was at 100% CPU while the compile was still running). Because dev-loop.check_wait_budget (devscripts/dev-loop.py:3905-3930) wraps record_wait_incident AND wake_reviewer in a single try, the raise skipped dev-loop.wait.over_budget and dev-loop.wait.reviewer-wake and emitted dev-loop.wait.issue-failed with the misleading reason "could not record over-budget wait" (false: the issue was created at 22:57:35.047Z and one wake-c7a184e091be was queued at 22:57:42.545Z). reported_wait_ids already held the wait_id, so there was no retry, and this wait's over_budget/reviewer-wake evidence is permanently lost. Suggested smallest fix: make the inline run --once launch best-effort (catch TimeoutExpired and return queued/launch_error) and/or emit over_budget/reviewer-wake independently of inline-launch success with an explicit launch-status field. Evidence: logs/2026-11-26/20261126_225234/dev-loop/events.jsonl line 129 (dev-loop.wait.issue-failed, wall 22:58:12.872Z); .dev/agent-wake/events.jsonl wake.queued wake-c7a184e091be 22:57:42.545Z; .dev/agent-coord/events.jsonl seq 20598. No source edit claimed. Reported by build-wait-reviewer (wake-c7a184e091be); review on issue-e87167e20d7d.
+
+
+Evidence: {"attempt": "game-dll-20261126T225631910089Z-cf9679", "failure_utc": "2026-11-26T22:58:12.872Z", "issue": "issue-e87167e20d7d", "journal": "logs/2026-11-26/20261126_225234/dev-loop/events.jsonl", "journal_line": 129, "reporter": "build-wait-reviewer", "run": "20261126_225234", "wait_id": "game-dll-build:2026-11-26T22:56:31.735Z", "wake": "wake-c7a184e091be"}
+
+## Occurrence
+
+### 2026-11-27T00:57:00.226Z — build-wait-reviewer
+
+Fresh identity + reason-tail occurrence for wait game-dll-build:2026-11-27T00:23:02.531Z (issue-2aa79d9fe477, wake-f93906ee6177). Evidence records build_id 2026-11-26T22:52:33.481041Z (the last published artifact), generation=null and no run_id. The in-flight attempt was game-dll-20261127T002302708617Z-988794, source_generation 11, real generation 744, run 20261127_001718; it ran 1015.86s and FAILED at link (25.703s). reason is a mid-JSON tail starting `:47093.0,"build_attempt_id":...` from dev-loop.py:3112 (detail = line.rstrip()[-240:]) assigned at :3142. Exactly one reviewer wake was queued for this wait (events.jsonl lines 96-97). This reproduces the known build/run-ID gap and reason-truncation defect on a fresh 2026-11-27 pair; the real attempt identity is recoverable only from the truncated reason tail. No source fix claimed and no duplicate issue filed.
+
+Evidence: {"budget_seconds": 60.0, "in_flight_build_attempt_id": "game-dll-20261127T002302708617Z-988794", "in_flight_failed_phase": "link", "in_flight_generation": 744, "in_flight_outcome": "failed", "in_flight_source_generation": 11, "in_flight_total_seconds": 1015.86, "issue": "issue-2aa79d9fe477", "journal": "logs/2026-11-27/20261127_001718/dev-loop/events.jsonl", "journal_lines": [96, 97], "kind": "game-dll-build", "open_duplicate_game_dll_wait_issues": 43, "reason_is_json_tail": true, "reason_owner": "devscripts/dev-loop.py:3112,3142", "reason_prefix": ":47093.0,\"build_attempt_id\"", "recorded_build_id": "2026-11-26T22:52:33.481041Z", "recorded_generation": null, "recorded_run_id": null, "reviewer_wake": "wake-f93906ee6177", "reviewer_wake_count_for_wait": 1, "run_id": "20261127_001718", "stage": "game_build", "wait_elapsed_seconds": 60.044, "wait_id": "game-dll-build:2026-11-27T00:23:02.531Z", "wait_record_utc": "2026-11-27T00:24:22.236Z"}
+
+## Agent discussion and suggestions
+
+### 2026-11-27T00:59:16.410Z — build-wait-reviewer
+
+Message: `msg-020cd9f7e06a` (question)
+
+Subject: Fresh identity+reason-tail occurrence for wait game-dll-build:2026-11-27T00:23:02.531Z
+
+Fresh occurrence appended to issue-9a4503f6ed68 for wait game-dll-build:2026-11-27T00:23:02.531Z (issue-2aa79d9fe477, run 20261127_001718). It reproduces the known identity gap: recorded build_id is the last published artifact 2026-11-26T22:52:33.481041Z, generation=null, no run_id; the in-flight attempt was game-dll-20261127T002302708617Z-988794 (source_generation 11, generation 744). reason is still a mid-JSON tail from dev-loop.py:3112/3142. Exactly one wake was queued (wake-f93906ee6177). Question: is the in-flight build_attempt_id now available on the wait record, or is reading the reason tail still the only recovery path? No source fix claimed by me.
+
+## Occurrence
+
+### 2026-11-27T02:10:40.044Z — build-wait-reviewer
+
+Occurrence 2026-11-27 for wait game-dll-build:2026-11-27T01:38:23.090Z (issue-e99701641a1c). The wait evidence records generation=749 and build_id=2026-11-27T00:44:04.497616Z, but the in-flight attempt was game-dll-20261127T013823160277Z-8b3773 at generation 750, source_generation 6, revision 7c0ee5b5..., request 2026-11-27T01:38:22.462Z-eb5ebd68:mode3:game (.dev/build-timings/game-dll-20261127T013823160277Z-8b3773.json started 01:38:23.160Z, succeeded in 186.672s). generation and build_id are last-published values captured before completion; source_generation is correct. No attempt id is recorded in the wait evidence. This is the same stale-identity behavior previously noted for wait 2026-11-24T21:23:08.791Z (issue-fdf3fb2f88e2). The build was healthy, so this is telemetry identity, not a stalled build. Reviewer build-wait-reviewer.
+
+Evidence: {"build_outcome": "success", "build_total_seconds": 186.672, "in_flight_build_attempt_id": "game-dll-20261127T013823160277Z-8b3773", "in_flight_generation": 750, "issue": "issue-e99701641a1c", "related_prior": "issue-fdf3fb2f88e2", "request_ids": ["2026-11-27T01:38:22.462Z-eb5ebd68:mode3:game"], "revision": "7c0ee5b52e694af48d8f0f55cd742f8612d23cef1ecb468075ae41264b28ee87", "source_generation": 6, "wait_build_id_stale": "2026-11-27T00:44:04.497616Z", "wait_generation_stale": 749, "wait_id": "game-dll-build:2026-11-27T01:38:23.090Z"}
+
+## Agent suggestion
+
+### 2026-11-27T02:27:17.962Z — build-wait-reviewer
+
+Identity occurrence (build-wait-reviewer) on wait game-dll-build:2026-11-27T01:44:56.218Z (issue-f6177f624ba9, run 20261127_014331). Wait evidence records generation=750 and build_id=2026-11-27T01:43:27.658897Z, i.e. the previously published game generation and the last EXE artifact, while the in-flight attempt was game-dll-20261127T014456458183Z-893a11 (request 2026-11-27T01:44:56.049Z-3f8f9b01, source_generation 0), which succeeded as generation 751 (ready 01:47:42.710Z). No run_id or build_attempt_id is stored; the only reliable join key is request_ids. Cause unchanged: check_wait_budget reads self.latest_build / self.game_build_generation (devscripts/dev-loop.py:3896-3897), and game_build_generation is assigned only on completion (dev-loop.py:3259). The reason field was clean this occurrence (reason-truncation defect issue-6e08d89b55e3 did not recur). Build was healthy, not a stall: total 166.0s, changed_source_preflight 57.703s (src/vehicles/vehicle-system.cpp 57.564s), link 80.297s (645 inputs / 502,153,396 B). Exactly one issue and one wake queued, so no per-wait duplicate. related_build/related_run were empty and were set by this reviewer to the true attempt/run. No source fix claimed.

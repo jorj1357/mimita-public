@@ -1,0 +1,22 @@
+{
+  "name": "vehicle-freeplay",
+  "launch_mode": 60,
+  "launch_visibility": "visible",
+  "map": "arena2",
+  "map_selection": "configured",
+  "allowed_maps_file": "config/gamemode-good-maps.json",
+  "mode": "vehicle_freeplay",
+  "gamemode": "vehicle_freeplay",
+  "weapon_set": 1,
+  "npc_count": 0,
+  "auto_map_rotation": false,
+  "discord_notification": false,
+  "host_player_name": "",
+  "client_name": "Vehicle Freeplay Dev",
+  "server_name": "Vehicle Freeplay Dev Server",
+  "server_bind": "127.0.0.1:0",
+  "join_via_room_code": true,
+  "require_client_connection": true,
+  "require_mode_start": false,
+  "max_mimita_processes": 2
+}

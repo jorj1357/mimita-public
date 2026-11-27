@@ -124,6 +124,23 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
             {"anchored", block.anchored},
             {"enabled", block.enabled}
         };
+        if (block.shape == "profile")
+        {
+            json pts = json::array();
+            for (const glm::vec2& pt : block.profile)
+                pts.push_back({pt.x, pt.y});
+            b["profile"] = std::move(pts);
+            b["profile_axis"] = block.profileAxis;
+            b["profile_flip"] = block.profileFlip;
+        }
+        if (block.shape == "cylinder" || block.shape == "cone" ||
+            block.shape == "sphere")
+        {
+            b["arc_degrees"] = block.arcDegrees;
+            b["convex"] = block.convex;
+            b["segments"] = block.segments;
+            b["radius_top"] = block.radiusTop;
+        }
         b["tags"] = block.tags;
         root["blocks"].push_back(std::move(b));
     }
@@ -611,6 +628,25 @@ bool MapConfigRegistry::loadFromStream(const std::string& mapId,
                         (*rotation)[1].get<float>(),
                         (*rotation)[2].get<float>());
                 }
+                block.profile.clear();
+                if (item.contains("profile") && item["profile"].is_array())
+                {
+                    for (const auto& pt : item["profile"])
+                    {
+                        if (!pt.is_array() || pt.size() < 2)
+                            continue;
+                        block.profile.emplace_back(pt[0].get<float>(),
+                                                   pt[1].get<float>());
+                    }
+                }
+                block.profileAxis = std::clamp(
+                    item.value("profile_axis", block.profileAxis), 0, 2);
+                block.profileFlip = item.value("profile_flip", false);
+                block.arcDegrees = item.value("arc_degrees", block.arcDegrees);
+                block.convex = item.value("convex", block.convex);
+                block.segments = std::clamp(item.value("segments", block.segments),
+                                            3, 128);
+                block.radiusTop = item.value("radius_top", block.radiusTop);
                 block.material = item.value("material", std::string{});
                 block.materialPreset = item.value("material_preset",
                     item.value("materialPreset", block.materialPreset));
@@ -1304,7 +1340,8 @@ AuthoredBlock* MapConfigRegistry::findBlockMutable(const std::string& id)
 }
 
 std::string MapConfigRegistry::createBlock(const glm::vec3& position, const glm::vec3& size,
-                                           const std::string& requestedId)
+                                           const std::string& requestedId,
+                                           const std::string& shape)
 {
     std::string id = requestedId.empty() ? uniqueId("block") : requestedId;
     if (findBlock(id)) return {};
@@ -1313,6 +1350,7 @@ std::string MapConfigRegistry::createBlock(const glm::vec3& position, const glm:
     block.position = position;
     block.size = glm::vec3(std::max(0.05f, size.x), std::max(0.05f, size.y),
                            std::max(0.05f, size.z));
+    block.shape = shape.empty() ? std::string{"box"} : shape;
     mCurrent.blocks.push_back(std::move(block));
     markChanged();
     StructuredLogger::instance().writeEvent(
@@ -1321,6 +1359,7 @@ std::string MapConfigRegistry::createBlock(const glm::vec3& position, const glm:
         nlohmann::json{{"map", mCurrent.mapId}, {"block_id", id},
                        {"position", {position.x, position.y, position.z}},
                        {"size", {size.x, size.y, size.z}},
+                       {"shape", block.shape},
                        {"source", "map_editor"}},
         __FILE__, __LINE__, __FUNCTION__);
     return id;

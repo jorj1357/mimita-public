@@ -1,0 +1,2755 @@
+{
+ "mapId": "arena2",
+ "name": "Arena 2 (measured Rocket League geometry)",
+ "description": "Standard Soccar arena generated from the measured collision mesh: 45 degree corner cuts, measured lower and upper wall ramps, 8.8 m goal recess. See config/reference/arena2-geometry.json.",
+ "worldMode": "static",
+ "arena": {
+  "ball": {
+   "friction": 0.35,
+   "linearDamping": 0.03,
+   "massKg": 30.0,
+   "maxSpeed": 60.0,
+   "radius": 0.9125,
+   "restitution": 0.6,
+   "spawn": [
+    0.0,
+    0.0,
+    0.9525
+   ],
+   "visualRadius": 0.95,
+   "gravityMps2": 6.5
+  },
+  "goals": [
+   {
+    "id": "blue_goal",
+    "team": "blue",
+    "enabled": true,
+    "center": [
+     -51.2,
+     0.0,
+     3.213875
+    ],
+    "facing": [
+     1.0,
+     0.0,
+     0.0
+    ],
+    "halfExtents": [
+     1.0,
+     8.92755,
+     3.213875
+    ]
+   },
+   {
+    "id": "orange_goal",
+    "team": "orange",
+    "enabled": true,
+    "center": [
+     51.2,
+     0.0,
+     3.213875
+    ],
+    "facing": [
+     -1.0,
+     0.0,
+     0.0
+    ],
+    "halfExtents": [
+     1.0,
+     8.92755,
+     3.213875
+    ]
+   }
+  ],
+  "kickoffs": [
+   {
+    "id": "blue_kickoff_1",
+    "team": "blue",
+    "position": [
+     -40.0,
+     0.0,
+     0.25
+    ],
+    "yaw": 0.0
+   },
+   {
+    "id": "orange_kickoff_1",
+    "team": "orange",
+    "position": [
+     40.0,
+     0.0,
+     0.25
+    ],
+    "yaw": 180.0
+   }
+  ]
+ },
+ "blocks": [
+  {
+   "id": "floor",
+   "shape": "box",
+   "position": [
+    0.0,
+    0.0,
+    -0.51
+   ],
+   "size": [
+    120.0,
+    81.92,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "grass",
+   "color": [
+    1.1,
+    1.15,
+    1.1,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena",
+    "floor"
+   ]
+  },
+  {
+   "id": "ceiling",
+   "shape": "box",
+   "position": [
+    0.0,
+    0.0,
+    20.94
+   ],
+   "size": [
+    120.0,
+    81.92,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv4",
+   "color": [
+    2.1,
+    2.15,
+    2.3,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena",
+    "ceiling"
+   ]
+  },
+  {
+   "id": "long_pos_ramp_lower",
+   "shape": "profile",
+   "position": [
+    0.0,
+    40.96,
+    0.0
+   ],
+   "size": [
+    1.0,
+    58.88,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    90.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -2.56,
+     0.0
+    ],
+    [
+     -2.044,
+     0.052
+    ],
+    [
+     -1.564,
+     0.201
+    ],
+    [
+     -1.129,
+     0.438
+    ],
+    [
+     -0.75,
+     0.75
+    ],
+    [
+     -0.438,
+     1.129
+    ],
+    [
+     -0.201,
+     1.564
+    ],
+    [
+     -0.052,
+     2.044
+    ],
+    [
+     0.0,
+     3.55
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "long_pos_wall",
+   "shape": "box",
+   "position": [
+    0.0,
+    41.46,
+    9.9705
+   ],
+   "size": [
+    1.0,
+    58.88,
+    12.841
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    90.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "long_pos_ramp_upper",
+   "shape": "profile",
+   "position": [
+    0.0,
+    40.96,
+    0.0
+   ],
+   "size": [
+    1.0,
+    58.88,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    90.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -6.243,
+     20.44
+    ],
+    [
+     -4.089,
+     20.376
+    ],
+    [
+     -3.128,
+     20.077
+    ],
+    [
+     -2.259,
+     19.605
+    ],
+    [
+     -1.501,
+     18.979
+    ],
+    [
+     -0.875,
+     18.221
+    ],
+    [
+     -0.403,
+     17.352
+    ],
+    [
+     -0.104,
+     16.391
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "long_neg_ramp_lower",
+   "shape": "profile",
+   "position": [
+    0.0,
+    -40.96,
+    0.0
+   ],
+   "size": [
+    1.0,
+    58.88,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    -90.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -2.56,
+     0.0
+    ],
+    [
+     -2.044,
+     0.052
+    ],
+    [
+     -1.564,
+     0.201
+    ],
+    [
+     -1.129,
+     0.438
+    ],
+    [
+     -0.75,
+     0.75
+    ],
+    [
+     -0.438,
+     1.129
+    ],
+    [
+     -0.201,
+     1.564
+    ],
+    [
+     -0.052,
+     2.044
+    ],
+    [
+     0.0,
+     3.55
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "long_neg_wall",
+   "shape": "box",
+   "position": [
+    0.0,
+    -41.46,
+    9.9705
+   ],
+   "size": [
+    1.0,
+    58.88,
+    12.841
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    -90.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "long_neg_ramp_upper",
+   "shape": "profile",
+   "position": [
+    0.0,
+    -40.96,
+    0.0
+   ],
+   "size": [
+    1.0,
+    58.88,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    -90.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -6.243,
+     20.44
+    ],
+    [
+     -4.089,
+     20.376
+    ],
+    [
+     -3.128,
+     20.077
+    ],
+    [
+     -2.259,
+     19.605
+    ],
+    [
+     -1.501,
+     18.979
+    ],
+    [
+     -0.875,
+     18.221
+    ],
+    [
+     -0.403,
+     17.352
+    ],
+    [
+     -0.104,
+     16.391
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "back_e_l_ramp_lower",
+   "shape": "profile",
+   "position": [
+    51.2,
+    -39.68,
+    0.0
+   ],
+   "size": [
+    1.0,
+    61.5049,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -2.56,
+     0.0
+    ],
+    [
+     -2.044,
+     0.052
+    ],
+    [
+     -1.564,
+     0.201
+    ],
+    [
+     -1.129,
+     0.438
+    ],
+    [
+     -0.75,
+     0.75
+    ],
+    [
+     -0.438,
+     1.129
+    ],
+    [
+     -0.201,
+     1.564
+    ],
+    [
+     -0.052,
+     2.044
+    ],
+    [
+     0.0,
+     3.55
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "back_e_l_wall",
+   "shape": "box",
+   "position": [
+    51.7,
+    -39.68,
+    9.9705
+   ],
+   "size": [
+    1.0,
+    61.5049,
+    12.841
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_e_l_ramp_upper",
+   "shape": "profile",
+   "position": [
+    51.2,
+    -39.68,
+    0.0
+   ],
+   "size": [
+    1.0,
+    61.5049,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -6.243,
+     20.44
+    ],
+    [
+     -4.089,
+     20.376
+    ],
+    [
+     -3.128,
+     20.077
+    ],
+    [
+     -2.259,
+     19.605
+    ],
+    [
+     -1.501,
+     18.979
+    ],
+    [
+     -0.875,
+     18.221
+    ],
+    [
+     -0.403,
+     17.352
+    ],
+    [
+     -0.104,
+     16.391
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "back_e_r_ramp_lower",
+   "shape": "profile",
+   "position": [
+    51.2,
+    39.68,
+    0.0
+   ],
+   "size": [
+    1.0,
+    61.5049,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -2.56,
+     0.0
+    ],
+    [
+     -2.044,
+     0.052
+    ],
+    [
+     -1.564,
+     0.201
+    ],
+    [
+     -1.129,
+     0.438
+    ],
+    [
+     -0.75,
+     0.75
+    ],
+    [
+     -0.438,
+     1.129
+    ],
+    [
+     -0.201,
+     1.564
+    ],
+    [
+     -0.052,
+     2.044
+    ],
+    [
+     0.0,
+     3.55
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "back_e_r_wall",
+   "shape": "box",
+   "position": [
+    51.7,
+    39.68,
+    9.9705
+   ],
+   "size": [
+    1.0,
+    61.5049,
+    12.841
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_e_r_ramp_upper",
+   "shape": "profile",
+   "position": [
+    51.2,
+    39.68,
+    0.0
+   ],
+   "size": [
+    1.0,
+    61.5049,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -6.243,
+     20.44
+    ],
+    [
+     -4.089,
+     20.376
+    ],
+    [
+     -3.128,
+     20.077
+    ],
+    [
+     -2.259,
+     19.605
+    ],
+    [
+     -1.501,
+     18.979
+    ],
+    [
+     -0.875,
+     18.221
+    ],
+    [
+     -0.403,
+     17.352
+    ],
+    [
+     -0.104,
+     16.391
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "back_e_header_wall",
+   "shape": "box",
+   "position": [
+    51.7,
+    0.0,
+    11.4094
+   ],
+   "size": [
+    1.0,
+    17.8551,
+    9.9632
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv4",
+   "color": [
+    1.6,
+    1.6,
+    1.8,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_e_header_ramp_upper",
+   "shape": "profile",
+   "position": [
+    51.2,
+    0.0,
+    0.0
+   ],
+   "size": [
+    1.0,
+    17.8551,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv4",
+   "color": [
+    1.6,
+    1.6,
+    1.8,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -6.243,
+     20.44
+    ],
+    [
+     -4.089,
+     20.376
+    ],
+    [
+     -3.128,
+     20.077
+    ],
+    [
+     -2.259,
+     19.605
+    ],
+    [
+     -1.501,
+     18.979
+    ],
+    [
+     -0.875,
+     18.221
+    ],
+    [
+     -0.403,
+     17.352
+    ],
+    [
+     -0.104,
+     16.391
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "back_e_goal_side_l",
+   "shape": "box",
+   "position": [
+    55.6,
+    -8.9276,
+    3.2139
+   ],
+   "size": [
+    8.8,
+    0.5,
+    6.4277
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv4",
+   "color": [
+    1.6,
+    1.6,
+    1.8,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_e_goal_side_r",
+   "shape": "box",
+   "position": [
+    55.6,
+    8.9276,
+    3.2139
+   ],
+   "size": [
+    8.8,
+    0.5,
+    6.4277
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv4",
+   "color": [
+    1.6,
+    1.6,
+    1.8,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_e_goal_ceiling",
+   "shape": "box",
+   "position": [
+    55.6,
+    0.0,
+    6.6777
+   ],
+   "size": [
+    8.8,
+    17.8551,
+    0.5
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv4",
+   "color": [
+    1.6,
+    1.6,
+    1.8,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_e_goal_back",
+   "shape": "box",
+   "position": [
+    59.5,
+    0.0,
+    3.2139
+   ],
+   "size": [
+    1.0,
+    17.8551,
+    6.4277
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv4",
+   "color": [
+    1.6,
+    1.6,
+    1.8,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_w_l_ramp_lower",
+   "shape": "profile",
+   "position": [
+    -51.2,
+    -39.68,
+    0.0
+   ],
+   "size": [
+    1.0,
+    61.5049,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    180.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -2.56,
+     0.0
+    ],
+    [
+     -2.044,
+     0.052
+    ],
+    [
+     -1.564,
+     0.201
+    ],
+    [
+     -1.129,
+     0.438
+    ],
+    [
+     -0.75,
+     0.75
+    ],
+    [
+     -0.438,
+     1.129
+    ],
+    [
+     -0.201,
+     1.564
+    ],
+    [
+     -0.052,
+     2.044
+    ],
+    [
+     0.0,
+     3.55
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "back_w_l_wall",
+   "shape": "box",
+   "position": [
+    -51.7,
+    -39.68,
+    9.9705
+   ],
+   "size": [
+    1.0,
+    61.5049,
+    12.841
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    180.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_w_l_ramp_upper",
+   "shape": "profile",
+   "position": [
+    -51.2,
+    -39.68,
+    0.0
+   ],
+   "size": [
+    1.0,
+    61.5049,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    180.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -6.243,
+     20.44
+    ],
+    [
+     -4.089,
+     20.376
+    ],
+    [
+     -3.128,
+     20.077
+    ],
+    [
+     -2.259,
+     19.605
+    ],
+    [
+     -1.501,
+     18.979
+    ],
+    [
+     -0.875,
+     18.221
+    ],
+    [
+     -0.403,
+     17.352
+    ],
+    [
+     -0.104,
+     16.391
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "back_w_r_ramp_lower",
+   "shape": "profile",
+   "position": [
+    -51.2,
+    39.68,
+    0.0
+   ],
+   "size": [
+    1.0,
+    61.5049,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    180.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -2.56,
+     0.0
+    ],
+    [
+     -2.044,
+     0.052
+    ],
+    [
+     -1.564,
+     0.201
+    ],
+    [
+     -1.129,
+     0.438
+    ],
+    [
+     -0.75,
+     0.75
+    ],
+    [
+     -0.438,
+     1.129
+    ],
+    [
+     -0.201,
+     1.564
+    ],
+    [
+     -0.052,
+     2.044
+    ],
+    [
+     0.0,
+     3.55
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "back_w_r_wall",
+   "shape": "box",
+   "position": [
+    -51.7,
+    39.68,
+    9.9705
+   ],
+   "size": [
+    1.0,
+    61.5049,
+    12.841
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    180.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_w_r_ramp_upper",
+   "shape": "profile",
+   "position": [
+    -51.2,
+    39.68,
+    0.0
+   ],
+   "size": [
+    1.0,
+    61.5049,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    180.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -6.243,
+     20.44
+    ],
+    [
+     -4.089,
+     20.376
+    ],
+    [
+     -3.128,
+     20.077
+    ],
+    [
+     -2.259,
+     19.605
+    ],
+    [
+     -1.501,
+     18.979
+    ],
+    [
+     -0.875,
+     18.221
+    ],
+    [
+     -0.403,
+     17.352
+    ],
+    [
+     -0.104,
+     16.391
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "back_w_header_wall",
+   "shape": "box",
+   "position": [
+    -51.7,
+    0.0,
+    11.4094
+   ],
+   "size": [
+    1.0,
+    17.8551,
+    9.9632
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    180.0
+   ],
+   "material": "wallv4",
+   "color": [
+    1.6,
+    1.6,
+    1.8,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_w_header_ramp_upper",
+   "shape": "profile",
+   "position": [
+    -51.2,
+    0.0,
+    0.0
+   ],
+   "size": [
+    1.0,
+    17.8551,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    180.0
+   ],
+   "material": "wallv4",
+   "color": [
+    1.6,
+    1.6,
+    1.8,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -6.243,
+     20.44
+    ],
+    [
+     -4.089,
+     20.376
+    ],
+    [
+     -3.128,
+     20.077
+    ],
+    [
+     -2.259,
+     19.605
+    ],
+    [
+     -1.501,
+     18.979
+    ],
+    [
+     -0.875,
+     18.221
+    ],
+    [
+     -0.403,
+     17.352
+    ],
+    [
+     -0.104,
+     16.391
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "back_w_goal_side_l",
+   "shape": "box",
+   "position": [
+    -55.6,
+    -8.9276,
+    3.2139
+   ],
+   "size": [
+    8.8,
+    0.5,
+    6.4277
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv4",
+   "color": [
+    1.6,
+    1.6,
+    1.8,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_w_goal_side_r",
+   "shape": "box",
+   "position": [
+    -55.6,
+    8.9276,
+    3.2139
+   ],
+   "size": [
+    8.8,
+    0.5,
+    6.4277
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv4",
+   "color": [
+    1.6,
+    1.6,
+    1.8,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_w_goal_ceiling",
+   "shape": "box",
+   "position": [
+    -55.6,
+    0.0,
+    6.6777
+   ],
+   "size": [
+    8.8,
+    17.8551,
+    0.5
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv4",
+   "color": [
+    1.6,
+    1.6,
+    1.8,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "back_w_goal_back",
+   "shape": "box",
+   "position": [
+    -59.5,
+    0.0,
+    3.2139
+   ],
+   "size": [
+    1.0,
+    17.8551,
+    6.4277
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "material": "wallv4",
+   "color": [
+    1.6,
+    1.6,
+    1.8,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "corner_ne_ramp_lower",
+   "shape": "profile",
+   "position": [
+    45.44,
+    35.2,
+    0.0
+   ],
+   "size": [
+    1.0,
+    16.2917,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    45.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -2.56,
+     0.0
+    ],
+    [
+     -2.044,
+     0.052
+    ],
+    [
+     -1.564,
+     0.201
+    ],
+    [
+     -1.129,
+     0.438
+    ],
+    [
+     -0.75,
+     0.75
+    ],
+    [
+     -0.438,
+     1.129
+    ],
+    [
+     -0.201,
+     1.564
+    ],
+    [
+     -0.052,
+     2.044
+    ],
+    [
+     0.0,
+     3.55
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "corner_ne_wall",
+   "shape": "box",
+   "position": [
+    45.79,
+    35.55,
+    9.9705
+   ],
+   "size": [
+    1.0,
+    16.2917,
+    12.841
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    45.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "corner_ne_ramp_upper",
+   "shape": "profile",
+   "position": [
+    45.44,
+    35.2,
+    0.0
+   ],
+   "size": [
+    1.0,
+    16.2917,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    45.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -6.243,
+     20.44
+    ],
+    [
+     -4.089,
+     20.376
+    ],
+    [
+     -3.128,
+     20.077
+    ],
+    [
+     -2.259,
+     19.605
+    ],
+    [
+     -1.501,
+     18.979
+    ],
+    [
+     -0.875,
+     18.221
+    ],
+    [
+     -0.403,
+     17.352
+    ],
+    [
+     -0.104,
+     16.391
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "corner_nw_ramp_lower",
+   "shape": "profile",
+   "position": [
+    -45.44,
+    35.2,
+    0.0
+   ],
+   "size": [
+    1.0,
+    16.2917,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    135.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -2.56,
+     0.0
+    ],
+    [
+     -2.044,
+     0.052
+    ],
+    [
+     -1.564,
+     0.201
+    ],
+    [
+     -1.129,
+     0.438
+    ],
+    [
+     -0.75,
+     0.75
+    ],
+    [
+     -0.438,
+     1.129
+    ],
+    [
+     -0.201,
+     1.564
+    ],
+    [
+     -0.052,
+     2.044
+    ],
+    [
+     0.0,
+     3.55
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "corner_nw_wall",
+   "shape": "box",
+   "position": [
+    -45.79,
+    35.55,
+    9.9705
+   ],
+   "size": [
+    1.0,
+    16.2917,
+    12.841
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    135.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "corner_nw_ramp_upper",
+   "shape": "profile",
+   "position": [
+    -45.44,
+    35.2,
+    0.0
+   ],
+   "size": [
+    1.0,
+    16.2917,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    135.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -6.243,
+     20.44
+    ],
+    [
+     -4.089,
+     20.376
+    ],
+    [
+     -3.128,
+     20.077
+    ],
+    [
+     -2.259,
+     19.605
+    ],
+    [
+     -1.501,
+     18.979
+    ],
+    [
+     -0.875,
+     18.221
+    ],
+    [
+     -0.403,
+     17.352
+    ],
+    [
+     -0.104,
+     16.391
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "corner_se_ramp_lower",
+   "shape": "profile",
+   "position": [
+    45.44,
+    -35.2,
+    0.0
+   ],
+   "size": [
+    1.0,
+    16.2917,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    -45.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -2.56,
+     0.0
+    ],
+    [
+     -2.044,
+     0.052
+    ],
+    [
+     -1.564,
+     0.201
+    ],
+    [
+     -1.129,
+     0.438
+    ],
+    [
+     -0.75,
+     0.75
+    ],
+    [
+     -0.438,
+     1.129
+    ],
+    [
+     -0.201,
+     1.564
+    ],
+    [
+     -0.052,
+     2.044
+    ],
+    [
+     0.0,
+     3.55
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "corner_se_wall",
+   "shape": "box",
+   "position": [
+    45.79,
+    -35.55,
+    9.9705
+   ],
+   "size": [
+    1.0,
+    16.2917,
+    12.841
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    -45.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "corner_se_ramp_upper",
+   "shape": "profile",
+   "position": [
+    45.44,
+    -35.2,
+    0.0
+   ],
+   "size": [
+    1.0,
+    16.2917,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    -45.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -6.243,
+     20.44
+    ],
+    [
+     -4.089,
+     20.376
+    ],
+    [
+     -3.128,
+     20.077
+    ],
+    [
+     -2.259,
+     19.605
+    ],
+    [
+     -1.501,
+     18.979
+    ],
+    [
+     -0.875,
+     18.221
+    ],
+    [
+     -0.403,
+     17.352
+    ],
+    [
+     -0.104,
+     16.391
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "corner_sw_ramp_lower",
+   "shape": "profile",
+   "position": [
+    -45.44,
+    -35.2,
+    0.0
+   ],
+   "size": [
+    1.0,
+    16.2917,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    -135.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -2.56,
+     0.0
+    ],
+    [
+     -2.044,
+     0.052
+    ],
+    [
+     -1.564,
+     0.201
+    ],
+    [
+     -1.129,
+     0.438
+    ],
+    [
+     -0.75,
+     0.75
+    ],
+    [
+     -0.438,
+     1.129
+    ],
+    [
+     -0.201,
+     1.564
+    ],
+    [
+     -0.052,
+     2.044
+    ],
+    [
+     0.0,
+     3.55
+    ]
+   ],
+   "profile_axis": 1
+  },
+  {
+   "id": "corner_sw_wall",
+   "shape": "box",
+   "position": [
+    -45.79,
+    -35.55,
+    9.9705
+   ],
+   "size": [
+    1.0,
+    16.2917,
+    12.841
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    -135.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ]
+  },
+  {
+   "id": "corner_sw_ramp_upper",
+   "shape": "profile",
+   "position": [
+    -45.44,
+    -35.2,
+    0.0
+   ],
+   "size": [
+    1.0,
+    16.2917,
+    1.0
+   ],
+   "rotationEuler": [
+    0.0,
+    0.0,
+    -135.0
+   ],
+   "material": "wallv2",
+   "color": [
+    1.35,
+    1.35,
+    1.45,
+    1.0
+   ],
+   "enabled": true,
+   "collision": true,
+   "anchored": true,
+   "tags": [
+    "arena"
+   ],
+   "profile": [
+    [
+     -6.243,
+     20.44
+    ],
+    [
+     -4.089,
+     20.376
+    ],
+    [
+     -3.128,
+     20.077
+    ],
+    [
+     -2.259,
+     19.605
+    ],
+    [
+     -1.501,
+     18.979
+    ],
+    [
+     -0.875,
+     18.221
+    ],
+    [
+     -0.403,
+     17.352
+    ],
+    [
+     -0.104,
+     16.391
+    ]
+   ],
+   "profile_axis": 1
+  }
+ ],
+ "boost_pads": [
+  {
+   "enabled": true,
+   "id": "pad_big_0",
+   "kind": "big",
+   "position": [
+    0.0,
+    -35.84,
+    0.08
+   ],
+   "radius": 2.08,
+   "rechargeTicks": 600
+  },
+  {
+   "enabled": true,
+   "id": "pad_big_1",
+   "kind": "big",
+   "position": [
+    0.0,
+    35.84,
+    0.08
+   ],
+   "radius": 2.08,
+   "rechargeTicks": 600
+  },
+  {
+   "enabled": true,
+   "id": "pad_big_2",
+   "kind": "big",
+   "position": [
+    40.96,
+    -30.72,
+    0.08
+   ],
+   "radius": 2.08,
+   "rechargeTicks": 600
+  },
+  {
+   "enabled": true,
+   "id": "pad_big_3",
+   "kind": "big",
+   "position": [
+    40.96,
+    30.72,
+    0.08
+   ],
+   "radius": 2.08,
+   "rechargeTicks": 600
+  },
+  {
+   "enabled": true,
+   "id": "pad_big_4",
+   "kind": "big",
+   "position": [
+    -40.96,
+    -30.72,
+    0.08
+   ],
+   "radius": 2.08,
+   "rechargeTicks": 600
+  },
+  {
+   "enabled": true,
+   "id": "pad_big_5",
+   "kind": "big",
+   "position": [
+    -40.96,
+    30.72,
+    0.08
+   ],
+   "radius": 2.08,
+   "rechargeTicks": 600
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_0",
+   "kind": "small",
+   "position": [
+    -42.4,
+    0.0,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_1",
+   "kind": "small",
+   "position": [
+    -41.84,
+    -17.92,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_2",
+   "kind": "small",
+   "position": [
+    -41.84,
+    17.92,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_3",
+   "kind": "small",
+   "position": [
+    -33.08,
+    -9.4,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_4",
+   "kind": "small",
+   "position": [
+    -33.08,
+    9.4,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_5",
+   "kind": "small",
+   "position": [
+    -28.16,
+    0.0,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_6",
+   "kind": "small",
+   "position": [
+    -24.84,
+    -35.84,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_7",
+   "kind": "small",
+   "position": [
+    -24.84,
+    35.84,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_8",
+   "kind": "small",
+   "position": [
+    -23.02,
+    -17.88,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_9",
+   "kind": "small",
+   "position": [
+    -23.02,
+    17.88,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_10",
+   "kind": "small",
+   "position": [
+    -10.36,
+    -20.48,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_11",
+   "kind": "small",
+   "position": [
+    -10.36,
+    20.48,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_12",
+   "kind": "small",
+   "position": [
+    -10.24,
+    0.0,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_13",
+   "kind": "small",
+   "position": [
+    0.0,
+    -10.24,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_14",
+   "kind": "small",
+   "position": [
+    0.0,
+    10.24,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_15",
+   "kind": "small",
+   "position": [
+    10.24,
+    0.0,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_16",
+   "kind": "small",
+   "position": [
+    10.36,
+    -20.48,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_17",
+   "kind": "small",
+   "position": [
+    10.36,
+    20.48,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_18",
+   "kind": "small",
+   "position": [
+    23.02,
+    -17.88,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_19",
+   "kind": "small",
+   "position": [
+    23.02,
+    17.88,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_20",
+   "kind": "small",
+   "position": [
+    24.84,
+    -35.84,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_21",
+   "kind": "small",
+   "position": [
+    24.84,
+    35.84,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_22",
+   "kind": "small",
+   "position": [
+    28.16,
+    0.0,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_23",
+   "kind": "small",
+   "position": [
+    33.08,
+    -9.4,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_24",
+   "kind": "small",
+   "position": [
+    33.08,
+    9.4,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_25",
+   "kind": "small",
+   "position": [
+    41.84,
+    -17.92,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_26",
+   "kind": "small",
+   "position": [
+    41.84,
+    17.92,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  },
+  {
+   "enabled": true,
+   "id": "pad_small_27",
+   "kind": "small",
+   "position": [
+    42.4,
+    0.0,
+    0.08
+   ],
+   "radius": 1.44,
+   "rechargeTicks": 240
+  }
+ ],
+ "entities": [],
+ "glb_objects": [],
+ "vehicles": [
+  {
+   "id": "blue_car",
+   "template": "octane_rl",
+   "position": [
+    -40.0,
+    0.0,
+    0.2
+   ],
+   "yaw": 0.0,
+   "enabled": true,
+   "roll": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "id": "orange_car",
+   "template": "octane_rl",
+   "position": [
+    40.0,
+    0.0,
+    0.2
+   ],
+   "yaw": 180.0,
+   "enabled": true,
+   "roll": 0.0,
+   "pitch": 0.0
+  }
+ ],
+ "chunks": [],
+ "attachments": [],
+ "generation_zones": [],
+ "npc_presets": [],
+ "weapon_overrides": [],
+ "interactions": []
+}

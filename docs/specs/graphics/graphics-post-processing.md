@@ -22,55 +22,44 @@ Normal mode:
 4. Draw GUI/HUD on the default framebuffer.
 5. Swap buffers.
 
-Full-frame stretched modes 5/6 (default, crisp HUD):
+Full-frame **fullscreen** stretched modes 5/6 (whole frame stretched):
 
 1. Render world/actors/effects at 1024x768 into the scene target.
-2. Run PostFX against that scene target and stretch the result to the display.
-3. Draw GUI/HUD on the default output framebuffer at output resolution.
+2. Draw GUI/HUD and the 2D crosshair into that same 1024x768 scene target.
+3. Run PostFX against the scene target and stretch the result to the display.
 4. Swap buffers.
+
+This is the documented contract in
+[graphics-resolution.md](graphics-resolution.md): modes 5/6 stretch the complete
+game frame, including the GUI/HUD/crosshair, so the interface uses the same
+1024x768 source pixels as the world and looks old/stretched rather than crisp.
+Modes 0-4 keep the HUD at output resolution and native aspect.
 
 The FBO is therefore required for output scaling even when all effects are
 identity. `full` and `minimal` keep the FBO; `off` does not.
 
 ### Why the GUI looked eaten by the world
 
-In the previous stretched path the HUD was drawn into the 1024x768 scene target
-before PostFX. The GUI was not depth-occluded: UI depth testing is disabled.
-Instead the lens stage resampled the scene and the HUD together. Radial lens
-distortion pulled background pixels inward at the frame edges, radial chromatic
-aberration offset the channels, vignette darkened the corners, and peripheral
-blur softened the whole outer image. A large `distortion` value therefore made
-the HUD appear to smear, stretch, or disappear into the world. The same warp
-also moved HUD space relative to the visible geometry, which read as the world
-eating the interface.
-
-The default is now to draw the HUD after PostFX at output resolution, so it is
-crisp and unaffected by lens effects.
+In an earlier stretched path the HUD was drawn into the 1024x768 scene target
+before PostFX without a mode policy, so a strong lens configuration could smear
+it. Under the current contract this is deliberate for modes 5/6: the HUD is part
+of the composed frame and therefore receives the same lens resampling as the
+world. Modes 0-4 still draw the HUD after PostFX so lens effects never touch it.
 
 ### Intentional in-scene UI for horror
 
-Set `ui_in_scene_target` to `true` in `config/postfx.json` to restore the old
-in-scene path deliberately. The HUD then renders into the 1024x768 target and is
-processed with the world, producing the warped, vignetted, color-fringed
-interface. This is a presentation choice for horror, found-footage, or
-dying-camera moments, not a fallback.
+Modes 5/6 always draw the HUD into the 1024x768 scene target because the whole
+frame is stretched. Lens mode 4 (`world_and_ui`) and lens mode 5
+(`bodycam_special`) additionally process that HUD with lens distortion, vignette,
+and colour fringing, producing the warped found-footage interface. For lens mode
+5 the HUD is stretched with the world by design; `lens_ca off` removes the
+colour fringing but keeps the lens and the stretch.
 
-```json
-{
-  "mode": "full",
-  "ui_in_scene_target": true,
-  "lensDistortion": 35.0,
-  "chromaticAberration": 0.35,
-  "vignette": 0.45,
-  "scanlines": 0.2,
-  "filmGrain": 0.08
-}
-```
-
-`ui_in_scene_target` currently applies to full-frame stretched modes, where the
-HUD is otherwise drawn after the post/stretch pass. In normal non-stretched
-mode the HUD already draws after PostFX; the flag does not move it back into the
-scene target.
+The routing owner is `engine-tick.cpp`: `uiInScene` is true for every
+whole-frame mode and false otherwise. `uiHudSceneLayer()` still reports the
+gamemode's requested HUD layer for diagnostics. The old `ui_in_scene_target` key
+in `config/postfx.json` is not read by the current code and must not be used as
+the switch.
 
 ## Modes
 

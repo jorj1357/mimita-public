@@ -26,11 +26,13 @@ constexpr const char* kBallPersistenceId = "arena-ball";
 bool sHasPendingSet = false;
 glm::vec3 sPendingPosition(0.0f);
 glm::vec3 sPendingVelocity(0.0f);
+glm::vec3 sPendingSpin(0.0f);
 // One-shot probe kick from MIMITA_ARENA_BALL_KICK="vx,vy,vz". The dev-loop ball
 // probe launch mode sets it; without it the field is inert.
 bool sProbeKickPending = false;
 bool sProbeKickHasPosition = false;
 glm::vec3 sProbeKickVelocity(0.0f);
+glm::vec3 sProbeKickSpin(0.0f);
 glm::vec3 sProbeKickPosition(0.0f);
 
 // Convert the authored ball gravity into the per-entity scale the shared
@@ -100,7 +102,17 @@ ArenaBallSpawn spawnFromMap(const MapObjectiveConfig& config, std::string* error
     // Rocket League's ball has one decay: drag 0.03/s. Replace the global
     // object damping instead of adding to it.
     entity->linearDampingOverride = ball.linearDamping;
-    entity->angularDamping = 0.4f;
+    // One decay for the ball, not two: the spin was being braked at 0.4/s
+    // while travel only decayed at 0.03/s, so contact friction converted the
+    // missing spin into a 0.25 m/s^2 linear drag and a 3.6 m/s roll died in
+    // 14 s (run 20261126_175118, ball asleep at x = -15.5 mid-field). Spin and
+    // travel now decay together at the ball's single drag constant, so it
+    // keeps rolling.
+    entity->angularDamping = ball.linearDamping;
+    // Setting angularDamping alone does nothing: a negative override means the
+    // global 1.5/s object damping wins. Replace it with the same single decay
+    // as travel so the ball's spin and speed die together.
+    entity->angularDampingOverride = ball.linearDamping;
     // A rolling sphere at the 60 m/s linear cap needs v/r = 65.7 rad/s, so a
     // 6 rad/s spin cap makes rolling impossible: the ball slides for the whole
     // roll and contact friction eats the speed (measured 4.0 m/s^2 instead of
@@ -129,16 +141,23 @@ ArenaBallSpawn spawnFromMap(const MapObjectiveConfig& config, std::string* error
         float px = 0.0f;
         float py = 0.0f;
         float pz = 0.0f;
+        float wx = 0.0f;
+        float wy = 0.0f;
+        float wz = 0.0f;
         // Three values = velocity at the current position; six values =
-        // position and velocity, so a probe can start away from map geometry.
-        const int parsed = std::sscanf(probe, "%f,%f,%f,%f,%f,%f",
-                                       &vx, &vy, &vz, &px, &py, &pz);
+        // position and velocity; nine values add the spin, so a probe can
+        // measure a spin-dependent bounce.
+        const int parsed = std::sscanf(probe, "%f,%f,%f,%f,%f,%f,%f,%f,%f",
+                                       &vx, &vy, &vz, &px, &py, &pz, &wx, &wy,
+                                       &wz);
         if (parsed >= 3)
         {
             sProbeKickPending = true;
             sProbeKickVelocity = glm::vec3(vx, vy, vz);
-            sProbeKickHasPosition = parsed == 6;
+            sProbeKickHasPosition = parsed >= 6;
             sProbeKickPosition = glm::vec3(px, py, pz);
+            sProbeKickSpin = parsed >= 9 ? glm::vec3(wx, wy, wz)
+                                         : glm::vec3(0.0f);
         }
     }
 
@@ -172,6 +191,8 @@ bool reset(PhysicalEntity& ball, const MapObjectiveConfig& config)
     ball.friction = data.friction;
     ball.linearDamping = data.linearDamping;
     ball.linearDampingOverride = data.linearDamping;
+    ball.angularDamping = data.linearDamping;
+    ball.angularDampingOverride = data.linearDamping;
     ball.gravityScale = ballGravityScale(data.gravityMps2);
     ball.transform = glm::mat4(1.0f);
     ball.transform[3] = glm::vec4(data.spawn, 1.0f);
@@ -201,7 +222,8 @@ PhysicalEntity* find()
 }
 
 void setState(PhysicalEntity& ball, const glm::vec3& position,
-              const glm::vec3& velocity)
+              const glm::vec3& velocity,
+              const glm::vec3& spin = glm::vec3(0.0f))
 {
     // Same discipline as reset(): the ball must never keep a stale contact,
     // sleep anchor, or previous transform from the pose it was moved out of.
@@ -209,7 +231,7 @@ void setState(PhysicalEntity& ball, const glm::vec3& position,
     ball.transform[3] = glm::vec4(position, 1.0f);
     ball.previousTransform = ball.transform;
     ball.velocity = velocity;
-    ball.angularVelocity = glm::vec3(0.0f);
+    ball.angularVelocity = spin;
     ball.sleeping = false;
     ball.sleepTicks = 0;
     ball.sleepAnchorValid = false;
@@ -223,20 +245,23 @@ void setState(PhysicalEntity& ball, const glm::vec3& position,
         nlohmann::json{{"network_id", ball.networkId},
                        {"position", {position.x, position.y, position.z}},
                        {"velocity", {velocity.x, velocity.y, velocity.z}},
+                       {"angular_velocity", {spin.x, spin.y, spin.z}},
                        {"speed", glm::length(velocity)}},
         __FILE__, __LINE__, __FUNCTION__);
 }
 
-void requestState(const glm::vec3& position, const glm::vec3& velocity)
+void requestState(const glm::vec3& position, const glm::vec3& velocity,
+                  const glm::vec3& spin)
 {
     if (PhysicalEntity* ball = find())
     {
-        setState(*ball, position, velocity);
+        setState(*ball, position, velocity, spin);
         return;
     }
     sHasPendingSet = true;
     sPendingPosition = position;
     sPendingVelocity = velocity;
+    sPendingSpin = spin;
 }
 
 void tick()
@@ -249,7 +274,7 @@ void tick()
             const glm::vec3 position =
                 sProbeKickHasPosition ? sProbeKickPosition
                                       : glm::vec3(ball->transform[3]);
-            setState(*ball, position, sProbeKickVelocity);
+            setState(*ball, position, sProbeKickVelocity, sProbeKickSpin);
         }
         return;
     }
@@ -259,7 +284,7 @@ void tick()
     if (!ball)
         return;
     sHasPendingSet = false;
-    setState(*ball, sPendingPosition, sPendingVelocity);
+    setState(*ball, sPendingPosition, sPendingVelocity, sPendingSpin);
 }
 
 namespace
@@ -283,26 +308,30 @@ void registerArenaBallCommands()
 {
     Terminal::instance().registerCommand({
         "ball_set",
-        "Place the arena ball with an optional velocity (server authority)",
-        "ball_set <x> <y> <z> [vx vy vz]",
+        "Place the arena ball with optional velocity and spin (server authority)",
+        "ball_set <x> <y> <z> [vx vy vz [wx wy wz]]",
         [](const std::vector<std::string>& args) {
             glm::vec3 position(0.0f);
             glm::vec3 velocity(0.0f);
+            glm::vec3 spin(0.0f);
             const bool ok =
-                (args.size() == 3 || args.size() == 6) &&
+                (args.size() == 3 || args.size() == 6 || args.size() == 9) &&
                 parseFloatArg(args[0], position.x) &&
                 parseFloatArg(args[1], position.y) &&
                 parseFloatArg(args[2], position.z) &&
                 (args.size() < 6 || (parseFloatArg(args[3], velocity.x) &&
                                      parseFloatArg(args[4], velocity.y) &&
-                                     parseFloatArg(args[5], velocity.z)));
+                                     parseFloatArg(args[5], velocity.z))) &&
+                (args.size() < 9 || (parseFloatArg(args[6], spin.x) &&
+                                     parseFloatArg(args[7], spin.y) &&
+                                     parseFloatArg(args[8], spin.z)));
             if (!ok)
             {
                 Terminal::instance().addLog(
                     "[BALL] usage: ball_set <x> <y> <z> [vx vy vz]");
                 return;
             }
-            requestState(position, velocity);
+            requestState(position, velocity, spin);
             Terminal::instance().addLog(
                 "[BALL] placed x=" + std::to_string(position.x) +
                 " y=" + std::to_string(position.y) +

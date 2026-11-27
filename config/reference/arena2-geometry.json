@@ -1,0 +1,287 @@
+{
+  "id": "arena2-geometry",
+  "description": "Standard Soccar collision geometry used to generate arena2.",
+  "units": "metres",
+  "provenance": {
+    "DOCUMENTED": "published tables (RLBot / RocketSim / RLGym)",
+    "MEASURED": "read directly from assets/maps/rl/pitch.obj",
+    "DERIVED": "computed from measured or documented values",
+    "ESTIMATED": "authored approximation, not verified against the mesh"
+  },
+  "source": {
+    "mesh": "assets/maps/rl/pitch.obj",
+    "triangles": 8028,
+    "vertices": 4384,
+    "note": "reference only; not shipped and not loaded by the game"
+  },
+  "documented": {
+    "width_m": 81.92,
+    "length_m": 102.4,
+    "ceiling_m": 20.48,
+    "goal_width_m": 17.8551,
+    "goal_height_m": 6.42775,
+    "goal_depth_m": 8.8,
+    "corner_plane_m": 80.64,
+    "goal_back_m": 60.0
+  },
+  "measured": {
+    "floor_bounds_m": [
+      -60.0,
+      60.0,
+      -40.96,
+      40.96,
+      -0.0,
+      0.0
+    ],
+    "ceiling_bounds_m": [
+      -51.2,
+      51.2,
+      -40.96,
+      40.96,
+      20.44,
+      20.7545
+    ],
+    "wall_face_m": 41.0733,
+    "back_face_m": 51.2533,
+    "ceiling_face_m": 20.44,
+    "corner_plane_m": 80.64,
+    "side_lower_profile_m": [
+      [
+        -2.56,
+        0.0
+      ],
+      [
+        -2.044,
+        0.052
+      ],
+      [
+        -1.564,
+        0.201
+      ],
+      [
+        -1.129,
+        0.438
+      ],
+      [
+        -0.75,
+        0.75
+      ],
+      [
+        -0.438,
+        1.129
+      ],
+      [
+        -0.201,
+        1.564
+      ],
+      [
+        -0.052,
+        2.044
+      ],
+      [
+        0.0,
+        3.55
+      ]
+    ],
+    "side_upper_profile_m": [
+      [
+        -6.243,
+        20.44
+      ],
+      [
+        -4.089,
+        20.376
+      ],
+      [
+        -3.128,
+        20.077
+      ],
+      [
+        -2.259,
+        19.605
+      ],
+      [
+        -1.501,
+        18.979
+      ],
+      [
+        -0.875,
+        18.221
+      ],
+      [
+        -0.403,
+        17.352
+      ],
+      [
+        -0.104,
+        16.391
+      ]
+    ],
+    "back_lower_profile_m": [
+      [
+        45.128,
+        1.129
+      ],
+      [
+        45.229,
+        0.0
+      ],
+      [
+        45.295,
+        1.564
+      ],
+      [
+        45.401,
+        2.044
+      ],
+      [
+        45.438,
+        2.56
+      ],
+      [
+        45.593,
+        0.052
+      ],
+      [
+        45.933,
+        0.201
+      ],
+      [
+        46.24,
+        0.438
+      ],
+      [
+        46.508,
+        0.75
+      ],
+      [
+        46.729,
+        1.129
+      ],
+      [
+        46.83,
+        0.0
+      ],
+      [
+        46.896,
+        1.564
+      ],
+      [
+        47.002,
+        2.044
+      ],
+      [
+        47.039,
+        2.56
+      ],
+      [
+        47.194,
+        0.052
+      ],
+      [
+        47.534,
+        0.201
+      ],
+      [
+        47.69,
+        0.051
+      ],
+      [
+        47.842,
+        0.438
+      ],
+      [
+        48.056,
+        0.198
+      ],
+      [
+        48.109,
+        0.75
+      ],
+      [
+        48.331,
+        1.129
+      ],
+      [
+        48.388,
+        0.43
+      ],
+      [
+        48.498,
+        1.564
+      ],
+      [
+        48.603,
+        2.044
+      ],
+      [
+        48.64,
+        2.56
+      ],
+      [
+        48.677,
+        0.738
+      ],
+      [
+        48.885,
+        0.411
+      ],
+      [
+        48.915,
+        1.11
+      ],
+      [
+        49.096,
+        1.538
+      ],
+      [
+        49.183,
+        0.705
+      ],
+      [
+        49.209,
+        2.01
+      ],
+      [
+        49.249,
+        2.517
+      ],
+      [
+        49.429,
+        1.061
+      ],
+      [
+        49.615,
+        1.47
+      ],
+      [
+        49.732,
+        1.922
+      ],
+      [
+        49.773,
+        2.406
+      ],
+      [
+        51.2,
+        0.0
+      ],
+      [
+        60.0,
+        0.0
+      ]
+    ]
+  },
+  "derived": {
+    "half_length_m": 51.2,
+    "half_width_m": 40.96,
+    "corner_cut_m": 11.52,
+    "diagonal_length_m": 16.2917,
+    "goal_opening_width_m": 17.8551,
+    "goal_depth_m": 8.8
+  },
+  "estimated": {
+    "goal_back_curve_radius_m": 2.0,
+    "note": "goal interior curvature not measured yet"
+  }
+}

@@ -134,7 +134,8 @@ public:
     // Commands that intentionally mutate authored map data through the editor,
     // so they share selection, history, and geometry rebuild behavior.
     std::string addEntity(const std::string& type, const std::string& id = {});
-    std::string addBlock(const std::string& id = {});
+    std::string addBlock(const std::string& id = {},
+                         const std::string& shape = "box");
     std::string addPlayerSpawn(const std::string& tag = "player_spawn");
     std::string addMonsterVolume(const std::string& monsterPool = "default");
     std::string addChunk(const std::string& id = {});
@@ -170,6 +171,10 @@ public:
     bool setSelectedAnchored(bool anchored);
     bool setSelectedVisible(bool visible);
     bool setSelectedSurfaceColor(const glm::vec4& color);
+    // Shape authoring: profile/cylinder/cone/sphere/wedge primitives.
+    bool setSelectedBlockShape(const std::string& shape);
+    bool setSelectedBlockProfile(const std::vector<glm::vec2>& points);
+    bool setSelectedBlockShapeParam(const std::string& name, float value);
     bool setSelectedOpacity(float opacity);
     void openMaterialPicker();
     bool applyMaterialPicker(const std::string& value);

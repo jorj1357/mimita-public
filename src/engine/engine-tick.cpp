@@ -39,7 +39,7 @@ namespace r = mimita::game::render;
 #include "debug/debug-diag.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
-#include "debug/structured-log.h"
+#include "debug/jitter-probe.h"
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
 #include "perf/perf-frame.h"
@@ -245,6 +245,14 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
     const bool replayExportForceRender =
         (getReplayExportJob().state == ReplayExportJob::Capturing ||
          getReplayExportJob().state == ReplayExportJob::Encoding) && WORLD_LOADED;
+    const bool wholeFrame = engine.renderer &&
+        engine.renderer->stretchesWholeFrame();
+    const int lensMode = PostFX::instance().effectiveLensMode();
+    // Modes 5/6 compose the whole game frame (world, GUI, HUD, crosshair) at
+    // 1024x768 and stretch it together (graphics-resolution.md). Lens modes
+    // still decide how the scene is processed, but they must not move the HUD
+    // back to output resolution in a whole-frame mode.
+    const bool uiInScene = wholeFrame;
 
     if (GAME_STATE == GAME_PLAYING || GAME_STATE == GAME_LOADING_MAP || replayExportForceRender)
     {
@@ -256,14 +264,11 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
                 MIMITA_PERF_SCOPE("Rendering");
                 engineTickRender(engine, dt, worldPassRan);
             } HEARTBEAT("after render");
-            const bool wholeFrame = engine.renderer &&
-                engine.renderer->stretchesWholeFrame();
-            const bool sceneHud = wholeFrame && uiHudSceneLayer();
-            const bool hudDeferred = wholeFrame && !uiHudSceneLayer();
+            const bool hudDeferred = wholeFrame && !uiInScene;
             {
                 // Bounded evidence for the one-draw HUD/console contract.
                 static int lastDrawPath = -1;
-                const int drawPath = sceneHud ? 1 : 0;
+                const int drawPath = uiInScene ? 1 : 0;
                 if (drawPath != lastDrawPath) {
                     lastDrawPath = drawPath;
                     StructuredLogger::instance().writeEvent(
@@ -272,9 +277,12 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
                         "resolved whole-frame HUD and console draw path", 0,
                         nlohmann::json{
                             {"whole_frame", wholeFrame},
-                            {"scene_layer", uiHudSceneLayer()},
-                            {"hud_in_scene", sceneHud},
-                            {"postfx_hud", !sceneHud},
+                            {"configured_scene_layer", uiHudSceneLayer()},
+                            {"lens_mode", lensMode},
+                            {"lens_mode_name", PostFX::lensModeName(lensMode)},
+                            {"ui_in_scene", uiInScene},
+                            {"hud_in_scene", uiInScene},
+                            {"postfx_hud", !uiInScene},
                             {"console_draw_count", 1}});
                 }
             }
@@ -463,15 +471,14 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
     }
 
     HEARTBEAT("before terminal");
-    if (!(engine.renderer && engine.renderer->stretchesWholeFrame() &&
-          uiHudSceneLayer())) {
+    if (!uiInScene) {
         MIMITA_PERF_PROGRESS("Terminal");
         MIMITA_PERF_SCOPE("Terminal");
         Terminal::instance().render();
     }
     { Perf::ScopedTimer _t("Diag"); diagRenderStage(8); }
 
-    if (engine.renderer && engine.renderer->stretchesWholeFrame()) {
+    if (wholeFrame) {
         PostFX::instance().probeScene("before-postfx-stretched");
         { MIMITA_PERF_PROGRESS("PostFX::Unbind");
           MIMITA_PERF_SCOPE("PostFX::Unbind"); PostFX::instance().unbindFBO(); }
@@ -480,7 +487,7 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
           PerfGpu::beginRegion("GPU::PostFX");
           PostFX::instance().render();
           PerfGpu::endRegion(); }
-        if (!uiHudSceneLayer()) {
+        if (!uiInScene) {
             MIMITA_PERF_PROGRESS("UI");
             MIMITA_PERF_SCOPE("UI");
             engineTickUI(engine, dt, worldPassRan, true);
@@ -488,6 +495,9 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
         }
     }
 
+    PostFX::instance().consumePresentationPatternFrame();
+    tickPresentationProbeFrame();
+    JitterProbe::endFrame();
     HEARTBEAT("end frame");
 
     // One-shot framebuffer probe: read the presented pixels, save a PNG, and

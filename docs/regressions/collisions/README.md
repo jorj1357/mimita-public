@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 21
+Entries: 22
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -164,3 +164,10 @@ applies to walkable slope impacts; runtime replay is still pending.
 - Status: REPORTED / NEEDS CURRENT TRACE
 - Summary: User reports collision queries checking far more world triangles than the local query needs. Existing records already cover uncached world gathers, full candidate scans, and missing entity broadphase. The current task is to prove whether `appendChunkTrianglesForAABB` is using the world tree or a fallback and to bound candidate counts.
 - Detail: [world-triangle-candidate-scan-REG-2026-11-17.md](world-triangle-candidate-scan-REG-2026-11-17.md)
+
+## Entry 22 — Static map collision double-scaled on the server
+
+- Recorded: 2026-11-27T05:34:55Z
+- Status: ATTEMPTED FIX (1) — arena2 runtime evidence; full fuzz proof and multi-map check pending
+- Summary: The headless builder applied `blockTransform` (which scales a unit cube by `block.size`) to collision geometry already built at `size * 0.5` or in metres. Arena2's goal ceilings became 34 m x 318 m phantom flags at z=6.80; cars spawned at z=7.14, the ball was launched 18-24 m/s by flat floor seams, and the settle fuzz reported 41 side rests. Fixed with `blockPlacement` (no scale), a single solid arena2 floor/ceiling, reference ball friction/restitution, and analytic sphere-world contacts.
+- Detail: [static-map-double-scale-REG-2026-11-27.md](static-map-double-scale-REG-2026-11-27.md)

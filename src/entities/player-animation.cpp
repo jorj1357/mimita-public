@@ -1,7 +1,9 @@
 #include "player.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <unordered_map>
 
@@ -9,6 +11,7 @@
 #include "animation-movement-state.h"
 #include "debug/structured-log.h"
 #include "combat/weapon-registry.h"
+#include "combat/weapon-config.h"
 #include "combat/weapon-melee-config.h"
 #include "config.h"
 #include "entities/aimbody-config.h"
@@ -27,11 +30,73 @@ static bool gAnimationPriorityDebug = false;
 void setAnimationPriorityDebug(bool enabled) { gAnimationPriorityDebug = enabled; }
 bool animationPriorityDebug() { return gAnimationPriorityDebug; }
 
+// Mode 2 tether: keep the rotation, saturate the local translation. tanh is
+// continuous and monotonic, so small motion is almost unchanged and large
+// motion approaches the budget without a snap or a per-frame branch flip.
+static glm::vec3 softTetherTranslation(const glm::vec3& raw, float budget)
+{
+    const float len = glm::length(raw);
+    if (len <= 1e-6f) return glm::vec3(0.0f);
+    if (!std::isfinite(budget) || budget <= 0.0f) return glm::vec3(0.0f);
+    const float outLen = budget * std::tanh(len / budget);
+    return raw * (outLen / len);
+}
+
 struct AnimOverlayResult {
     glm::vec3 translation{0.0f};
     glm::vec3 rotation{0.0f};
     glm::vec3 scale{1.0f};
 };
+
+// Presentation-only ADS body gesture state. Keeping it out of Player avoids a
+// player.h fan-out rebuild; the key is the owning Player instance. The entries
+// are bounded so long server sessions cannot grow the map without limit.
+struct AdsBodyPoseState {
+    float blend = 0.0f;
+    bool lastWanted = false;
+    uint64_t lastEmitMs = 0;
+    float lastEmitBlend = -1.0f;
+    std::string lastWeapon;
+};
+static std::unordered_map<const Player*, AdsBodyPoseState> gAdsBodyPoses;
+
+static float shortestAngleDeg(float from, float to)
+{
+    return std::fmod(to - from + 540.0f, 360.0f) - 180.0f;
+}
+
+static float pointSegmentDistance(const glm::vec3& p, const glm::vec3& a,
+                                  const glm::vec3& b)
+{
+    const glm::vec3 ab = b - a;
+    const float len2 = glm::dot(ab, ab);
+    if (len2 < 1e-8f)
+        return glm::length(p - a);
+    const float t = glm::clamp(glm::dot(p - a, ab) / len2, 0.0f, 1.0f);
+    return glm::length(p - (a + ab * t));
+}
+
+// World-space hand end of a body part, matching the weapon attachment's hand
+// point derivation so the ADS diagnostic measures the same geometry the
+// weapon is mounted on.
+static glm::vec3 bodyPartHandWorld(const Player& player, const char* name)
+{
+    for (const PhysicalBodyPart& part : player.physicalBody.parts) {
+        if (part.name != name)
+            continue;
+        const glm::vec3 boundsSize = part.collider.localMax - part.collider.localMin;
+        int axis = boundsSize.y > boundsSize.x ? 1 : 0;
+        if (boundsSize.z > boundsSize[axis])
+            axis = 2;
+        glm::vec3 handPoint = (part.collider.localMin + part.collider.localMax) * 0.5f;
+        const float minDistance = std::fabs(part.collider.localMin[axis]);
+        const float maxDistance = std::fabs(part.collider.localMax[axis]);
+        handPoint[axis] = maxDistance >= minDistance
+            ? part.collider.localMax[axis] : part.collider.localMin[axis];
+        return glm::vec3(part.worldTransform * glm::vec4(handPoint, 1.0f));
+    }
+    return glm::vec3(0.0f);
+}
 
 // Per-tick clip sampling must not allocate. The part names point into the
 // selected clip's keyframe maps, which stay alive for the whole sample.
@@ -1286,6 +1351,55 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     if (aimBodyConfig.enabled())
         aimBodyPitch = aimBodyConfig.smoothValue(aimBodyPitch, desiredLookPitch, dt);
 
+    // ADS body gesture: torso/head/arms ease toward the sight while aiming.
+    // Duration comes from the equipped weapon's ads.blend_seconds so the body
+    // and the first-person viewmodel share one configurable 0.30-0.40 s blend.
+    const WeaponViewModelConfig* adsCfg =
+        WeaponConfig::instance().get(weaponId);
+    if (gAdsBodyPoses.size() > 512)
+        gAdsBodyPoses.clear();
+    AdsBodyPoseState& adsPose = gAdsBodyPoses[this];
+    const float adsBlendSeconds = (adsCfg && adsCfg->ads.blendSeconds > 0.0f)
+        ? adsCfg->ads.blendSeconds : 0.33f;
+    const float adsRate = 3.0f / std::max(0.01f, adsBlendSeconds);
+    const bool adsWanted = weaponAimDownSights && adsCfg && adsCfg->ads.enabled &&
+        !dead && !ragdollModeActive && !meleeExclusivePose;
+    const float adsAlpha = 1.0f - std::exp(-adsRate * std::max(0.0f, dt));
+    adsPose.blend += ((adsWanted ? 1.0f : 0.0f) - adsPose.blend) * adsAlpha;
+    adsPose.blend = glm::clamp(adsPose.blend, 0.0f, 1.0f);
+    const float flatYawDeg = glm::length(glm::vec2(camForward))
+        > 1e-5f ? glm::degrees(std::atan2(camForward.y, camForward.x)) : yaw;
+    const float lookYawRelDeg = shortestAngleDeg(yaw, flatYawDeg);
+    const float adsTorsoYaw = lookYawRelDeg *
+        gPlayerProcedural.torsoAimYawStrength * adsPose.blend;
+    const float adsTorsoPitch = aimBodyPitch *
+        gPlayerProcedural.torsoAimPitchStrength * adsPose.blend;
+    const float adsArmYaw = lookYawRelDeg *
+        gPlayerProcedural.armAimYawStrength * adsPose.blend;
+    const float adsArmPitch = aimBodyPitch *
+        gPlayerProcedural.armAimPitchStrength * adsPose.blend;
+    const float adsHeadPitch = aimBodyPitch *
+        gPlayerProcedural.armAimPitchStrength * adsPose.blend;
+    const float adsHeadTilt = -8.0f * adsPose.blend;
+
+    // Mode 2 limb tether (2026-11-26). The global mode owns the tether so no
+    // per-clip root mode can let a limb escape during normal play.
+    const bool tetherActive = animationRootTranslationMode() == 2;
+    bool tetherDiag = false;
+    if (tetherActive && !username.empty() &&
+        animationTetherDiagnosticActor() == username) {
+        const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        static std::int64_t lastTetherLogMs = 0;
+        if (nowMs - lastTetherLogMs >= 1000) {
+            lastTetherLogMs = nowMs;
+            tetherDiag = true;
+        }
+    }
+    double tetherMaxOut = 0.0;
+    double tetherMaxBudget = 0.0;
+    int tetherOverBudget = 0;
+
     // === PERFECT POSE GENERATION ===
     for (PhysicalBodyPart& part : physicalBody.parts)
     {
@@ -1303,12 +1417,11 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             }
             const AnimOverlayResult* overlay = animOverlay.find(part.name);
             if (partAllowed && overlay) {
-                const int rootMode = activeClip && activeClip->rootTranslationMode >= 0
-                    ? activeClip->rootTranslationMode : animSettings.rootTranslationMode;
                 const float rootScale = activeClip
                     ? activeClip->rootTranslationScale : 1.0f;
-                target.translation = rootMode == 2
-                    ? glm::vec3(0.0f) : overlay->translation * rootScale;
+                // The old mode 2 zeroed this. Mode 2 now keeps the translation
+                // and lets the final tether below saturate it smoothly.
+                target.translation = overlay->translation * rootScale;
                 target.rotationEuler = overlay->rotation;
                 target.scale = overlay->scale;
             }
@@ -1421,6 +1534,45 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             }
         }
 
+        if (adsPose.blend > 0.001f && !meleeExclusivePose) {
+            if (part.name == "torso") {
+                target.rotationEuler.z += adsTorsoYaw;
+                target.rotationEuler.x += adsTorsoPitch;
+            } else if (part.name == "head") {
+                target.rotationEuler.x += adsHeadPitch;
+                target.rotationEuler.z += adsHeadTilt;
+            } else if (part.name == "leftArm" || part.name == "rightArm") {
+                target.rotationEuler.z += adsArmYaw;
+                target.rotationEuler.x += adsArmPitch;
+            }
+        }
+
+        // Mode 2 tether: apply after every translation layer so the weapon,
+        // reload, freeze, dash and melee poses cannot push the limb away.
+        if (tetherActive || (activeClip && activeClip->rootTranslationMode == 2)) {
+            const float budget = animationTetherBudget(part.name);
+            const float rawLen = glm::length(target.translation);
+            target.translation = softTetherTranslation(target.translation, budget);
+            const float outLen = glm::length(target.translation);
+            if (tetherDiag) {
+                const bool engaged = rawLen > budget * 1.05f;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "anim.tether", username,
+                    "limb translation tethered to the body", 0,
+                    nlohmann::json{
+                        {"actor", username}, {"part", part.name},
+                        {"raw_len", rawLen}, {"out_len", outLen},
+                        {"budget", budget}, {"engaged", engaged},
+                        {"mode", 2}});
+                tetherMaxOut = std::max(tetherMaxOut,
+                                        static_cast<double>(outLen));
+                tetherMaxBudget = std::max(tetherMaxBudget,
+                                           static_cast<double>(budget));
+                if (outLen > budget * 1.05f) ++tetherOverBudget;
+            }
+        }
+
         // Store the clean perfect pose (exact JSON target, no smoothing)
         part.perfectPose = target;
 
@@ -1477,6 +1629,59 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
+    // ADS pose evidence: one event at each state change and a bounded steady
+    // heartbeat while blending in/out. Distances are diagnostics only; the
+    // damage authority is unchanged.
+    {
+        const uint64_t nowEmitMs = nowMs();
+        const bool stateChanged = adsWanted != adsPose.lastWanted ||
+            std::fabs(adsPose.blend - adsPose.lastEmitBlend) > 0.05f ||
+            adsPose.lastWeapon != weaponId;
+        if ((adsPose.blend > 0.001f || adsPose.lastWanted) &&
+            (stateChanged || nowEmitMs - adsPose.lastEmitMs >= 500)) {
+            glm::vec3 muzzleWorld = glm::vec3(
+                weaponModelTransform * glm::vec4(weaponMuzzleLocal, 1.0f));
+            const glm::vec3 gripWorld = glm::vec3(
+                weaponModelTransform * glm::vec4(weaponGripLocal, 1.0f));
+            const glm::vec3 rightHand = bodyPartHandWorld(*this, "rightArm");
+            const glm::vec3 leftHand = bodyPartHandWorld(*this, "leftArm");
+            float sightAlignment = -1.0f;
+            const glm::vec3 camForwardN = glm::length(camForward) > 1e-5f
+                ? glm::normalize(camForward) : glm::vec3(0.0f);
+            if (glm::length(weaponMuzzleLocal) > 1e-4f &&
+                glm::length(camForwardN) > 0.5f) {
+                const glm::vec3 toMuzzle = muzzleWorld - camPos;
+                const float along = glm::max(0.0f, glm::dot(toMuzzle, camForwardN));
+                const glm::vec3 closest = camPos + camForwardN * along;
+                sightAlignment = glm::length(muzzleWorld - closest);
+            }
+            const float rightGrip = glm::length(rightHand - gripWorld);
+            const float leftForegrip = pointSegmentDistance(
+                leftHand, gripWorld, muzzleWorld);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "weapon.ads.pose", username,
+                "ADS body gesture blend and sight/arm alignment", 0,
+                nlohmann::json{
+                    {"actor", username}, {"avatar", avatarName()},
+                    {"weapon", weaponId}, {"ads_requested", adsWanted},
+                    {"blend", adsPose.blend},
+                    {"blend_seconds", adsBlendSeconds},
+                    {"blend_rate", adsRate},
+                    {"sight_alignment_m", sightAlignment},
+                    {"right_hand_grip_m", rightGrip},
+                    {"left_hand_foregrip_m", leftForegrip},
+                    {"torso_yaw_deg", adsTorsoYaw},
+                    {"torso_pitch_deg", adsTorsoPitch},
+                    {"head_tilt_deg", adsHeadTilt},
+                    {"bodycam_smoothing", true}});
+            adsPose.lastEmitMs = nowEmitMs;
+            adsPose.lastEmitBlend = adsPose.blend;
+            adsPose.lastWanted = adsWanted;
+            adsPose.lastWeapon = weaponId;
+        }
+    }
+
     // Render-only rig parts (wings/stinger/tail): animated by the same clip
     // overlay, drawn by the renderer, never simulated.
     for (PhysicalBodyPart& part : physicalBody.extraParts)
@@ -1490,6 +1695,29 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             target.rotationEuler = overlay->rotation;
             target.scale = overlay->scale;
         }
+        if (tetherActive || (activeClip && activeClip->rootTranslationMode == 2)) {
+            const float budget = animationTetherBudget(part.name);
+            const float rawLen = glm::length(target.translation);
+            target.translation = softTetherTranslation(target.translation, budget);
+            const float outLen = glm::length(target.translation);
+            if (tetherDiag) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "anim.tether", username,
+                    "render-only limb translation tethered to the body", 0,
+                    nlohmann::json{
+                        {"actor", username}, {"part", part.name},
+                        {"raw_len", rawLen}, {"out_len", outLen},
+                        {"budget", budget},
+                        {"engaged", rawLen > budget * 1.05f},
+                        {"mode", 2}, {"render_only", true}});
+                tetherMaxOut = std::max(tetherMaxOut,
+                                        static_cast<double>(outLen));
+                tetherMaxBudget = std::max(tetherMaxBudget,
+                                           static_cast<double>(budget));
+                if (outLen > budget * 1.05f) ++tetherOverBudget;
+            }
+        }
         part.perfectPose = target;
         part.pose.translation =
             springVec3(part.translationSpring, target.translation, 90.0f, 16.0f, dt);
@@ -1500,6 +1728,20 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         const glm::mat4 restM = perfectPoseSkeleton.restLocalTransforms[part.nodeIndex];
         perfectPoseSkeleton.nodes[part.nodeIndex].localTransform =
             restM * poseMatrix(part.pose);
+    }
+
+    if (tetherDiag) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "anim.tether.verdict", username,
+            "limb tether budget verdict", 0,
+            nlohmann::json{
+                {"actor", username}, {"mode", 2},
+                {"max_out_len", tetherMaxOut},
+                {"max_budget", tetherMaxBudget},
+                {"over_budget_count", tetherOverBudget},
+                {"matches", tetherOverBudget == 0 &&
+                            tetherMaxOut <= tetherMaxBudget * 1.05}});
     }
 
     if (DebugConfig::DEBUG_ANIMATION) {

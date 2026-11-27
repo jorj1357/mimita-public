@@ -15,6 +15,7 @@
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "actor/player-ai.h"
+#include "vehicles/vehicle-system.h"
 #include <cstdint>
 #include <cstdio>
 #include <chrono>
@@ -128,6 +129,12 @@ void logInputState(Engine& engine, InputCommandSystem& cmd) {
             {"d", InputRouter::keyDown(GLFW_KEY_D)},
             {"escape", InputRouter::keyDown(GLFW_KEY_ESCAPE)},
             {"grave", InputRouter::keyDown(GLFW_KEY_GRAVE_ACCENT)},
+            {"local_vehicle_profile", [&] {
+                 const uint32_t id = VehicleSystem::instance().localVehicleId();
+                 const VehicleState* vs = id ? VehicleSystem::instance().find(id)
+                                             : nullptr;
+                 return vs ? vs->profileId : std::string{};
+             }()},
             {"walkforward_held", cmd.getState("walkforward").held},
             {"walkback_held", cmd.getState("walkback").held},
             {"walkleft_held", cmd.getState("walkleft").held},

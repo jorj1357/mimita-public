@@ -1,4 +1,5 @@
 // 07 19 2026 1030
+// build-cache recovery 2026-11-27: force this TU back into the object cache.
 /* purpose
 * Client-side CollisionWorldView adapter implementation.
 * Queries world collision chunks (same spatial grid as the server adapter).

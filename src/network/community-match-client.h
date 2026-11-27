@@ -57,6 +57,10 @@ public:
     int goal() const { return mGoal; }
     int redScore() const { return mRedScore; }
     int blueScore() const { return mBlueScore; }
+    // Authoritative arena score pair from DuelStatePacket (blue, orange).
+    // Separate from the TDM kill counters above.
+    int arenaScoreA() const { return mArenaScoreA; }
+    int arenaScoreB() const { return mArenaScoreB; }
     float cameraFov() const { return mCameraFov; }
     bool forceFirstPerson() const { return mForceFirstPerson; }
     // ── Round-based match fields ────────────────────────────────────
@@ -239,6 +243,8 @@ private:
     int mGoal = 0;
     int mRedScore = 0;
     int mBlueScore = 0;
+    int mArenaScoreA = 0;
+    int mArenaScoreB = 0;
     int mLocalScore = 0;
     uint32_t mMatchId = 0;
     uint32_t mStateVersion = 0;

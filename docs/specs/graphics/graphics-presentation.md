@@ -238,3 +238,23 @@ but the issue is like
 everuthing else needs to work too
 not just this 
 ```
+
+## 2026-11-27 crosshair HUD space and outline pose source
+
+- **Fullscreen 6 HUD and crosshair:** modes 5/6 compose the world, GUI, HUD, and
+  2D crosshair at exactly 1024x768 and stretch the complete image
+  (`graphics-resolution.md`). The gameplay crosshair therefore uses the
+  1024x768 scene HUD space and is drawn at that resolution, so it is stretched
+  with everything else. The crosshair position follows the active mode rule:
+  `aim.mode=physical` draws it at the projected physical weapon aim point
+  (`weapons.mPhysicalAimPoint`), otherwise it is centred. Modes 0-4 keep the HUD
+  at output resolution and keep the physical-aim crosshair at output scale.
+- **Outline pose:** an actor outline must use the same render pose as the body.
+  The combined all-skin body path and the per-part/outline path both call
+  `playerRenderPartTransform()` (previous→current at `animationRenderAlpha()`).
+  A combined path that uses raw `part.worldTransform` makes the outline trail
+  the body by one interpolation fraction, which reads as tick-rate jitter.
+- **Diagnostics:** `hud.crosshair.center`, `hud.crosshair.verdict`,
+  `player_visuals.outline_pose`, and `player_visuals.outline_pose_verdict`.
+  `player_combined_pose <0|1>` is a dev-only A/B switch; 1 is the production
+  path.

@@ -22,12 +22,14 @@ Agents may edit and inspect the shared checkout, but must not invoke a compiler,
 only on disjoint files; coordinate ownership before editing. The root dev-loop
 remains the only build authority.
 
-Agents may request builds and isolated test runs through the root dev-loop
-without a human approval override. Every request records the agent, task,
-permit, build ID, and test run. One EXE build runs at a time. Candidate
-game-DLL builds may be requested as often as needed and run concurrently only
-within configured CPU and memory limits. They must not overwrite the normal
-published `build/game/current.json` or `ready.json`.
+Agents may request builds and isolated test runs through the root dev-loop, but
+an agent-requested build needs an approved coordination build request first
+(see "Build approval protocol"). Every request records the agent, task, permit,
+build ID, and test run. One EXE build runs at a time. Candidate game-DLL builds
+use the same approval and run concurrently only when an approved preview
+explicitly permits a second build within configured CPU and memory limits. They
+must not overwrite the normal published `build/game/current.json` or
+`ready.json`.
 
 Isolated test runs pin one EXE artifact and one game-DLL generation or explicit
 DLL path. They own separate processes, ports, command queues, manifests, and
@@ -43,15 +45,17 @@ changes the project policy and the CLI guard is deliberately revised.
 
 ## Mode 3 — batched coordinated builds (active default)
 
-**Status: active default since 2026-11-23, with manual readiness confirmation.**
+**Status: active default since 2026-11-23, with approval-gated manual sealing.**
 The root dev-loop records saved compiler inputs in a pending batch and does not
 start compilation on save. The root coordinator confirms that active
-compiler-input owners are ready, then seals the batch with
-`python devscripts/dev-loop.py --request batch-build`. An explicit
-`--request build` or `--request game-dll` also seals a pending batch. The current
-dev-loop does not enforce per-agent ready flags or readiness timeouts; that is
-follow-up coordination work, not a guarantee of this initial switch. Mode 2
-lanes remain retired.
+compiler-input owners are ready and that a build request is approved, then seals
+the batch with `python devscripts/dev-loop.py --request batch-build` or builds
+through the approval-gated `--request agent-build --build-request <id>`. An
+explicit `--request build` or `--request game-dll` also seals a pending batch and
+is a build-owner/human action. The current dev-loop enforces `approved` status
+for `agent-build`; it does not yet enforce per-agent ready flags or an approval
+token on `batch-build`, so those remain policy obligations until the follow-up
+guard lands. Mode 2 lanes remain retired.
 
 ### What we want
 
@@ -105,18 +109,92 @@ pressure, and no build competing with the tests it is supposed to enable.
 
 1. **Edit.** Agents edit disjoint files. Saves update the source generation and
    pending batch status only; no native build is queued.
-2. **Ready and seal.** Compiler-input owners coordinate readiness. The root
-   coordinator runs `python devscripts/dev-loop.py --request batch-build`, which
-   records and seals the current generation. Saves after sealing join the next
-   pending batch.
-3. **Build.** The root dev-loop runs one bounded build wave for that generation
-   and target set, retaining the last-good artifact on failure.
+2. **Request and approve.** An agent files a durable build request, the rotating
+   build owner (or two non-requester peers when no owner is set) approves it, and
+   the requester posts the request ID plus expected duration. Silence has a
+   bounded timeout fallback (see "Build approval protocol").
+3. **Build.** The approved request builds through
+   `python devscripts/dev-loop.py --request agent-build --build-request <id>`.
+   The build owner/human may instead seal the batch once with
+   `--request batch-build`; never start a second build while one request is
+   approved, queued, or building.
 4. **Drain.** The sealed batch completes and its owned compiler/linker
    processes exit before proof runs start.
-5. **Test.** Each agent launches or reloads its own runtime pinned to the new
+5. **Postmortem.** Read `game-generation.ready.postmortem`, append the largest
+   measured cause and next action to the issue, and act on it before the next
+   request.
+6. **Test.** Each agent launches or reloads its own runtime pinned to the new
    generation, exercises the behavior, and captures that run's `events.jsonl`.
-6. **Repeat.** Unproven edits return to step 1; proven agents exit. The root
-   coordinator seals the next ready batch.
+7. **Repeat.** Unproven edits return to step 1; proven agents exit. The build
+   owner approves the next ready request.
+
+## Build approval protocol (2026-11-27)
+
+Purpose: exactly one shared build window at a time, no unapproved compiler
+start, and the smallest necessary number of builds. Approval is a coordination
+gate, not a human sign-off for every routine change.
+
+1. **Request.** Run
+   `python devscripts/agent-coord.py build request --kind integration
+   --paths <changed paths> --issue <id> [--priority high]`. The requester posts
+   the request ID, changed paths, reason, expected build seconds, and current
+   resource state on the issue/board.
+2. **Approve.** The rotating build owner
+   (`agent-coord.py build owner`) approves with
+   `agent-coord.py build approve <request>`. When no owner is set, two active
+   agents that are not the requester must confirm on the issue/board and at
+   least one records the approval. A requester never self-approves; if the
+   requester is the build owner, a different agent approves.
+3. **Build.** Use
+   `python devscripts/dev-loop.py --request agent-build --build-request <request>`.
+   The dev-loop checks `status=approved` and rejects unknown or unapproved
+   requests. This is the default agent build path.
+4. **Seal instead of queueing more.** `--request batch-build` and
+   `--request build|game-dll` are build-owner/human seal actions. They are
+   permitted only after an approved request is recorded, and only once for that
+   request. Do not seal a second time to "retry" without a new approved request.
+5. **Single-flight.** While a request is approved, queued, or building, no
+   second build request may be approved. New changes join the pending batch or
+   wait; amend the existing request instead of opening a duplicate.
+6. **Timeout fallback.** If no owner or peer responds within 5 minutes, post one
+   final notice. After 10 minutes of silence, with no objection, halt/freeze, or
+   active/approved build, the requester may self-approve and must record
+   `approval=timeout` with the waited seconds. A timeout never preempts an
+   active or already-approved build and does not override a halt or freeze.
+7. **Postmortem.** After publish or failure, read
+   `game-generation.ready.postmortem`; append the largest measured cause and
+   the next action to the issue before requesting the next build.
+
+Implementation status: `agent-build` already enforces `approved`. The unguarded
+`batch-build`, `build`, and `game-dll` commands are restricted by this policy
+now; making them require `--build-request` or a minted owner token is follow-up
+work, not a current guarantee.
+
+## Better build coordination — TODO proposals (2026-11-27)
+
+These proposals target fewer, cheaper builds without blocking progress.
+
+- **Merge-queue token.** Mint one build token per approved request; `batch-build`
+  without a valid token is rejected. One token is valid for one attempt and
+  expires back to the queue instead of allowing a retry loop.
+- **Fixed build windows.** Agree two or three windows per hour (for example
+  :00 and :30). Agents target a window; a window with no ready change is
+  skipped. Predictable bursts are cheaper than ad-hoc builds.
+- **Change-value gate.** Build only when a change affects behavior or unblocks
+  proof. Docs/config-only changes and proven no-op reverts should not consume a
+  build (the dev-loop already filters fully reverted paths).
+- **Coalesce by path set.** Deduplicate requests that touch the same files into
+  one integration request with multiple owners instead of serial builds.
+- **Resource admission.** Estimate build RSS/CPU from the postmortem and reserve
+  memory for active pinned runtimes; deny approval when the host is above the
+  reserve.
+- **Quiet-window acks.** Let active compiler-input owners pre-register "no
+  changes this window" so the coordinator can seal immediately without polling.
+- **Preview only when needed.** Use preview builds for isolated A/B work while
+  integration is broken; otherwise test the last integration generation.
+- **Postmortem-driven tuning.** Act on the slowest TU, header fanout, and queue
+  wait from `game-generation.ready.postmortem` before adding another build;
+  split or reduce the measured hot spot first.
 
 ### Invariants
 
@@ -167,6 +245,8 @@ Mode 1 baseline with matched workloads:
 - How is build ordering handled when one agent's test is much longer than the
   others?
 - Does a max wait or human override force a build when someone is stuck?
+  **Resolved as policy 2026-11-27:** the 5/10-minute timeout approval in the
+  Build approval protocol; the hard dev-loop guard is still TODO.
 - What numeric thresholds define "negligible" between-build pressure?
 - Does batch mode also apply to a lone human editing, or only to concurrent
   multi-agent sessions?

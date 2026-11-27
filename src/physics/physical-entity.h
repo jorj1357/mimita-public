@@ -144,6 +144,14 @@ struct PhysicalEntity {
     // entity, used to delete small fragments that have been undisturbed.
     uint64_t lastInteractionTick = 0;
     uint64_t lastPlayerPushTick = 0;
+    // Network id of the last vehicle chassis that touched this entity. The
+    // arena scorer names the car that last played the ball; after a shot the
+    // ball travels several metres before it crosses the line, so proximity at
+    // the crossing names nobody.
+    uint32_t lastTouchedVehicleNetworkId = 0;
+    // Height of this entity when that touch happened. A ball played above
+    // kAerialBallHeightM was an aerial, which the goal event reports.
+    float lastTouchedHeightM = 0.0f;
     std::vector<CollisionTriangle> localTriangles;   // entity-local
     uint32_t materialId = 0;
     std::string modelPath;

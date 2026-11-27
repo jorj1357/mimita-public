@@ -752,6 +752,28 @@ void registerVehicleCommands()
     });
 
     Terminal::instance().registerCommand({
+        "hud_speed",
+        "Show or hide the km/h and rpm readout (default off)",
+        "hud_speed [on|off]",
+        [](const std::vector<std::string>& args) {
+            VehicleSystem& vehicles = VehicleSystem::instance();
+            const bool on = args.empty() ? !vehicles.hudSpeedEnabled()
+                                         : (args[0] == "on");
+            vehicles.setHudSpeedEnabled(on);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "vehicle.preference", "vehicle",
+                "hud speed readout toggled", 0,
+                {{"preference", "hud_speed"},
+                 {"enabled", on},
+                 {"default", VehicleSystem::defaultHudSpeed()}},
+                __FILE__, __LINE__, __func__);
+            Terminal::instance().addLog(std::string("[VEHICLE] hud_speed ") +
+                                        (on ? "on" : "off"));
+        }
+    });
+
+    Terminal::instance().registerCommand({
         "vehicle_exit_prompt",
         "Show or hide the enter/exit vehicle prompt (default off; F still exits)",
         "vehicle_exit_prompt [on|off]",
@@ -780,7 +802,8 @@ void registerVehicleCommands()
         StructuredCategory::General, StructuredLevel::Important,
         "vehicle.preferences", "vehicle",
         "presentation preference defaults", 0,
-        {{"hud_car_assist", VehicleSystem::defaultHudCarAssist()},
+        {{"hud_speed", VehicleSystem::defaultHudSpeed()},
+         {"hud_car_assist", VehicleSystem::defaultHudCarAssist()},
          {"vehicle_exit_prompt", VehicleSystem::defaultExitPrompt()},
          {"exit_key", "F"}},
         __FILE__, __LINE__, __func__);

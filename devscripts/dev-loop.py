@@ -3292,6 +3292,7 @@ class DevLoop:
                  "no_op": bool(result.get("no_op")),
                  "duration_seconds": self.last_game_build_duration_seconds,
                  "worker_total_seconds": result.get("worker_total_seconds"),
+                 "postmortem": result.get("postmortem") or {},
                  "request_ids": request_ids,
                  "notes": result.get("notes") or [],
                  "changed_paths": result.get("changed_paths") or [],
@@ -7678,13 +7679,14 @@ def run_dashboard(args: argparse.Namespace) -> int:
         return request_daemon_status(current, timeout=0.25) if isinstance(current, dict) and current else None
 
     checkout_states: dict[str, dict] = {"main": current or {}}
+    daemon_inventory_cache = {"expires_at": 0.0, "pids": None, "error": ""}
 
-    def collect_checkout_states() -> list[dict]:
+    def collect_checkout_states(main_state: dict | None = None) -> list[dict]:
         """Read the coordinator and lane snapshots without waking lane daemons."""
         nonlocal current
         prior = current if isinstance(current, dict) else {}
-        current = ((request_daemon_status(prior, timeout=0.25) if prior else None)
-                   or read_current_run() or prior)
+        current = (main_state if isinstance(main_state, dict)
+                   else read_current_run() or prior)
         checkout_states.clear()
         checkout_states["main"] = current
         rows = [{"checkout_id": "main", "name": "Main checkout",
@@ -7734,18 +7736,24 @@ def run_dashboard(args: argparse.Namespace) -> int:
             from dev_loop import gui as dev_loop_gui
             if dev_loop_gui.available():
                 def gui_status():
-                    latest = snapshot() or current or {}
-                    checkouts = collect_checkout_states()
-                    try:
-                        daemon_pids = sorted({
-                            int(item.get("pid") or 0)
-                            for item in dev_loop_process_inventory(ROOT)
-                            if int(item.get("pid") or 0) > 0
-                        })
-                        daemon_inventory_error = ""
-                    except (OSError, RuntimeError) as error:
-                        daemon_pids = None
-                        daemon_inventory_error = str(error)
+                    latest = snapshot()
+                    checkouts = collect_checkout_states(latest)
+                    latest = latest or current or {}
+                    now = time.monotonic()
+                    if now >= daemon_inventory_cache["expires_at"]:
+                        try:
+                            daemon_inventory_cache["pids"] = sorted({
+                                int(item.get("pid") or 0)
+                                for item in dev_loop_process_inventory(ROOT)
+                                if int(item.get("pid") or 0) > 0
+                            })
+                            daemon_inventory_cache["error"] = ""
+                        except (OSError, RuntimeError) as error:
+                            daemon_inventory_cache["pids"] = None
+                            daemon_inventory_cache["error"] = str(error)
+                        daemon_inventory_cache["expires_at"] = now + 2.0
+                    daemon_pids = daemon_inventory_cache["pids"]
+                    daemon_inventory_error = daemon_inventory_cache["error"]
                     identity = latest.get("build_identity") or {}
                     scenario = _scenario_state(str(latest.get("events_path") or ""))
                     scenario["build_id"] = scenario.get("build_id") or identity.get("build_id") or "—"

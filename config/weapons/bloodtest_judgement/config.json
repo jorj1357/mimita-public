@@ -169,7 +169,8 @@
     "enabled": true,
     "position": [0.0, 0.015, -0.005],
     "rotation_degrees": [0.0, 0.0, 0.0],
-    "blend_rate": 18.0
+    "blend_rate": 18.0,
+    "blend_seconds": 0.33
   },
   "viewmodel": {
     "enabled": true,

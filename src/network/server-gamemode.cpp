@@ -44,6 +44,7 @@
 #include "gamemode/match-roles.h"
 #include "gamemode/map-config.h"
 #include "map/map-authored-geometry.h"
+#include "map/authored-block-rebuild.h"
 #include "gamemode/monster-pools.h"
 #include "gamemode/mode-pack-registry.h"
 #include "gamemode/deterministic-rng.h"
@@ -219,6 +220,7 @@ void serverCaptureAuthoredBaseWorld(const HeadlessWorld& glbWorld,
 {
     ServerGamemodeState& d = serverGamemodeState();
     serverCancelAuthoredGeometryRebuild();
+    authoredBlockAuthorityReset();
     d.authoredRebuildInFlight = false;
     d.authoredRebuildInFlightSignature = 0;
     d.authoredRebuildInFlightMapVersion = 0;
@@ -253,10 +255,12 @@ void serverCaptureAuthoredBaseWorld(const HeadlessWorld& glbWorld,
 void serverMarkAuthoredGeometryApplied()
 {
     ServerGamemodeState& d = serverGamemodeState();
-    d.appliedGeometrySignature =
-        authoredGeometrySignatureLive(MapConfigRegistry::instance().current());
+    const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
+    d.appliedGeometrySignature = authoredGeometrySignatureLive(config);
     d.geometryRebuildPending = false;
     d.pendingGeometrySignature = 0;
+    authoredBlockAuthorityMarkApplied(
+        authoredNonBlockGeometrySignature(config), nowMs());
 }
 
 void serverSeedAuthoredCache(const HeadlessWorld& authoredWorld)
@@ -8437,6 +8441,106 @@ const HeadlessGLBObject* findGLBObjectById(const HeadlessWorld& world,
     return nullptr;
 }
 
+uint64_t& serverAuthoredGeometryRetryAtMs()
+{
+    static uint64_t retryAtMs = 0;
+    return retryAtMs;
+}
+
+void markAuthoredParityForAppliedSignature(uint64_t appliedSignature)
+{
+    const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
+    if (appliedSignature != 0 &&
+        appliedSignature == authoredGeometrySignatureLive(config)) {
+        authoredBlockAuthorityMarkApplied(
+            authoredNonBlockGeometrySignature(config), nowMs());
+    } else {
+        // The registry moved while the rebuild was running; the next signature
+        // change must go through a full rebuild to re-establish the baseline.
+        authoredBlockAuthorityReset();
+    }
+}
+
+// Apply a block-only authored edit to the live authoritative collision and its
+// NPC mirror in place. The caller has already verified that the change is
+// block-only and that no destructible cut is active.
+bool applyAuthoredBlockDeltaNow(
+    SOCKET sock, ServerGamemodeState& d,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    HeadlessWorld& world, World& npcWorld, uint64_t signature,
+    uint64_t nonBlockSignature, uint32_t tick, uint64_t& totalPacketsOut)
+{
+    const auto started = std::chrono::steady_clock::now();
+    const bool allowStreamedFootprint =
+        GamemodeRegistry::instance().get(d.matchMode).worldStreaming.enabled;
+    const auto authoredStart = std::chrono::steady_clock::now();
+    if (!rebuildAuthoredBlocksForAuthority(world, d.mapId,
+                                           allowStreamedFootprint)) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "map.geometry.block-delta.failed", d.mapId,
+            "block-only authored rebuild failed; old authoritative world kept",
+            tick,
+            nlohmann::json{{"map", d.mapId},
+                           {"signature", signature},
+                           {"raw_base", world.rawBaseValid}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return false;
+    }
+    const double authoredMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - authoredStart).count();
+
+    World candidateNpc;
+    const std::vector<CollisionTriangle> noDestructibleSurfaces;
+    const auto npcStart = std::chrono::steady_clock::now();
+    if (!buildNpcWorldCollisionDetached(
+            candidateNpc, world, noDestructibleSurfaces,
+            /*buildRecast=*/false, NavigationAgentProfile{}, nullptr)) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "map.geometry.block-delta.failed", d.mapId,
+            "NPC collision mirror rebuild failed; old authoritative world kept",
+            tick,
+            nlohmann::json{{"map", d.mapId}, {"signature", signature}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return false;
+    }
+    const double npcMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - npcStart).count();
+
+    clearDeferredServerWorldImpacts(world);
+    std::swap(npcWorld, candidateNpc);
+    serverInfiniteCollisionReset();
+
+    d.appliedGeometrySignature = signature;
+    d.pendingGeometrySignature = 0;
+    d.geometryRebuildPending = false;
+    ++d.geometryRevision;
+    authoredBlockAuthorityMarkApplied(nonBlockSignature, nowMs());
+
+    const double durationMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map.geometry.block-delta.applied", d.mapId,
+        "authored block edit applied to authoritative collision in place",
+        tick,
+        nlohmann::json{{"map", d.mapId},
+                       {"signature", signature},
+                       {"geometry_revision", d.geometryRevision},
+                       {"config_revision", MapConfigRegistry::instance().revision()},
+                       {"triangles", world.triangles.size()},
+                       {"raw_triangles", world.rawTriangles.size()},
+                       {"npc_triangles", npcWorld.collisionMesh.triangles.size()},
+                       {"authored_ms", authoredMs},
+                       {"npc_ms", npcMs},
+                       {"duration_ms", durationMs}},
+        __FILE__, __LINE__, __FUNCTION__);
+
+    serverBroadcastMapConfigSnapshot(sock, players, totalPacketsOut);
+    return true;
+}
+
 } // namespace
 
 bool serverQueueAuthoredGeometryRebuild(
@@ -8567,6 +8671,7 @@ bool serverDrainAuthoredGeometryRebuild(
             nlohmann::json{{"signature", result->input.signature},
                            {"failure", result->failure}},
             __FILE__, __LINE__, __FUNCTION__);
+        serverAuthoredGeometryRetryAtMs() = nowMs() + 2000;
         d.geometryRebuildPending = false;
         d.pendingGeometrySignature = 0;
         return false;
@@ -8597,6 +8702,7 @@ bool serverDrainAuthoredGeometryRebuild(
     d.appliedGeometrySignature = result->input.signature;
     d.geometryRebuildPending = false;
     d.pendingGeometrySignature = 0;
+    markAuthoredParityForAppliedSignature(d.appliedGeometrySignature);
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "map.geometry.reload.applied", d.mapId,
@@ -8638,9 +8744,6 @@ bool rebuildServerAuthoredGeometry(SOCKET sock,
 {
     const auto start = std::chrono::steady_clock::now();
     auto reject = [&](const char* reason) {
-        d.appliedGeometrySignature = d.pendingGeometrySignature;
-        d.geometryRebuildPending = false;
-        d.pendingGeometrySignature = 0;
         StructuredLogger::instance().writeEvent(
             StructuredCategory::World, StructuredLevel::Errors,
             "map.geometry.reload.rejected", d.mapId,
@@ -8648,9 +8751,15 @@ bool rebuildServerAuthoredGeometry(SOCKET sock,
             tick,
             nlohmann::json{{"map", d.mapId},
                            {"reason", reason},
-                           {"signature", d.appliedGeometrySignature},
+                           {"pending", d.pendingGeometrySignature},
+                           {"applied", d.appliedGeometrySignature},
                            {"triangles", world.triangles.size()}},
             __FILE__, __LINE__, __FUNCTION__);
+        // Never claim a rejected signature was applied: that permanently
+        // desynchronizes editor rendering from authoritative collision.
+        serverAuthoredGeometryRetryAtMs() = nowMs() + 2000;
+        d.geometryRebuildPending = false;
+        d.pendingGeometrySignature = 0;
         return false;
     };
 
@@ -8777,6 +8886,7 @@ bool rebuildServerAuthoredGeometry(SOCKET sock,
     d.appliedGeometrySignature = d.pendingGeometrySignature;
     d.geometryRebuildPending = false;
     d.pendingGeometrySignature = 0;
+    markAuthoredParityForAppliedSignature(d.appliedGeometrySignature);
 
     const double durationMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - start).count();
@@ -8860,8 +8970,37 @@ void serverGamemodeTick(SOCKET sock,
     {
         const uint64_t signature =
             authoredGeometrySignatureLive(MapConfigRegistry::instance().current());
-        if (signature != d.appliedGeometrySignature &&
-            signature != d.pendingGeometrySignature) {
+        bool blockOnlyHandled = false;
+        if (signature != d.appliedGeometrySignature) {
+            const MapObjectiveConfig& liveConfig =
+                MapConfigRegistry::instance().current();
+            const uint64_t nonBlockSignature =
+                authoredNonBlockGeometrySignature(liveConfig);
+            const bool destructiblesIdle =
+                world.activeDestructibleNodes.empty() &&
+                world.rejectedDestructibleNodes.empty();
+            const bool staticWorld = liveConfig.worldMode.empty()
+                ? !liveConfig.generateWholeWorld
+                : liveConfig.worldMode == "static";
+            if (!d.authoredRebuildInFlight && destructiblesIdle && staticWorld &&
+                world.rawBaseValid &&
+                authoredBlockAuthorityCanApply(nonBlockSignature)) {
+                if (authoredBlockAuthorityThrottleAllows(mapPollNow)) {
+                    blockOnlyHandled = applyAuthoredBlockDeltaNow(
+                        sock, d, players, world, npcWorld, signature,
+                        nonBlockSignature, tick, totalPacketsOut);
+                } else {
+                    // Coalesce an editor drag burst; retry the newest
+                    // signature on a later tick instead of starting a
+                    // multi-second whole-world rebuild.
+                    blockOnlyHandled = true;
+                }
+            }
+        }
+        if (!blockOnlyHandled &&
+            signature != d.appliedGeometrySignature &&
+            signature != d.pendingGeometrySignature &&
+            mapPollNow >= serverAuthoredGeometryRetryAtMs()) {
             d.geometryRebuildPending = true;
             d.pendingGeometrySignature = signature;
             StructuredLogger::instance().writeEvent(
@@ -8876,7 +9015,8 @@ void serverGamemodeTick(SOCKET sock,
                                 MapConfigRegistry::instance().revision()}},
                 __FILE__, __LINE__, __FUNCTION__);
         }
-        if (d.geometryRebuildPending && !d.authoredRebuildInFlight)
+        if (!blockOnlyHandled && d.geometryRebuildPending &&
+            !d.authoredRebuildInFlight)
             serverQueueAuthoredGeometryRebuild(d, world, d.mapId, signature,
                                                 tick);
     }
@@ -11532,3 +11672,4 @@ void serverBombTagTick(SOCKET sock,
 }
 
 } // namespace MimitaNet
+// map-authored-parity: saved for batch build 2026-11-27T01:45Z

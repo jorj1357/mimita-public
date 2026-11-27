@@ -451,3 +451,55 @@ Bounded independent review appended to issue-503f3e410c01 (review id 446, 2026-1
 2) NEW STRONGEST PLAYER-MACE EVIDENCE (candidate, not final proof): logs/2026-11-25/20261125_184820/client-01/events-0014.jsonl contains 97 accepted Mace player->NPC contacts, 29 active at damage_multiplier 10.0 (damage 250..2484), 97/97 predicted==accepted, 29/29 active exact, 0 future_contact, arcade_mode=true 701/701. Caveat: the accepting server is a replacement process pid 7876 (loaded build/game/generation-642/game-g642.dll, startup badhouse/team_deathmatch) writing into client-01 while run.json pins server-01 pid 12632 (fun counter strike/dust2cyberiav4, build 2026-11-25T01:21:28Z). gen642 predates f9d94c5b. No white-viewmodel journal event exists.
 
 Smallest next check: one pinned gen654+ Arcade/Bloodtest run with player Mace, require 0 future_contact, >=1 active accepted with predicted==accepted parity, and a white-pose screenshot or tint event. Do you agree run 184820 is the right candidate pending a source-current rerun, or should it be discarded because the server identity does not match the pinned run? Please reply on issue-503f3e410c01.
+
+## Scheduled independent review
+
+### 2026-11-27T00:44:21.046Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-7f2f07acdcd8 after 807 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive)
+
+### 2026-11-27T01:12:59.378Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Read-only independent review at 2026-11-27T00:5xZ; no source edit, build, run, close, or fix claim. Prior review text (ids 52, 206, 300, 395, 446) is preserved (append-only).
+
+Scope: issue brief/readiness, proof status, linked artifacts, and the latest relevant journals since the 2026-11-25T22:35Z review.
+
+OBSERVED FACTS
+1. Readiness is 8/8, state=in_review, 3 tasks open. `proof status` is unchanged for the three tasks: arcade_no_weapon_world_collision (row 15), arcade_npc_melee_hit (16), mace_active_contact (17) each have status=runtime_proven with result=unproven, reason="", run_id=20261120_072010, game_generation=398, journal_path="", verified_utc="". `proof list --issue issue-503f3e410c01` still returns []. issue.related_build/related_run still cite the failed-before-logger gen398 runs.
+2. Source is CURRENT for the melee owner at commit 7176d28a (2026-11-26 16:37Z), the revision used by the new runs. weapon-viewmodel.cpp on disk = 3d1ef8c15b1bb75a6545cb91033f674d75da4067188b1cbeb3bb9a0a021a50cb = commit 7176d28a (clean, not in git status); melee-client.cpp 3da6e365, server-packet-handlers.cpp 8a10a34e, server-physical-contact-actors.cpp 95f66a22, config/weapons/mace/config.json 25ce619a all remain a065471f. server-players.cpp = 69e5b9d2 (51306c08) and physics-collision-glb-main.cpp = 0abedb32 (d651e133). The proof rows still record e5f0a2f5 (weapon-viewmodel, 1/4 stale), 182b68c3 (server-players, 2/2 stale) and 5b77a843 (physics-collision, 2/2 stale); `proof status` reports reason="" for all three.
+3. NEW player-Mace runtime on artifact build 2026-11-26T22:52:33.481041Z:cb72ee40 (EXE source revision 7176d28a, dirty worktree c2ccc4c7; loaded game DLL build\game\generation-742\game-g742.dll sha256 02bd9fa326519379e1a84c7307e7e42c0b0294b4d3eaef9c79b126b3f4b6be40, built 2026-11-26T23:23Z).
+   - run 20261127_000428, journal logs/2026-11-27/20261127_000428/client-01/events-0001.jsonl: 237 client melee contact_claim, 88 server accepted, 78 exact predicted==accepted. Mace accepted: 10 active (damage_multiplier 10.0, damage 250..2351) and 48 inactive; all 10 both-active claims are exact. ZERO future_contact. Rejects: out_of_reach 48, invalid_contact_bounds 13, friendly_fire 19, world_occluded 4, outside_claim_radius 3, target_generation_changed 1. arcade_mode=true in 644/644 sampled collision.capsule-world.solve. collision.arcade_pose_skipped 741, of which 383 have nonzero held-weapon parts. NPC->player server.damage.applied source=physical_contact 512; weapon.contact.result npc->player chainsaw 51, mace 8, swordsword 6.
+   - run 20261127_001718, journal logs/2026-11-27/20261127_001718/client-01/events.jsonl: 30 claims, 13 accepted, 12/13 exact; one accepted active Mace (contact_id 5, damage 2304, mult 10.0, server_action_elapsed 32, client_action_elapsed 20) and one inactive Mace; ZERO future_contact. arcade_mode=true 699/699. pose_skip 812, 421 nonzero. NPC->player physical_contact 107; weapon.contact.result npc->player mace 1, chainsaw 5, swordsword 7.
+   - In 000428 the 10 mismatch rows are all INACTIVE (mult 1.0) and the client predicted ~2x the server accepted (10 vs 5, 22 vs 11, 21 vs 11, 15 vs 8, ...); no active-pose mismatch.
+4. WHITE ACTIVE POSE STILL HAS NO JOURNAL PREDICATE. Source still sets mTint white when the pose action ends in `_active` (src/combat/weapon-viewmodel.cpp:270-276) and sets uUseColor/uColor white while maceActivePose (:693-698), but the only emission is a printf gated by DebugConfig::DEBUG_WEAPON_VIEWMODEL (:703-707). Zero `tint`/`viewmodel` events exist in either journal.
+5. RUN-IDENTITY GAP (new, precise). The accepted player-Mace events are emitted by CLIENT-SPAWNED GUI servers, not the run's pinned server-01. In 000428 the client (pid 24528) logged network.gui-server.launch -> server_pid 20596, map dust2cyberiav4/team_deathmatch; CIM shows 20596's parent is 24528, and 20596 is the accepting server. In 001718 the client (pid 29544) launched pid 4660 (port 53148) and then pid 30816 (port 49299); CIM shows 30816's parent is 29544. Both clients first join the dedicated server-01 127.0.0.1:60364/atdm (server_run_id 20261127_000428), disconnect with reason local_shutdown within ~3s, then join the client-spawned dust2cyberiav4 GUI server. The run's pinned dedicated server-01 (pid 11572, map atdm, "tdm npc elite") journal logs/2026-11-27/20261127_000428/server-01/events.jsonl has arcade_mode=true 1085/1085, pose_skip 1094 ALL zero-part, NPC->player physical_contact 0 (only npc->npc 1394), and weapon.contact.result only npc->npc (chainsaw 128, swordsword 52, mace 5) - it does not host the player-melee evidence. run.json names only server-01 (11572); run 001718 has no server-01 journal dir.
+6. Input source: melee.client.action events carry source="input", but .dev/agent-command-20261127_001718.jsonl and .dev/agent-command-20261127_000428.jsonl are 0 bytes and the launch was requested_by=dashboard (client args --unlock-cursor, visible window). Human vs synthetic input is not machine-recorded, so "human or scripted-human" is not proven either way.
+
+INFERENCE / UNCERTAINTY
+- This is the strongest source-current player-Mace evidence to date: on a build made after the current weapon-viewmodel commit, a Mace active pose produced server-accepted 10x damage (250..2351) with exact client/server prediction on all both-active contacts, zero future_contact rejects, and Arcade active in every sampled capsule solve. It substantially demonstrates mace_active_contact's damage/parity clause.
+- It still cannot be attached as acceptance proof because (a) the accepting server is a client-spawned GUI server on dust2cyberiav4, not the run's pinned dedicated server-01 on atdm, and run.json does not name the joined/validating server; (b) input is not proven human; (c) the white viewmodel has no machine-readable evidence; and (d) the proof rows remain unverified and stale-by-hash.
+- arcade_npc_melee_hit also has fresh support on the same build (512 NPC->player physical_contact plus 65 NPC->player weapon.contact.result in 000428; 107 + 13 in 001718, all under arcade_mode=true), but again from the client-spawned server.
+- arcade_no_weapon_world_collision now has nonzero-part pose-skip evidence on the current build (383/741; 421/812), but the pinned server-01 counter is still all-zero (0/1094); the source guard remains primary and its proof row is stale on 2/2 paths.
+- The 10 inactive 2x mismatches and the one active elapsed disagreement (client 20 vs server 32) indicate client/server sampling differences, not a multiplier error; outside the active-pose claim but noted.
+
+CONTRARY EVIDENCE
+- The pinned server-01 journal for the same run has zero NPC->player damage and zero nonzero-part pose skips, so if a reviewer treats the run's pinned server as authoritative, the NPC-melee and held-weapon-pose clauses are not demonstrated there.
+- No player-melee run exists on the currently published generation 748; evidence is on g742 (23:23Z), ~1.5h older, though after the melee source revision.
+- White active pose is still source-only.
+- Proof rows still display runtime_proven on the failed gen398 run and do not flag weapon-viewmodel/server-players/physics-collision hash drift.
+
+NEXT DISCRIMINATING CHECK (ordered)
+1. Re-run one pinned Arcade/NPC scenario through the root dev-loop WITHOUT the client launching its own GUI server (or update run.json to record the joined server pid/endpoint/map/generation), then repeat. Require the acceptance evidence in the run's pinned server journal, 0 future_contact, and >=1 accepted active Mace with predicted==accepted. This is the single check that converts fact 3 into attached proof.
+2. Prove the white pose: add the bounded tint-transition StructuredLogger event already proposed on issue-89efbbc86535 (pose_active, uUseColor, tint) and capture it at an accepted active tick; otherwise record explicit human visual acceptance for an active tick.
+3. Fix the 10 inactive 2x prediction mismatch and the active elapsed disagreement by comparing client melee.client.contact_claim directness/force/action_elapsed with the server accepted fields at those contact_ids; determine which side samples the wrong tick.
+4. Refresh or mark stale the three proof rows (weapon-viewmodel now differs, server-players 2/2 differs, physics-collision differs) and repoint related_build/related_run at the actual current-build run instead of gen398.
+5. Ask issue-adfeaafa1136's owner to re-validate/close: future_contact did not reproduce in either 2026-11-27 run (0 rejects).
+
+PROCESS REVIEW
+- Repeated evidence/identity gap confirmed for the third consecutive sweep, now with a sharper cause: the dev-loop client launches its own GUI server via network.gui-server.launch (different map/mode from the pinned server-01), and run.json records only the launched dedicated server. Proof-bearing gameplay lands in a client-spawned server that the run manifest never names. This is a distinct facet from the existing game_generation proposal; one proposal was appended to issue-b396205aaecf.
+- The white-pose evidence gap is unchanged and already proposed on issue-89efbbc86535, so no duplicate was filed.
+- Noted but out of scope: both dashboard-launched clients disconnected from the dedicated server-01 with reason local_shutdown within ~3s and re-hosted themselves; this may relate to issue-a5ca672b6628 (dev-loop launch reliability), but this read-only review did not investigate it.

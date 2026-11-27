@@ -465,3 +465,62 @@ Cold handoff
 - No source, build, runtime, or proof record was changed by this reviewer.
 
 Process review: recurring measurement/attribution gap, not a new connect defect. The dev-loop already separates requested stops (dev-loop.instance.stopped, e.g. 20261124_150432 restart-instance) from exits, but the stop-all/shutdown path only emits dev-loop.instance.exited and accepts any code without recording intent. That made a unique 0xC0000409 exit indistinguishable from an unexplained crash and required manual source reading to bound it. One concrete proposal with a measurable target and smallest experiment is appended to issue-91e3384b219b.
+
+## Scheduled independent review
+
+### 2026-11-26T23:29:25.862Z — dashboard-resource-gold-spec
+
+A bounded independent review was queued as wake wake-79ea1b90306d after 802 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive - new 2026-11-26 server snapshot-publish stall (140.9s) starves client -> truthful but misleading ReconnectFailed; arena1 vehicle_freeplay startup crash family unlinked; no fix claimed)
+
+### 2026-11-26T23:37:07.641Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Reviewer: issue-review-sweeper (independent, read-only; no source edit, build, runtime mutation, close, or fix claimed). This is the 6th independent review; all prior reviews above are preserved unchanged.
+
+Scope and readiness: readiness ready=true score=8 missing=[] state=in_review with the same 3 open tasks (new-mode-connect-crash-trace, welcome-delivery-trace, welcome-transport-label). `agent-coord proof list --issue issue-55bd775c8026` returns [] again: no proof record is linked to any task. No completion claim is supported. Inspected the retained 2026-11-26 run journals, the newly created 2026-11-26 crash artifacts, and run.json state. No compiler/build was invoked.
+
+Observed facts
+1. NEW 2026-11-26 server snapshot-publication stall producing a truthful-but-misleading Disconnected. Run 20261126_225234 (build 2026-11-26T22:52:33.481041Z:cb72ee40c66d4a4935d89c0d03431ff52d82369b2bbf7230c6c41067ed8d781c, mode vehicle_arena, map arena2, room C5V7MXD, server PID 15808, client PID 28676):
+   - Client connected: network.client.first-packet.received 22:52:40.278Z, join.accepted 22:52:40.278Z (player 1), then snapshot.applied every ~1s.
+   - Last applied snapshot: network.client.snapshot.applied at 22:52:57.757Z, snapshot_tick=server_tick=1220 (logs/2026-11-26/20261126_225234/client-01/events.jsonl).
+   - At 22:53:08.613Z the client scheduled reconnect with reason_code=health_lost, snapshot_age_ms=10002, last_heard_age_ms=5 (so non-snapshot packets still arrived). It ran attempts 1..10 every 6s; every attempt was accepted (client network.client.reconnect.accepted result=ok; server network.server.reconnect.accepted reason_code=current_token slot_state=held token_state=current), but no snapshot recovered.
+   - At 22:54:08.619Z the client reached terminal network.connection-state.changed Reconnecting->ReconnectFailed with notification "Server status: Disconnected — reconnect failed", while the same record set connected=true, packet_received_after_disconnect=true, last_heard_age_ms=41.
+   - Server side: network.server.snapshot.build / network.server.snapshot.send and network.metrics.window last emitted 22:52:57.755Z and did not emit again until 22:55:18.618Z — a 140.863s gap (measured by diffing consecutive build timestamps). During that gap the server kept performance.server-loop-window at ~60 Hz every ~1s, emitted thousands of vehicle.*/arena.ball.* events, logged 10 x network.join.stage reconnect_accept_send success, and server.process.heartbeat stayed alive. At 22:55:18.613Z the server emitted network.server.player.removed removal_reason=reconnect_grace_expired (silent_ms=70005), and the snapshot build/metrics stream resumed in the same 5ms window with players=0.
+   - The dev-loop journal for this run recorded no connection-failure event for the client (only a later dev-loop.game-build.failed at 22:55:24.149Z and a wait.issue-failed at 22:58:12.872Z); run.json shows client state=offline.
+
+2. NEW 2026-11-26 startup crash family in Vehicle Arena (Rocket League Free Play), not proven linked to the user's connect path. `.dev/crashes/20261126_061338/crash-2026-11-26_01-13-40-14276.txt`, `.dev/crashes/20261126_145453/crash-2026-11-26_09-54-59-2704.txt`, and `.dev/crashes/20261126_145549/crash-2026-11-26_09-55-49-10544.txt` + `...-09-56-12-12892.txt` are all ACCESS_VIOLATION (0xc0000005) labelled [server-start] mode=vehicle_freeplay map=arena1 with the identical stack: GetMimitaWorldRenderingModuleAPI+0x162e43, +0x162e9c, +0x15ff72, +0x163f1f, GetMimitaNetworkPolicyModuleAPI+0x19808d/+0x199d64, GetMimitaGameServerPolicyV1+0xdc6f, mimita.exe+0x356e3. All four are the same build 2026-11-26T06:10:41.962780Z:31b8690d2866363bc3918d3dbc50e15cdf660760f055a28838f0ddf22af2efe7 (run.json servers state=offline, roster_count=0). The matching run journals are not retained (only run.json remains in 061338/145453/145549), so whether these starts blocked a client from connecting is not proven.
+
+3. Prior anomalies did not recur in the retained 2026-11-26 evidence inspected: no 3221225477 access-violation client exit and no 3221226356/0xC0000409 exit was found. Several 2026-11-26 dev-loop.instance.exited rows carry exit_code=4294967295 (e.g. runs 20261126_184829, 185032, 185310, 200435) with crash_artifacts=[]; that is a distinct lifecycle observation, not shown to be a connect failure.
+
+Inference and uncertainty
+- The first missing transition in run 225234 is server-side, not client-side or datagram-delivery-side: the server snapshot publish stream stopped at 22:52:57.755Z while the simulation loop, gameplay, reconnect accept, and reliable packets continued. The client health timeout and reconnect loop are consequences. The terminal Disconnected is the client's truthful state given zero snapshots for 60s, but it misreports a link that was still carrying packets and whose slot the server kept held. This is the closest 2026-11-26 match to the user's "if it's not actually disconnected don't show disconnected" and to "start a mode and never connect".
+- Why the publish stream stopped is unknown. The gap starts before the client notices (22:52:57.755 vs 22:53:08.613) and ends exactly when the expired player slot is removed (22:55:18.613/618), so a per-player or publish-path coupling to the held slot is plausible but unproven; it could equally be a publish function that blocked and was released by the removal. The 3 performance.server-publish-breakdown rows in the tail of the gap show publish_us 105581-133046 and snapshot_build_send_us 97-122503, i.e. large but sub-second publishes, not the 141s span.
+- The arena1 vehicle_freeplay startup crash is a plausible cause of "start a mode and never connect" but cannot be attributed here: no matching journal, and it is map/mode-specific (arena1 vehicle_freeplay) rather than the dust2cyberiav4 TDM sequence in the report.
+
+Contrary evidence
+- Reconnect acceptance worked at the token layer: every 2026-11-26T22:53-22:54 attempt returned token_found/current_token/slot_state=held, so the Nov-21 slot-erase and token-loss hypotheses remain superseded and must not be re-cited.
+- In run 225234 the client had been Connected and applying snapshots for ~17s before the stall, so this is not a post-welcome first-packet delivery failure and not a connect-timeout label defect.
+- The server process did not crash and the main loop stayed ~60 Hz, so the 2026-11-24 worldgen/nav 44.7s main-thread stall and the 2026-11-22 hot-swap ACCESS_VIOLATION are different signatures, not this one.
+
+Next discriminating check (one, not performed by this reviewer)
+On a pinned root-dev-loop reproduction of run 20261126_225234 (vehicle_arena/arena2, one client), capture server-side owner evidence across the publish stall: per-tick performance.server-publish-breakdown (publish_us, snapshot_build_send_us, reliable_events_us), the exact branch decision that skips network.server.snapshot.build/send while a player slot exists, and the lock/queue state of the snapshot-send path at the start and end of the stall. Acceptance: exactly one of (i) publish is invoked but early-returns because the player's connection is considered not-ready/held (server publish gated by reconnect state), so the stream cannot resume until slot removal; or (ii) publish is not invoked / is blocked on a named lock or queue that player removal releases. Record which owner (server snapshot publish vs connection-health removal) must change. Only after that, verify the client HUD shows Loading/Reconnecting instead of Disconnected during a non-terminal reconnect.
+
+Cold handoff
+- Primary: logs/2026-11-26/20261126_225234/client-01/events.jsonl (last snapshot.applied 22:52:57.757Z; health_lost 22:53:08.613Z; terminal ReconnectFailed 22:54:08.619Z), logs/2026-11-26/20261126_225234/server-01/events.jsonl (snapshot.build/metrics.window gap 22:52:57.755Z->22:55:18.618Z; reconnect accepted each attempt; player.removed reconnect_grace_expired 22:55:18.613Z; publish-breakdown 22:55:09-22:55:17), logs/2026-11-26/20261126_225234/run.json, logs/2026-11-26/20261126_225234/dev-loop/events.jsonl.
+- Adjacent: .dev/crashes/20261126_{061338,145453,145549}/crash-*.txt (arena1 vehicle_freeplay startup ACCESS_VIOLATION, identical stack); matching run journals pruned.
+- No source, build, runtime, or proof record was changed by this reviewer.
+
+Process review: repeated evidence-discovery and evidence-retention gap. The 141s server snapshot-publish stall and its terminal client consequence were visible only by manually diffing event names across a 98MB server journal; the dev-loop recorded no connection-failure or first-missing-event artifact for run 225234. Separately, three of today's four crash artifacts have no retained journals. One concrete proposal with a measurable target and smallest experiment is appended to issue-cf9cd77eb056.
+
+## Review (addendum - corrects review 496 'NEW' label; crash family already recorded on issue-cf9cd77eb056 review 477)
+
+### 2026-11-26T23:37:54.948Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Review addendum (correction to review 496, same reviewer, read-only; no source/build/runtime change). After appending review 496 I checked the sibling issue's records and found issue-cf9cd77eb056 review id 477 (issue-review-sweeper, 2026-11-26T15:02:51.252Z) already documents the same 2026-11-26 arena1 vehicle_freeplay server-startup crash family for run 20261126_145549: server PID 10544 exit 3221225477, crash stack through GetMimitaGameServerPolicyV1+0xdc6f / world-rendering frames, and client PID 29616 never reached Connected (dev-loop.launch.stage client_connection=failed after 45047ms).
+
+Correction: the word NEW in item 2 of review 496 means newly inspected in this review, not first discovered. The crash family is already recorded and owned on issue-cf9cd77eb056 review 477 and should not be filed again as a new defect here. For run 145549 that review establishes the user-visible "start a mode and never connect" link I had marked unproven; my review 496's primary new contribution remains the distinct run 20261126_225234 snapshot-publish stall. Runs 20261126_061338 and 20261126_145453 are not covered by review 477 and still need their own retained journals before any attribution.

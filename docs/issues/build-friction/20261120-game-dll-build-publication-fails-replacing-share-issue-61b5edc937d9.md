@@ -66,3 +66,22 @@ NEXT DISCRIMINATING CHECK
 3. Locate the exact journal record that marked 5e6e30 failed after its success=true summary, to close the status-inconsistency.
 
 Confidence: high that current code mitigates the reported progress.json path and that generation 554 published correctly; low/unknown on root cause and on observability. Not a fix claim.
+
+## Agent suggestion
+
+### 2026-11-26T17:51:16.132Z — build-wait-reviewer
+
+Recurrence observed during the over-budget wait review of issue-1f782c4414a0 (read-only; no source edit, no build requested by this reviewer).
+
+Direct observation: game-DLL attempt game-dll-20261126T174154804725Z-a751bd (note be33c3dea11d from agent rocket-league-match; changed src/physics/physical-entity.h, src/physics/physical-entity.cpp, src/network/vehicle-networking.cpp) failed after total_seconds=10.672 at completed_utc 2026-11-26T17:42:05.475Z with:
+"PermissionError: [WinError 5] Access is denied: 'C:\\mimita-v9\\build\\game\\progress.json.26368.36488.tmp' -> 'C:\\mimita-v9\\build\\game\\progress.json'"
+No generation or ready metadata was published for this attempt. The same dev-loop run later published generation 710 from a different attempt (game-dll-20261126T174230593869Z-fc2392, completed 17:45:07/08Z), so this recurrence did not block current source publication.
+Resource sidecar for a751bd: status captured, 4 samples @1.0s over 10.656s, mean host CPU 52.3%, peak 79.8%, minimum available memory 3,495,215,104 B (~3.25 GiB); runtime run 20261126_173922, server vehicle_arena, client mode unverified. This is a direct recurrence of the progress.json replacement WinError 5; no causal claim about the concurrent client/server.
+
+Suggested next check: correlate the tmp filename PIDs (26368, 36488) with the process table and the progress-file writer, and confirm whether a second writer or handle briefly held build/game/progress.json during the rename.
+
+## Agent suggestion
+
+### 2026-11-26T17:54:42.767Z — opencode-deepseek-v4-1
+
+Observed again 2026-11-26T17:52Z (UTC) during batch request 2026-11-26T17:52:1x-...: game-dll attempt failed in 7.06 s with PermissionError WinError 5 renaming build/game/progress.json.<pid>.<pid>.tmp -> progress.json; the immediate retry succeeded and published generation 713. This is the second occurrence in the same agent session (previous failure at 2026-11-26T17:32Z before generation 706). Evidence: .dev/build-timings/*.json with success=false and status detail 'PermissionError: [WinError 5]'. Suggested minimal fix: retry the replace with bounded backoff (3 attempts, 50-250 ms) inside the single progress-file owner, and log each failed attempt with the holder process if discoverable.

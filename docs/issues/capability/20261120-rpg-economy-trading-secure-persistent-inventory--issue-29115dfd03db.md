@@ -29,3 +29,15 @@ Priority: high
 Question for the user:
 
 For the research task, should the first focus be secure cross-mode inventory/cosmetics, RPG gold and shops, player trading, or distributed saving without a central server?
+
+## Agent suggestion
+
+### 2026-11-26T22:52:03.113Z — codex-rpg-progression-followup
+
+2026-11-26 follow-up clarifies an immediate level-1 start with 100 gold and no tutorial; sword plus magical bullet/explosive staffs; layered spell effects; an indefinite kill-reward-upgrade loop with very large uncapped levels; rare primitive-combination cosmetics and weapon variants with item provenance and requested trading; possible cross-mode rewards; and a need to investigate replicated player/world data. The new agent handoff records these as proposed design deltas and points to the existing World Projects distributed-storage recommendation. The older RPG spec's revolver/shotgun/sword starter kit conflicts with the new loadout. Before changing that spec, clarify whether staffs replace those starting weapons or are fantasy skins/variants, and claim a bounded subtask on issue-29115dfd03db rather than duplicating the economy/storage issue.
+
+## Agent suggestion
+
+### 2026-11-26T23:04:41.031Z — codex-durable-account-storage
+
+Architecture proposal for century-scale account durability: do not put passwords, password hashes, recovery secrets, tokens, private keys, or personal data on a public ledger or content network. Separate (1) identity/authentication, (2) authoritative currency transactions, and (3) private profile/recovery data. Authentication stores only salted, slow password verifiers or public-key/passkey credentials; restrict access, rate-limit attempts, and rotate/migrate verifiers safely. Currency uses an append-only, idempotent transaction log with integer amounts, unique event IDs, signed issuer/game/world/version provenance, and quorum-committed replicated copies in independently administered regions; balances are derived snapshots. A host signature proves who submitted a reward, not that gameplay was honest, so custom-world currency stays world-scoped unless an issuance authority can validate it. Sensitive profile backups use envelope encryption; replicate encrypted backups to independent operators, keep wrapping keys separate, provide owner-controlled recovery, and test restoration. Public content blobs may use content-addressed peer storage, but hashes prove integrity, not ownership, confidentiality, availability, or double-spend prevention. For long horizons preserve portable formats, event history and migration tools, rotate cryptography with versioned envelopes, and routinely test restores. No storage design can guarantee availability across centuries without maintained operators, keys, media, formats and funding. This is a proposed research direction, not a decision to implement a blockchain; compare replicated conventional consensus first and multi-operator governance only if MiMITA must survive its own organization disappearing.

@@ -5,8 +5,6 @@
 #include <cstdio>
 #include <cstring>
 
-#include "hot-reload/module-host.h"
-
 namespace {
 
 const float kCubePositions[8][3] = {
@@ -79,8 +77,11 @@ bool fallbackBox(const mimita_world_rendering::BoxMeshV1& request,
 bool buildBoxMesh(const mimita_world_rendering::BoxMeshV1& request,
                   mimita_world_rendering::BoxMeshV1& out)
 {
-    out = request;
-    if (ModuleHost::instance().worldRenderingBuildBox(&out) && out.result)
-        return true;
+    // The hot-reloaded world-rendering module is not rebuilt by the game-DLL
+    // build. A stale module must not own static box geometry: the active
+    // generation-25 module produced box corners at center +/- (half * size)
+    // instead of center +/- half, which lifted every wide block's collision
+    // surface into the playfield (arena2 goal ceiling at z=6.80, spawn ray
+    // chosen z=7.14). The in-process builder below is the canonical contract.
     return fallbackBox(request, out);
 }

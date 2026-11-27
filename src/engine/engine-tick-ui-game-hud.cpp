@@ -11,6 +11,7 @@
 #include "game/resident-state-module.h"
 #include "engine/engine.h"
 #include <algorithm>
+#include <cmath>
 #include "terminal/terminal-state.h"
 #include <cstdio>
 #include <vector>
@@ -62,6 +63,7 @@
 
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "debug/jitter-probe.h"
 #include "config/player-settings.h"
 #include "config/gameplay-config.h"
 #include "npc/npc-combat.h"
@@ -99,6 +101,10 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     auto& gReplayRecorder = REPLAY_RECORDER;
     auto& gReplayPlayer = REPLAY_PLAYER;
 
+    // A seated Rocket League arena player gets the arena HUD only: no combat
+    // health/ammo/crosshair/killfeed/hotbar. Chat and system overlays remain.
+    const bool arenaPresentation = vehicleArenaHudActive();
+
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
 
     // During replay, force spawn flash off so the full HUD is visible.
@@ -118,6 +124,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
 
     // Draw all panel elements from hud.json (backgrounds, containers, etc.)
     // This makes JSON-edited panels visible, matching the server browser pattern.
+    if (!arenaPresentation)
     { MIMITA_PERF_SCOPE("HUD::Panels");
     for (const auto& id : hudLayout.elementIds())
     {
@@ -186,13 +193,22 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         const bool currentWeaponHasCrosshair = replayViewedActor
             ? replayViewedActor->weaponName != "nothing"
             : (currentDef && currentDef->id != "nothing");
-        if (currentWeaponHasCrosshair && uiHudShowCrosshair()) {
+        if (!arenaPresentation && currentWeaponHasCrosshair && uiHudShowCrosshair()) {
             updateCrosshairDynamic(dt, glm::length(glm::vec2(vel)), grounded, didDash, shooting);
+            const bool fullScreenStretch = engine.renderer &&
+                engine.renderer->stretchesWholeFrame();
+            const int lensMode = PostFX::instance().effectiveLensMode();
+            // Whole-frame modes draw the HUD into the 1024x768 scene target.
+            const bool sceneHud = fullScreenStretch;
             float cx = uiScreenW() * 0.5f, cy = uiScreenH() * 0.5f;
+            bool physicalAimUsed = false;
             if (GameplayConfig::instance().aimMode() == GameplayAimMode::Physical &&
                 weapons.mPhysicalAimValid &&
                 DebugVis::projectToScreen(camera, weapons.mPhysicalAimPoint, cx, cy)) {
                 // Crosshair sits on the laser impact instead of screen center.
+                // In whole-frame modes projectToScreen resolves the scene size,
+                // so the point lands in the same stretched HUD space.
+                physicalAimUsed = true;
             }
             const GuiElement* dryFireEl = hudLayout.get("dryFireIndicator");
             bool dryFireEnabled = dryFireEl && dryFireEl->visible;
@@ -212,19 +228,83 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                 : 0.0f;
             drawCrosshair(cx, cy, 1.0f, dryFireFade > 0.0f);
             {
-                static bool centerLogged = false;
-                if (!centerLogged) {
-                    centerLogged = true;
+                static std::uint64_t lastLogMs = 0;
+                static float lastW = -1.0f, lastH = -1.0f;
+                static int lastMode = -1, lastLens = -1;
+                static bool lastPhysical = false;
+                const std::uint64_t nowMs =
+                    static_cast<std::uint64_t>(glfwGetTime() * 1000.0);
+                const int fullscreenMode = engine.renderer
+                    ? engine.renderer->appliedVideoMode() : -1;
+                const float screenW = uiScreenW();
+                const float screenH = uiScreenH();
+                const float centerX = screenW * 0.5f;
+                const float centerY = screenH * 0.5f;
+                // The expected draw position follows the resolved mode rule:
+                // physical aim -> weapon point, otherwise -> HUD centre.
+                const float expectedX = physicalAimUsed ? cx : centerX;
+                const float expectedY = physicalAimUsed ? cy : centerY;
+                const float dx = cx - expectedX;
+                const float dy = cy - expectedY;
+                const float centerOffsetX = cx - centerX;
+                const float centerOffsetY = cy - centerY;
+                const char* aimSource = physicalAimUsed ? "physical" : "center";
+                JitterProbe::sampleHud(cx, cy, centerX, centerY,
+                                       !physicalAimUsed);
+                const bool changed = screenW != lastW || screenH != lastH ||
+                    fullscreenMode != lastMode || lensMode != lastLens ||
+                    physicalAimUsed != lastPhysical;
+                if (changed || nowMs - lastLogMs >= 1000) {
+                    lastLogMs = nowMs;
+                    lastW = screenW;
+                    lastH = screenH;
+                    lastMode = fullscreenMode;
+                    lastLens = lensMode;
+                    lastPhysical = physicalAimUsed;
+                    const bool matches = physicalAimUsed
+                        ? (cx >= 0.0f && cx <= screenW &&
+                           cy >= 0.0f && cy <= screenH)
+                        : (std::fabs(dx) < 0.5f && std::fabs(dy) < 0.5f);
                     StructuredLogger::instance().writeEvent(
                         StructuredCategory::Gui, StructuredLevel::Important,
                         "hud.crosshair.center", modeId,
                         "crosshair drawn in the active HUD coordinate space",
                         gChatUiTickClock.getTick(),
-                        nlohmann::json{{"x", cx}, {"y", cy},
-                                       {"screen_width", uiScreenW()},
-                                       {"screen_height", uiScreenH()},
-                                       {"expected_center_x", uiScreenW() * 0.5f},
-                                       {"expected_center_y", uiScreenH() * 0.5f}},
+                        nlohmann::json{
+                            {"x", cx}, {"y", cy},
+                            {"expected_center_x", centerX},
+                            {"expected_center_y", centerY},
+                            {"center_offset_x", centerOffsetX},
+                            {"center_offset_y", centerOffsetY},
+                            {"dx", dx}, {"dy", dy},
+                            {"screen_width", screenW},
+                            {"screen_height", screenH},
+                            {"hud_space", sceneHud ? "scene" : "output"},
+                            {"whole_frame", fullScreenStretch},
+                            {"fullscreen_mode", fullscreenMode},
+                            {"lens_mode", lensMode},
+                            {"lens_mode_name", PostFX::lensModeName(lensMode)},
+                            {"aim_source", aimSource},
+                            {"centered", !physicalAimUsed},
+                            {"physical_aim_used", physicalAimUsed}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Gui, StructuredLevel::Important,
+                        "hud.crosshair.verdict", modeId,
+                        "crosshair position matches the mode aim rule",
+                        gChatUiTickClock.getTick(),
+                        nlohmann::json{
+                            {"x", cx}, {"y", cy},
+                            {"expected_center_x", centerX},
+                            {"expected_center_y", centerY},
+                            {"center_offset_x", centerOffsetX},
+                            {"center_offset_y", centerOffsetY},
+                            {"dx", dx}, {"dy", dy},
+                            {"tolerance_px", 0.5},
+                            {"aim_source", aimSource},
+                            {"physical_aim_used", physicalAimUsed},
+                            {"whole_frame", fullScreenStretch},
+                            {"matches", matches}},
                         __FILE__, __LINE__, __FUNCTION__);
                 }
             }
@@ -271,7 +351,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     {
     {
         const GuiElement* nameEl = hudLayout.get("playerName");
-        if (nameEl)
+        if (!arenaPresentation && nameEl)
         {
             float scale = nameEl->fontSize > 0.0f ? nameEl->fontSize : 0.32f;
             const std::string displayName = replayViewedActor ? replayViewedActor->name : player.username;
@@ -319,8 +399,11 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
     char hpText[64];
     snprintf(hpText, sizeof(hpText), "HP: %d/%d", hp, maxHp);
-    hudText("hpText", hpText);
-    if (drawDeathPopup && gDuelManager.phase() != DuelPhase::MatchEnd && !DuelQueue::instance().matchOver()) {
+    if (!arenaPresentation)
+        hudText("hpText", hpText);
+    if (!arenaPresentation && drawDeathPopup &&
+        gDuelManager.phase() != DuelPhase::MatchEnd &&
+        !DuelQueue::instance().matchOver()) {
         if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showDeathScreen())
         {
         // Draw death overlay from layout JSON
@@ -345,7 +428,8 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                 deathPopupAlpha);
         }
     }
-    if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showSpeedDisplay())
+    if (!arenaPresentation &&
+        (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showSpeedDisplay()))
     {
         glm::vec3 totalVel = replayViewedActor ? replayViewedActor->velocity : player.vel;
         float speed = glm::length(totalVel);
@@ -353,7 +437,8 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         snprintf(spBuf, sizeof(spBuf), "Speed: %.2f m/s", speed);
         hudText("speedText", spBuf);
     }
-    if (DebugConfig::DEBUG_PHYSICS && (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showSpeedDisplay()))
+    if (!arenaPresentation && DebugConfig::DEBUG_PHYSICS &&
+        (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showSpeedDisplay()))
     {
         char dbg[512];
         int y = 200;
@@ -382,7 +467,8 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             (int)player.ground.stableOnGround, player.ground.groundLostTimer, player.ground.airborneTimer);
         uiDrawText(dbg, 24.0f, (float)y, 0.28f, {0.3f, 1.0f, 0.6f, 1.0f});
     }
-    if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showModeText())
+    if (!arenaPresentation &&
+        (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showModeText()))
     {
         char modeText[128];
         snprintf(modeText, sizeof(modeText), "%s | %s | slot %d",
@@ -500,7 +586,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         glm::vec4 wepColEq = readTextCol("hotbarWeaponColorEquipped", {1.0f,0.85f,0.35f,1});
 
         const int slotCount = static_cast<int>(cachedEntries.size());
-        if (uiHudShowHotbar() && slotCount > 0) {
+        if (!arenaPresentation && uiHudShowHotbar() && slotCount > 0) {
             float totalWidth = slotSize * slotCount + gap * (slotCount - 1);
             float x = uiScreenW() * 0.5f - totalWidth * 0.5f;
             float y = uiScreenH() - yOffset;
@@ -522,7 +608,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
 
     // ── Self-healthbar (world-space, reuses NPC healthbar style) ──
     { MIMITA_PERF_SCOPE("HUD::WorldOverlays");
-    const bool worldHealthbarsVisible =
+    const bool worldHealthbarsVisible = !arenaPresentation &&
         HealthbarConfig::instance().worldHealthbarsVisible();
     if (worldHealthbarsVisible) {
         if (!dead && !replayPlaybackActive) {
@@ -636,7 +722,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
 
     // ── Sprint stamina (mode-owned) ──────────────────────
-    if (player.sprint.staminaMax > 0.0f &&
+    if (!arenaPresentation && player.sprint.staminaMax > 0.0f &&
         (player.sprint.active ||
          player.sprint.stamina < player.sprint.staminaMax - 0.01f))
     {

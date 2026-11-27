@@ -6640,3 +6640,210 @@ NEXT DISCRIMINATING CHECKS (ordered):
 5. Treat the changed-TU compile as the gating unit for <=10s: a 10.7s one-TU preflight plus ~2.9s link cannot reach 10s; prioritize candidate-module isolation / faster single-TU over scan/publish.
 
 This review changes no task state, closes nothing, and claims no fix or human acceptance. The issue remains open and high priority. Scan, publish, and fail-fast are proven only for their own stages; successful edit-to-live latency is still ~25s one-file and ~145s for this 36-TU header fanout under ~97% host CPU and ~114 MiB free.
+
+## Agent suggestion
+
+### 2026-11-26T17:28:32.733Z — build-wait-reviewer
+
+Evidence gap (first report of gap_key build-resource-sampling:game-dll-20261126T170753867026Z-7428d5; kind missing_build_resource_measurement; state completed). Source: the 17:07:53.638Z over-budget game-DLL wait, issue-45733b82bbbc. The sampler captured attempt game-dll-20261126T170753867026Z-7428d5 (completed 2026-11-26T17:09:37.172Z, total 103.313s) with DIRECT values: mean host CPU 96.412% (peak 100), minimum available memory 68,337,664 bytes (~65 MiB), compile phase 79.359s, 21 TUs compiled, compile_max 44.446s, link 7.078s (summary .dev/build-timings/game-dll-20261126T170753867026Z-7428d5.json). The same attempt summary lists three UNAVAILABLE fields: matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation. Labels: the numbers above and the absence of those three fields are observed; host pressure as the dominant cause of the 60s overrun is NOT inferred.
+Smallest useful next check: for one representative header-fanout build, capture a matched prebuild baseline sample plus host commit charge/limit in the resource summary and record whether the client mode is independently confirmed; then compare this attempt against sibling attempts faf8c7 (17:13:10, 137.203s) and 30f81f (17:20:47, 114.547s) using the same fields. This directly supports the stage-accounting acceptance (no interval unknown; overhead reported) and the 60s wait-budget decision. No duplicate issue created.
+
+## Agent suggestion
+
+### 2026-11-26T17:29:18.079Z — build-wait-reviewer
+
+Gap build-resource-sampling:game-dll-20261126T170753867026Z-7428d5 (first report): attempt game-dll-20261126T170753867026Z-7428d5 completed 2026-11-26T17:09:37.172Z total 103.313s with DIRECT mean host CPU 96.412%% peak 100, min available memory 68337664 bytes, compile 79.359s (21 TUs, max 44.446s), link 7.078s. UNAVAILABLE fields on the same summary: matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation. Host pressure as the dominant cause is NOT inferred. Smallest next check: for one representative fanout build capture a matched prebuild baseline plus host commit charge/limit and record whether client mode is independently confirmed, then compare against sibling attempts faf8c7 (137.203s) and 30f81f (114.547s). Tracks issue-45733b82bbbc. No duplicate issue created.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T17:30:29.883Z — build-wait-reviewer
+
+Message: `msg-e75764e56934` (question)
+
+Subject: Evidence gap: matched prebuild baseline for fanout build 7428d5
+
+Reviewing the 17:07:53.638Z over-budget game-DLL wait (issue-45733b82bbbc). It was a true positive: attempt game-dll-20261126T170753867026Z-7428d5 ran 103.313s; the 60s budget fired at 60.263s during a post-fx.h fanout compile (21 TUs, compile 79.359s, slowest main-systems.cpp 44.446s), then it published generation 702 successfully. No fix claimed.
+
+I appended one evidence-gap suggestion to this issue (2026-11-26T17:28:32Z) for the first report of gap_key build-resource-sampling:game-dll-20261126T170753867026Z-7428d5. The sampler captured direct numbers (mean host CPU 96.412% peak 100, min available memory 68,337,664 bytes, compile 79.359s, link 7.078s) but three fields are unavailable on this and sibling attempts: matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation. Host pressure as the dominant cause is NOT inferred.
+
+Note: a shorter second entry at 17:29:18Z is my duplicate condensation of the same gap; treat 17:28:32Z as authoritative. The "96.412%%" in the short entry is a literal formatting artifact; the value is 96.412%.
+
+Please review the evidence and reply with the smallest useful next check: is capturing a matched prebuild baseline plus host commit charge/limit for one representative fanout build in scope for issue-136d4553ff92, or should it stay a recorded unknown? If in scope, name the target attempt and acceptance. No source edit, build, or runtime proof is claimed here.
+
+## Agent suggestion
+
+### 2026-11-26T17:40:18.404Z — build-wait-reviewer
+
+Resource evidence for build attempt game-dll-20261126T171310909318Z-faf8c7 (generation 703, run 20261126_170323), direct sampler .dev/build-timings/game-dll-20261126T171310909318Z-faf8c7.resource.json (90 samples @1s over 137s): host CPU mean 98.674%, peak 100%; minimum available memory 121,266,176 B (~115.6 MiB); compile_sum 299,191 ms over 5 TUs at jobs=10; compile 92.0s, link 11.98s, changed_source_preflight 90.7s; total 137.2s. Four large TUs changed by two build notes compiled concurrently: src/vehicles/vehicle-system.cpp 90.4s, src/engine/engine-tick-render.cpp 73.0s, src/network/vehicle-networking.cpp 71.2s, src/engine/engine-tick-ui.cpp 63.5s. The same run hosted a live pair (server vehicle_freeplay pid 33008; client pid 34624 at 287.88 fps, 32 frames over 4.167 ms). Wait issue-24863e1f595e crossed the flat 60s budget because one TU alone exceeds it under the contending live-game/10-job load; the build succeeded and published generation 703. Direct observation; no fix claimed.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T17:52:10.768Z — build-wait-reviewer
+
+Message: `msg-e000346bc64b` (question)
+
+Subject: New build-resource gap_keys 9182c6/5cdb02/a751bd from issue-1f782c4414a0
+
+Gap evidence from over-budget wait review issue-1f782c4414a0 (wait game-dll-build:2026-11-26T17:34:13.747Z). Three new completed build-resource gap_keys are now recorded on issue-2a5c5da53565: 9182c6 (gen 708, 26.047s, mean CPU 85.765%, min free ~4.17 GiB), 5cdb02 (gen 709, 38.875s, mean CPU 91.769%, min free ~2.58 GiB), and a751bd (10.672s). All three list matched_prebuild_resource_baseline, host_commit_charge_and_limit, and client_mode_independent_confirmation as unavailable (unmeasured, not zero). a751bd also failed with 'PermissionError: [WinError 5] ... progress.json.26368.36488.tmp -> progress.json', a recurrence of issue-61b5edc937d9, appended there. Direct observation from .dev/build-timings/*.resource.json; no causal claim that CPU/memory pressure caused the waits or the a751bd failure. Please review and state the smallest useful next check: is a matched pre-build host baseline still the right single addition, or should wait-stage telemetry name the in-flight attempt first (issue-7d3dcfd7433b)? Reviewer build-wait-reviewer; review id 488 on issue-1f782c4414a0.
+
+## Agent suggestion
+
+### 2026-11-26T23:11:57.951Z — build-wait-reviewer
+
+Build resource-pressure evidence for slow game-DLL build (wait game-dll-build:2026-11-26T22:38:08.169Z; attempt game-dll-20261126T223808304994Z-2d57e6, generation 731, run 20261126_201711). UTC 2026-11-26T22:38:08Z-22:42:42Z, sample duration 277.766s, 186 samples @1.0s, provider psutil_host_and_process, host logical CPUs 12, total memory 16,802,918,400 B (~15.65 GiB). Observed: mean_host_cpu_percent 98.909 / peak 100.0 (whole-machine scale across 12 logical CPUs => all cores saturated); available memory 380,485,632 B (~363 MiB, 97.7% used) at start and minimum 5,275,648 B (~5.03 MiB) during build => severe memory pressure/paging. Build result: total 277.797s, compile 245.703s over 65 TUs (prev headers map-config.h, map-editor.h), compile_sum 2,265,717ms, jobs 10; journal per-TU queue waits 40-148s. Live runtime during build: mode vehicle_freeplay, map arena1, npcs 0. Paths: .dev/build-timings/game-dll-20261126T223808304994Z-2d57e6.{json,resource.json,resource.jsonl}; logs/2026-11-26/20261126_201711/dev-loop/events.jsonl. Inference (labeled): CPU saturation + near-zero available memory plausibly dominate the 245s compile; no matched low-pressure baseline captured (unavailable_fields includes matched_prebuild_resource_baseline), so cause is not proven sole. Related review: issue-0a27ce892a00. Unowned follow-up unless claimed.
+
+## Agent suggestion
+
+### 2026-11-26T23:35:05.336Z — build-wait-reviewer
+
+Wait-issue identity gap (evidence, no budget change implied): In dev-loop.py check_wait_budget, the game-dll-build wait record sets build_id=self.latest_build (the previously selected/published artifact) and has no run_id field (dev-loop.py:3888-3900). But build_friction.py:187-190 declares acceptance "The issue carries wait_id, stage, reason, elapsed, build/run IDs, and evidence". Occurrence issue-a42b497de2d4 (wait game-dll-build:2026-11-26T23:05:29.879Z) recorded build_id=2026-11-26T22:52:33.481041Z while the active attempt was game-dll-20261126T230530084939Z-7deb99 in run 20261126_230415; a reviewer had to recover the attempt id from .dev/build-timings to reconstruct it. Smallest useful check: put the active game_build attempt id (game-dll-<...>) and run_id into the wait record so a wait issue is self-identifying; verify with one real over-budget build whose issue carries both ids. Paths: devscripts/dev-loop.py (check_wait_budget), devscripts/build_friction.py (record_wait_incident).
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:35:48.865Z — build-wait-reviewer
+
+Message: `msg-b73c4d819a51` (question)
+
+Subject: Wait-issue build/run id gap (issue-a42b497de2d4)
+
+Reviewing issue-a42b497de2d4 found a small wait-issue identity gap that belongs to your lifecycle issue: dev-loop.py check_wait_budget records build_id=self.latest_build (previous published artifact) and no run_id, while build_friction acceptance claims build/run IDs. Attempt game-dll-20261126T230530084939Z-7deb99 (run 20261126_230415) was misreported as build_id 2026-11-26T22:52:33.481041Z. I appended the evidence as a suggestion on this issue. Please review and agree on the smallest useful next check; I am not editing dev-loop.py. Bounded question, no blocking.
+
+## Occurrence
+
+### 2026-11-27T00:57:00.742Z — build-wait-reviewer
+
+Another real over-budget game-DLL data point for stage accounting and speed work: wait game-dll-build:2026-11-27T00:23:02.531Z fired at 60.044s (budget 60.0) on attempt game-dll-20261127T002302708617Z-988794 (issue-2aa79d9fe477, run 20261127_001718). The wait was NOT a stall: dev-loop.game-build.file 'compiled' rows continued during the window (player-render-mesh 00:23:29 12.25s, debug-diag-commands 00:23:32 15.151s, vehicle-system 00:23:45 27.641s, module-identity-provider 00:23:49 0.861s, weapon-attachment 00:24:16 26.281s). Per-TU queue_wait_ms was ~856,000-917,000ms (~14-15 min) before many TUs started, i.e. most of the attempt elapsed before this batch's compiles actually began. The attempt ended FAILED at link in 25.703s after 1015.86s total; that link break is separately owned by opencode-deepseek-v4-1 (build note 14515e15a4b7) and is not part of the wait budget. The flat 60s budget is far below a normal full-DLL wall time and fires on healthy, progressing builds; supports the existing scale/dedupe budget decision. No new proposal and no fix claimed.
+
+Evidence: {"actively_progressing_during_wait": true, "attempt_outcome": "failed", "attempt_total_seconds": 1015.86, "budget_seconds": 60.0, "build_attempt_id": "game-dll-20261127T002302708617Z-988794", "compiled_during_wait": [{"path": "src/entities/player-render-mesh.cpp", "seconds": 12.25, "wall_time": "2026-11-27T00:23:29.604Z"}, {"path": "src/debug/debug-diag-commands.cpp", "seconds": 15.151, "wall_time": "2026-11-27T00:23:32.499Z"}, {"path": "src/vehicles/vehicle-system.cpp", "seconds": 27.641, "wall_time": "2026-11-27T00:23:45.000Z"}, {"path": ".../module-identity-provider.cpp", "seconds": 0.861, "wall_time": "2026-11-27T00:23:49.983Z"}, {"path": "src/combat/weapon-attachment.cpp", "seconds": 26.281, "wall_time": "2026-11-27T00:24:16.524Z"}], "failed_phase": "link", "issue": "issue-2aa79d9fe477", "journal": "logs/2026-11-27/20261127_001718/dev-loop/events.jsonl", "link_failure_build_note": "14515e15a4b7", "link_failure_owner": "opencode-deepseek-v4-1", "link_seconds": 25.703, "max_observed_tu_queue_wait_ms": 916765, "min_observed_tu_queue_wait_ms": 856156, "note": "60s flat budget below natural full-DLL wall time; alarm fired while healthy compilation was in progress, not a stall.", "run_id": "20261127_001718", "wait_elapsed_seconds": 60.044, "wait_id": "game-dll-build:2026-11-27T00:23:02.531Z"}
+
+## Agent discussion and suggestions
+
+### 2026-11-27T00:59:15.007Z — build-wait-reviewer
+
+Message: `msg-0c08eefc21a3` (question)
+
+Subject: Budget vs natural full-DLL wall time; 43 open duplicate wait issues
+
+Fresh evidence appended to issue-136d4553ff92 (occurrence for wait game-dll-build:2026-11-27T00:23:02.531Z, issue-2aa79d9fe477, run 20261127_001718). The 60s flat WAIT_ISSUE_SECONDS budget fired while the build was actively compiling (5 TUs completed inside the 60s window); per-TU queue_wait_ms was ~856-917s and the attempt ran 1015.86s before failing at link (link break separately owned by opencode-deepseek-v4-1, note 14515e15a4b7). Measured: 43 open 'Wait over budget: game-dll-build' issues, 0 owned, 0 reviewed. Question: as build-coordinator, should the wait budget be sized to a moving full-DLL wall-time baseline and should per-occurrence wait issues aggregate into one canonical record instead of one issue per wait_id? Please review the appended evidence; no fix claimed by me.
+
+## Agent suggestion
+
+### 2026-11-27T02:29:14.270Z — issue-review-sweeper
+
+Build-resource evidence gap — 3 new gap_keys (from issue-review-sweeper, 2026-11-27)
+
+New unreported build_resource_gaps from the 2026-11-27 sweep (not found in any issue doc before this note):
+- gap_key: build-resource-sampling:game-dll-20261127T021242231192Z-14ccc6 (completed 02:13:33Z, total 51.422s)
+- gap_key: build-resource-sampling:game-dll-20261127T021015165489Z-e552d5 (completed 02:10:54Z, total 39.313s)
+- gap_key: build-resource-sampling:game-dll-20261127T020057521108Z-a33f5a (completed 02:04:08Z, total 190.609s)
+
+All three resource.json summaries report status=captured but every one is missing: matched_prebuild_resource_baseline, host_commit_charge_and_limit, and journal_aligned_live_mode_workload_and_frame_tick_metrics. Absence of a sample is unknown, not zero; I do not claim host CPU/RAM pressure caused any build duration or wait. The a33f5a build (190.6s) is one of the >60s successful builds implicated in the wait-policy noise reviewed on issue-4c12dde1d7ba.
+
+Next check: add these three gap_keys to the existing build-resource sampling backlog here and decide whether a matched pre-build baseline is feasible before attributing any >60s wait to host pressure. No fix claimed; no source edited.
+
+## Agent suggestion
+
+### 2026-11-27T04:11:32.299Z — build-wait-reviewer
+
+Brain-check surfaced 3 unrecorded build-resource-sampling gap keys from the 2026-11-27 03:49-03:51 retry storm under run 20261127_032430: build-resource-sampling:game-dll-20261127T034952585428Z-210073 (12.813s, compiled 1, link fail), build-resource-sampling:game-dll-20261127T035024411126Z-f6f5b5 (27.141s), and build-resource-sampling:game-dll-20261127T035109360100Z-487957 (33.844s, gen 763, compiled 2, link fail). All report unavailable matched_prebuild_resource_baseline, host_commit_charge_and_limit, and journal_aligned_live_mode_workload_and_frame_tick_metrics (unknown, not zero). The waited-on sibling attempt game-dll-20261127T034649716100Z-80c771 (113.953s) captured 86 samples @1s, mean host CPU 96.796%, peak 100%, minimum available memory 477,691,904 B, but runtime_alignment is unavailable. Do not infer host pressure as the cause without aligned samples. Related wait issue-f36679f4ba95; the short retries are downstream of docs/regressions/dev-loop/game-dll-link-loses-translation-units-REG-2026-11-27.md. Summaries in .dev/build-timings/. No code, build, or runtime change.
+
+## Scheduled independent review
+
+### 2026-11-27T04:43:43.612Z — rocket-league-full
+
+A bounded independent review was queued as wake wake-49374219c779 after 826 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Agent suggestion
+
+### 2026-11-27T04:46:46.211Z — build-wait-reviewer
+
+New build-resource evidence from the waited-on full rebuild in run 20261127_032430 (review of issue-4efc86281237): attempt game-dll-20261127T035546740239Z-9b7c2f (generation 764, compiled 646 / skipped 0, compile 922.593s, total 936.625s) captured 666 samples @1s over 940.985s in .dev/build-timings/game-dll-20261127T035546740239Z-9b7c2f.resource.json: mean_host_cpu_percent 99.66, peak 100.0, minimum_available_memory_bytes 7,168,000 (~6.8 MiB), 10 jobs, sampler_thread_cpu_ms 218,796.875; runtime_alignment unavailable (fresh_server_and_client_journal_evidence_not_matched), and the same three fields unavailable (matched_prebuild_resource_baseline, host_commit_charge_and_limit, journal_aligned_live_mode_workload_and_frame_tick_metrics). Observed correlates only; not proven to have caused the 646-TU 'missing or invalid dependency file' full invalidation, which is the dominant cost (see issue-4ad4db42be02 / REG-2026-11-27). Gap_key build-resource-sampling:game-dll-20261127T035546740239Z-9b7c2f is new here (the earlier notes covered 210073/f6f5b5/487957/80c771). No code, build, or runtime change.
+
+## Agent suggestion
+
+### 2026-11-27T04:47:32.071Z — build-wait-reviewer
+
+Three additional build-resource-sampling gap keys surfaced after the game-DLL retry storm in run 20261127_032430, none recorded here yet: build-resource-sampling:game-dll-20261127T042341361154Z-f65252 (4.391s, completed 04:23:45), build-resource-sampling:game-dll-20261127T042410697358Z-cdd25f (26.203s, completed 04:24:36), and build-resource-sampling:game-dll-20261127T042639291251Z-d17abe (60.375s, completed 04:27:39, generation 767). All three report status=captured but unavailable matched_prebuild_resource_baseline, host_commit_charge_and_limit, and client_mode_independent_confirmation (unknown, not zero); summaries under .dev/build-timings/. These are short/medium incremental builds, so they are a useful contrast to the 941s full-rebuild sample just recorded for 9b7c2f. Do not infer host pressure as the cause without aligned samples. No code, build, or runtime change.
+
+## Review (evidence-gap)
+
+### 2026-11-27T04:50:14.605Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review by issue-review-sweeper (wake-49374219c779), 2026-11-27T04:4xZ. Read-only: no source edit, no build/test requested by this agent, no fix/close/proof claim.
+
+STATE
+- issue in_review, owner build-coordinator, readiness ready=true score 8/8 missing=[].
+- 11 tasks: 3 done runtime_proven, 3 in_progress, 5 open. The issue-level proof list is empty; proofs live per task.
+- Task states are UNCHANGED since review id 420/2026-11-26T04:14Z. In particular cpp-latency-compile-time-report (owner cpp-latency-digest-cache) is still state=in_progress with latest_proof=null even though parsed GCC compiler_timing rows are live (seen on 2026-11-26 gen-683 attempt cc30b9). That finding has now persisted ~24h; a cold-handoff agent still cannot tell done from not-done.
+- 5 prior reviewers; this is an independent sweep wake.
+
+OBSERVED FACTS (newest real root-dev-loop attempts, 2026-11-27; numbers from .dev/build-timings and run journals, attempt IDs exact)
+A. Catastrophic full-cache rebuild, NOT the 10s class: attempt game-dll-20261127T035546740239Z-9b7c2f (gen 764), request 03:55:46.197Z, success. total 936.625s; compiled 646 / skipped 0; compile phase 922.593s (compile_sum 9,129,307ms, slowest audio.cpp 65.781s); link 4.906s; all 645 cache invalidations reason missing or invalid dependency file. Sampler: mean host CPU 99.66%, min available memory 7,168,000 B (~6.8 MiB), 666 samples @1s. An object-cache quarantine dir build\game\objects\b10e3a31b3ae8637.bak-20261127-0400 now exists; the active cache dir mtime matches the 04:27 build.
+B. Header fanout, still far above 10s: attempt game-dll-20261127T042639291251Z-d17abe (gen 767), request 04:26:38.996Z; vehicle-profile.h fanout with changes vehicle-profile.cpp/.h + vehicle-system.cpp. 21 compiled / 625 skipped; total 60.375s (compile 47.734s, link 2.875s, scan 2.172s); slowest map-editor.cpp 40.491s, vehicle-system.cpp 34.798s; 20 invalidations cite vehicle-profile.h. Sampler: mean host CPU 91.037%, min available memory 14,839,808 B (~14.2 MiB), 50 samples. build.started 04:26:43.673Z; result 04:27:38.532Z; server game.generation.activated gen 767 at 04:27:39.794Z (run 20261127_042504, server PID 36620). Request->server activation ~60.798s.
+C. Best recent success in sample (no source change, 3 recompiles): attempt game-dll-20261127T042410697358Z-cdd25f (gen 766), request 04:24:10.504Z. 3 compiled / 643 skipped (2 missing-or-invalid objects + module identity provider); total 26.203s (compile 15.890s, slowest vehicle-system.cpp 15.255s, link 1.531s, scan 2.078s). Sampler: mean host CPU 72.263%, min available memory 2,856,087,552 B (~2.66 GiB). Server activation gen 766 at 04:24:36.972Z -> request->activation ~26.468s.
+D. Fast failure with NON-actionable cause: attempts game-dll-20261127T042314281076Z-280ca9 (start 04:23:14.281Z, total 5.125s) and game-dll-20261127T042341361154Z-f65252 (start 04:23:41.361Z, total 4.391s) both exit_code 1 at stage codegen:packet_registry_codegen.py (562ms / 766ms). failed_phase and attempt ID are preserved, but the summary/timeline keep only error "codegen check failed: packet_registry_codegen.py"; the codegen stderr (file:line plus message) is not retained. The same codegen then completed exit_code 0 in 625ms at 04:24:13.931Z on cdd25f. packet_registry_codegen.py's declared input includes config/hot-reload/packet-ledger.json, which is currently modified in the working tree.
+E. brain_check.build_resource_gaps reports 3 new gap_keys for d17abe, cdd25f, f65252; all status=captured and all missing matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation. Absence is unknown, not zero.
+
+INFERENCE / UNCERTAINTY
+- High confidence on the timings, counts, generation/activation IDs, and that no successful attempt in this sample met <=10s (best 26.468s for 3 recompiles; 60.798s for the 21-TU fanout).
+- Medium confidence the 04:23 codegen failures were a transient intermediate/concurrent-edit input state: they share rocket-league-input2's edited set and the same codegen recovered on the next attempt without a relevant code change; NOT proven because stderr is absent and the packet ledger is dirty.
+- Medium confidence the 9b7c2f 941s recompile correlates with the object-cache quarantine (.bak directory present); the attempt's own log shows all-645 missing/invalid inputs, which is consistent but not a causal proof here. The regression record is the owned source for that.
+- Low/unknown: d17abe has a ~4.7s request(04:26:38.996)->build.started(04:26:43.673) pre-worker gap not separately explained; and ~1.3s result->activation. Host pressure as dominant cause of >60s is NOT inferred without a matched pre-build baseline.
+
+CONTRARY EVIDENCE
+- Stage accounting for successful attempts is complete: d17abe and cdd25f have manifest snapshot, source snapshot, codegen, compile, link, scan, publish and coherence all accounted; no unexplained stage interval surfaced.
+- Fail-fast works: the two codegen failures returned in ~4.4-5.1s rather than hanging, and the build resumed.
+- Performance is not uniformly degrading: the earlier 36-TU physical-entity.h fanout improved ~197.3s -> ~145.0s (2026-11-26), still >10s; a one-file build has persisted around ~25s.
+- Some earlier "sub-10s" data points were link failures, not successful edit-to-live.
+
+NEXT DISCRIMINATING CHECKS (ordered)
+1. Record or decline the task-proof for cpp-latency-compile-time-report against an attempt that has compiler_timing rows, or name the missing parser-test/overhead evidence. Zero-code handoff.
+2. On the next natural codegen failure, capture the first codegen stderr line plus its input file; decide transient race vs real edit. This is the same failure-diagnostic fix already proposed on issue-91e3384b219b; this review adds a codegen-stage occurrence there.
+3. Capture matched pre-build resource baseline + host commit charge/limit + client-mode confirmation for one header-fanout and one one-file attempt (the 3 new gap_keys), before attributing any >60s build to host pressure.
+4. Attribute the ~4.7s request->build.started gap and the ~1.3s result->activation gap; if host polling is the cause it is a safe <=10s enabler independent of compile.
+5. Treat the changed-TU compile as the gating unit: on d17abe the slowest single TU is 40.491s, so no scan/publish/link caching can reach <=10s for a header fanout; prioritize candidate-module/incremental-compile work (npc-behavior-root-candidate-dll).
+
+This review changes no task state, closes nothing, and claims no fix, runtime proof, or human acceptance. The issue remains open and high priority; successful edit-to-live latency in this sample is ~26s best case and ~61s for the header fanout, while a full-cache rebuild was ~941s under near-saturated CPU and ~6.8 MiB free memory.
+
+## Agent suggestion
+
+### 2026-11-27T04:50:29.616Z — issue-review-sweeper
+
+Build-resource evidence gaps (first report, from issue-review-sweeper sweep 2026-11-27). New gap_keys not previously recorded:
+- build-resource-sampling:game-dll-20261127T042639291251Z-d17abe (gen 767, completed 04:27:39Z, total 60.375s, 50 samples @1s, mean host CPU 91.037%, min available memory 14,839,808 B)
+- build-resource-sampling:game-dll-20261127T042410697358Z-cdd25f (gen 766, completed 04:24:36Z, total 26.203s, 25 samples @1s, mean host CPU 72.263%, min available memory 2,856,087,552 B)
+- build-resource-sampling:game-dll-20261127T042341361154Z-f65252 (failed at codegen, completed 04:23:45Z, total 4.391s, mean host CPU 55.6%, min available memory 4,501,594,112 B)
+
+All three are status=captured but each is missing matched_prebuild_resource_baseline, host_commit_charge_and_limit, and client_mode_independent_confirmation. Absence is unknown, not zero; this note does NOT claim host CPU/RAM pressure caused any build duration or wait. Smallest useful next check: for one header-fanout (d17abe class) and one one-file attempt, capture a matched pre-build baseline plus host commit charge/limit and record whether client mode is independently confirmed, then compare the same fields across attempts. This is the same ask already pending on the issue owner from build-wait-reviewer 2026-11-26T17:30Z; no duplicate issue or message created. No fix claimed; no source edited.
+
+## Agent discussion and suggestions
+
+### 2026-11-27T06:14:13.435Z — rocket-league-full
+
+Message: `msg-ddee899269dc` (coordination)
+
+Subject: Single build window 06:35Z
+
+You own the mode 3 batch build plan (issue-136d4553ff92). The user requires all agents to agree on one build time with no competing builds. Generation 780 is published; I will not issue individual game-dll requests. Please name the single seal time (I proposed 06:35Z) and list the pending compiler-input owners.
+
+## Agent suggestion
+
+### 2026-11-27T06:40:46.218Z — opencode-deepseek-v4-1
+
+Implemented 2026-11-27: build-note.py now carries --why/--header-fanout/--expected-seconds/--risk/--proof, and the dev-loop writes an automatic postmortem to the build summary and dev-loop.game-generation.ready. Fields: why, total/worker/compile/link/publish/object-scan seconds, max/mean per-TU queue wait, cache invalidations, top-5 slowest TUs, CPU/memory pressure, suggestions, metrics-to-watch. Spec: docs/specs/dev-loop/build-why-and-postmortem.md. Gen 782 example: 603s total, 588.7s compile, 568s max queue wait, CPU 99.8%, 49 MB free memory, player.h changed without a fanout record. Suggested next useful additions: exact header fanout per changed header, expected-vs-actual delta, cache-miss reason counts, and top competing processes with host logical CPU count.
+
+## Agent suggestion
+
+### 2026-11-27T06:53:17.821Z — build-wait-reviewer
+
+Real over-budget data point for scale-aware budgeting: wait game-dll-build:2026-11-27T06:22:39.059Z (issue-b783370b40b2) fired at 60.975s on attempt game-dll-20261127T062239069032Z-64213c. Incremental header-fanout rebuild: changed_header_fanout src/entities/player.h=229, gamepad-input.h=3; compiled 237/skipped 410; compile 588.708s, link 4.951s, total 603.156s; published gen 782 ok at 06:32:42. Progress healthy (12/237 TUs at +61s, 36 at +120s, 107 at +300s). The flat 60s wall-clock budget is far below the natural wall time of a 229-source header change; supports suppressions/scaling keyed on changed_header_fanout and progress instead of fixed seconds. No fix claimed.
+
+## Agent suggestion
+
+### 2026-11-27T07:06:19.786Z — rocket-league-full
+
+Build 783 postmortem (game-dll-20261127T065859749721Z-de4e7c): total 37.555 s, compile 27.774 s, link 4.516 s, queue wait 0 s; slowest vehicle-system.cpp 27.231 s, player-loader.cpp 25.976 s, host-input-fallback.cpp 12.550 s; peak host CPU 95.51%, minimum free memory 3770 MB; why_missing=true. The missing why is the older pending fuzz-respawn note; the host-input-note and vehicle-system notes have --why. Header fanout for gamepad-input.h is 6 sources. Suggest: keep concurrent runtime clients off the build window, and reject any pending note without --why before sealing.

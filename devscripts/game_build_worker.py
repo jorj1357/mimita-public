@@ -180,6 +180,8 @@ LINK_LIBS = [
     "-ldxgi",
     "-lbcrypt",
     "-lpthread",
+    "-lhid",
+    "-lsetupapi",
 ]
 
 PRIORITY_CLASSES = {

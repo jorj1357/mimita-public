@@ -106,6 +106,7 @@ systems first. Use this default order:
 | Quality gates, lint, dead/duplicate code, multi-client matrix | `docs/specs/dev-loop/quality-gates.md`, `docs/specs/dev-loop/dev-loop.md` |
 | Dev-loop dashboard UI, process discovery, or dashboard controls | `docs/specs/dev-loop/dashboard.md`, `docs/specs/dev-loop/multi-instance.md`, `docs/specs/dev-loop/dev-loop.md` |
 | Multi-server/client presentation, per-executable journals, or dev-loop process table | `docs/specs/dev-loop/multi-instance.md`, `docs/specs/dev-loop/dashboard.md`, `docs/specs/debug-logging/canonical-jsonl.md`, `docs/specs/dev-loop/dev-loop.md` |
+| Host or process CPU, RAM, paging, build pressure, or resource baselines | `docs/specs/dev-loop/system-resource-measurement.md`, `docs/specs/dev-loop/dashboard.md`, `docs/specs/dev-loop/agent-runtime-registry.md`, `docs/workflows/measurement-hypothesis-driven-improvement.md` |
 | One server + multiple clients, same-machine interaction tests, or dev-loop process controls | `docs/workflows/multi-client-dev-testing.md`, `docs/specs/dev-loop/multi-instance.md`, `docs/specs/networking/bad-connection-simulation.md` |
 | Bad-connection presets, latency, loss, reorder, blackout, or impairment evidence | `docs/specs/networking/bad-connection-simulation.md`, `docs/specs/networking/networking.md`, `docs/specs/debug-logging/debug-logging.md` |
 | In-game chat | `docs/specs/ingame-chat/ingame-chat.md`, `docs/skills/chat-checker-v1.md` |

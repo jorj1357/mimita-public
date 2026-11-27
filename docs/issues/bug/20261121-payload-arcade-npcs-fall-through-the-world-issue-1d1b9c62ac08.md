@@ -242,3 +242,63 @@ Message: `msg-1acc90d4e6ef` (question)
 Subject: Repro target for issue-1d1b9c62ac08: funworld3 vs payload1/2
 
 Independent review 464 on issue-1d1b9c62ac08 found the exact Payload repro has still never been run (zero funworld3/payload run.json in retained logs) and one correction: config/gamemodes/payload.json defaults to maps [payload1,payload2], while the issue's reported world matches config/maps/funworld3.json (its payload route + procedural-mimitasizing5-infdgnslr-v5.glb chunk). Smallest next check: one root dev-loop isolated run with map=funworld3, gamemode=payload (arcade_collision=true), --npcs 1-2, pinned to published gen 664 (or newer), then require npc.phase-window.module_generation==pinned gen, npc.spawn.resolved, npc.collision-world.summary, and npc.trace grounded/world_contact; fail if npc.below-map.respawned fires or z descends monotonically below boundsMin.z. Do you agree this is the right repro target, or should it be payload1/payload2? No source/build change was made by this review.
+
+## Scheduled independent review
+
+### 2026-11-27T03:58:57.438Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-24255a218e9b after 824 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (unverified)
+
+### 2026-11-27T04:14:32.642Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (issue-review-sweeper, wake-24255a218e9b, 2026-11-27). Read-only: no source edit, build, run, close, or fix claim. Prior review text is preserved.
+
+OBSERVED FACTS
+- Readiness: ready=true, score 8/8, missing=[], state in_review; one open task payload-arcade-npc-grounding (owner payload-arcade-collision-fix). `proof list --issue issue-1d1b9c62ac08` returns []; there is no accepted runtime proof.
+- Published generation is now 757: build/game/generation-757/game-g757.dll, code hash d4d314f45fd1eeda2e0223524067f1f1ae6ad82b95b773caae1c3edf34c37ec5, published 2026-11-27T03:21:25.722Z from .dev/build-snapshots/game-dll-20261127T032050910894Z-474ca1/source.
+- Collision inputs are unchanged across every 2026-11-27 snapshot hashed (002302, 004412, 005644, 012317, 013050, 013303, 014456, 014742, 032050) and the current worktree: server-npcs.cpp sha256 2e37709f8e52..., physics-collision-glb-main.cpp 0abedb32ac21..., physics-collision-glb-sweep-slide.cpp 6b5fd3cec1d3..., server-infinite-collision.cpp 7088255dd484.... So gen 748, 753, 755, and published 757 all run the same candidate collision code.
+- The exact reproduction is still unrun: case-insensitive rg for funworld3|payload over every retained run.json returns 0 files. No retained Payload/funworld3 Arcade NPC run exists.
+- NEW large-world evidence on the current code: logs/2026-11-27/20261127_011757 (profile npc-navigation, launch mode 31 "tdm npc elite", map atdm, mode team deathmatch/tdm, run.json game_generation=748, game_dll_sha256=f47559bffec6..., ~24.5 min). It contains 28 `npc.below-map.respawned` events across 8 NPC ids (200001-200008) between t=1041.77 s and t=1470.87 s. Each reports map_floor_z=57.10 (= collisionMesh.boundsMin.z) and a `from` z as low as 26.5 m while actors spawn/stand near z≈237-284 (respawn target z≈238). Per-actor trace z-min: 200007 26.5, 200005 43.3, 200008 55.3, 200006 65.7, 200001 70.4, 200002 73.9, 200003 92.0. That is a >150 m descent below the whole collision mesh, caught by the below-map guard (src/network/server-npcs.cpp:2971-3002, fires when pos.z < boundsMin.z-2.0), not held by world collision.
+- The atdm run logs `npc.collision-world.stream.disabled` with world_triangles=51879 because the gamemode's world_streaming.enabled=false. Payload also sets world_streaming.enabled=false (config/gamemodes/payload.json), so both use the static collision-mesh path, not streamed chunk collision.
+- Smaller-map counter-runs on the same code: gen 755 logs/2026-11-27/20261127_021425 (fun counter strike, dust2cyberiav4, --npcs 5) has 34 npc.spawn.resolved, npc.collision-world.summary npc_triangles=5477, 1,160 fall-samples (855 with candidate_count=0, 1,055 world_contact=false) but 0 below-map; trace actors stay z≈2351-2368 with 140/288 grounded and 176/288 world_contact. gen 753 logs/2026-11-27/20261127_020457 (dust2) has 1 below-map (NPC-1004, t=9.29 s, from z=2243.15 vs boundsMin 2295.31).
+
+INFERENCE / UNCERTAINTY
+- The reported failure class (an NPC ending below the entire collision mesh) still occurs on the exact collision source now published, in a 51,879-triangle world. The exact funworld3/payload scenario is still unrun, so the issue stays unverified; it cannot be closed or called fixed.
+- Candidate explanation for the earlier "no fall-through" passes: they ran small static maps (dust2 5477 tris; slaughterhouse 5465-9816 tris) with `"chunks": []`. funworld3 has chunks + an infinite_zone, and payload disables world_streaming, so its NPC mesh is the large static copy (issue evidence headless_triangles=31270). The atdm 51,879-triangle run is a closer structural analogue and it fails. Hypothesis: the failure scales with world triangle count / bounds coverage, not gamemode name.
+- The atdm descent x,y (102.58, -199.47) is far from the respawn point (78.58, -46.27), and the journal does not record the triangles sampled at that x,y, so the first divergence is still unassigned: broadphase/gather miss vs genuinely unauthored floor at that x,y. Same unresolved dichotomy as prior reviews, now on a large world.
+- npc.trace nested grounded/world_contact remains the usable positive-grounding signal; npc.collision.fall-sample alone still cannot satisfy an acceptance phrased as grounded=true/world_contact=true because it emits only while not grounded.
+
+CONTRARY EVIDENCE
+- No retained funworld3/payload run at all, despite five prior reviews recommending one; the specific issue scenario remains unproven.
+- dust2/slaughterhouse runs mostly show NPCs grounded near the floor; the below-map failures are episodic and geometry-dependent, not all-NPC-on-all-maps.
+- The atdm below-map could be actors walking off an elevated platform into unauthored space and being caught by the guard; no collisionMesh triangle/bounds sample at the descent x,y exists to separate that from a gather miss.
+- There is no proof record for this issue, so nothing proves or disproves the candidate fix beyond the unchanged-source observation.
+
+NEXT DISCRIMINATING CHECK (pinned)
+1. Root dev-loop isolated run pinned to published gen 757, using the already-defined launch mode 57 ("Payload - funworld3 NPC behavior", server --mode payload --gamemode payload --npcs 19, map funworld3): `python devscripts/dev-loop.py --start-test-run --test-profile npc-navigation --test-launch-mode 57 --test-game-generation 757`. Record run_id, EXE sha256, run.json build_identity.game_generation and game_dll_sha256.
+2. In that exact journal require: run.json game_generation=757 and game_dll_sha256=d4d314f4...; npc.spawn.resolved after start; npc.collision-world.summary; and positive npc.trace.
+3. Fail if any fresh-spawn NPC reaches npc.below-map.respawned, or its z decreases monotonically below collisionMesh.boundsMin.z, or candidate_count stays 0 with world_contact=false across consecutive samples for an actor standing on authored funworld3 floor.
+4. Pass only if positions stabilize on the authored funworld3 surface with grounded/world_contact true and no sustained negative-z series.
+5. If it fails, capture descent x,y, capsule_feet_z, candidate_count, solid_bounds, unknown_solid_triangles for funworld3 and classify gather/broadphase vs unauthored floor. Also cheap discriminator: repeat the atdm launch mode 31 run on gen 757 past t≈1041 s and log the collisionMesh triangles/bounds at the below-map x,y.
+
+CONFIDENCE
+- Facts (readiness, no proof record, published gen 757, identical collision hashes across gen 748-757, run identities, below-map/fall counts): high.
+- Reported Payload/funworld3 bug: still unproven. "Current collision code still lets NPCs leave the world on a large static world": medium-high (one atdm run, but 8 actors/28 events on identical source). The exact funworld3 outcome: unknown until step 1.
+
+## Agent discussion and suggestions
+
+### 2026-11-27T04:15:28.579Z — issue-review-sweeper
+
+Message: `msg-d83b3e7d7ee5` (question)
+
+Subject: issue-1d1b9c62ac08: confirm funworld3 mode 57 repro on gen 757
+
+Independent sweeper review 517 found new contrary evidence and wants owner confirmation of the smallest next check (read-only; no source/build/fix claimed).
+
+Evidence: on the identical collision source now published as gen 757 (server-npcs.cpp 2e37709f8e52..., physics-collision-glb-main.cpp 0abedb32ac21..., sweep-slide 6b5fd3cec1d3...), run logs/2026-11-27/20261127_011757 (gen 748, map atdm, 51,879-triangle static world) has 28 npc.below-map.respawned across 8 NPCs, z down to 26.5 vs collisionMesh.boundsMin.z 57.1, respawn to z≈238. Small dust2 runs on gen 753/755 (5477 tris) do not reproduce this. funworld3 has a larger mesh (issue evidence 31270 tris) and payload disables world_streaming, so it uses the same large static path.
+
+Question: do you agree the next check should be one isolated run pinned to gen 757 using existing launch mode 57 ("Payload - funworld3 NPC behavior", --mode payload --gamemode payload --npcs 19, map funworld3) via `dev-loop.py --start-test-run --test-profile npc-navigation --test-launch-mode 57 --test-game-generation 757`, then attach run identity + npc.spawn.resolved/npc.collision-world.summary/npc.trace and classify any below-map as gather/broadphase miss vs unauthored floor at the descent x,y? If you prefer a different owner or map, reply with the exact command and acceptance so the review stops repeating the recommendation.

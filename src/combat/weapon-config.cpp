@@ -45,6 +45,7 @@ static WeaponViewModelConfig parseOne(const json& root) {
         if (ads.contains("rotation_degrees") && ads["rotation_degrees"].is_array() && ads["rotation_degrees"].size() >= 3)
             cfg.ads.rotationDegrees = glm::vec3((float)ads["rotation_degrees"][0], (float)ads["rotation_degrees"][1], (float)ads["rotation_degrees"][2]);
         cfg.ads.blendRate = std::clamp(ads.value("blend_rate", cfg.ads.blendRate), 1.0f, 60.0f);
+        cfg.ads.blendSeconds = std::clamp(ads.value("blend_seconds", cfg.ads.blendSeconds), 0.0f, 2.0f);
         cfg.ads.fov = std::clamp(ads.value("fov", cfg.ads.fov), 0.0f, 180.0f);
     }
 

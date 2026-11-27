@@ -2131,6 +2131,13 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
     if (!mActive) return;
     RagdollBody& b = mAlive;
 
+    // A live ragdoll is simulated outside the movement kernel, so advance the
+    // player's movement tick here. Player::updateModelWorldTransforms() captures
+    // previousWorldTransform only when this tick changes; without the increment
+    // render interpolation keeps blending from a stale pre-ragdoll pose and the
+    // local body visibly steps/jitters between fixed ticks.
+    ++player.movementSimulationTick;
+
     const auto& cfg = RagdollModeConfig::instance().data();
 
     // Live tuning: apply capsule/attachment geometry changes immediately while

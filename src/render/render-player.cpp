@@ -13,6 +13,7 @@
 #include "render-player.h"
 #include "game/gl-resource-bridge-module.h"
 #include "entities/player.h"
+#include "entities/player-avatar-animations.h"
 
 #include <chrono>
 #include <cmath>
@@ -37,7 +38,9 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <deque>
 #include <unordered_map>
@@ -45,6 +48,7 @@
 #include <vector>
 #include "render/render-command.h"
 #include "render/world-shader.h"
+#include "debug/jitter-probe.h"
 
 namespace r = mimita::game::render;
 
@@ -390,6 +394,11 @@ void renderPlayerInternal(
     int localTeam,
     int actorTeam)
 {
+    // Seated in a vehicle: the car is the body. Draw nothing of the actor, which
+    // is alpha 0 for the whole model (user request: "when i am in the car make
+    // whole actor alpha 0.0").
+    if (player.seatedVehicleId != 0)
+        return;
     Player& p = const_cast<Player&>(player);
     AvatarSystem& av = AvatarSystem::instance();
 
@@ -781,6 +790,19 @@ void renderPlayerInternal(
     }
     { MIMITA_PERF_SCOPE("Rendering::Actors::PlayerBody");
       player.render(r::worldShader().programObject(), view, proj, hideHead, playerTint); }
+    if (JitterProbe::active() && !player.physicalBody.parts.empty()) {
+        const PhysicalBodyPart* probePart = nullptr;
+        for (const auto& part : player.physicalBody.parts) {
+            if (part.name == "head") { probePart = &part; break; }
+        }
+        if (!probePart) probePart = &player.physicalBody.parts.front();
+        const glm::mat4 interpolated =
+            playerRenderPartTransform(player, *probePart);
+        JitterProbe::sampleActorPose(
+            networkEntityId, probePart->name.c_str(),
+            glm::vec3(interpolated[3]),
+            glm::vec3(probePart->worldTransform[3]), 0.0f);
+    }
     if (isLocal && fadeData.proximityFadeEnabled) {
         static double lastLocalFadeDiag = -1.0;
         const double now = glfwGetTime();
@@ -843,6 +865,95 @@ void renderPlayerInternal(
         (!bounds.valid || bounds.maxOffset > saneRadius ||
          bounds.maxWorldExtent > saneRadius * 2.0f);
     const bool submitted = drawable && !boundsRejected;
+    // Body/outline pose-source proof. The combined body path historically used
+    // raw fixed-tick part transforms while the outline used the interpolated
+    // render pose; the shell then trailed the body. Record both positions and
+    // the resulting mismatch once per second per actor.
+    if (!isLocal && networkEntityId != 0 &&
+        !player.physicalBody.parts.empty()) {
+        const PhysicalBodyPart* probe = nullptr;
+        for (const auto& p : player.physicalBody.parts) {
+            if (p.nodeIndex >= 0) { probe = &p; break; }
+        }
+        if (probe) {
+            const glm::mat4 raw = probe->worldTransform;
+            const glm::mat4 interpolated =
+                playerRenderPartTransform(player, *probe);
+            bool allSkin = true;
+            for (const auto& p : player.physicalBody.parts) {
+                const ActorBodyPart kind = actorBodyPartFromName(p.name);
+                if (kind == ActorBodyPart::Unknown) continue;
+                if (player.body.layer(kind) != ActorBodyLayer::Skin ||
+                    p.damageHoleCount > 0) {
+                    allSkin = false;
+                    break;
+                }
+            }
+            const bool bodyCombined = !hideHead && allSkin;
+            const glm::mat4 bodyPose = bodyCombined
+                ? (combinedBodyInterpolate() ? interpolated : raw)
+                : interpolated;
+            const float bodyMismatch = glm::length(
+                glm::vec3(bodyPose[3]) - glm::vec3(interpolated[3]));
+            const float rawVsInterp = glm::length(
+                glm::vec3(raw[3]) - glm::vec3(interpolated[3]));
+            const uint64_t nowPoseMs =
+                (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+            static std::unordered_map<uint32_t, uint64_t> sLastPoseMs;
+            static std::unordered_map<uint32_t, float> sMaxMismatch;
+            static std::unordered_map<uint32_t, uint32_t> sPoseSamples;
+            sMaxMismatch[networkEntityId] = std::max(
+                sMaxMismatch[networkEntityId], bodyMismatch);
+            ++sPoseSamples[networkEntityId];
+            uint64_t& lastMs = sLastPoseMs[networkEntityId];
+            if (nowPoseMs - lastMs >= 1000) {
+                const float maxMismatch = sMaxMismatch[networkEntityId];
+                const uint32_t samples = sPoseSamples[networkEntityId];
+                const glm::vec3 rawPos(raw[3]);
+                const glm::vec3 interpPos(interpolated[3]);
+                const glm::vec3 bodyPos(bodyPose[3]);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Rendering, StructuredLevel::Important,
+                    "player_visuals.outline_pose", std::to_string(networkEntityId),
+                    "combined body and outline pose source comparison", 0,
+                    nlohmann::json{
+                        {"actor_id", networkEntityId},
+                        {"actor", player.username},
+                        {"part", probe->name},
+                        {"alpha", animationRenderAlpha()},
+                        {"combined_interpolate", combinedBodyInterpolate()},
+                        {"body_path", bodyCombined ? "combined" : "per_part"},
+                        {"outline_path", "per_part"},
+                        {"raw_position", {rawPos.x, rawPos.y, rawPos.z}},
+                        {"interpolated_position",
+                            {interpPos.x, interpPos.y, interpPos.z}},
+                        {"body_position",
+                            {bodyPos.x, bodyPos.y, bodyPos.z}},
+                        {"body_mismatch_m", bodyMismatch},
+                        {"raw_vs_interp_m", rawVsInterp},
+                        {"max_mismatch_m", maxMismatch},
+                        {"samples", samples}},
+                    __FILE__, __LINE__, __FUNCTION__);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Rendering, StructuredLevel::Important,
+                    "player_visuals.outline_pose_verdict",
+                    std::to_string(networkEntityId),
+                    "outline/body pose alignment verdict", 0,
+                    nlohmann::json{
+                        {"actor_id", networkEntityId},
+                        {"actor", player.username},
+                        {"max_mismatch_m", maxMismatch},
+                        {"samples", samples},
+                        {"tolerance_m", 0.001},
+                        {"matches", maxMismatch <= 0.001f}},
+                    __FILE__, __LINE__, __FUNCTION__);
+                sMaxMismatch[networkEntityId] = 0.0f;
+                sPoseSamples[networkEntityId] = 0;
+                lastMs = nowPoseMs;
+            }
+        }
+    }
     {
         static std::unordered_map<uint32_t, std::string> sLastOutlineState;
         if (!isLocal && networkEntityId != 0 &&

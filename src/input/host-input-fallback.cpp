@@ -4,6 +4,8 @@
 #include "input/host-input-fallback.h"
 
 #include <windows.h>
+
+#include <cstdlib>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
@@ -67,12 +69,20 @@ HWND cachedWindow() {
         cached = byTitle;
         return cached;
     }
-    cached = findGameWindow();
     if (!cached) {
-        HWND foreground = GetForegroundWindow();
-        DWORD foregroundPid = 0;
-        if (foreground) GetWindowThreadProcessId(foreground, &foregroundPid);
-        if (foreground && foregroundPid == cachedPid) cached = foreground;
+        // Never synthesize ALT here. cachedWindow() runs from every key, mouse
+        // and focus query, many times per frame; when the handle was briefly
+        // unresolved this sent ALT down/up on every call, spamming the menu key
+        // and eating the keyboard (2026-11-27 user report: "pressing alt over
+        // and over"). Rescan at most once per second. The explicit
+        // focus_game_window command owns the one-shot ALT unlock.
+        static ULONGLONG lastScan = 0;
+        const ULONGLONG now = GetTickCount64();
+        if (now - lastScan >= 1000)
+        {
+            lastScan = now;
+            cached = findGameWindow();
+        }
     }
     return cached;
 }
@@ -87,13 +97,28 @@ void setGameWindow(GLFWwindow* window) { sWindow = window; }
 
 void* gameWindowHandle() { return cachedWindow(); }
 
+// Dev-loop clients cannot always take OS foreground focus (the dashboard
+// window owns it), which made every key and mouse read return false while the
+// game rendered normally. MIMITA_INPUT_GLOBAL_KEYS opts a probe client into
+// reading global key state instead of the foreground window's. It is set only
+// by dev launch modes, so a normal session still ignores keys typed elsewhere.
+static bool globalKeysEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("MIMITA_INPUT_GLOBAL_KEYS");
+        return value && value[0] != '\0' && value[0] != '0';
+    }();
+    return enabled;
+}
+
 bool gameWindowFocused() {
+    if (globalKeysEnabled()) return true;
     HWND window = cachedWindow();
     return window && GetForegroundWindow() == window;
 }
 
 bool focusGameWindow() {
     HWND window = cachedWindow();
+    if (!window) window = findGameWindow();
     if (!window) return false;
     if (IsIconic(window)) ShowWindow(window, SW_RESTORE);
     ShowWindow(window, SW_SHOW);
@@ -113,12 +138,35 @@ bool focusGameWindow() {
     SetForegroundWindow(window);
     SetFocus(window);
     if (attached) AttachThreadInput(thisThread, foregroundThread, FALSE);
+    if (GetForegroundWindow() != window)
+    {
+        // One-shot ALT unlock for the explicit focus command only, and no more
+        // often than every 500 ms. This used to live in cachedWindow(), where
+        // it ran on every input query and spammed the keyboard with ALT.
+        static ULONGLONG lastAltMs = 0;
+        const ULONGLONG nowMs = GetTickCount64();
+        if (nowMs - lastAltMs >= 500)
+        {
+            lastAltMs = nowMs;
+            keybd_event(VK_MENU, 0, 0, 0);
+            keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
+            SetForegroundWindow(window);
+        }
+    }
+    if (GetForegroundWindow() != window)
+    {
+        // Last resort that always activates: minimise then restore.
+        ShowWindow(window, SW_MINIMIZE);
+        ShowWindow(window, SW_RESTORE);
+        SetForegroundWindow(window);
+    }
     return GetForegroundWindow() == window;
 }
 
 bool mouseDown(int glfwButton) {
     HWND window = cachedWindow();
-    if (!window || GetForegroundWindow() != window) return false;
+    if (!globalKeysEnabled() && (!window || GetForegroundWindow() != window))
+        return false;
     if (glfwButton == 1) return keyDownVk(VK_RBUTTON);
     if (glfwButton == 2) return keyDownVk(VK_MBUTTON);
     return keyDownVk(VK_LBUTTON);
@@ -137,7 +185,8 @@ bool cursorPos(GLFWwindow*, double* x, double* y) {
 
 bool keyDown(int glfwKey) {
     HWND window = cachedWindow();
-    if (!window || GetForegroundWindow() != window) return false;
+    if (!globalKeysEnabled() && (!window || GetForegroundWindow() != window))
+        return false;
     if (glfwKey >= 'A' && glfwKey <= 'Z') return keyDownVk(glfwKey);
     if (glfwKey >= '0' && glfwKey <= '9') return keyDownVk(glfwKey);
     switch (glfwKey) {

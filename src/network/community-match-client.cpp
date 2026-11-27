@@ -1,4 +1,5 @@
 // 09 01 2026, 13 25
+// Relink aid: see the build-friction issue on stale object-cache entries.
 /* purpose
 * Implements the client-side replicated state owner for FFA and TDM matches.
 * Converts authoritative match packets into HUD-ready values and confirmed score events.
@@ -9,6 +10,7 @@
 */
 #include "network/community-match-client.h"
 #include "network/multiplayer-context.h"
+#include "physics/physical-entity.h"
 #include "procedural/procedural-world-client.h"
 #include "terminal/terminal-state.h"
 #include "auth/auth-system.h"
@@ -400,8 +402,51 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         }
     }
 
+    // Client-side receipt of an arena score change. The server logs the
+    // authoritative arena.goal.detected with its own tick; this records the
+    // same change as this client observed it, with the client tick, so a goal
+    // has evidence on both sides of the wire. The score itself stays
+    // server-authoritative: nothing here decides a goal.
+    {
+        static uint32_t sSeenScoreA = 0;
+        static uint32_t sSeenScoreB = 0;
+        static uint32_t sSeenMatchId = 0;
+        static bool sFirstOfMatch = false;
+        const bool newMatch = packet.duelId != sSeenMatchId;
+        if (newMatch)
+        {
+            // Reset to zero rather than to the packet's score: a client that
+            // joins just after the first goal otherwise swallows it (the 1-0
+            // aerial goal in run 20261126_193939 was missing for this reason).
+            sSeenMatchId = packet.duelId;
+            sSeenScoreA = 0;
+            sSeenScoreB = 0;
+            sFirstOfMatch = true;
+        }
+        if (packet.scoreA + packet.scoreB > sSeenScoreA + sSeenScoreB)
+        {
+            const uint32_t clientTick = static_cast<uint32_t>(
+                PhysicalEntitySystem::instance().simulationTick());
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "arena.goal.received", packet.matchMode,
+                "client observed an arena score change", clientTick,
+                {{"mode", packet.matchMode},
+                 {"score_a", packet.scoreA},
+                 {"score_b", packet.scoreB},
+                 {"server_tick", packet.serverTick},
+                 {"client_tick", clientTick},
+                 {"duel_id", packet.duelId},
+                 {"first_observation", sFirstOfMatch}});
+            sSeenScoreA = packet.scoreA;
+            sSeenScoreB = packet.scoreB;
+            sFirstOfMatch = false;
+        }
+    }
     mMatchId = packet.duelId;
     mStateVersion = packet.stateVersion;
+    mArenaScoreA = packet.scoreA;
+    mArenaScoreB = packet.scoreB;
     mMode = packet.matchMode == "melee" ? "ssbm" : packet.matchMode;
     if (mMode != "juggernaut" || packet.phase == DUEL_PHASE_RESULTS) {
         mFighterWeaponChoiceRoundVersion = packet.roundVersion;

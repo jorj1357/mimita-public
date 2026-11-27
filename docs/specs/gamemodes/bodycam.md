@@ -49,10 +49,11 @@ settings, not camera-only effects.
 - A small `settle_deadband_degrees` suppresses aim-motor torque and bleeds
   angular velocity when the body is already within that angle of its target.
   This removes standing-still jitter without changing large turns or movement.
-- The HUD is drawn after PostFX by default and stays crisp. The optional
-  `ui_in_scene_target` horror path is documented in
-  `docs/specs/graphics/graphics-post-processing.md`; it is not required for
-  bodycam and must not be enabled to hide a camera bug.
+- The HUD is drawn at output resolution in modes 0-4 and stays crisp. In
+  full-frame stretched modes 5/6 the HUD is composed into the 1024x768 scene
+  frame and stretched with the world, as required by
+  `docs/specs/graphics/graphics-resolution.md`; that is deliberate and must not
+  be used to hide a camera bug.
 - Separate local presentation smoothing from multiplayer state. Interpolate
   replicated remote actor poses using the shared snapshot path, then render the
   camera/arms smoothly from those poses. Do not smooth or rewrite authoritative

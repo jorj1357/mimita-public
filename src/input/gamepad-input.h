@@ -42,6 +42,12 @@ public:
     int deviceId() const { return mDeviceId; }
     bool standardMapping() const { return mStandardMapping; }
     bool rawFallback() const { return mRawOnly; }
+    const std::string& captureMode() const { return mCaptureMode; }
+
+    // Focused-window policy: mode "focused" (default) reads the pad only while
+    // this process's game window has OS focus; mode "always" reads it whenever
+    // the process is open. The old behaviour was "always".
+    void setWindowFocused(bool focused) { mWindowFocused = focused; }
 
     // Bounded diagnostic override used to prove the controller -> vehicle path
     // when no physical pad is available. It is not a second gameplay path.
@@ -85,6 +91,7 @@ private:
     void loadMappings();
     void pollState();
     void logAxes();
+    void logPoll();
     void updateTriggerCalibration();
     void finishTriggerCalibration();
     float axisValue(int axis, bool trigger, bool invert, float deadzone,
@@ -115,6 +122,8 @@ private:
     std::string mName;
     std::string mConfigPath = "config/input/gamepad.json";
     std::string mMappingsPath = "config/input/gamecontrollerdb.txt";
+    std::string mCaptureMode = "focused";
+    bool mWindowFocused = false;
 
     // GLFW standardized state, or raw fallback.
     float mAxes[16] = {};

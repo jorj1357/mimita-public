@@ -106,10 +106,27 @@ The owner may auto-approve when all are true:
 - the request touches only the requester's claimed/announced files;
 - no host ABI, EXE-owned source, packet/wire format, or shared build input is
   touched;
-- no overlapping build or preview is active;
+- no overlapping build or preview is active, approved, or queued;
 - host memory, CPU, disk, and runtime capacity are above the configured reserve;
 - no higher-priority integration build is waiting;
 - no halt or freeze applies.
+
+### Single-flight and timeout
+
+- At most one integration request may be approved or unconsumed per checkout.
+  New requests wait or amend the active request; do not open a duplicate.
+- One approval is enough when the build owner acts, but the owner must not be
+  the requester; otherwise a different agent approves. Without an owner, two
+  active agents other than the requester must confirm on the issue/board and at
+  least one records the approval.
+- If no owner or peer responds within 5 minutes, the requester posts one final
+  notice. After 10 minutes of silence, with no objection, halt/freeze, or
+  active/approved build, the requester may self-approve and records
+  `approval=timeout` plus the waited seconds. A timeout never preempts an active
+  build and never overrides a halt or freeze.
+- After publish or failure, read `game-generation.ready.postmortem` and append
+  the largest measured cause plus the next action to the issue before the next
+  request.
 
 ### Owner/agent/user consultation
 

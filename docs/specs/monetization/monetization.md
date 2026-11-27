@@ -407,3 +407,44 @@ mannnnnnnnnnnnnnnnnnnnn
 ALSO THIS 
 MOENTIZATION
 CONNECTING ONLINE FRIEND GROUPS a fund for that 
+
+## Story mode, free access, and revenue direction — 2026-11-26
+
+### Status
+
+This section records an early product direction, not an approved price, store
+listing, release plan, or revenue model. The exact relationship between RPG,
+story mode, and an endless dungeon mode remains open and is tracked in
+`issue-35736d408bd4`.
+
+### Player access goal
+
+Explore a story-driven game or “Infinite Dungeon Slayer” experience that can
+keep adding meaningful encounters, enemies, rewards, and progression. The
+player should have a way to play this experience without paying. A possible
+paid release on Steam at an exploratory price around US$5–$10 was raised, but a
+paid purchase must not be the only route into the experience. These price and
+distribution examples are undecided, not targets or commitments.
+
+Revenue should come from another optional, clearly explained source if a paid
+storefront release would otherwise conflict with free access. That source has
+not been selected. Evaluate sustainability only after accounting for server
+costs, contributor and creator compensation, and revenue shares, consistent
+with the existing monetization direction above.
+
+### Guardrails and open design
+
+- Do not make the free route a timed trial or require spending to continue
+  core story/dungeon progression. Keep the access path usable without a
+  purchase.
+- Do not gate creation or community contribution behind payment. Preserve the
+  existing no-pay-to-win and anti-loot-box direction elsewhere in this spec.
+- Keep any supporter or optional paid offering transparent and non-coercive;
+  do not invent a specific product, price, subscription, ad model, or currency
+  before it is evaluated.
+- Decide whether this is a mode inside MiMITA, a separately packaged game, or
+  both; what content is available on each route; and how free access is funded
+  without making one central service a requirement to launch the game.
+
+No storefront, payment integration, price, or monetization mechanism is
+approved by this direction note.

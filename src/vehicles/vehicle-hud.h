@@ -7,3 +7,7 @@
 #pragma once
 
 void drawVehicleHud();
+
+// True while the local player is seated in a Rocket League arena profile.
+// Other HUD owners use this to suppress combat-only elements.
+bool vehicleArenaHudActive();

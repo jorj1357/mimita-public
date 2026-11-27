@@ -2,6 +2,7 @@
 #include "game/resident-state-module.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <algorithm>
@@ -13,6 +14,8 @@
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
 #include "debug/debug-visuals.h"
+#include "debug/structured-log.h"
+#include "debug/jitter-probe.h"
 #include "entities/player.h"
 #include "physics/movement/physics-collision.h"
 #include "terminal/terminal-state.h"
@@ -338,6 +341,45 @@ void registerDiagnosticCommands()
             pf.setBypass(direct);
             Terminal::instance().addLog(std::string("[POSTFX] direct=") +
                 (direct ? "1 (direct backbuffer)" : "0 (FBO + PostFX)"));
+        }
+    });
+    t.registerCommand({
+        "player_combined_pose",
+        "Use the interpolated render pose for the combined body path (0=raw A/B)",
+        "player_combined_pose <0|1>",
+        [](const std::vector<std::string>& args) {
+            const bool on = args.empty() ? !combinedBodyInterpolate()
+                                         : args[0] != "0";
+            setCombinedBodyInterpolate(on);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "player_visuals.combined_pose.changed", "player-render",
+                "combined body pose interpolation toggled", 0,
+                nlohmann::json{{"enabled", on}});
+            Terminal::instance().addLog(
+                std::string("[PLAYER] combined body interpolate=") +
+                (on ? "1" : "0"));
+        }
+    });
+    t.registerCommand({
+        "jitter_probe",
+        "Run a bounded jitter investigation and emit jitter.* verdicts",
+        "jitter_probe <seconds>",
+        [](const std::vector<std::string>& args) {
+            double seconds = 10.0;
+            if (!args.empty()) seconds = std::strtod(args[0].c_str(), nullptr);
+            JitterProbe::start(seconds);
+            Terminal::instance().addLog(
+                "[JITTER] probe started seconds=" + std::to_string(seconds));
+        }
+    });
+    t.registerCommand({
+        "jitter_probe_stop",
+        "Stop the bounded jitter investigation early",
+        "jitter_probe_stop",
+        [](const std::vector<std::string>&) {
+            JitterProbe::stop();
+            Terminal::instance().addLog("[JITTER] probe stopped");
         }
     });
     t.registerCommand({

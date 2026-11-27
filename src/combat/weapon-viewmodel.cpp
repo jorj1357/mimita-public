@@ -7,9 +7,11 @@
 #include "combat/weapon-melee-config.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <unordered_map>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -207,7 +209,9 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
     // to the physical hand; it never changes authoritative damage or hit logic.
     const bool adsWanted = hasConfig && vmcfg && vmcfg->ads.enabled &&
         player.weaponAimDownSights;
-    const float adsRate = (hasConfig && vmcfg) ? vmcfg->ads.blendRate : 16.0f;
+    const float adsRate = (hasConfig && vmcfg && vmcfg->ads.blendSeconds > 0.0f)
+        ? 3.0f / vmcfg->ads.blendSeconds
+        : ((hasConfig && vmcfg) ? vmcfg->ads.blendRate : 16.0f);
     const float adsAlpha = 1.0f - std::exp(-adsRate * std::max(0.0f, dt));
     mAdsBlend += ((adsWanted ? 1.0f : 0.0f) - mAdsBlend) * adsAlpha;
     mAdsBlend = std::clamp(mAdsBlend, 0.0f, 1.0f);
@@ -229,7 +233,9 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                         vmcfg->ads.positionOffset.y, vmcfg->ads.positionOffset.z}},
                     {"rotation_degrees", {vmcfg->ads.rotationDegrees.x,
                         vmcfg->ads.rotationDegrees.y, vmcfg->ads.rotationDegrees.z}},
-                    {"blend_rate", vmcfg->ads.blendRate}});
+                    {"blend_rate", adsRate},
+                    {"configured_blend_rate", vmcfg->ads.blendRate},
+                    {"blend_seconds", vmcfg->ads.blendSeconds}});
         }
     }
 
@@ -241,6 +247,55 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
         modelPath = def->modelPath;
 
     loadModel(modelPath);
+
+    // Held-viewmodel evidence: one event per state change and a one-second
+    // heartbeat. This distinguishes "config ignored", "model not loaded", and
+    // "model loaded but not drawn" without a special per-weapon path.
+    {
+        struct VmState {
+            std::string key;
+            uint64_t lastMs = 0;
+        };
+        static std::unordered_map<const WeaponViewModel*, VmState> states;
+        if (states.size() > 128)
+            states.clear();
+        VmState& state = states[this];
+        const uint64_t nowMsState = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        const bool loaded = mModelAsset && mModelAsset->loadOk &&
+            mModelAsset->gpuUploaded;
+        const bool equipped = def && player.equippedSlot == def->slot;
+        const bool visible = equipped && vao != 0 && !heldMesh.verts.empty();
+        const std::string stateKey = (def ? def->id : std::string("?")) +
+            "|" + std::to_string((int)loaded) +
+            "|" + std::to_string((int)equipped) +
+            "|" + std::to_string((int)visible) +
+            "|" + std::to_string(heldMesh.verts.size());
+        if (stateKey != state.key || nowMsState - state.lastMs >= 1000) {
+            state.key = stateKey;
+            state.lastMs = nowMsState;
+            const char* reason = !loaded ? "model-not-loaded"
+                : (!equipped ? "not-equipped"
+                   : (visible ? "held-visible" : "mesh-not-drawable"));
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "weapon.viewmodel.state", def ? def->id : "unknown",
+                reason, 0,
+                nlohmann::json{
+                    {"weapon", def ? def->id : ""},
+                    {"slot", def ? def->slot : -1},
+                    {"requested_path", modelPath},
+                    {"loaded_path", loadedModelPath},
+                    {"loaded", loaded},
+                    {"verts", heldMesh.verts.size()},
+                    {"vao", vao},
+                    {"has_bounds", hasModelBounds},
+                    {"equipped", equipped},
+                    {"equipped_slot", player.equippedSlot},
+                    {"visible", visible}});
+        }
+    }
 
     if (def && def->recoilDefinition.enabled) {
         const float recovery = std::max(0.0f, def->recoilDefinition.viewmodelRecoveryRate);

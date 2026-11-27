@@ -1,0 +1,27 @@
+# Daily implementation and runtime evidence review — 2026-11-27
+
+- Review window: after the 2026-11-26 snapshot through 2026-11-27T01:48Z.
+- Checkout: `C:\mimita-v9`, branch `checkpoint/one-checkout-condensation-20261111`; existing shared edits belong to contributors.
+- This review records evidence only; it did not change gameplay source/config or control any runtime.
+
+## What moved
+
+| Work | Tried / implemented | Evidence now available | What improved, worsened, or remains unknown |
+|---|---|---|---|
+| Rocket League landing, attitude, and air-control corrections | Generation 664 implemented the floor-penetration correction and telemetry. | Changelog `docs/changelog/2026-11-26/20261126_015301-rocket-league-landing-and-orientation-sit-on-wheels-no-ground-overlap-no-ground-tilt-correct-air-axes.md` records runtime proof across runs `20261126_013852`, `014117`, `014423`, `014657`, and `014900`: flat landing, zero underground penetration in the described cases, level grounded attitude, and aligned air-roll/yaw intent. | Clear improvement from the prior daily snapshot, where gen 664 was not yet proven. Current coordination proof records mark multiple related tasks stale after later source changes; the old success is not current-source proof. No human visual acceptance recorded. |
+| NPC melee against the player | User clarified the desired comparison is NPC vs player, equivalent to player-vs-player and full behavior parity (context `ctx-664e860ecd10`, issue `issue-503f3e410c01`). | Dedicated live run `20261127_011757`, mode `tdm npc elite`, map `atdm`, server PID 5900/client PID 34092, pinned game DLL generation 748 (`f47559bffec6fb40f9d3ae13fb5ca7862952e05b640bd8dbb2eeda644926b5f6`). Server journal shows NPC-vs-NPC physical-contact damage and NPC-vs-NPC weapon contacts; the captured events do not show NPC-to-player melee damage/contact. | This run exercises NPC combat but does not prove failure: player proximity, targeting, and a melee attempt against the player are not established by these events. Issue remains open/unproven. The live pair was observed, not adopted or stopped. |
+| Reported eight MiMITA processes and host pressure | Existing issue `issue-a13a383a3f3d` retains the user report and prior resource investigation. | Earlier five-minute capture measured host CPU at 99.9–100%, low available RAM, and four game processes using about 30% whole-host CPU; it did not capture the reported eight-process incident or establish causality for Explorer/networking. At this review, evidence-watch found two processes in run `20261127_011757`; journals were active and large. | Current observed count is two, not eight. The exact buildup and networking/Explorer causal chain remain unknown. No process was stopped. |
+| Game-DLL object-cache freshness | Issue `issue-70b27f66e00e` records a prior changed-source skip concern. | Later attempt `game-dll-20261127T013823160277Z-8b3773` built generation 750 successfully and compiled `src/vehicles/vehicle-system.cpp`; current dev-loop snapshot at 01:43Z then showed a fresh EXE and generation 751 starting. | The generation 750 compile is counterevidence to a continuing omission on that attempt, but does not resolve the earlier skipped-source report. Active TDM run still used gen 748, so it is not runtime evidence for later code. |
+| Build and proof workflow | Shared dev-loop remains active; coordination snapshot showed 473 open issues, 98 unproven proofs, 40 stale proofs, and 37 conflicts. | `dev-loop.py --status` at 01:43Z showed visible run `20261127_014331`, mode `vehicle_freeplay`, fresh EXE build `2026-11-27T01:43:27.658897Z:f50b710550f37deea6ac33a1dd2f80f227222b751ba87563fe029ee46f894cc8`, and game-DLL generation 751 still building. | Backlog counts are coordination state, not product-quality measures. Two new issues appeared since the earlier 471-open snapshot; stale and conflict counts were unchanged. Generation 751 has no success evidence in this review window. |
+
+## Quiet-time and overlooked-work scan
+
+- User's request to think during idle periods is represented here as a daily comparison pass: planned/attempted work, source/build state, exact live-run evidence, improvements/regressions, and questions only surfaced by the evidence. This is a snapshot, not proof that every workstream was inspected.
+- The current TDM journal offers a useful follow-up capture: identify whether an NPC actually targets and swings at the player, then correlate that attempt through contact resolution to damage. Current journal evidence is insufficient to distinguish no attempt from a rejected/missed contact.
+- The eight-process report still needs a capture at the moment of buildup, with process ownership, matched run IDs, and host resource samples. Do not infer a cause from process count alone.
+- Generation 664's gameplay results were good, but source changes made their proof stale. Re-run the relevant landing/air-control scenarios against the current candidate before treating them as maintained behavior.
+- Open or new work is not silently assigned or closed by this review. No behavior task is declared complete without current runtime proof or an explicit proof exemption.
+
+## Evidence limits
+
+Source inspection, build status, runtime journals, and human review are separate evidence layers. This review has no fresh human visual/gameplay acceptance. The active dev-loop run and the isolated TDM run are different processes with different modes, artifacts, and ownership; neither was controlled during this review.

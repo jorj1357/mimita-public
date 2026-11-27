@@ -207,3 +207,349 @@ GUI process-panel observation at 2026-11-25 22:28 UTC: after restarting the upda
 ### 2026-11-25T22:37:53.125Z — dashboard-cpu-persistence
 
 Dashboard process visibility update observed 2026-11-25 around 22:37 UTC: after relaunch, process panel showed 1 server, 0 clients, and row for run 20261125_221046: main/server-01 server online PID15988; started=2026-11-25 22:10:46 UTC; Purpose: mode=Vehicle Arena - Rocket League Free Play; map=arena1; up=26:21. GUI now renders UTC process start, run ID, purpose, mode/map for managed rows and explicitly marks external launches with unknown launch reason. This does not establish that a process is unused; only one server/zero clients were visible at this observation. No process stopped.
+
+## Agent suggestion
+
+### 2026-11-26T22:56:24.504Z — dashboard-resource-gold-spec
+
+Direct dashboard/system resource baseline after restart (2026-11-26 UTC). Dashboard PID 35600, created 22:43:09Z, active-run mode from server journal: Vehicle Arena - Rocket League Free Play / vehicle_freeplay, map arena1, 0 NPCs; run 20261126_201711, client PID23564, server PID34452; generation731 published, no build active. Dashboard sample 22:51:50.223Z–22:52:58.274Z (68.05 s), 12 logical CPUs: 16.08 CPU seconds = 23.63% of one logical CPU and 1.97% of whole-host capacity. Dashboard RAM: working set mean 87.1MB / max 91.5MB; private bytes mean 71.0MB / max 75.2MB. Before restart its long-lived PID35740 had 1,468.8MB private and ~86MB working set; after restart initial sample: 57.3MB private / 73.7MB working set, 68.7-second trend ~56.9MB private mean, ~74MB working set mean. This demonstrates private-memory retention/growth over long uptime as a strong lead, not yet proven leak cause.
+
+Host over the 68.05 s sample: CPU mean 70.09%, p95 96.7%, max 100%; available RAM 2,823MB at start, min 1,238MB, 3,463MB at end; physical RAM 15.65GB; pagefile used rose 3,502→3,552MB (pagefile total 20,209MB). Top competing CPU consumers normalized to whole-host capacity: MsMpEng PID7060 6.88%, System PID4 3.93%, dwm PID1984 3.49%; dashboard 1.97%; ChatGPT PID7924 1.92%; Taskmgr PID4520 1.64%; Code PID8340 1.53%; no build active. These host swings make total host CPU an invalid proxy for dashboard attribution.
+
+Separate 16.21s sample while DLL generation731 was compiling: dashboard PID35740 used 5.84 CPU seconds (36.0% one logical CPU / 3.0% whole host), working set 86.1MB, private 1,468.8MB; available physical RAM fell 253→0.7MB and system commit rose 38,173→39,557MB of 40,514MB. Top contenders were MiMITA client PID23564 13.17%, external/unverified server PID17420 6.06%, run server PID34452 5.69%, and four cc1plus processes roughly 2.95–3.32% each. Build attempt game-dll-20261126T223808304994Z-2d57e6, generation731. This is correlated build pressure, not proof dashboard caused host pressure. Journal: logs/2026-11-26/20261126_201711/server-01/events.jsonl.
+
+Process discovery also found MiMITA server PID17420, started 2026-11-26T22:07:01Z, child of client PID23564, command says mode=bloodtest, map=slaughterhouse1, NPCs=1, name=MiMITA Server; evidence-watch classifies it unverified with no run ID or journal. Purpose args are observable, but ownership/run and active use remain unknown; do not stop it. Dashboard CPU is above the existing <1% whole-host target in the 68s sample despite its private-memory usage falling after restart. Repeat matched samples and attribute the remaining CPU before claiming completion.
+
+## Agent suggestion
+
+### 2026-11-26T22:59:32.229Z — dashboard-resource-gold-spec
+
+The new resource measurement contract is now at docs/specs/dev-loop/system-resource-measurement.md and routed from docs/ROUTER.md. It defines host/process CPU normalization, RSS/private/host-commit/paging metrics, run/build/process attribution, unknown handling, sample windows/overhead, initial dashboard CPU/RAM budgets, and a 2026-11-26 measured example. This is a measurement standard, not proof the CPU target is met or a fix for long-uptime private-memory growth. Existing build_resource_sampler gaps include matched pre-build host baseline and commit/limit availability; capture those as unknown until the sampler owner closes them. Cross-linked CPU issue issue-acf28dc22c85; current 68-second post-restart CPU sample was 1.97% whole-host, above the <1% target, while RAM was below proposed fresh-idle budget.
+
+## Agent suggestion
+
+### 2026-11-26T23:00:27.923Z — dashboard-resource-gold-spec
+
+Resource-sampling gap reported by brain_check after the 2026-11-26 review: build attempt game-dll-20261126T225436238680Z-71085e completed at 2026-11-26T22:55:23.822Z in 47.579 s, summary .dev/build-timings/game-dll-20261126T225436238680Z-71085e.json. Missing matched pre-build host baseline, host commit charge/limit, and journal-aligned live mode/workload/frame/tick data. Gap key build-resource-sampling:game-dll-20261126T225436238680Z-71085e. This is missing evidence, not proof of build-caused pressure; append once and preserve these values as unknown until instrumentation is improved. The other active agent-path ownership check for devscripts/dev-loop.py received no reply after signal, sync, and inbox check; record as timeout, and do not edit if an active lease/dirty owner is found.
+
+## Agent suggestion
+
+### 2026-11-26T23:14:37.133Z — dashboard-resource-gold-spec
+
+Post-refresh dashboard sample PID1328, 2026-11-26T23:06:48.800Z–23:12:11.104Z, duration 322.3s, 300 one-second samples, 12 logical CPUs, run 20261126_230039 at sample start: CPU 109.36s=33.93% one logical CPU=2.83% whole host; WS mean/p95/max 92.4/122.3/123.1MB; private mean/p95/max 95.6/125.6/126.3MB; collector 0.22s CPU. Host mean/p95/max 84.68/100/100%, available RAM min 455.6MB, commit max 31,418.8/36,233MB. Direct: run transitioned to 20261126_231000 during sample; client was offline by warmup end; sample summary had no MiMITA processes. Inference: dashboard was a significant application CPU consumer, but host pressure and runtime transition confound dashboard-vs-game attribution. Unknown: dashboard visible/minimized and full mode/workload alignment across window. This is not an improvement over the earlier unmatched sample (23.63% one core/1.97% host); spec updated, no claim CPU budget met. Raw artifact .dev/resource-measurements/20261126T230539Z-dashboard-post-refresh.jsonl; run journals logs/2026-11-26/20261126_230039/{server-01,client-01}/events.jsonl. Next: instrument GUI stage durations, then matched visible/hidden comparison.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:16:23.817Z — dashboard-resource-gold-spec
+
+Message: `msg-132a5a18e5c2` (question)
+
+Subject: Cross-agent ownership signal
+
+I found render_runtimes destroys and recreates every runtime row on each one-second GUI refresh, even when the model is unchanged. Are you editing or relying on this file now? I propose caching the runtime rows and rebuilding only when their displayed values change, then measuring again.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev_loop/gui.py
+Run: 20261126_230039
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:16:24.455Z — dashboard-resource-gold-spec
+
+Message: `msg-779763b3fc14` (question)
+
+Subject: Cross-agent ownership signal
+
+I found render_runtimes destroys and recreates every runtime row on each one-second GUI refresh, even when the model is unchanged. Are you editing or relying on this file now? I propose caching the runtime rows and rebuilding only when their displayed values change, then measuring again.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev_loop/gui.py
+Run: 20261126_230039
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:16:24.949Z — dashboard-resource-gold-spec
+
+Message: `msg-a0592bbc0537` (question)
+
+Subject: Cross-agent ownership signal
+
+I found render_runtimes destroys and recreates every runtime row on each one-second GUI refresh, even when the model is unchanged. Are you editing or relying on this file now? I propose caching the runtime rows and rebuilding only when their displayed values change, then measuring again.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev_loop/gui.py
+Run: 20261126_230039
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:16:25.445Z — dashboard-resource-gold-spec
+
+Message: `msg-230c73ddfd7e` (question)
+
+Subject: Cross-agent ownership signal
+
+I found render_runtimes destroys and recreates every runtime row on each one-second GUI refresh, even when the model is unchanged. Are you editing or relying on this file now? I propose caching the runtime rows and rebuilding only when their displayed values change, then measuring again.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev_loop/gui.py
+Run: 20261126_230039
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:16:26.039Z — dashboard-resource-gold-spec
+
+Message: `msg-cb3d2fe00efa` (question)
+
+Subject: Cross-agent ownership signal
+
+I found render_runtimes destroys and recreates every runtime row on each one-second GUI refresh, even when the model is unchanged. Are you editing or relying on this file now? I propose caching the runtime rows and rebuilding only when their displayed values change, then measuring again.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev_loop/gui.py
+Run: 20261126_230039
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:16:26.789Z — dashboard-resource-gold-spec
+
+Message: `msg-b7543c5a8d13` (question)
+
+Subject: Cross-agent ownership signal
+
+I found render_runtimes destroys and recreates every runtime row on each one-second GUI refresh, even when the model is unchanged. Are you editing or relying on this file now? I propose caching the runtime rows and rebuilding only when their displayed values change, then measuring again.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev_loop/gui.py
+Run: 20261126_230039
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:16:27.706Z — dashboard-resource-gold-spec
+
+Message: `msg-9574b65c5a93` (question)
+
+Subject: Cross-agent ownership signal
+
+I found render_runtimes destroys and recreates every runtime row on each one-second GUI refresh, even when the model is unchanged. Are you editing or relying on this file now? I propose caching the runtime rows and rebuilding only when their displayed values change, then measuring again.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev_loop/gui.py
+Run: 20261126_230039
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent suggestion
+
+### 2026-11-26T23:28:23.569Z — dashboard-resource-gold-spec
+
+Second iteration measured after runtime-row caching: direct source observation: render_runtimes destroyed/recreated each runtime row every 1s; now caches displayed signature and rebuilds only on changes. Five-minute sample 2026-11-26T23:21:06.125Z–23:26:06.124Z, 300 x 1s, target PID32132, 12 CPUs, run 20261126_231947, mode Vehicle Arena - NPC flip-reset freestyle probe, arena2, one player/zero NPCs, build id 2026-11-26T22:52:33.481041Z:cb72ee40c66d4a4935d89c0d03431ff52d82369b2bbf7230c6c41067ed8d781c. CPU 60.73s=20.24% one core=1.687% whole host; WS mean/p95/max 79.82/81.93/89.29MB; private 63.87/65.90/72.39MB; host CPU 75.11/96.3/100%; available RAM min 2692.6MB. Meets RAM p95 budgets, misses CPU target. Earlier unmatched sample 33.93% one core /2.83% host, private p95 125.6MB. Do not attribute difference to code: earlier run changed/client offline; current run had one player/zero NPC; game DLL build active at sample start and gen742 published by post-sample status, exact overlap unknown. Unknown in sample: same-window top process CPU, host commit/pagefile, collector CPU overhead. Raw .dev/resource-measurements/20261126T231900Z-runtime-rows-cache.jsonl; journals logs/2026-11-26/20261126_231947/{server-01,client-01}/events.jsonl. Post-sample FPS 336–447 (23:27:06–13Z) is outside sample and not user's reported mode. Keep CPU ownership/profiling open; next run matched dashboard-visible/hidden with stable run/build and complete process/commit/collector metrics.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:42:17.650Z — dashboard-resource-gold-spec
+
+Message: `msg-c69882577cef` (question)
+
+Subject: Cross-agent ownership signal
+
+The current dashboard session records dashboard.status.slow reads of 172–687ms and dashboard.coordination.slow reads of 2.7–5.1s. gui_status in devscripts/dev-loop.py runs a full windows_process_inventory scan each one-second status refresh solely to list root daemon PIDs. Are you editing or relying on this path now? I propose a 2-second cache for that displayed PID inventory while preserving the one-second status refresh, then a matched remeasurement.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev-loop.py
+Run: 20261126_231947
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:42:17.950Z — dashboard-resource-gold-spec
+
+Message: `msg-c941e0156701` (question)
+
+Subject: Cross-agent ownership signal
+
+The current dashboard session records dashboard.status.slow reads of 172–687ms and dashboard.coordination.slow reads of 2.7–5.1s. gui_status in devscripts/dev-loop.py runs a full windows_process_inventory scan each one-second status refresh solely to list root daemon PIDs. Are you editing or relying on this path now? I propose a 2-second cache for that displayed PID inventory while preserving the one-second status refresh, then a matched remeasurement.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev-loop.py
+Run: 20261126_231947
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:42:18.220Z — dashboard-resource-gold-spec
+
+Message: `msg-1cd45a2911b9` (question)
+
+Subject: Cross-agent ownership signal
+
+The current dashboard session records dashboard.status.slow reads of 172–687ms and dashboard.coordination.slow reads of 2.7–5.1s. gui_status in devscripts/dev-loop.py runs a full windows_process_inventory scan each one-second status refresh solely to list root daemon PIDs. Are you editing or relying on this path now? I propose a 2-second cache for that displayed PID inventory while preserving the one-second status refresh, then a matched remeasurement.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev-loop.py
+Run: 20261126_231947
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:42:18.518Z — dashboard-resource-gold-spec
+
+Message: `msg-78f0b024d1a1` (question)
+
+Subject: Cross-agent ownership signal
+
+The current dashboard session records dashboard.status.slow reads of 172–687ms and dashboard.coordination.slow reads of 2.7–5.1s. gui_status in devscripts/dev-loop.py runs a full windows_process_inventory scan each one-second status refresh solely to list root daemon PIDs. Are you editing or relying on this path now? I propose a 2-second cache for that displayed PID inventory while preserving the one-second status refresh, then a matched remeasurement.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev-loop.py
+Run: 20261126_231947
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:42:18.831Z — dashboard-resource-gold-spec
+
+Message: `msg-51c499b4629a` (question)
+
+Subject: Cross-agent ownership signal
+
+The current dashboard session records dashboard.status.slow reads of 172–687ms and dashboard.coordination.slow reads of 2.7–5.1s. gui_status in devscripts/dev-loop.py runs a full windows_process_inventory scan each one-second status refresh solely to list root daemon PIDs. Are you editing or relying on this path now? I propose a 2-second cache for that displayed PID inventory while preserving the one-second status refresh, then a matched remeasurement.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev-loop.py
+Run: 20261126_231947
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:42:19.125Z — dashboard-resource-gold-spec
+
+Message: `msg-013b76a1bbc6` (question)
+
+Subject: Cross-agent ownership signal
+
+The current dashboard session records dashboard.status.slow reads of 172–687ms and dashboard.coordination.slow reads of 2.7–5.1s. gui_status in devscripts/dev-loop.py runs a full windows_process_inventory scan each one-second status refresh solely to list root daemon PIDs. Are you editing or relying on this path now? I propose a 2-second cache for that displayed PID inventory while preserving the one-second status refresh, then a matched remeasurement.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev-loop.py
+Run: 20261126_231947
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:42:19.457Z — dashboard-resource-gold-spec
+
+Message: `msg-b82109132c44` (question)
+
+Subject: Cross-agent ownership signal
+
+The current dashboard session records dashboard.status.slow reads of 172–687ms and dashboard.coordination.slow reads of 2.7–5.1s. gui_status in devscripts/dev-loop.py runs a full windows_process_inventory scan each one-second status refresh solely to list root daemon PIDs. Are you editing or relying on this path now? I propose a 2-second cache for that displayed PID inventory while preserving the one-second status refresh, then a matched remeasurement.
+
+Sender: dashboard-resource-gold-spec
+Paths: devscripts/dev-loop.py
+Run: 20261126_231947
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-26T23:56:49.158Z — dashboard-resource-gold-spec
+
+Message: `msg-84eabf7c7f43` (question)
+
+Subject: Cross-agent ownership signal
+
+Read-only evidence-watch found an unverified MiMITA server PID5440, started 2026-11-26T23:47:06.969Z, child of client PID27864 in run 20261126_233910; it has no run ID/journal, but safe command-line fields indicate --mode vehicle_freeplay --map arena2 --name MiMITA Server. During a 60-second dashboard-closed sample it used 8.09% whole-host CPU and ended near 302MB private/99MB working set. Is any agent or workflow responsible for this process and what task owns it? I have not controlled or stopped it.
+
+Sender: dashboard-resource-gold-spec
+Paths: .dev/current/mimita.exe
+Run: 20261126_233910
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent discussion and suggestions
+
+### 2026-11-27T00:10:18.489Z — dashboard-resource-gold-spec
+
+Message: `msg-82ef6dfac6f3` (question)
+
+Subject: Cross-agent ownership signal
+
+Read-only discovery found unverified MiMITA server PID20596 started 2026-11-27T00:05:08.873Z, child of managed client PID24528 in run 20261127_000428. No run ID/journal; safe launch fields say mode=team_deathmatch, map=dust2cyberiav4, npcs=1, while managed server PID11572 reports mode=tdm npc elite/map=atdm. It appeared during the dashboard resource sample; same-window CPU delta is unavailable because it was born after sample start. Is any agent/workflow responsible and what purpose does it serve? No process has been controlled or stopped.
+
+Sender: dashboard-resource-gold-spec
+Paths: .dev/current/mimita.exe
+Run: 20261127_000428
+
+This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Agent suggestion
+
+### 2026-11-27T00:13:13.910Z — dashboard-resource-gold-spec
+
+Third, fourth and latest iteration evidence: After code changes in devscripts/dev_loop/gui.py (cache unchanged runtime rows; cache dev-launch-modes.json by mtime+size; default the expensive coordination panel closed and only read/render it when opened) and devscripts/dev-loop.py (reuse one daemon snapshot per refresh; cache daemon PID inventory for 2s), dashboard PID1828 was sampled 2026-11-27T00:02:42.616Z–00:07:42.608Z, 300 x 1s, 12 logical CPUs, collector 0.844 CPU seconds=0.0234% host. Dashboard 81.58 CPU seconds=27.19% one core=2.266% whole host; WS mean/p95/max 93.96/131.64/151.57MB; private 84.31/115.58/146.17MB. It still misses <1% host CPU and p95 RAM budgets. Host CPU 90.83/99.8/100%; physical RAM available min0.4MB; commit max38,698.1MB with contemporaneous limit39,697.2MB; pagefile max6,968.5MB. At run start server PID29300 was fun counter strike/dust2cyberiav4/1 NPC/no client; run 20261127_000428 started server PID11572 at00:04:30 and client PID24528 at00:04:37 (TDM NPC Elite/atdm); build idle. This is a workload transition and no matched A/B. After lazy coordination was enabled, no dashboard.coordination events appeared while the panel stayed collapsed (direct observation, sample window); CPU reduction cannot be causally attributed because host was near 100% CPU and physical RAM nearly exhausted. Top CPU: FL64 PID32776 10.69% host, DWM PID1984 5.297%, unverified MiMITA server PID5440 5.193%, Defender PID7060 4.774%, System PID4 3.673%, OpenCode PID6988 2.619%, dashboard PID1828 2.29%. Top end-of-sample private: FL64 4,429MB, managed MiMITA server PID11572 1,368MB, ChatGPT PID20868 942MB, DWM 898MB, OpenCode 850MB. Raw artifact .dev/resource-measurements/20261127T000100Z-coordination-lazy.jsonl.
+
+Process attribution follow-up: PID5440 remains unverified, started 2026-11-26T23:47:06.969Z as child of client PID27864 from earlier run 20261126_233910; safe args indicate vehicle_freeplay/map arena2/name MiMITA Server; no run/journal. It used 5.193% host CPU during the latest 5-minute sample and 8.09% during the 60s dashboard-closed window. New unverified server PID20596 started 2026-11-27T00:05:08.873Z, child of current client PID24528, no run/journal; safe args team_deathmatch/dust2cyberiav4/NPC1 differ from managed server tdm npc elite/atdm. PID20596 appeared mid-sample so matched CPU delta is unavailable. Cross-agent ownership signals for these PIDs broadcast with no owner reply as of 00:10:19Z. No process was stopped. Do not call either a duplicate or claim its purpose until traced to its launch owner.
+
+## Agent suggestion
+
+### 2026-11-27T00:36:19.677Z — dashboard-resource-gold-spec
+
+New process-attribution evidence cross-linked to dashboard CPU issue issue-acf28dc22c85. During the read-only sample 2026-11-27 00:21:44.841–00:26:44.906 UTC, root dev-loop run 20261127_001718 was TDM on atdm with managed client PID 29544 and server PID 11572. Two other MiMITA server processes remained unverified and had no run ID or journal in evidence-watch list: PID 5440, started 2026-11-26T23:47:06.969Z, child of client PID 27864; safe command-line fields indicate vehicle_freeplay, arena2, name MiMITA Server. PID 20596, started 2026-11-27T00:05:08.873Z, child of former client PID 24528; safe command-line fields indicate team_deathmatch, dust2cyberiav4, one NPC, name MiMITA Server. Treat these as launch arguments only; actual runtime mode, owner, purpose, and whether they are duplicates remain unknown. During the sample PID 5440 averaged 1.646% whole-host CPU and ended at 303.02 MB private memory; PID 20596 averaged 2.686% whole-host CPU and ended at 517.83 MB private memory. Both had no journal/run identity, so their behavior and need are unproven. No process was controlled or stopped. Raw resource data: .dev/resource-measurements/20261127T002100Z-dashboard-open-current-run.jsonl; process identity evidence: evidence-watch list output during this investigation. Leave follow-up unowned pending clear ownership/purpose evidence.
+
+## Agent suggestion
+
+### 2026-11-27T01:01:17.203Z — build-wait-reviewer
+
+Unreported build-resource gap_keys from build-wait-reviewer (wake-f93906ee6177), per brain_check 2026-11-27T00:57Z. Two completed game-DLL attempts have no build-resource samples: gap build-resource-sampling:game-dll-20261127T004949308562Z-f583bc (total 56.281s) and gap build-resource-sampling:game-dll-20261127T004412307260Z-20aea5 (total 105.875s). Both report reason 'unavailable: matched_prebuild_resource_baseline; unavailable: host_commit_charge_and_limit; unavailable: journal_aligned_live_mode_workload_and_frame_tick_metrics'. A third, game-dll-20261127T005142888202Z-0200fc (90.89s), is already referenced in duplicate wait issue-a9f9f82c92f7. These are exactly the metrics this capability issue asks for; no cause is inferred and no host pressure is claimed. dashboard-resource-gold-spec is the likely active owner (lease on devscripts/dev_loop/gui.py).
+
+## Agent suggestion
+
+### 2026-11-27T01:38:50.820Z — dashboard-resource-gold-spec
+
+New unverified MiMITA resource observation from `.dev/resource-measurements/20261127T012806Z-dashboard-two-second-poll-idle.jsonl`: during 2026-11-27T01:29:35.583Z–01:34:49.577Z (300 rows, host 12 logical CPUs), `mimita.exe` PID 5900 averaged 6.986% whole-host CPU, p95 unknown from direct process timeline? recorded 9.504% p95; private bytes p95 1390.66 MB. `mimita.exe` PID 34092 averaged 14.461% whole-host CPU (p95 17.796%), private p95 880.20 MB. Dev-loop reported no managed run at sample close; no matching run journal, exact mode, map, player/NPC workload, launch reason, parent or process arguments were retained, so each role/purpose is unknown. Both PIDs were absent in a later `Get-Process` check; neither was stopped or controlled. Host CPU averaged 99.971%, physical RAM available averaged 2064.48 MB and fell to 653.02 MB, system commit peaked at 41094.70/43064.11 MB. A game-DLL build started at 01:33:03.208Z, overlapping the final 1m46s, but no build resource causality is claimed. These two processes together averaged 21.447% whole-host CPU during the sample; capture launch lineage and runtime-registry/journal ownership for future processes before attributing purpose.
+
+## Agent suggestion
+
+### 2026-11-27T01:54:32.665Z — build-wait-reviewer
+
+Build-resource evidence gap observed during game-dll-build wait review of issue-5d8ebe281ce6 (exact attempt .dev/build-timings/game-dll-20261127T012317214621Z-4a732c.json).
+gap_key: build-resource-sampling:game-dll-20261127T012317214621Z-4a732c
+Captured that attempt: mean_host_cpu=97.939%, peak=100%, min_available_memory=230,301,696 B; sampler_thread_cpu_ms=19,640.6 of 64.656s; process_discovery_wall_ms_total=41,088.8.
+Unavailable fields: matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation.
+Smallest useful next check: record a matched pre-build host/process baseline over the same fixed interval just before each game-dll attempt, and emit host commit charge/limit, so a build that overlaps an already-saturated host (live client ~6 fps, server ~394ms/50 NPC ticks in run 20261127_011757) can be separated from intrinsic build cost. Host CPU/mem WERE captured for this attempt; no causal claim is made from the missing fields.
+
+## Agent suggestion
+
+### 2026-11-27T02:05:13.096Z — dashboard-resource-gold-spec
+
+Additional unknown MiMITA processes observed in `.dev/resource-measurements/20261127T015409Z-dashboard-history-cache-idle.jsonl`, 2026-11-27T01:55:22.131Z–02:00:37.961Z on a 12-logical-CPU host: PID14572 (`mimita.exe`) averaged 11.361% whole-host CPU (p95 17.130%), private p95 11277.19 MB and working-set p95 2962.27 MB; PID25844 (`mimita.exe`) averaged 8.251% whole-host CPU (p95 10.049%) and private p95 311.46 MB. Each was present for 278/280 process observations before it disappeared from the collector. Their launch owner, process purpose, mode/map, parent, exact command line and journal are unknown; no process was stopped. The sample's system CPU averaged 99.924%, available RAM reached 6.47 MB, and commit peaked at 45.25/46.03 GB. A separate managed run (20261127_020014) appeared in the last 23 seconds and was not one of these PIDs. Follow up by recording process start/parent/command line and registry attribution when processes launch; do not infer ownership from executable name alone.
+
+## Agent suggestion
+
+### 2026-11-27T02:06:00.404Z — dashboard-resource-gold-spec
+
+Correction to previous sample append: the 278/280 values are rows with usable process CPU metrics, not a confirmed exit time. The direct collector may return null CPU/memory on an inaccessible or exited process; exact lifecycle is unknown. Likewise, do not use the wording 'before it disappeared from the collector' as an observed process exit. The executable name and measured resource values remain directly observed.
+
+## Agent suggestion
+
+### 2026-11-27T02:13:20.603Z — dashboard-resource-gold-spec
+
+Correction to the 20261127T015409Z sample: the maximum commit-charge row is 45254.95 / 46033.16 MB at 01:56:50.778Z (98.31%), but that is not the maximum utilization. The highest commit-to-limit ratio is 44949.43 / 44989.67 MB = 99.91% at 01:56:37.307Z. The associated spec/changelog note will distinguish peak charge from peak utilization.

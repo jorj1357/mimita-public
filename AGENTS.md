@@ -17,25 +17,60 @@ Read these gates before doing anything else:
    never invoke a compiler, `build.py`, a module worker, or a second loop
    directly. The root dev-loop remains the only builder. Mode 3 batch triggering
    is the default: a saved compiler input joins the visible pending batch and
-   does not start compilation. After the compiler-input owners report ready,
-   the root coordinator issues one `dev-loop.py --request batch-build` to seal
-   that batch. An explicit `--request build` or `--request game-dll` also seals
-   a pending batch. `MIMITA_BUILD_TRIGGER_MODE=auto` is the deliberate Mode 1
-   automatic-on-save fallback.
+   does not start compilation.
+
+   BUILD APPROVAL IS MANDATORY (2026-11-27): one shared build at a time, and no
+   agent may start a compile without an approved build request. The goal is to
+   avoid resource pressure and wasted duplicate builds, not to add ceremony.
+   1. Before the first compiler-input save, queue the DLL change note with
+      `build-note.py --changes ... --why ... --expected-seconds ...` (gate 6).
+   2. File a durable request with
+      `agent-coord.py build request --kind integration --paths <changed paths>
+      --issue <id>` and post the request ID, paths, expected duration, and the
+      current resource state on the board/issue.
+   3. The rotating build owner (`agent-coord.py build owner`) approves with
+      `agent-coord.py build approve <request>`. If no owner is set, two active
+      agents that are not the requester must confirm in the issue/board and at
+      least one records the approval. A requester never self-approves; if the
+      requester is the build owner, a different agent approves.
+   4. Only an `approved` request may build:
+      `dev-loop.py --request agent-build --build-request <request>`. The
+      dev-loop rejects unknown or unapproved `agent-build` requests. Use this
+      path for agent builds. `--request batch-build`, `--request build`, and
+      `--request game-dll` are owner/human seal actions; record an approved
+      request first, then seal once. Never start a second request while one is
+      approved, queued, or building; amend or wait.
+   5. EVENT-DRIVEN APPROVAL, NO TIMER WAITING (human rule, 2026-11-27): ask the
+      build owner and peers through coordinator events (`send`/`ask` plus the
+      wake/inbox path). If no response event arrives after **two** asks, record
+      both asks and "no response" on the request/issue, then the requester may
+      auto-approve and seal this one build. Do not sleep, poll, or wait on a
+      clock between asks. A response event (approve/object), an active build,
+      halt, or freeze still wins. The no-response seal is an explicit
+      human-authorized exception for this one build, not a general permission to
+      self-approve. Prefer `build.approved` / `build.finished` events, the wake
+      adapter, and issue discussion threads over timers. A human approval is
+      recorded with the human as the approving actor.
+   6. After every build, read `game-generation.ready.postmortem`, append the
+      measured cause and suggestion to the issue, and act on the largest cause
+      before requesting the next build.
+
    Forbidden: `build.py`, `build_agent.py`, `buildv2.py`,
    `module-build-worker.py`, `ccache`, a compiler, and starting a second
    dev-loop. Do not set `MIMITA_BUILD_OVERRIDE=1`; that emergency variable is
    human-only.
-   Allowed through the root dev-loop: `dev-loop.py --request batch-build`,
-   `--request build`, `--request game-dll`, `--request cold-link-trial`,
-   `--start-test-run`, and the one-shot agent test path. In Mode 3, issue one
-   build request only after the batch is ready; do not request a build on each
-   save. Every request records the agent, task, permit, build ID, and test run.
-   One EXE build runs at a time. Candidate game-DLL builds may be requested as
-   often as needed and run concurrently only within configured CPU/memory
-   limits. Isolated test runs pin one EXE artifact and one game-DLL generation
-   or path; they have their own processes and journals and do not replace the
-   shared runtime.
+   Allowed through the root dev-loop after approval:
+   `--request agent-build --build-request <approved>`,
+   `--request batch-build`, `--request build`, `--request game-dll`,
+   `--request cold-link-trial`, `--start-test-run`, and the one-shot agent test
+   path. In Mode 3, issue one build request only after the batch is ready; do
+   not request a build on each save. Every request records the agent, task,
+   permit, build ID, and test run.
+   One EXE build runs at a time. Candidate game-DLL builds may be requested only
+   through the approval protocol and run concurrently only within configured
+   CPU/memory limits when explicitly approved as a preview. Isolated test runs
+   pin one EXE artifact and one game-DLL generation or path; they have their own
+   processes and journals and do not replace the shared runtime.
    One checkout and one source tree are current policy. Per-agent source
    isolation is deferred; do not create worktrees or source overlays until the
    specification changes. Read
@@ -81,6 +116,70 @@ Read these gates before doing anything else:
    leave follow-up unowned unless accepting it with `next --claim`. Do not
    duplicate the report or post status-only chatter.
 
+   LIVENESS: KEEP GOING (prefer progress over waiting). A lease, an unanswered
+   question, or a file another agent is "probably" editing must never stop work
+   for long. Ask once with the exact evidence, wait one short window (at most
+   one build cycle, about 10 minutes), and if there is no reply, treat the file
+   as RELEASED: take the edit lease, record in the issue discussion that you are
+   continuing because the owner did not answer, and proceed carefully with the
+   smallest change. Never leave the shared tree unbuildable. When a compile or
+   link failure traces to a file you do not own, you may fix the minimal cause
+   needed to restore the build, and you must record exactly what you changed and
+   why. Owners who come back to a file they abandoned adopt the current content
+   instead of reverting it.
+
+   OPEN DESIGN TODO (unsolved, do not treat as settled): agent conflict
+   avoidance is still weak. Editing the same file concurrently, silently stale
+   build objects, and missing shared context (an agent not seeing another
+   agent's decision, run, or issue) have all caused real wasted work. Track
+   proposals under the coordination/brain issues rather than inventing a new
+   authority in a task. Read `docs/specs/dev-loop/agent-coordination.md`.
+
+   BUILD SELF-REPAIR (object cache / link): a game-DLL link that names an
+   undefined symbol for a source that exists in the tree, or a build summary
+   with `compiled: 0` on a link failure, is a CACHE fault, not a code fault.
+   Do not chase it file by file. Runbook, all through the root dev-loop:
+   1. Touch nothing and check `.dev/build-timings/` for `compiled: 0` and a
+      `link failed` line; confirm the named symbol's definition exists with
+      `rg`.
+   2. For one missing TU, a *content* edit forces a rebuild; an mtime touch
+      does not, so a comment edit is the smallest legal lever when a single
+      object is missing.
+   3. If two attempts in a row fail on different missing TUs, stop and
+      quarantine the object cache for the current `flags_identity`:
+      move `build/game/objects/<id>` to `build/game/objects/<id>.bak-<utc>`
+      (never delete it) and request one `--request game-dll` to rebuild.
+      Record the quarantine in the regression/friction issue.
+   4. Verify the publish: `build/game/current.json` `generation`, `status` and
+      `changed_sources` must contain the work you intended, and a runtime event
+      unique to the change must appear in the run journal.
+   Quarantining an object cache is a shared-build action: say so in the issue
+   discussion and in your activity entry, with the directory moved and why.
+   The recorded occurrence is
+   `docs/regressions/dev-loop/game-dll-link-loses-translation-units-REG-2026-11-27.md`.
+
+   AGENT PROCESS AUTONOMY: an agent may start as many checkout-owned MiMITA
+   EXEs and isolated test runs as its task needs. Use the root dev-loop, keep
+   within resource limits, record the run IDs, and clean up only its own
+   processes at task boundaries. Do not stop, adopt, kill, or relaunch another
+   agent's run unless the user explicitly asks or the run is proven abandoned by
+   the coordination tools.
+
+   QUEUED WORK IS AUTONOMOUS: when a plan lists implementation items, continue
+   through them in order without asking for per-item confirmation. Stop only
+   when a decision materially changes scope, behavior, or shared authority, or
+   when the tree would be left unbuildable.
+
+   CONTEXT HANDOFF: if context is nearing its usable limit (including an
+   OpenCode model reporting near-full context) and work remains, do not stop
+   with an unfinished or unbuildable tree. Write
+   `docs/handoffs/YYYY-MM-DD-<task>-handoff.md` with current state, evidence,
+   open items, file ownership, build/run IDs, and next steps; open a **new
+   top-level OpenCode chat** with that document via the durable wake adapter
+   (`devscripts/agent-wake.py`, `--adapter opencode`), not a subagent; ensure
+   the tree compiles; then end. The new agent owns the continuation. The
+   detailed contract is `docs/specs/dev-loop/agent-context-handoff.md`.
+
    CROSS-AGENT SIGNAL: When a build failure, dirty file, lease, runtime, stale
    proof, or resource-pressure symptom looks owned by another agent, do not
    guess or overwrite it. Send one bounded question with the exact evidence
@@ -117,6 +216,13 @@ Read these gates before doing anything else:
    incomplete creation is rejected. Triage into owned tasks and steps;
    use `issue assign`, `task dep`, `issue defer`, and `issue clarify`. Do not
    edit a spec or TODO to resolve a report without user clarification.
+   ISSUES ARE FORUM THREADS (2026-11-27 human rule): every issue is an
+   append-only discussion, not a one-line ticket. Agents add proposals,
+   objections, evidence, and replies with `agent-coord issue suggest` /
+   `issue review`, state the stance and the evidence, and debate the fix in the
+   issue. Do not move the debate to chat and do not append status-only chatter.
+   The verbatim human report stays immutable. New entries wake the owner and
+   participants through coordinator events; do not wait on timers.
    When a build or test waits, record why; a wait above the measured budget or
    an avoidable wait creates a `build-friction` issue. A behavior task cannot
    be marked done or its issue closed without a verified `runtime_proven` proof
@@ -208,13 +314,21 @@ Read these gates before doing anything else:
 
 6. DLL CHANGE NOTES: Before the first edit to any whole-game DLL compiler
    input, queue a note with `python devscripts/build-note.py --changes
-   "short description" --files path/to/file`. Queue one note for each
+   "short description" --why "why this build exists now" --files
+   path/to/file [--header-fanout N] [--expected-seconds S] [--risk "..."]
+   [--proof "..."]`. Queue one note for each
    independent agent change before saving its compiler inputs. If several
    agents' changes land in one DLL attempt, each note must remain attached to
    that attempt; the dev-loop consumes all pending notes together. Never wait
    for the build to add the note afterward. The final build result and its
    notes must be traceable from the dev-loop `events.jsonl` and the per-attempt
    `.dev/build-timings/` summary.
+   Every build carries a postmortem in `game-generation.ready.postmortem`
+   (why, phase seconds, slowest TUs, queue wait, header fanout, resource
+   pressure, suggestions). Read it after each build and act on the largest
+   measured cause. Missing `--why` is a build-friction issue, not an
+   acceptable state. The contract is
+   `docs/specs/dev-loop/build-why-and-postmortem.md`.
 
 ## Authority and scope
 

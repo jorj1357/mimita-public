@@ -4,8 +4,9 @@
 Rocket-League-style vehicle arena mode.
 **Audience:** gamemode, vehicle, physics, networking, map, HUD, and replay
 contributors.
-**Status:** desired behavior; a Rocket League comparison baseline is recorded,
-while MiMITA arena tuning and first implementation remain pending.
+**Status:** desired behavior with a working first slice. Physics, match, and bot
+probe evidence is recorded in the milestone ladder; presentation parity,
+opponent quality, and the remaining physics parity rows are still open.
 **Does not:** add a second vehicle physics solver, require vehicle-mounted
 weapons, or replace the shared gamemode lifecycle.
 
@@ -27,11 +28,13 @@ the same commit as any change to it.
 | # | Milestone | State | Proof |
 |---|---|---|---|
 | M1 | Input contract: one logical action, any device. Profile data owns the keyboard mapping; the pad owns its own device mapping; nothing hardcodes a key. | partial | Server-side `vehicle.airroll` after a transmitted roll input: run `20261125_233342`, game generation 656. Keyboard rebind path is source-only, not yet runtime-proven |
-| M2 | Air handling: jump, double jump, dodge, air roll (all four), stall, flip reset, 5.5 rad/s cap | partial | Jump and air roll proven in run `20261125_233342` (`vehicle.jump`, `vehicle.airroll`, `air_control=true`, 184 samples, angular speed capped at 5.5). Roll and yaw direction proven in run `20261126_014900`: intent sign matched the measured `roll_rate_local`/`yaw_rate_local`, zero `vehicle.aircontrol.mismatch`. Dodge, stall, and flip reset unproven |
+| M2 | Air handling: jump, double jump, dodge, air roll (all four), stall, flip reset, angular cap | partial | Jump and air roll proven in run `20261125_233342` (`vehicle.jump`, `vehicle.airroll`, `air_control=true`, 184 samples). Roll and yaw direction proven in run `20261126_014900`: intent sign matched the measured `roll_rate_local`/`yaw_rate_local`, zero `vehicle.aircontrol.mismatch`. Dodge is a full 360 (`rocket_dodge_360_v1`, 359.85 deg) and cancel stops it (`rocket_dodge_cancel_v1`, `cancelled=true`, 162 deg). Stall and NPC flip reset are unproven |
 | M3 | Ground handling: throttle curve, 23 m/s cap, supersonic, powerslide, wall drive, landing, ground attitude | partial | Drive at 17.5-20 m/s proven earlier. Run `20261126_014657`: 3,726 grounded samples with max \|pitch_rate_local\| and \|roll_rate_local\| of 0.000 and max tilt 0.00 deg under throttle and reverse. Run `20261126_014117`: jump lands with `up_dot 1.0000`, `wheel_mask 15`, zero penetration. Run `20261126_013852`: hard landing plus wall ram, zero penetration events, zero resting penetration. Run `20261126_014423`: a 90-degree roll landing touches down on the chassis (`wheel_mask 0`), never reports a tilted rest, and holds 0.005 m resting overlap. Powerslide effect still unproven |
-| M4 | Ball: roll-down, wall/ceiling bounce, car-ball impulse curve, 50/50 convergence | partial | Ball caps proven (60 m/s, 6 rad/s); bounce, impulse curve, and 50/50 unproven |
-| M5 | Camera and presentation: ball cam on Triangle and Space, boost meter, nametags, touch markers, sounds | partial | `vehicle.ballcam` on/off/on recorded in run `20261125_233213` from the command surface; the Triangle pad path still needs a human check |
-| M6 | 1v1 versus an NPC: kickoff, goal, reset, score, timer, full match | unproven | One complete match to the score limit, 5x `arena.goal.detected` + `arena.goal.reset`, correct winner |
+| M4 | Ball: roll-down, wall/ceiling bounce, car-ball impulse curve, 50/50 convergence | partial | Speed cap 60 m/s, spin cap 66 rad/s, floor restitution 0.6, spin-dependent bounce, and rest-height fix are proven in §9.0. Clean rolling drag, wall bounce isolation, car-ball impulse curve, 50/50 convergence, and dribble remain unproven (§20) |
+| M5a | HUD: arena-only scoreboard, clock, phase, goal flash, boost meter, ball-cam indicator; debug readouts default off | partial | Run `20261127_080234`: `vehicle.hud hud_mode=arena`, `hud_speed=false`; command `hud_speed on` logged and the HUD reported `hud_speed=true`. Run `20261127_080258`: `arena.hud.snapshot` reports phase/score/clock. Goal flash still needs a scored goal; visual boost-meter placement is a human check |
+| M5b | Camera and audio: one RL camera JSON, ball-cam/swivel, goal/touch cues | partial | Ball cam on/off/on recorded in run `20261125_233213` from the command surface; camera distance/height/FOV/pitch and audio are not implemented (§18.6-18.7) |
+| M5c | Tick VFX and debug views: touch/boost/jump/dodge/powerslide markers, hitbox view, speed readout | not started | Spec §18.5, §18.8 |
+| M6 | 1v1 versus an NPC: kickoff, goal, reset, score, timer, full match | partial | A full NPC-vs-NPC match is proven (run `20261126_200435`, 7 goals, 4-3, time limit). A human 1v1 against a non-probe opponent, and kickoff behavior, are unproven |
 | M7 | 3v3 and SSL-level bots | not started | later, data-driven rosters |
 
 Rules for the ladder:
@@ -205,15 +208,57 @@ unmeasured, not "fine".
 |---|---|---|---|---|
 | Car→ball impulse, slow hit (~5 m/s) | `rocket_ball_hit_v1` | curve 0.65, Z 0.35 | | |
 | Car→ball impulse, fast hit (~23 m/s) | `rocket_ball_hit_v1` | curve 0.55 | | |
-| Ball roll-down on flat ground | launch mode `62` (probe kick), runs `20261126_033552` and `20261126_040455` | drag 0.03/s (0.9 m/s^2 at 30 m/s) | 29.9 -> 25.1 m/s in 1.2 s = **4.0 m/s^2, k 0.175 /s** after the damping override | **~5x too much**; the 6 rad/s spin cap prevented rolling (pure rolling at 25 m/s needs 27 rad/s), so the ball slid for the whole roll. Spin cap raised to 66 rad/s; re-measure pending |
-| Ball spin during roll | run `20261126_040455` | angular speed consistent with rolling at `v/r` | spin rose 0.39 -> 6.89 rad/s and stopped at the cap | waiting on the raised cap |
-| Ball resting height | run `20261126_033552` | radius 0.9125 m -> centre at 0.9125 | centre rest **1.01 m**, i.e. the ball floats **~0.10 m** | tessellated sphere is inscribed in the collision radius; needs the analytic radius at the contact |
-| Floor rebound at 20 m/s | `rocket_ball_bounce_v1` | restitution 0.6 | | |
-| Wall rebound at 20 m/s | `rocket_ball_bounce_v1` | restitution 0.6 | | |
+| Ball roll-down on flat ground | clean-roll mode `74`, run `20261127_074605_01`, gen 786; prior mode `62` run `20261127_052258` | drag 0.03/s (0.9 m/s^2 at 30 m/s) | 2.9902 -> 2.2638 m/s over 9.185 s = **k 0.03030 /s**; angular 3.2769 -> 2.4809 = **k 0.03030 /s**; `omega / v = 1.0959 = 1/r`; z exactly 0.90250 | **matches**; prior 0.052 was wall-contaminated and included the 10 mm slop bounce |
+| Ball spin during roll | run `20261127_052258` | angular speed consistent with rolling at `v/r` | ratio 0.95-0.98 at 1.08-3.20 m/s | rolling; old 6 rad/s cap no longer limits it |
+| Ball resting height | clean-roll mode `74`, run `20261127_074605_01`, gen 786 | radius 0.9125 m -> centre at 0.9125 above the floor | centre `0.90250` with floor top `-0.01` = **0.91250 above floor**; constant for 160 samples; prior 0.9093-0.9175 sawtooth gone | **exact**; no lift, no sawtooth |
+| Floor rebound at 20 m/s | run `20261127_052258` | restitution 0.6 | -13.95 -> +8.37, -8.17 -> +4.90, -4.84 -> +2.90 m/s | matches 0.6 |
+| Wall rebound at 20 m/s | `rocket_ball_bounce_v1` | restitution 0.6 | 0.6 configured; not isolated | unmeasured |
 | Ball speed cap | any | 60 m/s | 60 m/s (proven earlier) | 0 |
-| Ball spin cap | any | 6 rad/s | 6 rad/s (proven earlier) | 0 |
+| Ball spin cap | any | 65.7 rad/s is rolling at the 60 m/s cap | 66 rad/s | raised from 6 so the ball can roll instead of slide |
 | 50/50 convergence | `rocket_ball_50_50_v1` | one authoritative result | | |
 | Dribble carry | `rocket_ball_dribble_v1` | friction 2.0, restitution 0.0 | | |
+
+2026-11-27 measurement note: the 2026-11-26 "inscribed tessellation"
+explanation for the 0.10 m rest was wrong. Sphere entities used the shared
+physical-entity 0.1 m rounded mesh shell; they now use analytic sphere-vs-world
+contact. arena2 uses one solid floor/ceiling box because the 10 m tile seams
+caught the rounded shell and launched the ball. The ball carries friction 0.35
+and restitution 0.6 from arena1. The remaining drag excess is contact friction,
+not the authored 0.03 drag. See
+`docs/regressions/collisions/static-map-double-scale-REG-2026-11-27.md`.
+
+### 9.0.1 Rolling contact model and clean-roll probe (2026-11-27)
+
+The 0.052/s drag fit above was taken over a path that had already bounced off
+walls and ramps, so it is not a clean rolling measurement. It also exposed a
+real contact bug: the shared depenetration solver builds its target as
+`penetration + slop` (10 mm), so every sphere contact lifted the ball by up to
+10 mm. A rolling ball therefore fell, was teleported back up, and fed that
+energy through the friction solve. `arena.ball.state` shows the cycle directly:
+rest `z` oscillates `0.90933 -> 0.91750` and speed rises inside each cycle
+(`0.70 -> 0.79 m/s`, run `20261127_052258`, while angular speed decays at the
+authored 0.03/s).
+
+The sphere contact path now:
+
+- uses the authored collision radius with no added skin,
+- passes zero correction slop (actors keep their 10 mm allowance),
+- keeps the authored restitution 0.6 and friction 0.35,
+- keeps one decay constant (`linearDamping = angularDamping = 0.03/s`).
+
+`devscripts/dev-launch-modes.json` mode `74` is the clean probe: it starts the
+ball at the arena centre at rest height with a pure rolling velocity and spin
+(`v = 3 m/s`, `omega = v / r`), so the first 9 s never touch a wall. Acceptance
+for the row below is a fitted late-roll `k` of `0.030 +/- 0.003 /s` over at least
+6 s with no wall contact, plus a stable rest height (no `z` sawtooth) and
+`|omega| = |v| / r` within 2 percent. The earlier contaminated fit is retained
+as history, not as the acceptance value.
+
+**Measured 2026-11-27, run `20261127_074605_01`, generation 786, mode 74:**
+2.9902 -> 2.2638 m/s over 9.185 s gives `k = 0.03030 /s`; angular speed
+3.2769 -> 2.4809 rad/s gives the same `0.03030 /s`; `omega / v = 1.0959`, exactly
+`1 / 0.9125`; centre `z = 0.90250` with floor top `-0.01` is exactly one radius
+above the floor and constant across all 160 samples. Acceptance met.
 
 ### 9.1 Rocket League reference baseline
 
@@ -360,11 +405,25 @@ Boost pads are authored map data, not mode code:
 Arena geometry, ball spawn, goals, kickoffs, and boost pads are authored through
 the map editor into `config/maps/<mapId>.json`. Blender is not required.
 
-- Curves use cubic Bezier control points and editable tangent handles.
-- Geometry output modes are wall, ribbon, and tube.
-- Curves are tessellated into the shared triangle collision mesh; the first
-  implementation is triangle-only and does not use an analytic quarter-sphere
-  collider.
+- Blocks carry a `shape`. `box` is the rectangle primitive; `profile`,
+  `cylinder`, `cone`, `sphere` and `wedge` are curved primitives. One tessellator
+  feeds render and collision, so the visible surface and the physics surface are
+  the same triangles (`src/map/map-authored-geometry.cpp`).
+- `profile` is the measured geometry primitive: a 2D polyline in the plane
+  perpendicular to `profile_axis`, extruded along `size[profile_axis]`. A curved
+  wall ramp is 8 or 9 measured points, not an invented radius. Points are in
+  metres relative to the block position. `profile_flip` reverses the winding, and
+  the normal is auto-oriented toward the playfield.
+- `cylinder` (radius, `arc_degrees`, `convex`, `segments`) covers fillets, post
+  rounding and the goal back. `cone` (`radius_top`), `sphere` (dome) and `wedge`
+  cover tapered transitions, caps and plain ramps.
+- Editor: `mapeditor add block [id] [shape]`, `block_shape <shape>`,
+  `block_profile <u1> <v1> <u2> <v2> ...`, and
+  `block_shape_param <arc|segments|convex|axis|radius_top|flip> <value>`.
+- There is no Bezier path/ribbon/tube implementation. An earlier version of this
+  section claimed one; the maps in the repository only ever used boxes.
+- Curves are tessellated into the shared triangle collision mesh; there is no
+  analytic quarter-sphere collider.
 - Optional `mapeditor bake_glb` writes a derived `assets/maps/<mapId>.glb`.
   The JSON remains authoritative.
 - Missing ball spawn or goal data fails closed with a diagnostic and never
@@ -377,6 +436,38 @@ the map editor into `config/maps/<mapId>.json`. Blender is not required.
   `npcs=0`. A mismatch is a launch-identity failure, not a playable arena
   session.
 
+## 12a. arena2 (2026-11-26): generated from the measured Rocket League mesh
+
+`config/maps/arena2.json` is generated by `devscripts/gen-arena2.py` from
+`assets/maps/rl/pitch.obj`, the standard Soccar collision mesh (4,384 vertices,
+8,028 triangles, Unreal units). The reference record is
+`config/reference/arena2-geometry.json`; every value is labelled DOCUMENTED,
+MEASURED, DERIVED or ESTIMATED, and the mesh itself is never shipped or loaded.
+
+Plan dimensions are **documented** (81.92 x 102.40 m, ceiling 20.48 m, 45 degree
+corner cuts with `|x|+|y| = 80.64`, goal mouth 17.8551 x 6.42775, goal depth
+8.80, net back at 60.00). Curvature is **measured** from the mesh:
+
+| Profile | Measured points (metres, inward offset u from the wall plane, z) |
+|---|---|
+| Lower ramp | (-2.560, 0.000) (-2.044, 0.052) (-1.564, 0.201) (-1.129, 0.438) (-0.750, 0.750) (-0.438, 1.129) (-0.201, 1.564) (-0.052, 2.044) (0.000, 3.550) |
+| Upper ramp | (-6.243, 20.440) (-4.089, 20.376) (-3.128, 20.077) (-2.259, 19.605) (-1.501, 18.979) (-0.875, 18.221) (-0.403, 17.352) (-0.104, 16.391) |
+
+The lower ramp starts 2.56 m inside the wall plane, so the flat floor is
+inscribed; the upper ramp spans 6.14 m horizontally from y = 34.72 to the wall,
+which is why the ceiling curve matters for wall and ceiling play. Both ramps are
+`profile` blocks on every straight wall and every diagonal corner, with the ramp
+stopped at the goal mouth (no ramp across the opening).
+
+Floor and ceiling are tiled at 10 m rather than one field-sized slab: a single
+quad pair dropped the ball through the floor (run `20261126_231000`, ball resting
+at z = -1.31).
+
+The arena declares materials per surface (`grass` floor, `wallv2` walls,
+`wallv4` ceiling and goal) with tints above 1, because arena1's blocks had
+`material: ""` and rendered untextured. arena1 now declares `grass`, `wallv2` and
+`wallv4` as well.
+
 ## 13. Arena events (2026-11-05)
 
 ```text
@@ -387,6 +478,13 @@ arena.goal.detected
 arena.goal.reset
 arena.boostpad.collected
 arena.prediction.divergence
+arena.presentation.goal_flash
+arena.presentation.vfx
+arena.hud.snapshot
+arena.freeplay.throw
+vehicle.npc.kickoff
+vehicle.npc.recover
+vehicle.camera.applied
 vehicle.jump
 vehicle.jump.double
 vehicle.surface.reset
@@ -451,13 +549,15 @@ profile's `ground.attitude` block owns the rule:
 
 ## 15. Presentation preferences (2026-11-26)
 
-Two local-seat presentation elements are console-toggled and **disabled by
-default**. Both defaults are written once at startup as `vehicle.preferences`
-(`hud_car_assist=false`, `vehicle_exit_prompt=false`, `exit_key=F`) so a missing
-element is explained by the journal instead of looking broken.
+Three local-seat presentation elements are console-toggled and **disabled by
+default**. Defaults are written once at startup as `vehicle.preferences`
+(`hud_speed=false`, `hud_car_assist=false`, `vehicle_exit_prompt=false`,
+`exit_key=F`) so a missing element is explained by the journal instead of looking
+broken.
 
 | Preference | Command | Default | Effect when on |
 |---|---|---|---|
+| Speed / rpm readout | `hud_speed on\|off` (no argument toggles) | off | Draws `43 km/h   1234 rpm` |
 | Engine / gear / diff readout | `hud_car_assist on\|off` (no argument toggles) | off | Draws `ENGINE ON/OFF  AUTO/MANUAL  GEAR n  DIFF x` above the speed line |
 | Enter/exit vehicle prompt | `vehicle_exit_prompt on\|off` (no argument toggles) | off | Shows the `enter seat` / `exit vehicle` prompt |
 
@@ -467,6 +567,454 @@ element is explained by the journal instead of looking broken.
   and the compiled default.
 - Turning a preference on is presentation only; it never gates driving,
   possession, or the exit action.
+
+## 16. Ground steering, dodge and match evidence (2026-11-26)
+
+### 16.1 Grounded steering owns the yaw rate
+
+A car cannot rotate in place. While a car is grounded and upright, the steering
+input sets the yaw rate directly:
+
+```text
+targetYawRate = steer * ground.maxYawRateRadPerSecond
+                * clamp(speed / 1.5, 0, 1)
+yawRate += clamp(targetYawRate - yawRate, -ground.yawAccelRadPerSecond2 * dt, ...)
+```
+
+- `ground.maxYawRateRadPerSecond` (default 3.4) and
+  `ground.yawAccelRadPerSecond2` (default 14) live in the vehicle profile.
+- Rocket League's turn rate is roughly constant with speed, so full rate is
+  reached at 1.5 m/s rather than a long ramp.
+- Residual rates below 0.02 rad/s are zeroed: a parked car does not creep.
+- Before this, contact friction decided the yaw and integrated a tiny
+  asymmetric ground torque into **4 degrees of drift while parked** and **225
+  degrees of curve over 9 s while driving** (measured log `slip_deg 0.08`). A
+  straight drive now holds `yaw_deg = 0.00` from `x = -39` to `x = +32`
+  (run `20261126_190324`).
+- The lateral-velocity bleed is skipped while powersliding: the slide is the
+  point of a powerslide.
+
+### 16.2 Normal grip versus powerslide grip
+
+`bodyFriction` 0.65 and `bodyWallFriction` 0.30 are normal driving. Powerslide
+remains `powerslide.gripScale` 0.10. The previously slippery feel is now the
+powerslide feel; ordinary driving grips.
+
+### 16.3 Dodge is a full turn, and cancelling stops the turn
+
+- The dodge's angular limit is the profile `flip.maxAngularVelocity`, and the
+  vehicle template's `maxAngularSpeed` must be at least as large (24). The
+  template clamp used to cap every dodge at 5.5 rad/s (about 205 degrees).
+- Flip torque stops once `flipRotationRad` reaches 2*pi, so a dodge is 360
+  degrees every time: `rocket_dodge_360_v1`, `rotation_deg_total = 359.85`,
+  `cancelled = false`.
+- Pushing the stick opposite the dodge direction cancels it. Cancelling removes
+  the flip-axis angular velocity, not just the torque, so the body stops
+  rotating instead of coasting: `rocket_dodge_cancel_v1`,
+  `cancelled = true`, rotation stops at 162 degrees.
+- `vehicle.flip` reports `rotation_deg_total`, `cancelled`, `flip_limit`,
+  `air_limit` and `flip_seconds`, so a future clamp regression is attributable.
+
+### 16.4 Match clock and goal attribution
+
+`config/gamemodes/vehicle_arena.json` owns `time_limit_seconds: 300`. The limit
+is enforced and observed:
+
+```text
+arena.match.clock        every 30 s and at the limit
+arena.match.over         reason = time_limit | score_limit, winner_team, scores
+arena.goal.detected      goal_id, goal_team, scoring_team, scorer_vehicle_id,
+                         scorer_team, scorer_driver_id, match_seconds,
+                         remaining_seconds, server_tick, scores
+arena.goal.received      client observation of the same score change:
+                         score_a, score_b, server_tick, client_tick
+```
+
+- `match_seconds` and `remaining_seconds` are match-relative, not process-relative.
+- A goal is a ball that **touches** the goal volume: the test subtracts the ball
+  radius, because the ball's centre stops one radius short of the back net. A
+  centre-only test let a shot into the net rest 0.6 m outside the volume and
+  score nothing.
+- The scorer is the car that **last touched** the ball
+  (`PhysicalEntity.lastTouchedVehicleNetworkId`, set by the entity pair
+  contact), not the car nearest the goal line when the ball arrives.
+- `arena.match.over` with `reason = time_limit` ends the match: the higher score
+  wins, and a goal after the whistle does not count or change the score.
+
+Full run `20261126_185723` (mode 66, `MIMITA_ARENA_BOT_VS_BOT=1`): clock 0 to
+300.0 s, five goals from both bots, final 3-2, `arena.match.over`
+`reason = time_limit` at `server_tick` 18974, and all five score changes
+observed by the client with `client_tick`. Twelve landings, all twelve on the
+wheels, zero `vehicle.rest.tilted`.
+
+### 16.5 The ball keeps rolling
+
+The ball has **one** decay constant. `angularDamping` used to be 0.4/s while
+travel decayed at `linearDamping` 0.03/s; contact friction converted the missing
+spin into a 0.25 m/s^2 linear drag and a 3.6 m/s roll died in 14 s. Spin and
+travel now decay together at the ball's own drag constant.
+
+### 16.6 Bot controller (probe only)
+
+`MIMITA_ARENA_BOT_VS_BOT` seats a second bot on the other team so two NPCs play
+each other with no human. The controller aims at a point **behind** the ball
+relative to the opponent goal, reverses toward a target that is behind it, and
+reverses out of geometry when it has throttle applied but is not moving. It is a
+probe: it is how the 1v1 evidence is produced, not a production AI.
+
+## 17. Aerial play, saves and probe evidence (2026-11-26)
+
+### 17.1 The aerial program
+
+`MIMITA_ARENA_BOT_VS_BOT` also drives an aerial: when a ball is above the car
+(> 2.0 m, or > 1.1 m while defending) within 18 m and the bot has boost, it
+
+1. plants the car and jumps (`vehicle.jump`, `jump_count = 1`),
+2. points the nose at the ball with a **body-rate** controller and boosts
+   (`vehicle.boost` with the car airborne),
+3. air-rolls on the climb while the ball is still more than 10 m away
+   (`vehicle.airroll`),
+4. dodges through the ball inside the double-jump window (`vehicle.dodge`).
+
+An attacking aerial only starts from **behind** the ball relative to the target
+goal; flying at it from the goal side headed the ball into the bot's own net.
+
+### 17.2 Aerial goal evidence
+
+Launch mode 67 (`MIMITA_ARENA_BALL_KICK="0,0,0,42,0,5"`) places the ball at 5 m
+over the orange goal. One run, `20261126_195128`:
+
+| time | event | field |
+|---|---|---|
+| 0.28 s | `vehicle.npc.aerial` | phase start, `ball_height_m = 5.0` |
+| 0.28 s | `vehicle.jump` | `jump_count = 1` |
+| 0.49 s | `vehicle.boost` + `vehicle.airroll` | airborne boost, roll |
+| 0.74 s | `vehicle.dodge` | the NPC dodged |
+| 0.93 s | `arena.ball.contact` | car touched the ball |
+| 1.79 s | `arena.goal.detected` | `aerial = true`, `scorer_ball_height_m = 2.74`, `scorer_vehicle_id = 2`, `scorer_team = 0`, `server_tick = 98` |
+
+`arena.goal.detected` gains `aerial` and `scorer_ball_height_m`; the aerial flag
+is taken from the ball height at the scoring touch
+(`PhysicalEntity.lastTouchedHeightM`).
+
+### 17.3 Aerial save evidence
+
+A save is computed from real state, never declared: the ball's previous velocity
+must point at the toucher's own goal at more than 5 m/s, the ball must be within
+16 m of that goal, and the touch must turn it away (dot to the goal below 0.35).
+`arena.save` carries the goal, team, vehicle, speed before and after, distance,
+both dots, the touch height and `aerial`.
+
+Launch mode 68 (`MIMITA_ARENA_BALL_KICK="8,0,0,36,0,3"`) lobs a shot at the
+orange goal. Run `20261126_194927`:
+
+```text
+arena.save goal_id=orange_goal team=1 vehicle_id=2
+           ball_speed_before_mps=8.34 ball_speed_after_mps=7.05
+           distance_to_goal_m=12.53 aimed_at_goal=0.93 still_at_goal=-0.55
+           ball_height_m=2.58 aerial=true
+```
+
+The ball was turned from aimed-at-goal (0.93) to heading away (-0.55) by a car
+whose touch happened 2.58 m above the floor.
+
+### 17.4 Spin changes the bounce (measured)
+
+`ball_set` and `MIMITA_ARENA_BALL_KICK` accept a spin
+(`ball_set <x> <y> <z> [vx vy vz [wx wy wz]]`; the probe takes three, six or
+nine values). Dropping the ball straight down with opposite spin about y:
+
+| run | spin about y | bounce velocity |
+|---|---|---|
+| `20261126_201529` (mode 69) | +60 rad/s | (+0.62, +0.59, 11.53) |
+| `20261126_201615` (mode 70) | -60 rad/s | (-0.62, -0.59, 11.53) |
+
+Same vertical rebound, mirrored horizontal deflection: spin changes the bounce
+direction.
+
+Re-confirmed 2026-11-27 on generation 786 after the exact-radius/zero-slop
+sphere change. Mode 69 run `20261127_074747` and mode 70 run `20261127_074833`
+both start with a -8.67 m/s vertical impact and rebound at +5.47 m/s
+(restitution 0.63). Horizontal deflection is exactly mirrored: `+5.10` and
+`-5.10` m/s. The contact change did not remove the spin response.
+
+### 17.5 Roof or wheels, proven by the fuzz probe
+
+Launch mode 65 (`MIMITA_VEHICLE_FUZZ=7`) throws the car with random velocity and
+spin every few seconds; `vehicle.fuzz.report` classifies each settle just before
+the next kick. `rocket_settle_fuzz_v1` (run `20261126_201305`) passes:
+
+```text
+kicks=55 wheels_landings=52 tilted_rests=0 worst_settled_up_dot=1.0
+settled_up_dot=0.99999 settled_wheel_mask=15
+```
+
+A body thrown onto a corner or its side always finished on all four wheels. No
+scripted righting rule is involved; the low centre of mass does it.
+
+### 17.6 The probe bot is not a production AI
+
+It exists to produce evidence. It aims at a point behind the ball, reverses when
+the target is behind it, reverses out when it has throttle applied without
+moving, self-rights with air control when its up axis is off vertical, and
+aerials as described above. Its team comes from the car it actually occupies
+(`VehicleState::origin` is the zero vector before the first tick), so a bot never
+attacks its own goal.
+
+Full 5-minute bot-vs-bot run `20261126_200435` on generation 729: clock 0 to
+300.0 s, 7 goals, final 4-3, `arena.match.over reason=time_limit`
+`winner_team=0` at `server_tick` 19047, all 7 score changes observed by the
+client with `client_tick`, 23 aerials, 2 dodges, 91 air rolls, 34 landings with
+28 on wheels and 0 tilted rests.
+
+### 17.7 Settling contract (2026-11-27)
+
+A body is **settled** when its speed is below 0.5 m/s and its angular speed is
+below 0.5 rad/s. Wheels (`up_dot_world_up > 0.95` with the full wheel mask) and
+roof (`up_dot_world_up < -0.90`) are the only accepted settled poses.
+
+- A supported car that is still, but in any other pose (edge, corner, side,
+  partial tip), receives a righting impulse after 15 vehicle updates (0.25 s):
+  an angular velocity of 7.5 rad/s about the shorter arc toward world up, plus a
+  1.2 m/s hop when a surface is carrying it. This is the same outcome a player
+  produces by flipping out of an edge; it is not a second collision solver and
+  it does not run while the car is airborne without support.
+- The fuzz probe kicks with random velocity, random spin, random air roll and
+  random boost, then classifies only after a supported settle has held for 0.5 s
+  (30 updates), so a pose that the righting rule fixes is not counted as a
+  failure. A car that leaves the arena bounds is respawned and counted in
+  `escapes`; it is not a rest.
+- Acceptance: `side_rests == 0`, `tilted_rests == 0`, wheels landings dominate
+  roof rests, and every escape is logged. `vehicle.side.recovery` carries
+  `up_dot_world_up`, `wheel_mask`, `grounded`, `last_contacted_world`,
+  `sleeping`, `speed_mps`, `angular_speed`, `rest_ticks`, `angular_impulse`,
+  `hop_mps`, and the righting axis.
+
+## 18. Presentation contract (2026-11-27)
+
+Presentation is a client-only consumer of replicated state and authoritative
+events. It never decides a goal, score, boost amount, or contact outcome.
+
+### 18.1 One arena HUD, debug off by default
+
+- While a local player is seated in `vehicle_arena`, the arena HUD replaces the
+  combat HUD. Health, ammo, crosshair, hitmarker, damage numbers, killfeed, and
+  the generic `Speed: n m/s` line are not drawn. The same rule applies to
+  `vehicle_freeplay`, which is the practice surface for the mode.
+- The arena HUD reads one client snapshot: phase, score A/B, match start tick,
+  server tick, time limit, goal value, local team, boost charge, ball-cam state.
+- Layout and strings live in `config/gui/gamemode-meta-gui.json` under a
+  `vehicle_arena` section. The generic overlay owner draws it; a second score
+  model is not allowed. A missing section is a visible HUD failure, not a reason
+  to invent a default scoreboard.
+- Debug readouts are console commands and default off. The km/h + rpm line is
+  controlled by `hud_speed on|off` (no argument toggles), default **off**. The
+  engine/gear line remains `hud_car_assist`, also default off (§15).
+- Every toggle writes `vehicle.preference` with the name, new value, and compiled
+  default.
+
+### 18.2 Scoreboard, clock, phase, goal flash
+
+- Top centre: `BLUE 0 - 0 ORANGE` from the mode's ordered team names, with the
+  left team matching the blue goal owner.
+- Under it: the authoritative match clock in `MM:SS`, counting down from
+  `time_limit_seconds`. It freezes at 0 and never runs backwards. It is derived
+  from `serverTick - matchStartTick`, not from a local wall clock.
+- Phase banner: `INTERMISSION`, `GET READY`, `GO!`, `ACTIVE`, `MATCH OVER`.
+  Countdown is the generic `countdownText` path.
+- Goal flash: a client-observed score change shows the scoring team's name and
+  the new score for 2.0 s. It is deduplicated by `(duelId, serverTick, scoreA,
+  scoreB)` so a duplicated packet cannot flash twice. It logs
+  `arena.presentation.goal_flash` with the observed score and client tick.
+- Results: winner, final score, and `reason` from `arena.match.over`.
+
+### 18.3 Boost meter and ball cam
+
+- Boost is a gauge, not text: a circular/segmented meter in the bottom-right
+  screen corner, with the numeric value inside it. It reads replicated
+  `boostCharge / profile.boost.max`.
+- Empty, normal, and full states are visually distinct. A full meter does not
+  pulse forever; it marks full once.
+- Ball cam has a small icon next to the meter (`BALL CAM` / `CAR CAM`), driven by
+  the replicated `ballCam` flag. The pad toggle remains the input owner.
+- Neither element is drawn on foot or when the local player is not seated.
+
+### 18.4 World presentation
+
+- Boost pads: authored pad position, kind (small/big), radius, and availability.
+  Ready pads are bright; recharging pads are dim and show the remaining fraction.
+  Pad availability is server-owned and replicated; the client may predict a
+  local pickup for immediate feedback but reconciles to the server mask.
+- Nametags: reuse the existing player-nameplate owner, projected at the car body.
+  They show the driver name and team colour, never a health bar.
+- Goal volumes are authored and match the scoring volume; the visual net may be
+  larger. A missing goal or ball definition fails closed with a diagnostic.
+
+### 18.5 Tick VFX
+
+All markers are one-tick, alpha 0.5, presentation-only, and rate-limited per
+source. They are consumed from a replicated presentation event (sequence-numbered,
+exactly once) or a local vehicle-state transition; a client-only proximity guess
+is not used for ball contact.
+
+| Cue | Colour | Size / anchor | Source |
+|---|---|---|---|
+| Ball touch | red | 0.1 m at contact point | `arena.ball.contact` (server) |
+| Boost | yellow | 0.3 m at exhaust | local `vehicle.boost` transition |
+| Powerslide | dark purple | 0.3 m under the car | local `vehicle.powerslide` transition |
+| Dodge | bright pink | 0.3 m at car centre | `vehicle.flip` / `vehicle.dodge` |
+| Jump | turquoise | 0.3 m above the roof | `vehicle.jump` |
+
+The server event packet carries `kind`, `tick`, `vehicle_id`, `team`, `point`,
+and a monotonically increasing `serial`. The client drops a serial it has
+already rendered and never replays an old serial after reconnect.
+
+### 18.6 Camera
+
+One file, `config/cameras/vehicle-camera.json`, owns the vehicle camera. Combat
+camera settings do not apply while seated in the arena. Values use Rocket League
+units converted to metres/degrees:
+
+| Setting | Value |
+|---|---|
+| Distance | 2.20 m |
+| Height | 0.90 m |
+| Pitch | -7 deg |
+| FOV | 110 deg |
+| Stiffness | 1.0 |
+| Swivel speed | 10.0 (scaled to deg/s in the file) |
+| Transition speed | 10.0 |
+| Ball-cam snap | 0.5 |
+| Look-behind | 180 deg |
+
+The camera path applies these values for the local seated vehicle only. It logs
+`vehicle.camera.applied` once per load with every effective value. Ball cam eases
+toward the ball; car cam follows momentum, not the nose. Swivel returns to
+centre when the stick is released.
+
+### 18.7 Audio
+
+- Goal: a short whistle/explosion cue, once per confirmed goal.
+- Ball touch: impact volume and pitch scale with relative speed, rate-limited to
+  one cue per 100 ms per pair.
+- Boost, jump, dodge, powerslide: reuse the vehicle audio owner; do not create a
+  second engine/RPM scheduler.
+- All cues are client-side. A missing asset logs once and disables that cue; it
+  never blocks gameplay.
+
+### 18.8 Debug views
+
+- `hud_speed on|off`: km/h + rpm line, default off.
+- `hud_car_assist on|off`: engine/mode/gear/diff line, default off.
+- `vehicle_hitbox [on|off]`: per-face colours front red, back blue, right green,
+  left yellow, top white, bottom magenta, plus a forward arrow. Local vehicle
+  only, default off.
+- Debug views never change the collision shape or the physics tick.
+
+## 19. NPC opponents (2026-11-27)
+
+The probe bot in §16.6/§17 is an evidence tool. An opponent must be able to
+finish a 1v1 against a human without the probe's reverse-into-geometry escape
+being its main strategy.
+
+### 19.1 Ladder
+
+| Step | Behaviour | Acceptance |
+|---|---|---|
+| N1 | Kickoff: drive to the ball from the authored kickoff point, hit it toward the opponent goal | `vehicle.npc.kickoff` with a first touch inside 2.5 s of GO |
+| N2 | Ground rotation: attack from the ball side facing the opponent goal, recover to the own half when the ball is behind | 3 minutes of 1v1, no own-goal from a goal-side approach, zero stuck ticks over 2 s |
+| N3 | Closed-loop aerial: target position + target velocity + brake, not nose-at-target | `rocket_aerial_arrive_v1`, final distance to the target < 1.0 m, vertical overshoot < 1.5 m |
+| N4 | Freestyle reset: pop, track above the ball, four-wheel touch, dodge at goal | `vehicle.flip.reset` from an NPC, then `arena.goal.detected` with `freestyle=true` |
+
+Freestyle progress 2026-11-27: the tracking phase now holds the jump for six
+ticks, starts only from the ground, applies the aerial 0.25 boost floor, and
+self-right no longer overwrites the freestyle input. Run `20261127_081833` on
+generation 794 reaches car `z = 2.18` against a ball at `z = 1.18` (target above
+the ball was ~2.16) and logs `vehicle.boost` during the climb. It still ends
+`landed` with zero resets: the remaining gap is the reset/descent controller, not
+the climb.
+| N5 | Defense: meet a shot from the goal side, do not fly through the ball into the net | `arena.save` from an NPC, own-goal rate below 10 percent in a 5-minute run |
+
+### 19.2 Controller rules
+
+- The NPC uses the same `VehicleInput` surface as a human. No second vehicle
+  solver.
+- Aerial control is a position/velocity controller: compute the desired velocity
+  from `(target - position) / timeToArrive`, clamp it, compute the body-rate error
+  from the velocity error, and brake when closing fast. The old nose-at-target
+  law overshot to 7 m above a 1 m ball (`issue-1ffbfffaefa0`).
+- Aerials only start from behind the ball relative to the target goal. Starting
+  from the goal side is an own-goal path.
+- The NPC may reverse out of geometry only after it has throttle applied and has
+  not moved for 45 ticks, and it must log `vehicle.npc.recover` with the reason.
+- Team identity comes from the occupied car's `communityTeams` entry, never from
+  spawn order.
+
+### 19.3 Roster
+
+1v1 is the first opponent slice. 2v2/3v3 remain data-driven rosters that reuse the
+same controller; no per-slot AI code.
+
+## 20. Physics parity matrix (2026-11-27)
+
+Each row is a scenario and an acceptance value. A build is not evidence; the
+named scenario's journal is. Values are compared with the §9.1 baseline and the
+deviation is recorded.
+
+| # | Scenario | Measurement | Acceptance |
+|---|---|---|---|
+| P1 | `rocket_ball_roll_v1` (mode 74, clean roll) | fitted late-roll `k` over >= 6 s, no wall contact | 0.030 +/- 0.003 /s |
+| P2 | `rocket_ball_rest_v1` | rest centre height and z stability | radius +/- 2 mm, no sawtooth > 1 mm |
+| P3 | `rocket_ball_bounce_v1` | floor and wall rebound at 20 m/s | restitution 0.6 +/- 0.05 on each surface |
+| P4 | `rocket_ball_50_50_v1` | opposing cars, simultaneous approach | one authoritative first-contact tick and one ball outcome on both clients |
+| P5 | `rocket_ball_hit_v1` | car-to-ball impulse at ~5 and ~23 m/s | follows the 0.65 -> 0.55 push curve, no double impulse |
+| P6 | `rocket_ball_dribble_v1` | ball carried on the car roof | ball stays within 0.5 m of the roof for 1.5 s at > 8 m/s |
+| P7 | mode 73 cruise | throttle + boost for 60 s on arena2 | no jitter, no fall-out-of-world, only wheels/roof settlements |
+| P8 | `rocket_settle_fuzz_v1` | 55 random kicks | `side_rests == 0`, wheels landings dominate |
+
+Rules:
+
+- One decay constant for the ball: linear and angular damping are both the
+  authored 0.03/s. Contact friction may not add rolling drag.
+- The sphere contact uses the authored radius and zero positional slop. The
+  shared depenetration solver's `penetration + slop` target is an actor rule and
+  must not lift a sphere.
+- A 50/50 is resolved by the server; the client never applies a confirmed
+  impulse twice.
+- Re-measure every row after a contact, ball, or vehicle-physics change and
+  append the run ID. A stale row is unproven.
+
+## 21. Free play and command surface (2026-11-27)
+
+- Mode 60 is free play on arena2. D-pad left throws the ball at the local car:
+  `speed = clamp(12 + 0.35 * distance, 12, 50)`, aimed at the car's nose. It logs
+  `arena.freeplay.throw` with the distance, speed, and tick.
+- `ball_set <x> <y> <z> [vx vy vz [wx wy wz]]` is server-authoritative. A
+  client-side placement is overwritten; the command belongs on the server.
+- `ball_status` logs one `arena.ball.status` sample on request.
+- `hud_speed on|off`, `hud_car_assist on|off`, `vehicle_hitbox on|off`,
+  `vehicle_cam_reload`, and `vehicle_profile` are presentation/configuration
+  commands. None changes the physics tick.
+- The free-play HUD is the arena HUD without score/clock (no match) plus the
+  boost meter and ball-cam indicator.
+
+## 22. Evidence ledger (2026-11-27)
+
+| Area | Scenario / run | Required evidence | State |
+|---|---|---|---|
+| Ball clean roll | mode 74 | `arena.ball.state`, fitted `k` | pending build |
+| Ball rest | mode 74 | `arena.ball.state` z stability | pending build |
+| Spin bounce | modes 69/70 | mirrored horizontal deflection | proven (prior build) |
+| Dodge 360 | `rocket_dodge_360_v1` | `rotation_deg_total`, `cancelled` | proven |
+| Landing | `rocket_landing_flat_v1` | `up_dot`, `wheel_mask`, penetration | proven |
+| Settle fuzz | `rocket_settle_fuzz_v1` | `side_rests`, `wheels_landings` | not re-proven after the sphere fix |
+| NPC vs NPC | mode 66 | clock, goals, `arena.match.over` | proven (prior build) |
+| NPC aerial | mode 67 | jump, boost, air roll, dodge, aerial goal | proven (prior build) |
+| NPC freestyle | mode 72 run `20261127_081833`, gen 794 | `vehicle.flip.reset`, freestyle goal | partial: car reaches `z=2.18` above a `z=1.18` ball and boosts, but ends landed with 0 resets |
+| Arena HUD | mode 60 run `20261127_080234`; mode 67 run `20261127_080258` | `vehicle.hud hud_mode=arena`, `arena.hud.snapshot` with phase/score/clock | HUD active and scoreboard data present; goal flash pending a scored goal |
+| Speed/rpm default | mode 60 run `20261127_080234` | `vehicle.preferences hud_speed=false`; `vehicle.preference` on command; `vehicle.hud hud_speed=true` after | proven |
+| Camera | mode 60 run `20261127_080131` | `vehicle.camera.applied` distance 2.2, height 0.9, pitch -7, fov 110, stiffness 1.0 | proven |
+| Tick VFX | mode 60 | one event per cue, rate limit | not started |
 
 ## Related specifications
 

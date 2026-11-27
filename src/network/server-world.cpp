@@ -419,7 +419,9 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
     return usable;
 }
 
-void buildHeadlessCollisionChunks(HeadlessWorld& world)
+namespace {
+
+void buildHeadlessCollisionGrid(HeadlessWorld& world, bool buildSubGrids)
 {
     constexpr float CS = 6.0f;
     constexpr int MAX_CHUNKS_PER_TRIANGLE = 256;
@@ -451,7 +453,10 @@ void buildHeadlessCollisionChunks(HeadlessWorld& world)
            serverTimestamp(), world.collisionChunks.size(), world.collisionLargeTriangles.size());
 
     // Second-level sub-grid: divide each chunk into 4^3 sub-cells so projectile
-    // broadphase near dense geometry only tests touched sub-cells.
+    // broadphase near dense geometry only tests touched sub-cells. A block-only
+    // authored rebuild skips this and uses the chunk-level fallback so a live
+    // edit does not stall the fixed tick.
+    if (buildSubGrids) {
     constexpr int SUBDIV = 4;
     const float subSize = CS / (float)SUBDIV;
     uint64_t totalSubRefs = 0;
@@ -489,6 +494,19 @@ void buildHeadlessCollisionChunks(HeadlessWorld& world)
     printf("%s [SERVER WORLD] built collision subgrids: %zu subSize=%.2f totalSubRefs=%llu\n",
            serverTimestamp(), world.collisionSubGrids.size(), subSize,
            (unsigned long long)totalSubRefs);
+    }
+}
+
+}  // namespace
+
+void buildHeadlessCollisionChunks(HeadlessWorld& world)
+{
+    buildHeadlessCollisionGrid(world, true);
+}
+
+void buildHeadlessCollisionChunksWithoutSubGrids(HeadlessWorld& world)
+{
+    buildHeadlessCollisionGrid(world, false);
 }
 
 void appendHeadlessWorldInstance(HeadlessWorld& target,

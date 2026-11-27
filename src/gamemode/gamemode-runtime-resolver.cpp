@@ -1,5 +1,6 @@
 #include "gamemode/gamemode-runtime-resolver.h"
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 
@@ -113,7 +114,10 @@ void applyPresentationPolicy(const Gamemode& mode)
                    !p.hud.configured || (p.hud.enabled && p.hud.showHotbar),
                    !p.hud.configured || (p.hud.enabled && p.hud.showCrosshair),
                    !p.hud.configured || (p.hud.enabled && p.hud.showStatus),
-                   p.hud.caStrength);
+                   // Lens CA is applied by the single PostFX pass. A second
+                   // HUD CA would double-fringe mode 4 and leak CA into modes
+                   // 2/3 after the world pass.
+                   0.0f);
 
     if (p.hasKillfeed)
         KillfeedManager::instance().setModeEnabledOverride(p.killfeed);
@@ -195,7 +199,15 @@ void applyPresentationPolicy(const Gamemode& mode)
         PostFX::ModeBodycamLensOverride lens;
         lens.chromaticAberration = p.bodycam.chromaticAberration;
         lens.chromaticAberrationBackgroundOnly =
+            p.bodycam.chromaticAberrationMode == "mixed" ||
             p.bodycam.chromaticAberrationMode == "background_only";
+        lens.lensMode =
+            p.bodycam.chromaticAberrationMode == "world_only" ||
+            p.bodycam.chromaticAberrationMode == "full_world" ? 2 :
+            p.bodycam.chromaticAberrationMode == "normal" ? 3 :
+            p.bodycam.chromaticAberrationMode == "world_and_ui" ? 4 :
+            p.bodycam.chromaticAberrationMode == "bodycam_special" ||
+            p.bodycam.chromaticAberrationMode == "world_ca_lens" ? 5 : 1;
         lens.vignette = p.bodycam.vignette;
         lens.distortion = p.bodycam.lensDistortion;
         lens.curve = p.bodycam.lensCurve;
@@ -244,6 +256,44 @@ void applyPresentationPolicy(const Gamemode& mode)
                     {"edge_mode", p.bodycam.lensEdgeMode},
                     {"radial_chromatic_aberration", p.bodycam.radialChromaticAberration}}}},
             __FILE__, __LINE__, __FUNCTION__);
+
+        // The 2026-11-26 lens ranges are no longer validation gates. Record
+        // any value outside that band so an extreme setting is traceable; do
+        // not clamp it here.
+        {
+            nlohmann::json extremes = nlohmann::json::object();
+            auto note = [&](const char* key, float value, float lo, float hi) {
+                if (!std::isfinite(value) || value < lo || value > hi)
+                    extremes[key] = value;
+            };
+            note("chromatic_aberration", lens.chromaticAberration, 0.0f, 0.8f);
+            note("vignette", lens.vignette, 0.0f, 0.8f);
+            note("distortion", lens.distortion, 0.0f, 100.0f);
+            note("curve", lens.curve, 0.05f, 8.0f);
+            note("zoom", lens.zoom, 0.1f, 5.0f);
+            note("edge_radius", lens.edgeRadius, 0.05f, 1.2f);
+            note("edge_softness", lens.edgeSoftness, 0.0f, 1.0f);
+            note("edge_darkness", lens.edgeDarkness, 0.0f, 1.0f);
+            note("peripheral_blur", lens.peripheralBlur, 0.0f, 4.0f);
+            if (!extremes.empty()) {
+                static std::string lastExtremeKey;
+                const std::string key = extremes.dump();
+                if (key != lastExtremeKey) {
+                    lastExtremeKey = key;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::General, StructuredLevel::Important,
+                        "config.value.extreme", mode.id,
+                        "authored lens value outside the 2026-11-26 range was applied",
+                        0,
+                        nlohmann::json{
+                            {"path", "presentation.bodycam.lens"},
+                            {"baseline", "2026-11-26"},
+                            {"values", extremes},
+                            {"count", extremes.size()}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+            }
+        }
     } else {
         CamConfig::instance().clearBodycamOverride();
         AimBodyConfig::instance().clearBodycamResponseOverride();

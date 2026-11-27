@@ -1,0 +1,5 @@
+{
+  "comment": "Per-avatar body sockets, relative to the torso. Written by the in-game rig editor (rig_editor / rig_editor_save). offset is metres in the torso frame; quat is [x,y,z,w]; scale defaults to the model rest. Missing entries fall back to each GLB's authored node transform.",
+  "avatars": {},
+  "models": {}
+}

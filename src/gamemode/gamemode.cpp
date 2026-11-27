@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -741,34 +742,44 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                     bodycam.value("camera_sway_scale", out.cameraSwayScale), 0.0f, 5.0f);
                 if (bodycam.contains("lens") && bodycam["lens"].is_object()) {
                     const auto& lens = bodycam["lens"];
-                    out.chromaticAberration = std::clamp(
-                        lens.value("chromatic_aberration", out.chromaticAberration), 0.0f, 0.8f);
+                    // 2026-11-26: the lens values are no longer clamped to the
+                    // old schema ranges. Keep only a finite guard so NaN cannot
+                    // poison the shader.
+                    auto finiteLens = [&](const char* key, float fallback) {
+                        const float value = lens.value(key, fallback);
+                        return std::isfinite(value) ? value : fallback;
+                    };
+                    out.chromaticAberration = finiteLens(
+                        "chromatic_aberration", out.chromaticAberration);
                     out.chromaticAberrationMode = lens.value(
                         "chromatic_aberration_mode", out.chromaticAberrationMode);
-                    if (out.chromaticAberrationMode != "full_world" &&
+                    if (out.chromaticAberrationMode != "mixed" &&
+                        out.chromaticAberrationMode != "world_only" &&
+                        out.chromaticAberrationMode != "normal" &&
+                        out.chromaticAberrationMode != "world_and_ui" &&
+                        out.chromaticAberrationMode != "bodycam_special" &&
+                        out.chromaticAberrationMode != "world_ca_lens" &&
+                        out.chromaticAberrationMode != "full_world" &&
                         out.chromaticAberrationMode != "background_only") {
-                        out.chromaticAberrationMode = "full_world";
+                        out.chromaticAberrationMode = "world_only";
                     }
-                    out.vignette = std::clamp(
-                        lens.value("vignette", out.vignette), 0.0f, 0.8f);
-                    out.lensDistortion = std::clamp(
-                        lens.value("distortion", out.lensDistortion), 0.0f, 100.0f);
-                    out.lensCurve = std::clamp(
-                        lens.value("curve", out.lensCurve), 0.05f, 8.0f);
-                    out.lensZoom = std::clamp(
-                        lens.value("zoom", out.lensZoom), 0.1f, 5.0f);
+                    out.vignette = finiteLens("vignette", out.vignette);
+                    out.lensDistortion = finiteLens(
+                        "distortion", out.lensDistortion);
+                    out.lensCurve = finiteLens("curve", out.lensCurve);
+                    out.lensZoom = finiteLens("zoom", out.lensZoom);
                     const std::string edgeMode = lens.value("edge_mode", out.lensEdgeMode);
                     if (edgeMode == "black" || edgeMode == "vignette" ||
                         edgeMode == "clamp" || edgeMode == "repeat" || edgeMode == "circle")
                         out.lensEdgeMode = edgeMode;
-                    out.lensEdgeRadius = std::clamp(
-                        lens.value("edge_radius", out.lensEdgeRadius), 0.05f, 1.2f);
-                    out.lensEdgeSoftness = std::clamp(
-                        lens.value("edge_softness", out.lensEdgeSoftness), 0.0f, 1.0f);
-                    out.lensEdgeDarkness = std::clamp(
-                        lens.value("edge_darkness", out.lensEdgeDarkness), 0.0f, 1.0f);
-                    out.lensPeripheralBlur = std::clamp(
-                        lens.value("peripheral_blur", out.lensPeripheralBlur), 0.0f, 4.0f);
+                    out.lensEdgeRadius = finiteLens(
+                        "edge_radius", out.lensEdgeRadius);
+                    out.lensEdgeSoftness = finiteLens(
+                        "edge_softness", out.lensEdgeSoftness);
+                    out.lensEdgeDarkness = finiteLens(
+                        "edge_darkness", out.lensEdgeDarkness);
+                    out.lensPeripheralBlur = finiteLens(
+                        "peripheral_blur", out.lensPeripheralBlur);
                     out.radialChromaticAberration = lens.value(
                         "radial_chromatic_aberration", out.radialChromaticAberration);
                 }

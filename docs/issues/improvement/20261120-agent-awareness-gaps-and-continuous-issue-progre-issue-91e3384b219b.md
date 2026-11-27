@@ -1025,3 +1025,125 @@ Measurable target: over the next 10 natural failed build attempts, 10/10 attempt
 Smallest experiment: observational first. On the next naturally failing changed-source preflight, check whether the diagnostic exists. If absent, add bounded capture of the first diagnostic line at the existing failure owner (no retry/timeout/priority change) and re-check on the following natural failure. Add a focused parser/format test only if a new field is introduced.
 
 Cross-links: issue-136d4553ff92 acceptance requires failures to preserve an actionable cause; issue-6e08d89b55e3 covers truncation in the wait-issue reason field (different field); issue-7d3dcfd7433b covers wait build/generation identity. If the owner judges this duplicate of the issue-136d4553ff92 acceptance clause, treat it as supporting evidence there rather than new scope.
+
+## Scheduled independent review
+
+### 2026-11-26T17:10:09.296Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-ae1ed8a1d9c5 after 782 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (stale-heartbeat runtime-proven; gold/WPR acceptance met; umbrella still incomplete (review-while-waiting open); no proof/exemption claimed)
+
+### 2026-11-26T17:20:27.797Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review - issue-review-sweeper, wake wake-ae1ed8a1d9c5, 2026-11-26T17:1xZ. Read-only: no source/config edited, no build or run started, no fix claimed, no proof-state change; issue not closed.
+
+**Identity / readiness (observed)**
+- `issue readiness issue-91e3384b219b` -> ready=true, score 8/8, missing=[], state=in_review, tasks=3.
+- No task proof records: `task_proofs` joined to the 3 tasks = 0 rows. Proof expectation here is documentation + one persisted handoff checkpoint, so a missing runtime proof record is expected, not a behavior-proof failure.
+- Tasks: define-awareness-issues (juggernaut-npc-stuck-shooting, open), review-while-waiting (unassigned, open), stale-issue-heartbeat (general-issue-review-scheduler, open).
+
+**Observed facts**
+1. Gold-reference acceptance facet is MET. docs/gold/20261030_033224-agent-session-handoff-gold.md has "Optional tools and accelerators fail open" (RECOMMENDED_PRACTICE) that separates optional profilers/fast paths from required gates ("Preserve failures in required correctness gates... fail-open applies only to optional capabilities") and records the exact failure: `wpr -start CPU -filemode` -> `0xc5585011`, "a failed optional measurement tool, not a failed build." This satisfies "Gold reference explains the behavior, distinguishes optional diagnostics from build blockers, and records current WPR failure as tooling-only."
+2. The stale-issue-heartbeat gap recorded by prior reviews 43/44 ("no observed coord.issue_review.scheduled event; code-static only, runtime cadence unproven") is now RESOLVED by runtime evidence. .dev/agent-coord/events.jsonl contains coord.issue_review.scheduled for sweeps 718->782, each with issue, wake_id, sweep_key, completed_sessions, trigger=sync|work_end, threshold_sessions=5, interval_seconds=1800. Examples: COORD_19741 sweep-762 (2026-11-26T04:02Z, issue-136d4553ff92); COORD_19942 sweep-772 wake-3f8f3b236d89; COORD_20011 sweep-776 wake-947313207784; COORD_20126 sweep-779 wake-479e90a636b1; COORD_20239 sweep-782 wake-ae1ed8a1d9c5 @2026-11-26T17:10:09Z.
+3. The scheduled-wake -> appended-review chain is observed, not just queued: issue_reviews ids 475 (wake-3f8f3b236d89/sweep-772), 477 (wake-947313207784/sweep-776), 478 (wake-479e90a636b1/sweep-779) are real cold-handoff review bodies by issue-review-sweeper dated 2026-11-26, plus build-wait-reviewer rows 476 and 480. So scheduled reviews have actually produced reviews, not only wakes.
+4. Dedupe/stale-cancel path is observed on issue-55bd775c8026: sweep-731 scheduled wake-d0acca77e92c (20:49:47Z); after the opener adapter exited (wake.retry 21:02:10Z) the coordinator cancelled it at 21:21:39Z and scheduled sweep-736 wake-2f468c5db419 one second later. Re-queue followed cancellation; this is not two concurrent reviewer wakes.
+
+**Inference / uncertainty**
+- Cadence, single-issue selection, and stale-cancel are now runtime-supported. I did not exhaustively re-measure every policy clause (24h per-issue preference, unproven-proof ordering, dedupe across in-flight wakes). Confidence: high that "the scheduler runs and its wake yields a review"; moderate that every clause is enforced on every path.
+- The umbrella is NOT complete: review-while-waiting is unassigned with no method, and the doc shows the same issues (issue-55bd775c8026 x5, issue-87d8c9c7ffb1 x5) re-reviewed with "inconclusive / no new evidence." Prior sweeps already proposed activation/next-check obligations for that loop; I do not re-propose them here.
+
+**Contrary evidence / limits**
+- Prior reviews 43/44 are superseded, not retroactively wrong: their "no scheduled event" observation held at their time; events since 2026-11-25 invalidate the "unproven" conclusion.
+- Scheduler runtime proves only the review-heartbeat sub-capability, not the umbrella's broader autonomous diagnosis/fix autonomy.
+- The 17:10 scheduling note appended by the coordinator names `build-wait-reviewer` as its section author even though wake-ae1ed8a1d9c5's request agent is `issue-review-sweeper`; a separate process suggestion records this attribution defect. The scheduling-note author string is not evidence of reviewer identity.
+
+**Next discriminating check**
+- Cadence itself needs no new runtime check. To close stale-issue-heartbeat with evidence rather than inference: over the next 5 sweeps, confirm in events.jsonl that each coord.issue_review.scheduled has exactly one matching issue_reviews row (same wake/sweep) within its sweep window, and that no issue is scheduled twice inside 24h without an intervening review or an observed stale-cancel. First divergence to watch: a scheduled sweep with no review appended before the next sweep. Owner general-issue-review-scheduler; this reviewer makes no closure or proof claim.
+
+## Agent suggestion
+
+### 2026-11-26T17:20:51.005Z — issue-review-sweeper
+
+Development-process proposal from issue-review-sweeper (wake-ae1ed8a1d9c5, bounded review of issue-91e3384b219b, 2026-11-26; read-only, no source edit).
+
+**Evidence (observed).** The coordinator's scheduled-review note is attributed to the agent that triggered the sync, not the scheduled reviewer. At 2026-11-26T17:10:09Z the issue doc gained a section headed `### ... - build-wait-reviewer` followed by "A bounded independent review was queued as wake wake-ae1ed8a1d9c5", yet wake-ae1ed8a1d9c5.json has `agent=issue-review-sweeper` (the mission in its prompt is the bounded review). Source: devscripts/agent_coord.py:1102 calls `_issue_append(agent, ...)` where `agent` is the sync/work_end caller, while the scheduled reviewer is the separate `reviewer` variable at :892 used for the wake `--agent`; `_issue_append` stamps the heading as `### <utc> - <agent>` (:2124). A cold-handoff reader of the doc would address build-wait-reviewer for a review that issue-review-sweeper owns.
+
+**Proposal (safe, no behavior/build/gate change).** Make the scheduling note name the actual reviewer. Smallest change: at agent_coord.py:1102-1108, either pass `reviewer` instead of `agent` as the note author, or keep writer attribution but add `scheduled reviewer=<reviewer>; note written by <agent>` to the body. This is a label/text change only; wake creation, cadence, dedupe, and proof gates are untouched.
+
+**Measurable target.** Over the next 10 coord.issue_review.scheduled notes, 10/10 name a reviewer equal to the matching wake request's `agent` field, and 0 require opening the wake JSON to identify the reviewer; if writer attribution is kept it is labeled separately.
+
+**Smallest experiment.** Apply only the body-label variant (no API change), let the next scheduled sweep write one note, and diff the note text against wake-<id>.json `agent`; repeat for the next 10 scheduled sweeps and record matches/misses.
+
+Cross-ref: issue-91e3384b219b (scheduler umbrella / stale-issue-heartbeat task), issue-6907072bb155 (wake/context bundle), issue-62ab3daa615d (wake prompt delivery).
+
+## Agent suggestion
+
+### 2026-11-26T23:09:35.025Z — issue-review-sweeper
+
+PROCESS PROPOSAL (issue-review-sweeper; wake wake-104bdf88c42e; 2026-11-26T23:1xZ) - escalate an unrun next-check instead of repeating a no-evidence review.
+
+EVIDENCE (observed):
+- issue-5d82fc58a875 received three consecutive independent sweeper reviews with the same verdict and the same unrun check: id378 (2026-11-24), id436 (2026-11-25), id493 (2026-11-26). All = needs-evidence; all say the identical two-client TDM late-join run is "unchanged and still unrun."
+- Its proof rows id74-78 have been unproven/stale since 2026-11-23; no late-join journal exists anywhere under logs, including ~250 run dirs on 2026-11-26 (only bloodtest and vehicle_arena mode.start seen).
+- The scheduler task stale-issue-heartbeat (owner general-issue-review-scheduler) already says "deduplicate wakes; select one stale/unproven open issue; append evidence/counterevidence." It dedupes wakes but not repeats of the same unchanged next-check, so each sweep spends a wake to re-append an identical verdict that advances no evidence.
+
+PROPOSAL:
+- Extend the stale-issue-heartbeat dedupe from wake-level to next-check-level: record a next_check_fingerprint (required event names + target generation/EXE identity) and last_review_verdict/last_reviewed_utc on each issue. If a selected issue's most recent sweeper verdict is needs-evidence AND the fingerprint is unchanged AND it was reviewed within 7 days, do not append another independent review; instead emit one actionable item (create/assign a bounded task to execute the check, or enqueue one isolated tdm-validation mode-41 run through the root dev-loop when the owner is inactive), and log review.skipped.duplicate-next-check. Keep unproven/stale changes visible on the board.
+
+MEASURABLE TARGET:
+- Duplicate needs-evidence reviews for an unchanged next-check drop from 3 in 3 days to <=1 per issue per 7 days.
+- "Open issues whose next-check is unrun for >48h" becomes a visible board count that trends down as checks execute.
+
+SMALLEST EXPERIMENT:
+- Add next_check_fingerprint + last_review_verdict/last_reviewed_utc to the review record; add the skip branch + review.skipped.duplicate-next-check counter to the scheduler. Backfill issue-5d82fc58a875 so the next tick skips the duplicate review and instead queues the tdm-validation run. Measure skip counter and unrun-next-check count over the next 10 scheduler ticks; do not change human proof authority.
+
+## Agent suggestion
+
+### 2026-11-27T04:14:45.776Z — issue-review-sweeper
+
+Process proposal from bounded review of issue-1d1b9c62ac08 (issue-review-sweeper, wake-24255a218e9b, 2026-11-27). No source edit, build, run, or fix claimed.
+
+REPEATED DELAY (evidence): Six independent sweeper reviews of issue-1d1b9c62ac08 (2026-11-21, 11-22, 11-23, 11-25, 11-26, 11-27; review ids 61, 215, 305, 407, 464, 517) each ended with the same next check: one isolated funworld3/payload Arcade NPC run pinned to the published generation. None was executed; a case-insensitive rg for funworld3|payload over every retained run.json still returns 0 files. The capability is not missing: devscripts/dev-launch-modes.json mode 57 "Payload - funworld3 NPC behavior" already defines server --mode payload --gamemode payload --npcs 19, map funworld3, and dev-loop accepts --start-test-run --test-launch-mode 57 --test-game-generation <gen>. The scheduled-review wake prompt says "Do not edit source, build, close, or claim a fix," and reviewers appear to treat starting an isolated run as out of scope, so the same recommendation repeats without new evidence. Cost is concrete: an atdm run already on disk (logs/2026-11-27/20261127_011757, gen 748, 51,879-triangle world) has 28 npc.below-map.respawned events with z down to 26.5 vs boundsMin 57.1 on the same collision source as published gen 757; repeated reviews that only sampled 5.5k-triangle maps would have missed this.
+
+PROPOSAL: Give the scheduled issue-review sweeper an explicit bounded permission (one line in the wake prompt) to start at most one isolated test run per review when the issue's next discriminating check names an existing dev launch mode and the run can be pinned to the published generation via --start-test-run --test-launch-mode <n> --test-game-generation <gen>. The reviewer must attach run_id, EXE/DLL identity, run.json game_generation+game_dll_sha256, journal path, and the required/forbidden events, and must not edit source, request a build, replace the shared runtime, close the issue, or self-approve proof. If it cannot run, it records the exact missing permission/tool instead of repeating the recommendation.
+
+MEASURABLE TARGET: for issues whose next check names an existing launch mode, at least 1 pinned isolated-run journal attached per review (target 100% within 1 activation); time from review to first exact journal evidence under one build cycle (~10 min); 0 repeated "run the repro" recommendations for the same issue after a launch mode exists; still 0 source edits or self-approved proofs.
+
+SMALLEST EXPERIMENT: the next scheduled review of issue-1d1b9c62ac08 starts `python devscripts/dev-loop.py --start-test-run --test-profile npc-navigation --test-launch-mode 57 --test-game-generation 757`, attaches the journal, and reports pass/fail against the existing acceptance. Compare before (0 such runs after 6 reviews) and after (1 run, exact identity + events). If the run is disallowed, have the activator return an explicit denial message so the gap is visible rather than silently repeating.
+
+Cross-links: issue-1d1b9c62ac08 (target issue), issue-df9cc9acbb0d (low-CPU headless Payload repro; mode 57 partially satisfies it), issue-91e3384b219b (this process issue).
+
+## Agent suggestion
+
+### 2026-11-27T04:50:29.922Z — issue-review-sweeper
+
+Occurrence corroborating the existing "first actionable diagnostic on every failed attempt" proposal (proposal logged 2026-11-26 for failed preflight attempt 8864f8). New class, not previously represented: the codegen stage.
+
+Observed 2026-11-27: attempts game-dll-20261127T042314281076Z-280ca9 (start 04:23:14.281Z) and game-dll-20261127T042341361154Z-f65252 (start 04:23:41.361Z) both failed exit_code 1 at stage codegen:packet_registry_codegen.py (562ms / 766ms). Summary and timeline preserve failed_phase and attempt ID but keep only "codegen check failed: packet_registry_codegen.py"; the codegen stdout/stderr (file:line plus message) is not retained. The same codegen completed exit_code 0 in 625ms on the next attempt cdd25f without a relevant code change, so a cold agent cannot tell transient concurrent-edit state from a real schema error. packet_registry_codegen.py's input set includes config/hot-reload/packet-ledger.json.
+
+Relation to existing proposal: same root gap ("failures preserve ... actionable cause", issue-136d4553ff92 acceptance) now demonstrated for a non-compiler stage, so the fix must cover codegen/tool failures too, not only GCC/LLD diagnostics.
+
+Measurable target (unchanged, extended scope): over the next 10 natural failed build attempts (any stage including codegen), 10/10 attempt summaries contain a non-empty bounded first-diagnostic field (file/index plus tool message or tool name + exit reason), and 0 require raw output_tail or a manual rerun to name the failing file/cause; explicitly record "tool emitted no diagnostic" when true.
+
+Smallest experiment: on the next natural codegen failure, check whether the diagnostic exists; if absent, add bounded capture of the first stderr line at the existing codegen failure owner (devscripts/dev_loop/game_build.py codegen stage) with no retry/timeout/priority/semantics change, then re-check on the following natural failure. Read-only until an owner adopts it.
+
+## Agent suggestion
+
+### 2026-11-27T06:54:48.207Z — issue-review-sweeper
+
+PROCESS PROPOSAL (issue-review-sweeper, wake-3926e90a1d75; evidence from the issue-be1adb51b6ac review). Evidence: the run manifest is not finalized at stop, so reviewers must reconstruct run liveness and provenance from event journals. Run 20261127_010236 run.json still says status="online" and updated_utc=2026-11-27T01:03:11Z although its server journal runs to 01:14:30Z and no process is live; the same file has source_generation=17, game_revision="", game_source_generation=null. Run 20261127_060325 run.json says source_generation=0 and game_revision="" even though it loaded game generation 779. Repeated across runs this is a missing-evidence/avoidable-review-cost gap: a cold reviewer cannot confirm liveness or build identity from the manifest and must parse multi-MB journals (today the 25 defuse interruptions required a scripted pass). Proposal: at process exit, the isolated-run runner rewrites run.json to status=stopped with stopped_utc, final game_generation/game_revision/source_generation, and outcome event counts (round.result/objective.planted/objective.defused/objective.exploded); missing values are written as explicit null/unknown, never guessed. Measurable target: in a 24 h sample of isolated FCS runs, >=95% have status=stopped and non-empty game_revision after exit, and a reviewer can answer identity+outcome from run.json alone in <1 minute with zero journal parsing. Smallest experiment: patch the devscripts/dev_loop/parallel_test_runs.py stop path to write the final manifest for the next 3 isolated FCS runs; compare reviewer time and manifest completeness before/after. No source edit or build by me.
+
+## Agent suggestion
+
+### 2026-11-27T07:14:48.113Z — issue-review-sweeper
+
+Confirming instance + measurable addition for the existing exact-duplicate human_quote proposal (2026-11-21 entry above), from issue-review-sweeper wake-9e996a07ca4b reviewing issue-dc6792df3815 on 2026-11-27.
+
+Observed: two auto-created build-friction issues now share the identical human_quote "game-dll-build wait at game_build exceeded the wait budget", title, summary, paths, and acceptance, differing only by wait_id/elapsed/attempt: issue-dc6792df3815 (wait game-dll-build:2026-11-21T16:25:06.256Z, elapsed 60.858s) and issue-8737ccc0152a (wait game-dll-build:2026-11-27T06:04:12.334Z, elapsed 62.467s, state new, no reviewer). Neither links to the other, both are ready=true, and the review scheduler picked the older dc6792df3815 at 2026-11-27T07:10Z (835 completed sessions after creation) while the newer duplicate remained unreviewed. This directly exercises the duplicate-quote gap already proposed; it is not a new mechanism.
+
+Measurable addition to the existing target: at wait-issue creation in devscripts/build_friction.py, when an open issue with the same kind+stage+human_quote hash exists, still create the per-occurrence issue (preserve the "one issue per wait occurrence" acceptance) but (a) append its wait_id/attempt/elapsed to the canonical (oldest open) issue as an occurrence, (b) record related_issue=<canonical> on the new issue, and (c) have the review scheduler never select a duplicate-quote issue while its canonical is open. Target: over the next 10 same-quote wait issues, 10/10 carry a reciprocal canonical link within 24h and 0 duplicate-quote issues are independently reviewed in place of the canonical; baseline from this sample is 0/2 linked.
+
+Smallest experiment: add only the link + occurrence append (no budget or policy change), then verify on the next real over-budget wait that the new issue's evidence contains related_issue and the canonical issue shows the new occurrence. Read-only review; I made no source edit, build, or fix claim, and the build-friction owner (issue-dc6792df3815 owner rocket-league-input-fix) retains ownership.

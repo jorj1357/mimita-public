@@ -61,11 +61,11 @@
   "flip": {
     // RocketSim FLIP_TORQUE_X/Y converted from the fixed-point torque unit:
     // 260 * 0.0959931 = 24.96 (lateral/roll), 224 * 0.0959931 = 21.50 (pitch).
-    "angularAccelPitch": 40.0,
-    "angularAccelRoll": 40.0,
+    "angularAccelPitch": 70.0,
+    "angularAccelRoll": 80.0,
     "torqueSeconds": 0.65,
     // A dodge has its own angular limit; 0.5 * 30 * 0.65^2 = 6.34 rad = 363 deg.
-    "maxAngularVelocity": 24.0,
+    "maxAngularVelocity": 12.0,
     "pitchLockSeconds": 1.0,
 
     // FLIP_INITIAL_VEL_SCALE 500 uu/s and the forward-speed scaling factors.
@@ -133,7 +133,9 @@
     // wheel contact normal (ramps still work).
     "attitudeLock": true,
     "alignToSurface": true,
-    "alignRateDegPerSecond": 480.0
+    "alignRateDegPerSecond": 480.0,
+    "maxYawRateRadPerSecond": 3.4,
+    "yawAccelRadPerSecond2": 14.0
   },
 
   "steering": {

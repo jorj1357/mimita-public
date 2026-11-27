@@ -132,10 +132,13 @@ public:
     // Presentation preferences owned here because they describe the local seat:
     // both default disabled and are toggled from the console.
     bool hudCarAssistEnabled() const { return mHudCarAssist; }
+    bool hudSpeedEnabled() const { return mHudSpeed; }
     bool exitPromptEnabled() const { return mExitPrompt; }
     void setHudCarAssistEnabled(bool on) { mHudCarAssist = on; }
+    void setHudSpeedEnabled(bool on) { mHudSpeed = on; }
     void setExitPromptEnabled(bool on) { mExitPrompt = on; }
     static bool defaultHudCarAssist() { return false; }
+    static bool defaultHudSpeed() { return false; }
     static bool defaultExitPrompt() { return false; }
 
 private:
@@ -168,5 +171,6 @@ private:
     bool mPrevBallCamHeld = false;
     bool mPrevExitKey = false;
     bool mHudCarAssist = false;
+    bool mHudSpeed = false;
     bool mExitPrompt = false;
 };

@@ -108,8 +108,11 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput,
     int framebufferWidth = 0;
     int framebufferHeight = 0;
     mimita::game::hostFramebufferSize(framebufferWidth, framebufferHeight);
+    // Whole-frame fullscreen modes draw the complete frame into the 1024x768
+    // scene target before PostFX, even for lens modes that leave the world
+    // alone. The HUD must use that same size or it is clipped in the target.
     if (gRenderer && gRenderer->stretchesWholeFrame() &&
-        gHudSceneLayer && !useOutputFramebuffer) {
+        !useOutputFramebuffer) {
         framebufferWidth = gRenderer->sceneWidth;
         framebufferHeight = gRenderer->sceneHeight;
     }

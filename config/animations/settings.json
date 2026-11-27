@@ -1,10 +1,20 @@
 {
   "version": 1,
-  // 2026 10 28 0948 root mode 1 = limbs go all over 
-  // mode 2 = nullifies part translations 
-  // ok well 2026 10 28 0951 jorj it not good so we need difrent solution
+  // 2026 10 28 0948 root mode 1 = limbs use authored translation
+  // mode 2 = 2026-11-26 soft tether; see rootTranslationLimits below
   "rootTranslationMode": 1,
   // "rootTranslationMode": 2,
+  // Mode 2 (2026-11-26) is a soft limb tether, not a hard zero. Rotations
+  // still animate; each part's local translation is saturated smoothly at its
+  // budget so a limb cannot drift far from its socket. These are metres.
+  "rootTranslationLimits": {
+    "torso": 0.005,
+    "head": 0.005,
+    "leftArm": 0.01,
+    "rightArm": 0.01,
+    "leftLeg": 0.01,
+    "rightLeg": 0.01
+  },
   "renderPoseInterpolation": true,
   "deathPresentation": "auto",
   "hurtTierMode": 1,

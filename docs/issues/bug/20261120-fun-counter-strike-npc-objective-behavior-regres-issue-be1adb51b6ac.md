@@ -594,3 +594,50 @@ NEXT DISCRIMINATING CHECK
 One pinned isolated FCS/dust2cyberiav4 run on the current newest published generation, through the root dev-loop (not started by a reviewer), after/with issue-381dc906ecd4 clearing the missing-server-policy launch block, retained so its journal shows: (a) per-round plant-start -> defuse-start -> objective.defused ticks on both sites; (b) the defuser's own server.damage.applied and death transition across the hold; (c) per-actor stuck seconds/contacts. Then record issue evidence with the exact npc source hash and re-point task proof so it is neither stale nor dangling. Preserve the journal per the retention issue.
 
 VERDICT: evidence (newer-generation, multi-site, multi-round corroboration of CT NPC defuse; not completion, because it is not current source, machine-readable proof is stale/dangling, movement acceptance is unmet, and death-survival used credited kills only). Human visual review not performed.
+
+## Scheduled independent review
+
+### 2026-11-27T06:07:18.453Z — rocket-league-settle
+
+A bounded independent review was queued as wake wake-ab0ad198a13e after 830 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Scheduled independent review
+
+### 2026-11-27T06:40:41.676Z — build-approval-policy
+
+A bounded independent review was queued as wake wake-3926e90a1d75 after 831 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (evidence)
+
+### 2026-11-27T06:54:42.837Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+INDEPENDENT BOUNDED REVIEW (issue-review-sweeper, wake wake-3926e90a1d75, 2026-11-27T06:41Z activation). Read-only: no source edit, no build request, no runtime started by me, no lease, no close, no proof claim, no owner change. Preserved the active shared runtime.
+
+OBSERVED FACTS
+
+1) Readiness/proof at review time: ready=true, missing=[], score 8, state=in_review, owner=fcs-npc-speed-combat-investigation, 2 tasks. Task fcs-npc-regression-repro is in_progress with no proof. Task fcs-objective-correction's latest structured proof task-proof-3ff7fb066ff8 is result=stale (reason "source changed: src/npc/npc.cpp") and cites logs/2026-11-22/20261122_042716_fcs-route-proof/server-01/events.jsonl, but logs/2026-11-22 no longer exists. The issue's structured evidence JSON still describes run 20261122_081330 generation 478 with objective.defuse-start=0 and objective.defused=0. Machine-readable proof still lags the later defuse work. No new review had been posted since id 471 (2026-11-26T05:54Z).
+
+2) Journal availability on 2026-11-26/27: there are no FCS runs in logs/2026-11-26. On logs/2026-11-27 the FCS runs with a server journal are 20261127_010236, 20261127_020632, 20261127_021425, 20261127_055253, and 20261127_060325. The newest, 20261127_060325, loaded game generation 779 (build artifact 2026-11-27T04:28:12Z) and ran only about 74 simulated seconds with round.start=1 and 0 plant/defuse/explode, so it cannot prove objective behavior. Its run.json records test_run_kind=parallel_agent_test, profile=tdm-validation, status=stopped, source_generation=0, game_revision="".
+
+3) Newest objective-bearing FCS journal: 20261127_010236, test_run_kind=parallel_agent_test, profile=npc-navigation, server+client, game generation 748, game-g748.dll sha256 f47559bffec6fb40f9d3ae13fb5ca7862952e05b640bd8dbb2eeda644926b5f6, artifact 2026-11-27T00:44:04Z. Server journal logs/2026-11-27/20261127_010236/server-01/events.jsonl. Counts: round.start 2, round.result 1, objective.plant-start 7, objective.planted 1 (site A, t=244.26), objective.exploded 1 (t=427.30), round.result winner T reason=2, objective.defuse-start 25 (all operator_kind=npc), objective.defuse-interrupted 25 (all reason=released), objective.defused 0, kill.reward 99, server.damage.applied 309, npc.stuck-episode 595.
+
+4) Hold-breaker classification (I scripted the retained journal: last npc.objective-context for each operator before each interruption, plus victim match within 0.5 s): of 25 interruptions, 16/25 ended with the operator's distance_to_objective > 6.0 m (eligibility outside_defuse_range), 4/25 coincided with the operator being the kill.reward victim, and 5/25 ended inside 6.0 m with no nearby victim. Best attempt: operator 100001, start t=348.51, 249/300 progress ticks, released at t=358.34 when distance_to_objective was 6.397 m > interaction_range 6.0 m; the last objective-context before that interruption reports eligibility_reason=outside_defuse_range while the NPC is in CHASE/Approach toward remembered target 100012. The final attempt (operator 100002, start t=418.40, 36 ticks, dist 2.06 m) released at t=419.81 and that operator was killed at t=422.38; the bomb exploded at t=427.30.
+
+INFERENCE / UNCERTAINTY
+- Confidence is high for the recorded gen748 events. The dominant single interruption cause in this round is leaving the 6.0 m interaction radius while still in combat/chase (16/25 = 64%), not operator death (4/25 = 16%). This is the first per-interruption classification in this issue's evidence record.
+- This is contrary to a plain "CTs reliably defuse" reading: on this generation one long bomb round produced 25 starts and 0 completions even though the best attempt was 51 ticks from finishing.
+- Not newest-source proof: current HEAD is 7176d28a, build/game/current.json records generation 782 generated 2026-11-27T06:32Z, and dev-loop --status reports latest published artifact 2026-11-27T04:28:12Z, build=published_stale, run=(none). The run is gen748, so this behavior cannot be attributed to current source.
+- Sample is 1 completed round on one map; the 0/25 result may be a high-variance round rather than a new regression. gen642 run 20261125_184820 had 404 starts / 369 interruptions / 27 defuses over 64 rounds, so a fragile hold was already visible; this run sharpens the mechanism (range exit) rather than proving a regression direction.
+- The 5 inside-range, non-death releases are not explained by the retained fields; possible causes are target/utility state change or interaction re-assignment. Not proven.
+
+CONTRARY EVIDENCE
+- gen642 run 20261125_184820 (still on disk, 12 segments) has 27 defuse completions (11 A + 16 B); a competent-defuse outcome is therefore demonstrable on a newer-than-478 generation, just not on this gen748 round.
+- The prior gen642 review already showed 369 interruptions vs 404 starts, so frequent release is not new; only the range-exit breakdown is new.
+- 4 of 25 releases were operator deaths, so contested fire is a real but minority cause here.
+
+NEXT DISCRIMINATING CHECK
+One pinned isolated FCS/dust2cyberiav4 run on the newest published generation (currently generation 782 / HEAD 7176d28a, through the root dev-loop, not started by a reviewer) retained so its journal holds, per defuse attempt: sampled distance_to_objective during the hold, the operator's utility-decision/goal, and any operator death, plus >=2 completions on >=2 sites. Classify every interruption as range-exit vs death vs other. Success = no completion attempt is dropped while the defuser is alive and inside 6.0 m for the required ticks, and the range-exit share falls below 10%. Also record per-actor stuck seconds. Preserve the journal per the retention issue (logs/2026-11-22 and logs/2026-11-24 are now pruned; 20261125_152203 still has no server journal).
+
+VERDICT: evidence (new gen748 per-interruption classification: range exit, not death, dominates hold failures; not completion, because it is not current source, single map, one round, and the movement/stuck acceptance remains unmet). Human visual review not performed.

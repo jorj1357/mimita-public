@@ -23,6 +23,7 @@
 #include "camera.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "devtools/terminal.h"
 #include "map/map_loader.h"
 #include "physics/config.h"
 #include "tinygltf/tiny_gltf.h"
@@ -1109,6 +1110,518 @@ static void syncPoseSkeletonFromRestLocal(Player& player)
     }
 }
 
+// ── Body socket hierarchy and per-avatar sockets (2026-11-27) ─────
+// Authored player GLBs use a flat root rig: plrOrigin owns six sibling part
+// nodes. A body is a socket hierarchy: the torso owns the head, arms and legs,
+// so a torso rotation carries the whole upper body and every limb rotates
+// about its own socket (1:1 rotation, no shear). Sockets are converted once
+// after per-avatar overrides, preserving each part's rest world transform.
+// Per-avatar socket edits live in config/rig-sockets.json, keyed by avatar
+// name and model path; config/bodyparts.json stays the model fallback.
+static constexpr const char* kRigSocketConfigPath = "config/rig-sockets.json";
+
+static const char* kRigSocketPartNames[] = {
+    "head", "leftArm", "rightArm", "leftLeg", "rightLeg"};
+static constexpr int kRigSocketPartCount = 5;
+
+static bool gRigEditorActive = false;
+static std::string gRigEditorSelected = "head";
+static std::string gRigAvatarKey;
+static std::string gRigModelKey;
+// Model-derived socket for each part, keyed by avatar|model, used by reset.
+static std::unordered_map<std::string,
+    std::unordered_map<std::string, glm::mat4>> gRigBaseSockets;
+
+static std::string rigBaseKey()
+{
+    return gRigAvatarKey + "|" + gRigModelKey;
+}
+
+static int findRigNode(const std::vector<TransformNode>& nodes, const char* base)
+{
+    for (int i = 0; i < (int)nodes.size(); ++i)
+        if (playerBodyPartBaseName(nodes[i].name) == base)
+            return i;
+    return -1;
+}
+
+static bool rigPartNameValid(const std::string& name)
+{
+    for (const char* part : kRigSocketPartNames)
+        if (name == part)
+            return true;
+    return false;
+}
+
+static bool readRigVec3(const nlohmann::json& obj, const char* key, glm::vec3& out)
+{
+    if (!obj.contains(key) || !obj[key].is_array() || obj[key].size() < 3)
+        return false;
+    out = glm::vec3(obj[key][0].get<float>(), obj[key][1].get<float>(),
+                    obj[key][2].get<float>());
+    return true;
+}
+
+struct RigSocketValue {
+    bool present = false;
+    glm::vec3 offset{0.0f};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 scale{1.0f};
+    std::string source = "model";
+};
+
+static RigSocketValue decomposeRigSocket(const glm::mat4& m)
+{
+    RigSocketValue v;
+    v.present = true;
+    v.offset = glm::vec3(m[3]);
+    v.scale = glm::vec3(glm::length(glm::vec3(m[0])),
+                        glm::length(glm::vec3(m[1])),
+                        glm::length(glm::vec3(m[2])));
+    glm::mat3 basis(
+        glm::vec3(m[0]) / std::max(v.scale.x, 1e-6f),
+        glm::vec3(m[1]) / std::max(v.scale.y, 1e-6f),
+        glm::vec3(m[2]) / std::max(v.scale.z, 1e-6f));
+    v.rotation = glm::normalize(glm::quat_cast(basis));
+    return v;
+}
+
+static glm::mat4 composeRigSocket(const RigSocketValue& v)
+{
+    glm::mat4 m = glm::translate(glm::mat4(1.0f), v.offset) *
+                  glm::mat4_cast(v.rotation);
+    return glm::scale(m, v.scale);
+}
+
+static nlohmann::json loadRigSocketJson()
+{
+    std::ifstream file(kRigSocketConfigPath);
+    if (!file.is_open())
+        return nlohmann::json::object();
+    try {
+        return nlohmann::json::parse(file, nullptr, true, true);
+    } catch (...) {
+        Debug::warn(Debug::Category::GLB,
+            "[RIG SOCKET] failed to parse %s; using model sockets\n",
+            kRigSocketConfigPath);
+        return nlohmann::json::object();
+    }
+}
+
+static RigSocketValue lookupRigSocket(const nlohmann::json& root,
+                                      const std::string& part)
+{
+    auto readSection = [&](const char* section, const std::string& key,
+                           const char* source) -> RigSocketValue {
+        RigSocketValue v;
+        if (key.empty() || !root.contains(section) || !root[section].is_object())
+            return v;
+        const auto& table = root[section];
+        if (!table.contains(key) || !table[key].is_object())
+            return v;
+        const auto& entry = table[key];
+        if (!entry.contains(part) || !entry[part].is_object())
+            return v;
+        const auto& p = entry[part];
+        bool authored = false;
+        if (readRigVec3(p, "offset", v.offset)) authored = true;
+        if (p.contains("quat") && p["quat"].is_array() && p["quat"].size() == 4) {
+            v.rotation = glm::normalize(glm::quat(
+                p["quat"][3].get<float>(), p["quat"][0].get<float>(),
+                p["quat"][1].get<float>(), p["quat"][2].get<float>()));
+            authored = true;
+        }
+        if (readRigVec3(p, "scale", v.scale)) authored = true;
+        v.present = authored;
+        v.source = source;
+        return v;
+    };
+    RigSocketValue v = readSection("avatars", gRigAvatarKey, "avatar");
+    if (!v.present)
+        v = readSection("models", gRigModelKey, "model");
+    return v;
+}
+
+// Convert sibling parts to torso-relative sockets. originalRest receives the
+// pre-conversion root-relative rest transforms for the attachment check.
+static int reparentBodyPartsToTorso(Player& player,
+                                    std::vector<glm::mat4>& originalRest)
+{
+    originalRest = player.restLocalTransforms;
+    const int torso = findRigNode(player.nodes, "torso");
+    if (torso < 0 || torso >= (int)player.restLocalTransforms.size())
+        return 0;
+    const int torsoParent = player.nodes[torso].parent;
+    const glm::mat4 torsoRest = player.restLocalTransforms[torso];
+    const float det = glm::determinant(glm::mat4(glm::mat3(torsoRest)));
+    if (!(std::fabs(det) > 1e-8f))
+        return 0;
+    const glm::mat4 invTorso = glm::inverse(torsoRest);
+
+    int converted = 0;
+    for (const char* partName : kRigSocketPartNames) {
+        const int child = findRigNode(player.nodes, partName);
+        if (child < 0 || child >= (int)player.restLocalTransforms.size())
+            continue;
+        if (child == torso || player.nodes[child].parent != torsoParent)
+            continue; // already socketed or belongs to another rig
+        const glm::mat4 socket = invTorso * player.restLocalTransforms[child];
+        player.restLocalTransforms[child] = socket;
+        player.perfectPoseSkeleton.restLocalTransforms[child] = socket;
+
+        if (torsoParent >= 0 && torsoParent < (int)player.nodes.size()) {
+            auto& siblings = player.nodes[torsoParent].children;
+            siblings.erase(std::remove(siblings.begin(), siblings.end(), child),
+                           siblings.end());
+        }
+        auto& torsoChildren = player.nodes[torso].children;
+        if (std::find(torsoChildren.begin(), torsoChildren.end(), child) ==
+            torsoChildren.end())
+            torsoChildren.push_back(child);
+        player.nodes[child].parent = torso;
+        player.perfectPoseSkeleton.nodes[child].parent = torso;
+        ++converted;
+    }
+    player.perfectPoseSkeleton.nodes[torso].children = player.nodes[torso].children;
+    return converted;
+}
+
+static void emitRigLayoutEvents(const Player& player,
+                                const std::vector<glm::mat4>& originalRest,
+                                const std::vector<glm::mat4>& reparentedRest,
+                                int converted,
+                                const nlohmann::json& socketConfig,
+                                const std::string& modelPath)
+{
+    const int torso = findRigNode(player.nodes, "torso");
+    if (torso < 0)
+        return;
+    const std::string actor = player.username.empty() ? "local" : player.username;
+    const glm::mat4 torsoRest = player.restLocalTransforms[torso];
+
+    double attachmentMax = 0.0;
+    int socketCount = 0;
+    nlohmann::json sockets = nlohmann::json::array();
+    for (const char* partName : kRigSocketPartNames) {
+        const int idx = findRigNode(player.nodes, partName);
+        if (idx < 0 || idx >= (int)player.restLocalTransforms.size())
+            continue;
+        const RigSocketValue socket =
+            decomposeRigSocket(player.restLocalTransforms[idx]);
+        // Does the part's rest world still match the authored model rest?
+        if (idx < (int)originalRest.size() &&
+            idx < (int)reparentedRest.size()) {
+            const glm::vec3 composed =
+                glm::vec3(torsoRest * glm::vec4(
+                    glm::vec3(reparentedRest[idx][3]), 1.0f));
+            attachmentMax = std::max<double>(
+                attachmentMax,
+                glm::length(composed - glm::vec3(originalRest[idx][3])));
+        }
+        const RigSocketValue authored = lookupRigSocket(socketConfig, partName);
+        nlohmann::json rec{
+            {"actor", actor}, {"part", partName}, {"parent", "torso"},
+            {"offset", {socket.offset.x, socket.offset.y, socket.offset.z}},
+            {"quat", {socket.rotation.x, socket.rotation.y,
+                      socket.rotation.z, socket.rotation.w}},
+            {"scale", {socket.scale.x, socket.scale.y, socket.scale.z}},
+            {"source", authored.present ? authored.source : "model"}};
+        sockets.push_back(rec);
+        ++socketCount;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "rig.socket", actor, "body part socket resolved", 0, rec);
+    }
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "rig.hierarchy", actor, "torso-relative body socket hierarchy", 0,
+        nlohmann::json{
+            {"actor", actor},
+            {"root", player.nodes[torso].parent >= 0
+                ? player.nodes[player.nodes[torso].parent].name : "root"},
+            {"torso", "torso"},
+            {"children", player.nodes[torso].children},
+            {"converted", converted},
+            {"socket_count", socketCount},
+            {"avatar_key", gRigAvatarKey},
+            {"model_path", modelPath},
+            {"model_key", gRigModelKey}});
+
+    // Child-follows-torso check: a 15 degree torso twist must carry the head.
+    const int head = findRigNode(player.nodes, "head");
+    double followMeters = 0.0;
+    double torsoScaleError = 0.0;
+    int torsoScale = 1;
+    if (head >= 0 && head < (int)player.restLocalTransforms.size()) {
+        const glm::mat4 twist =
+            glm::rotate(glm::mat4(1.0f), glm::radians(15.0f), glm::vec3(0, 0, 1));
+        const glm::vec3 before =
+            glm::vec3(torsoRest * player.restLocalTransforms[head] *
+                      glm::vec4(0, 0, 0, 1));
+        const glm::vec3 after =
+            glm::vec3(torsoRest * twist * player.restLocalTransforms[head] *
+                      glm::vec4(0, 0, 0, 1));
+        followMeters = glm::length(after - before);
+    }
+    const glm::vec3 torsoAxisX = glm::vec3(torsoRest[0]);
+    const glm::vec3 torsoAxisY = glm::vec3(torsoRest[1]);
+    const glm::vec3 torsoAxisZ = glm::vec3(torsoRest[2]);
+    const float meanScale = (glm::length(torsoAxisX) + glm::length(torsoAxisY) +
+                             glm::length(torsoAxisZ)) / 3.0f;
+    torsoScale = (int)std::lround(meanScale * 100.0f);
+    torsoScaleError = (double)std::fabs(meanScale - 1.0f);
+    torsoScaleError = std::max({torsoScaleError,
+        (double)std::fabs(glm::length(torsoAxisX) - glm::length(torsoAxisY)),
+        (double)std::fabs(glm::length(torsoAxisY) - glm::length(torsoAxisZ))});
+
+    const double attachTolerance = 0.002; // metres; pure float round-trip
+    const bool valid = converted > 0 && attachmentMax <= attachTolerance &&
+        torsoScaleError <= 0.1 && followMeters > 0.01;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "rig.verdict", actor, "body socket hierarchy verdict", 0,
+        nlohmann::json{
+            {"actor", actor},
+            {"parts_reparented", converted},
+            {"sockets", sockets},
+            {"attachment_error_max_m", attachmentMax},
+            {"attachment_tolerance_m", attachTolerance},
+            {"torso_scale_pct", torsoScale},
+            {"torso_scale_error", torsoScaleError},
+            {"child_follows_torso_m", followMeters},
+            {"avatar_key", gRigAvatarKey},
+            {"model_path", modelPath},
+            {"model_key", gRigModelKey},
+            {"valid", valid}});
+}
+
+// Apply the socket hierarchy to one loaded player. Called after body-part
+// overrides and after damage-layer meshes (those use root-relative node
+// translations), and before the first world-transform update.
+void applyAvatarBodyRig(Player& player, const std::string& modelPath)
+{
+    // Keys identify this player's avatar and model. They must follow the player
+    // being edited, never whichever avatar happened to load last.
+    gRigAvatarKey = player.avatarName();
+    gRigModelKey = player.renderModelKey();
+    std::vector<glm::mat4> originalRest;
+    const int converted = reparentBodyPartsToTorso(player, originalRest);
+    const std::vector<glm::mat4> reparentedRest = player.restLocalTransforms;
+    const nlohmann::json socketConfig = loadRigSocketJson();
+    auto& baseSockets = gRigBaseSockets[rigBaseKey()];
+
+    const int torso = findRigNode(player.nodes, "torso");
+    if (torso >= 0) {
+        for (const char* partName : kRigSocketPartNames) {
+            const int idx = findRigNode(player.nodes, partName);
+            if (idx < 0 || idx >= (int)player.restLocalTransforms.size())
+                continue;
+            baseSockets[std::string(partName)] =
+                player.restLocalTransforms[idx];
+            const RigSocketValue authored =
+                lookupRigSocket(socketConfig, partName);
+            if (!authored.present)
+                continue;
+            player.restLocalTransforms[idx] = composeRigSocket(authored);
+            player.perfectPoseSkeleton.restLocalTransforms[idx] =
+                player.restLocalTransforms[idx];
+        }
+    }
+
+    syncPoseSkeletonFromRestLocal(player);
+    player.updateModelWorldTransforms();
+    if (converted > 0)
+        emitRigLayoutEvents(player, originalRest, reparentedRest, converted,
+                            socketConfig, modelPath);
+}
+
+// ── Live rig editor ───────────────────────────────────────────────
+bool playerRigEditorActive() { return gRigEditorActive; }
+const std::string& playerRigEditorSelected() { return gRigEditorSelected; }
+
+// The editor acts on the player passed by the command, so its avatar/model
+// keys must come from that player, not from the most recent model load.
+static void syncRigEditorKeys(const Player& player)
+{
+    gRigAvatarKey = player.avatarName();
+    gRigModelKey = player.renderModelKey();
+}
+
+void playerRigEditorToggle(Player& player)
+{
+    syncRigEditorKeys(player);
+    gRigEditorActive = !gRigEditorActive;
+    const int torso = findRigNode(player.nodes, "torso");
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "rig.editor", player.username.empty() ? "local" : player.username,
+        "rig editor toggled", 0,
+        nlohmann::json{{"active", gRigEditorActive},
+                       {"selected", gRigEditorSelected},
+                       {"torso", torso >= 0},
+                       {"avatar_key", gRigAvatarKey},
+                       {"model_key", gRigModelKey}});
+    Terminal::instance().addLog(
+        std::string("[RIG] editor ") + (gRigEditorActive ? "ON" : "OFF") +
+        " selected=" + gRigEditorSelected);
+}
+
+void playerRigEditorSelect(Player& player, const std::string& part)
+{
+    syncRigEditorKeys(player);
+    if (!rigPartNameValid(part)) {
+        Terminal::instance().addLog(
+            "[RIG] usage: rig_editor_select <head|leftArm|rightArm|leftLeg|rightLeg>");
+        return;
+    }
+    gRigEditorSelected = part;
+    playerRigEditorPrint(player);
+}
+
+void playerRigEditorNudge(Player& player, const glm::vec3& delta)
+{
+    syncRigEditorKeys(player);
+    const int idx = findRigNode(player.nodes, gRigEditorSelected.c_str());
+    if (idx < 0 || idx >= (int)player.restLocalTransforms.size())
+        return;
+    glm::mat4& socket = player.restLocalTransforms[idx];
+    socket[3] += glm::vec4(delta, 0.0f);
+    player.perfectPoseSkeleton.restLocalTransforms[idx] = socket;
+    player.updateModelWorldTransforms();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "rig.socket.edited", player.username.empty() ? "local" : player.username,
+        "rig socket moved", 0,
+        nlohmann::json{{"part", gRigEditorSelected},
+                       {"offset", {socket[3].x, socket[3].y, socket[3].z}},
+                       {"delta", {delta.x, delta.y, delta.z}}});
+}
+
+void playerRigEditorRotate(Player& player, const glm::vec3& eulerDeg)
+{
+    syncRigEditorKeys(player);
+    const int idx = findRigNode(player.nodes, gRigEditorSelected.c_str());
+    if (idx < 0 || idx >= (int)player.restLocalTransforms.size())
+        return;
+    glm::mat4& socket = player.restLocalTransforms[idx];
+    const glm::vec3 pivot = glm::vec3(socket[3]);
+    const glm::quat delta = glm::quat(glm::radians(eulerDeg));
+    socket = glm::translate(glm::mat4(1.0f), pivot) * glm::mat4_cast(delta) *
+             glm::translate(glm::mat4(1.0f), -pivot) * socket;
+    player.perfectPoseSkeleton.restLocalTransforms[idx] = socket;
+    player.updateModelWorldTransforms();
+    const RigSocketValue value = decomposeRigSocket(socket);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "rig.socket.edited", player.username.empty() ? "local" : player.username,
+        "rig socket rotated", 0,
+        nlohmann::json{{"part", gRigEditorSelected},
+                       {"quat", {value.rotation.x, value.rotation.y,
+                                 value.rotation.z, value.rotation.w}},
+                       {"euler_delta", {eulerDeg.x, eulerDeg.y, eulerDeg.z}}});
+}
+
+bool playerRigEditorSave(Player& player)
+{
+    syncRigEditorKeys(player);
+    nlohmann::json root = loadRigSocketJson();
+    if (!root.is_object())
+        root = nlohmann::json::object();
+    const bool useModelKey = gRigAvatarKey.empty();
+    const std::string& key = useModelKey ? gRigModelKey : gRigAvatarKey;
+    if (key.empty()) {
+        Terminal::instance().addLog("[RIG] cannot save: no avatar or model key");
+        return false;
+    }
+    const char* section = useModelKey ? "models" : "avatars";
+    if (!root.contains(section) || !root[section].is_object())
+        root[section] = nlohmann::json::object();
+    auto& entry = root[section][key];
+    if (!entry.is_object())
+        entry = nlohmann::json::object();
+    int saved = 0;
+    for (const char* partName : kRigSocketPartNames) {
+        const int idx = findRigNode(player.nodes, partName);
+        if (idx < 0 || idx >= (int)player.restLocalTransforms.size())
+            continue;
+        const RigSocketValue v = decomposeRigSocket(player.restLocalTransforms[idx]);
+        entry[partName] = {
+            {"offset", {v.offset.x, v.offset.y, v.offset.z}},
+            {"quat", {v.rotation.x, v.rotation.y, v.rotation.z, v.rotation.w}},
+            {"scale", {v.scale.x, v.scale.y, v.scale.z}}};
+        ++saved;
+    }
+    std::ofstream out(kRigSocketConfigPath, std::ios::trunc);
+    if (!out.is_open()) {
+        Terminal::instance().addLog("[RIG] cannot write config/rig-sockets.json");
+        return false;
+    }
+    out << root.dump(2) << "\n";
+    out.close();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "rig.socket.saved", player.username.empty() ? "local" : player.username,
+        "rig sockets saved", 0,
+        nlohmann::json{{"section", section}, {"key", key}, {"parts", saved}});
+    Terminal::instance().addLog(
+        std::string("[RIG] saved ") + std::to_string(saved) + " sockets to " +
+        section + "/" + key);
+    return true;
+}
+
+void playerRigEditorReset(Player& player)
+{
+    syncRigEditorKeys(player);
+    int restored = 0;
+    const auto baseIt = gRigBaseSockets.find(rigBaseKey());
+    if (baseIt != gRigBaseSockets.end()) {
+        for (const char* partName : kRigSocketPartNames) {
+            const int idx = findRigNode(player.nodes, partName);
+            if (idx < 0 || idx >= (int)player.restLocalTransforms.size())
+                continue;
+            const auto it = baseIt->second.find(partName);
+            if (it == baseIt->second.end())
+                continue;
+            player.restLocalTransforms[idx] = it->second;
+            player.perfectPoseSkeleton.restLocalTransforms[idx] = it->second;
+            ++restored;
+        }
+    }
+    player.updateModelWorldTransforms();
+    Terminal::instance().addLog(
+        "[RIG] reset " + std::to_string(restored) + " sockets to model rest");
+}
+
+void playerRigEditorPrint(const Player& player)
+{
+    syncRigEditorKeys(player);
+    const int torso = findRigNode(player.nodes, "torso");
+    Terminal::instance().addLog(
+        std::string("[RIG] active=") + (gRigEditorActive ? "1" : "0") +
+        " avatar=" + (gRigAvatarKey.empty() ? "-" : gRigAvatarKey) +
+        " model=" + (gRigModelKey.empty() ? "-" : gRigModelKey) +
+        " selected=" + gRigEditorSelected);
+    for (const char* partName : kRigSocketPartNames) {
+        const int idx = findRigNode(player.nodes, partName);
+        if (idx < 0 || idx >= (int)player.restLocalTransforms.size())
+            continue;
+        const RigSocketValue v = decomposeRigSocket(player.restLocalTransforms[idx]);
+        char buf[256];
+        snprintf(buf, sizeof(buf),
+                 "  %-8s parent=%d offset=(%.3f %.3f %.3f) quat=(%.3f %.3f %.3f %.3f)%s",
+                 partName, player.nodes[idx].parent, v.offset.x, v.offset.y,
+                 v.offset.z, v.rotation.x, v.rotation.y, v.rotation.z,
+                 v.rotation.w, (gRigEditorSelected == partName) ? "  <" : "");
+        Terminal::instance().addLog(buf);
+    }
+    if (torso >= 0)
+        Terminal::instance().addLog(
+            "[RIG] torso children=" +
+            std::to_string(player.nodes[torso].children.size()) +
+            " (expect 5)");
+}
+
 // Node-local collision triangles and render meshes per body part. The triangles
 // stay node-local; part.worldTransform (set by updateModelWorldTransforms)
 // places them in the world for both the renderer and the collision owner.
@@ -1204,6 +1717,7 @@ bool Player::loadModel(const char* path)
 
         updateModelWorldTransforms();
         buildPlayerPartLayerMeshes(*this);
+        applyAvatarBodyRig(*this, resolvedPath);
         printf("[AVATAR CACHE] model=%s result=hit\n", resolvedPath.c_str());
         return modelLoaded;
     }
@@ -1253,6 +1767,10 @@ bool Player::loadModel(const char* path)
 
     buildBodyPartCollidersFromModel(model, *this, /*buildRenderMeshes=*/true);
     buildPlayerPartLayerMeshes(*this);
+    // The rig editor and render uploads key on the resolved model identity, so
+    // set it before applying sockets.
+    setRenderModelKeyFromPath(cacheKey);
+    applyAvatarBodyRig(*this, resolvedPath);
 
     // Publish the full immutable parse result into the cache.
     cached.bodyColliders = bodyColliders;
@@ -1261,7 +1779,6 @@ bool Player::loadModel(const char* path)
     cached.extraParts = physicalBody.extraParts;
     cached.extraPartMeshes = physicalBody.extraPartMeshes;
     cache[cacheKey] = std::move(cached);
-    setRenderModelKeyFromPath(cacheKey);
     printf("[AVATAR CACHE] model=%s result=miss (skeleton)\n", resolvedPath.c_str());
 
     updateModelWorldTransforms();
@@ -1285,7 +1802,7 @@ bool Player::loadModelColliders(const char* path)
         setRenderModelKeyFromPath(cacheKey);
         applyBodypartConfigOverrides(restLocalTransforms, nodes, gAvatarUseModelTransforms);
         syncPoseSkeletonFromRestLocal(*this);
-        updateModelWorldTransforms();
+        applyAvatarBodyRig(*this, resolvedPath);
         return !physicalBody.parts.empty() || !physicalBody.extraParts.empty();
     }
 
@@ -1316,7 +1833,7 @@ bool Player::loadModelColliders(const char* path)
     syncPoseSkeletonFromRestLocal(*this);
     buildBodyPartCollidersFromModel(model, *this, /*buildRenderMeshes=*/false);
     setRenderModelKeyFromPath(cacheKey);
-    updateModelWorldTransforms();
+    applyAvatarBodyRig(*this, resolvedPath);
 
     // Do not publish into the shared cache: this actor has no GL render mesh,
     // and a cache entry with an empty render mesh would break later client loads.
@@ -1663,6 +2180,7 @@ void Player::finalizeModelIfReady()
     modelLoaded = true;
     avatarAtlasUvs = false;
     setRenderModelKeyFromPath(d->renderModelKey);
+    applyAvatarBodyRig(*this, d->resolvedPath.empty() ? d->path : d->resolvedPath);
 
     // Avatar application can happen before this async model finishes. Complete
     // the per-player atlas, body overrides, and cosmetics at the ready boundary

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from devscripts.build_scheduler import acquire as acquire_build_slot
 from devscripts.dev_loop.build_resource_sampler import BuildResourceSampler
+from devscripts.dev_loop.build_postmortem import build_postmortem
 from devscripts.source_manifest import build_manifest, diff_manifests, validate
 
 
@@ -50,14 +51,18 @@ def _write_json(path: Path, payload: dict) -> None:
         f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n",
                           encoding="utf-8")
-    for attempt in range(20):
+    # progress.json lives in the repository root, where antivirus and the
+    # dashboard read it while the build rewrites it. One second of retries was
+    # not enough: two requests failed with WinError 5 on the rename and a third
+    # waited 900 s for a build that had not started (issue recorded 2026-11-26).
+    for attempt in range(200):
         try:
             os.replace(temporary, path)
             return
         except PermissionError:
-            if attempt == 19:
+            if attempt == 199:
                 raise
-            time.sleep(0.05)
+            time.sleep(min(0.25, 0.02 * (attempt + 1)))
 
 
 def _append_timing(path: Path, event: dict) -> None:
@@ -2251,6 +2256,7 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                 attempt_summary["total_seconds"] = round(
                     time.monotonic() - started, 3)
                 attempt_summary["resource_sampling"] = resource_summary
+                attempt_summary["postmortem"] = build_postmortem(attempt_summary)
                 try:
                     _write_json(summary_path, attempt_summary)
                 except OSError:
@@ -2264,6 +2270,8 @@ def run_game_build(root: Path, request_ids: list[str], mode: str = "debug",
                     pass
             if isinstance(result, dict):
                 result["resource_sampling"] = resource_summary
+                result["postmortem"] = attempt_summary.get("postmortem") or build_postmortem(
+                    attempt_summary)
                 result["total_seconds"] = float(
                     attempt_summary.get("total_seconds")
                     or round(time.monotonic() - started, 3))

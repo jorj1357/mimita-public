@@ -32,12 +32,29 @@ struct AnimationRuntimeSettings {
     float hurtPercentNormalMax = 30.0f;
     int hurtFixedSmallMax = 10;
     int hurtFixedNormalMax = 50;
+    // 2026-11-26 mode 2: keep limb rotations but soft-tether each part's local
+    // translation so a limb can never drift far from its socket. Values are
+    // metres and are intentionally small.
+    float tetherTorso = 0.005f;
+    float tetherHead = 0.005f;
+    float tetherLeftArm = 0.01f;
+    float tetherRightArm = 0.01f;
+    float tetherLeftLeg = 0.01f;
+    float tetherRightLeg = 0.01f;
     std::unordered_map<std::string, int> statePriorities;
 };
 
 const AnimationRuntimeSettings& animationRuntimeSettings();
 void pollAnimationRuntimeSettings();
 int animationStatePriority(const std::string& state);
+// Effective mode/limits including live overrides. 0 override means "use JSON".
+int animationRootTranslationMode();
+float animationTetherBudget(const std::string& part);
+void setAnimationRootTranslationModeOverride(int mode);
+void setAnimationTetherBudgetOverride(const std::string& part, float meters);
+void clearAnimationTetherBudgetOverrides();
+void setAnimationTetherDiagnosticActor(const std::string& actor);
+const std::string& animationTetherDiagnosticActor();
 // Presentation-only interpolation factor between the last two fixed poses.
 float animationRenderAlpha();
 void setAnimationRenderAlpha(float alpha);

@@ -774,12 +774,15 @@ While seated, the HUD shows the vehicle state and key hints (`V` engine,
 `B` auto/manual, `X`/`Z` shift, clutch, throttle/brake/steer, handbrake,
 `F` exit):
 
-- engine `ON` / `OFF`,
-- mode `AUTO` / `MANUAL`,
-- gear `R`, `N`, `1`-`6`,
-- engine RPM,
-- speed,
+- engine `ON` / `OFF` (only with `hud_car_assist on`),
+- mode `AUTO` / `MANUAL` (only with `hud_car_assist on`),
+- gear `R`, `N`, `1`-`6` (only with `hud_car_assist on`),
+- engine RPM and speed (only with `hud_speed on`),
 - clutch, brake, and handbrake indicators.
+
+Both debug readouts default off. In the Rocket League arena profile the
+always-on HUD is the boost meter and ball-cam label; see
+`docs/specs/gamemodes/vehicle-arena.md` §18.
 
 An interaction prompt (`F` + seat name) appears when aiming at an enterable seat.
 All drawings reuse the existing HUD text/render path; no new UI framework.

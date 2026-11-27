@@ -2373,6 +2373,73 @@ bool MapEditor::setSelectedVisible(bool visible)
     return true;
 }
 
+bool MapEditor::setSelectedBlockShape(const std::string& shape)
+{
+    if (mSelection.empty()) return false;
+    MapConfigRegistry& reg = MapConfigRegistry::instance();
+    const EditorObjectRef ref = mSelection.front();
+    AuthoredBlock* block = ref.kind == EditorObjectKind::Block
+                               ? reg.findBlockMutable(ref.id)
+                               : nullptr;
+    if (!block) return false;
+    block->shape = shape.empty() ? std::string{"box"} : shape;
+    reg.markChanged();
+    rebuildAuthoredRenderGeometry();
+    mCollisionDirty = true;
+    if (dirty()) autosave();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.block.shape", ref.id, "block shape set", 0,
+        {{"project_id", currentWorldProjectId()}, {"map_id", mapId()},
+         {"block_id", ref.id}, {"shape", block->shape}});
+    return true;
+}
+
+bool MapEditor::setSelectedBlockProfile(const std::vector<glm::vec2>& points)
+{
+    if (mSelection.empty()) return false;
+    MapConfigRegistry& reg = MapConfigRegistry::instance();
+    const EditorObjectRef ref = mSelection.front();
+    AuthoredBlock* block = ref.kind == EditorObjectKind::Block
+                               ? reg.findBlockMutable(ref.id)
+                               : nullptr;
+    if (!block) return false;
+    block->profile = points;
+    reg.markChanged();
+    rebuildAuthoredRenderGeometry();
+    mCollisionDirty = true;
+    if (dirty()) autosave();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.block.profile", ref.id, "block profile set", 0,
+        {{"project_id", currentWorldProjectId()}, {"map_id", mapId()},
+         {"block_id", ref.id}, {"points", points.size()}});
+    return true;
+}
+
+bool MapEditor::setSelectedBlockShapeParam(const std::string& name, float value)
+{
+    if (mSelection.empty()) return false;
+    MapConfigRegistry& reg = MapConfigRegistry::instance();
+    const EditorObjectRef ref = mSelection.front();
+    AuthoredBlock* block = ref.kind == EditorObjectKind::Block
+                               ? reg.findBlockMutable(ref.id)
+                               : nullptr;
+    if (!block) return false;
+    if (name == "arc") block->arcDegrees = value;
+    else if (name == "segments") block->segments = static_cast<int>(value);
+    else if (name == "convex") block->convex = value > 0.5f;
+    else if (name == "axis") block->profileAxis = static_cast<int>(value);
+    else if (name == "radius_top") block->radiusTop = value;
+    else if (name == "flip") block->profileFlip = value > 0.5f;
+    else return false;
+    reg.markChanged();
+    rebuildAuthoredRenderGeometry();
+    mCollisionDirty = true;
+    if (dirty()) autosave();
+    return true;
+}
+
 bool MapEditor::setSelectedSurfaceColor(const glm::vec4& color)
 {
     if (mSelection.empty()) return false;
@@ -4294,12 +4361,13 @@ std::string MapEditor::addEntity(const std::string& type, const std::string& id)
     return created;
 }
 
-std::string MapEditor::addBlock(const std::string& id)
+std::string MapEditor::addBlock(const std::string& id,
+                               const std::string& shape)
 {
     pushUndo("add block");
     const glm::vec3 position = THE_CAMERA.pos + THE_CAMERA.front * 8.0f;
     const std::string created = MapConfigRegistry::instance().createBlock(
-        position, glm::vec3(2.0f), id);
+        position, glm::vec3(2.0f), id, shape);
     if (created.empty()) {
         notify("add block failed: id exists or is invalid");
         return {};
@@ -6451,3 +6519,4 @@ void MapEditor::renderUI(GLFWwindow* window)
         fontOf("map-editor.help-commands", cfg.helpScale),
         textOf("map-editor.help-commands", dim));
 }
+// map-authored-parity: saved for batch build 2026-11-27T01:45Z

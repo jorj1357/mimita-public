@@ -84,6 +84,15 @@ struct ServerVehicleState
     // the same VehicleInput surface as human drivers.
     std::unordered_set<uint32_t> npcDriverIds;
     uint32_t npcVehicleId = 0;
+    // Optional second bot (probe mode MIMITA_ARENA_BOT_VS_BOT): a bot on the
+    // other team so two NPCs can play each other without a human.
+    uint32_t npcVehicleId2 = 0;
+    // Vehicle that last touched the ball, for "who scored".
+    uint32_t lastBallTouchVehicleId = 0;
+    // Save detection: the ball's previous velocity and last known toucher, so
+    // a contact that turns a ball away from its own goal is identifiable.
+    glm::vec3 arenaPrevBallVelocity{0.0f};
+    uint32_t arenaPrevBallToucher = 0;
     // Vehicle Arena scoring and pad ownership. Goal detection is edge-triggered
     // so one crossing scores once; pad timers are server-authoritative.
     std::string arenaGoalInside;

@@ -27,6 +27,9 @@ MIN_HEIGHT = 500
 APP_USER_MODEL_ID = "MiMITA.DevLoop.Dashboard"
 UI_STATE_PATH = Path(__file__).resolve().parents[2] / ".dev" / "dashboard-ui.json"
 _LIVE_ACTIVATION_CACHE: dict[str, dict] = {}
+_RECENT_GAME_GENERATIONS_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_CONFIGURED_LAUNCH_MODES_STAMP: tuple[int, int] | None = None
+_CONFIGURED_LAUNCH_MODES_CACHE: list[dict[str, str]] | None = None
 
 
 def _load_ui_state() -> dict:
@@ -115,7 +118,16 @@ def _tk_geometry(width: int, height: int, x: int, y: int) -> str:
 
 
 def _configured_launch_modes() -> list[dict[str, str]]:
+    global _CONFIGURED_LAUNCH_MODES_STAMP, _CONFIGURED_LAUNCH_MODES_CACHE
     path = Path(__file__).resolve().parents[2] / "devscripts" / "dev-launch-modes.json"
+    try:
+        stat = path.stat()
+    except OSError:
+        return []
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    if (_CONFIGURED_LAUNCH_MODES_CACHE is not None
+            and stamp == _CONFIGURED_LAUNCH_MODES_STAMP):
+        return list(_CONFIGURED_LAUNCH_MODES_CACHE)
     try:
         config = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -128,12 +140,15 @@ def _configured_launch_modes() -> list[dict[str, str]]:
         not str(value).isdigit(),
         int(str(value)) if str(value).isdigit() else str(value),
     ))
-    return [
+    result = [
         {"id": str(mode_id),
          "name": str(modes[mode_id].get("name", "unnamed"))
          if isinstance(modes[mode_id], dict) else "unnamed"}
         for mode_id in ordered
     ]
+    _CONFIGURED_LAUNCH_MODES_STAMP = stamp
+    _CONFIGURED_LAUNCH_MODES_CACHE = result
+    return list(result)
 
 
 def _launch_timing_from_journal(events_path: str, request_id: str,
@@ -393,6 +408,11 @@ def _latest_generation_activation(root: Path, state_data: dict) -> dict:
 
 
 def _recent_game_generations(root: Path) -> list[dict]:
+    cache_key = str(root)
+    cached = _RECENT_GAME_GENERATIONS_CACHE.get(cache_key)
+    now = time.monotonic()
+    if cached and now - cached[0] < 5.0:
+        return [dict(item) for item in cached[1]]
     summaries = root / ".dev" / "build-timings"
     try:
         paths = sorted(summaries.glob("game-dll-*.json"),
@@ -407,7 +427,10 @@ def _recent_game_generations(root: Path) -> list[dict]:
             continue
         if isinstance(item, dict) and item.get("generation") is not None:
             recent.append(item)
-    return recent[:5]
+    result = recent[:5]
+    _RECENT_GAME_GENERATIONS_CACHE[cache_key] = (
+        time.monotonic(), [dict(item) for item in result])
+    return result
 
 
 def _game_dll_progress(checkout: str) -> tuple[str, str, dict]:
@@ -803,6 +826,7 @@ def run(status_provider: Callable[[], dict],
         "coordination_reader_started": False,
         "coordination_snapshot_in_flight": False,
         "coordination_request_last_monotonic": 0.0,
+        "coordination_view_open": False,
         "coordination_render_in_progress": False,
         "coordination_render_after_id": None,
         "checkout_render_in_progress": False,
@@ -837,14 +861,17 @@ def run(status_provider: Callable[[], dict],
 
     def measure_ui_stage(name: str, operation):
         started = time.perf_counter()
+        thread_started = time.thread_time()
         try:
             return operation()
         finally:
             elapsed_ms = round((time.perf_counter() - started) * 1000.0, 1)
+            thread_cpu_ms = round((time.thread_time() - thread_started) * 1000.0, 1)
             if elapsed_ms >= 50.0:
                 log_dashboard_event(
                     "dashboard.stage.slow",
                     {"stage": name, "duration_ms": elapsed_ms,
+                     "thread_cpu_ms": thread_cpu_ms,
                      "refresh_number": state["dashboard_refresh_count"]},
                     cooldown_key=f"last_stage_log_{name}",
                     cooldown_seconds=2.0)
@@ -852,22 +879,45 @@ def run(status_provider: Callable[[], dict],
     def request_status_refresh() -> None:
         if state["status_refresh_in_flight"] or state["closing"]:
             return
-        state["status_refresh_in_flight"] = True
         started = time.monotonic()
+        if started - state["status_refresh_last_started"] < 2.0:
+            return
+        state["status_refresh_in_flight"] = True
         state["status_refresh_last_started"] = started
 
         def read_status() -> None:
             model = {}
             error_text = ""
+            stage_metrics = {}
+
+            def measure_status_stage(name: str, operation):
+                stage_started = time.perf_counter()
+                thread_started = time.thread_time()
+                try:
+                    return operation()
+                finally:
+                    stage_metrics[name] = {
+                        "duration_ms": round(
+                            (time.perf_counter() - stage_started) * 1000.0, 1),
+                        "thread_cpu_ms": round(
+                            (time.thread_time() - thread_started) * 1000.0, 1),
+                    }
+
             try:
-                with state["provider_control_lock"]:
-                    value = status_provider() or {}
+                def read_provider():
+                    with state["provider_control_lock"]:
+                        return status_provider() or {}
+
+                value = measure_status_stage("status_provider", read_provider)
                 model = value if isinstance(value, dict) else {}
                 try:
-                    headline, detail, progress = _game_dll_progress(
-                        str(model.get("checkout") or ""))
-                    summary, job_title, stamp, ratio, timer = _game_dll_queue_view(
-                        model, progress)
+                    headline, detail, progress = measure_status_stage(
+                        "game_dll_progress",
+                        lambda: _game_dll_progress(
+                            str(model.get("checkout") or "")))
+                    summary, job_title, stamp, ratio, timer = measure_status_stage(
+                        "game_dll_queue_view",
+                        lambda: _game_dll_queue_view(model, progress))
                     model["_game_queue_snapshot"] = {
                         "headline": headline, "detail": detail, "progress": progress,
                         "summary": summary, "job_title": job_title,
@@ -883,6 +933,7 @@ def run(status_provider: Callable[[], dict],
                     }
             except Exception as error:  # noqa: BLE001 - surface without blocking Tk
                 error_text = str(error)
+            model["_dashboard_status_stage_metrics"] = stage_metrics
             finished = time.monotonic()
             state["status_refresh_queue"].put(
                 (model, error_text, started, finished))
@@ -906,6 +957,16 @@ def run(status_provider: Callable[[], dict],
             return
         state["status_refresh_error"] = ""
         state["latest_model"] = model
+        for stage, metrics in (model.get("_dashboard_status_stage_metrics") or {}).items():
+            duration_ms = float(metrics.get("duration_ms") or 0.0)
+            thread_cpu_ms = float(metrics.get("thread_cpu_ms") or 0.0)
+            if duration_ms >= 50.0 or thread_cpu_ms >= 10.0:
+                log_dashboard_event(
+                    "dashboard.status.stage",
+                    {"stage": stage, "duration_ms": duration_ms,
+                     "thread_cpu_ms": thread_cpu_ms},
+                    cooldown_key=f"last_status_stage_log_{stage}",
+                    cooldown_seconds=2.0)
         state["dashboard_refresh_monotonic"] = finished
         state["dashboard_refresh_count"] += 1
         state["dashboard_refresh_utc"] = _utc_now_iso()
@@ -1483,13 +1544,25 @@ def run(status_provider: Callable[[], dict],
     button(runtimes_card, "Start runtime", start_runtime_dialog, width=12).grid(
         row=0, column=1, sticky="e")
 
+    last_runtime_rows_signature = None
+
     def render_runtimes(model: dict) -> None:
-        rows = list(model.get("runtimes") or [])
+        nonlocal last_runtime_rows_signature
+        rows = list(model.get("runtimes") or [])[:8]
+        signature = tuple((str(row.get("runtime_id") or ""),
+                           str(row.get("launch_mode") or ""),
+                           str(row.get("map") or ""),
+                           bool(row.get("server_alive")),
+                           bool(row.get("client_alive")),
+                           str(row.get("port") or "")) for row in rows)
+        if signature == last_runtime_rows_signature:
+            return
+        last_runtime_rows_signature = signature
         runtimes_summary.configure(
             text=f"{len(rows)} runtime(s)" if rows else "No independent runtimes.")
         for child in runtimes_rows.winfo_children():
             child.destroy()
-        for row in rows[:8]:
+        for row in rows:
             runtime_id = str(row.get("runtime_id") or "")
             alive = bool(row.get("server_alive"))
             client_alive = bool(row.get("client_alive"))
@@ -1511,7 +1584,7 @@ def run(status_provider: Callable[[], dict],
                    width=7).grid(row=0, column=2, padx=(4, 0))
 
     coordination_host = collapsible_section(
-        body, 5, "COORDINATION", "coordination")
+        body, 5, "COORDINATION", "coordination", default_open=False)
     coordination_card = frame(coordination_host, padx=5, pady=3)
     coordination_card.grid(row=0, column=0, sticky="ew")
     coordination_card.grid_columnconfigure(0, weight=1)
@@ -1650,6 +1723,12 @@ def run(status_provider: Callable[[], dict],
     def request_coordination_snapshot() -> None:
         if state["coordination_snapshot_in_flight"] or state["closing"]:
             return
+        if not coordination_card.winfo_ismapped():
+            state["coordination_view_open"] = False
+            return
+        if not state["coordination_view_open"]:
+            state["coordination_view_open"] = True
+            state["coordination_request_last_monotonic"] = 0.0
         now = time.monotonic()
         if now - state["coordination_request_last_monotonic"] < 30.0:
             return
@@ -1824,6 +1903,12 @@ def run(status_provider: Callable[[], dict],
     def render_coordination() -> None:
         if state["coordination_render_in_progress"]:
             return
+        if not coordination_card.winfo_ismapped():
+            state["coordination_view_open"] = False
+            return
+        if not state["coordination_view_open"]:
+            state["coordination_view_open"] = True
+            state["coordination_request_last_monotonic"] = 0.0
         try:
             snapshot, error_text, started, finished = (
                 state["coordination_result_queue"].get_nowait())
@@ -2941,6 +3026,7 @@ def run(status_provider: Callable[[], dict],
         if state["closing"]:
             return
         refresh_started = time.perf_counter()
+        refresh_thread_started = time.thread_time()
         measure_ui_stage("control_results", apply_control_results)
         if not state["frozen"]:
             measure_ui_stage("status_result_apply", apply_status_refresh)
@@ -3216,9 +3302,12 @@ def run(status_provider: Callable[[], dict],
                 except tk.TclError:
                     pass
         refresh_ms = round((time.perf_counter() - refresh_started) * 1000.0, 1)
+        refresh_thread_cpu_ms = round(
+            (time.thread_time() - refresh_thread_started) * 1000.0, 1)
         if refresh_ms >= 100.0:
             log_dashboard_event(
                 "dashboard.refresh.slow", {"duration_ms": refresh_ms,
+                                            "thread_cpu_ms": refresh_thread_cpu_ms,
                                             "refresh_number": state["dashboard_refresh_count"]},
                 cooldown_key="last_slow_refresh_log")
         if not state["closing"]:

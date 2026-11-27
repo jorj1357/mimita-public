@@ -1,3 +1,13 @@
+<!--
+Purpose: define deterministic, connected infinite-world generation, editing,
+streaming, authority, and performance requirements.
+Does not: claim that planned features are implemented or runtime-proven, or
+replace the Map Editor, world-project, networking, or nodes-and-connections
+owners.
+-->
+
+## Historical author note
+
 9 7 2026 1712 jorj todo - explain the inf dng slr  infinite world gneration , and like
 maek it like minecraft
 or 
@@ -619,3 +629,156 @@ The existing `infinite_xxity_load_v1`, `infinite_xxity_radius_live_v1`,
 `infinite_xxity_connectors_v1`, and `infinite_xxity_blocks_collision_v1`
 scenarios remain focused component paths. This new stress scenario covers the
 combined cloned-editor-playtest path and does not replace the focused cases.
+
+## Endless exploration worlds and spatial-graph experiments — 2026-11-26
+
+### Intent and first world
+
+These worlds are for open-ended exploration: the player can keep moving into
+new places without reaching a designed edge. The tone may be quiet, uncanny,
+or horror-leaning, but exploration and continuity are the core experience.
+Infinite XXITY is the first vertical slice because it already has a connected
+city world and an editor path. Do not start by implementing several separate
+world modes. Add other world identities as data-driven variants that reuse the
+same streaming, authoring, and authority owners.
+
+The first city should evoke Chicago through believable street and building
+patterns, without claiming a one-to-one replica. Use a 1.8 m standing player as
+the initial scale reference. Author dimensions in meters, and expose the
+reference height in the project so authors can compare doors, curbs, stairs,
+parking bays, sidewalks, and interior ceilings against the player. City
+parcels and chunk footprints must grow together: enlarging a building without
+changing its parcel and connectors must not break street continuity.
+
+The city chunk library should support connected road segments, corners,
+intersections, sidewalks, alleys, small and tall buildings, enterable building
+shells with room/floor layouts, parking structures with drive ramps, parks with
+paths, trees and benches, plazas, elevated highways, underpasses, rail corridors,
+and tall landmark towers with rooftop or helipad areas. Every walkable or
+drivable route has continuous authored collision and compatible connectors.
+Interiors are reusable chunks or subgraphs joined to street entrances; they
+must be traversable, not just visible façades. NPC pedestrians and vehicles
+with drivers are optional population layers, kept separate from the base
+streaming contract so an empty exploration world remains useful.
+
+The generator must make travel feel continuous. Geometry is prepared ahead of
+the player with bounded queues, work budgets, stable seeded placement, and
+near/mid/far representations. Fog is a world presentation setting tied to the
+nearest guaranteed ready or represented boundary; it must hide generation
+without covering nearby navigation cues. Rain is an optional weather layer
+with bounded effects and a clear project-level on/off/intensity control. It
+must not become a substitute for missing geometry or collision. If the stream
+cannot meet the fog boundary, report a failed coverage condition rather than
+silently showing holes. Streaming and fog settings belong to the cloned world
+profile and must not alter other `connected_world` maps.
+
+### Reusable authoring vocabulary
+
+The in-game editor should let an author clone a world, select or create a
+reusable chunk, edit it in place, preview its neighbors, save, reload, and see
+the result without changing the source project. Keep common edits discoverable
+in the viewport and properties panel: meter-based dimensions and transforms,
+materials, collision, entrances, connectors, repeat rules, vertical extent,
+fog, and weather. Show connector compatibility and blocked or missing paths
+before saving. Provide undo/redo and validation that identifies the chunk,
+connector, or portal with the error.
+
+The authored world can be modeled as a graph, following the target ontology in
+[`../architecture/nodes-and-connections.md`](../architecture/nodes-and-connections.md).
+This is a design/authoring model, not a requirement to replace the current
+world runtime with a graph database. Suggested stable node kinds are:
+
+| Node | Meaning |
+|---|---|
+| `world` | Project identity, seed, generator/dependency versions, scale, and environment profile. |
+| `district` | A reusable or seeded area such as downtown, neighborhood, rail corridor, or park zone. |
+| `chunk` | A reusable authored template or generated instance, with stable template ID and instance coordinate. |
+| `connector` | A typed boundary point with transform, shape, traversal role, and compatibility tags. |
+| `structure` / `room` | Enterable building, parking, interior, or landmark subgraph. |
+| `portal` | A directed transition between spatial locations or layer identities. |
+| `layer` | A stable spatial instance for stacked streets, interiors, or non-Euclidean spaces. |
+| `anchor` | Spawn, navigation, population, or landmark point with a declared purpose. |
+| `environment` | Fog, rain, lighting, and ambience profile referenced by a world or district. |
+
+Useful typed connections include `contains` (world/district/chunk/room
+hierarchy), `connects_to` (compatible physical connectors), `enters` (street to
+building or room), `located_at` (authored transform or generated coordinate),
+`uses_environment`, `spawns_at`, `routes_to` (roads, paths, stairs, ramps, and
+rails), and `transitions_to` (portal mapping). Each connection has a stable ID,
+direction where applicable, a version, and provenance identifying whether it
+was authored or generated. The graph is resolved from the world seed,
+generator version, template dependencies, and authored overrides; clients must
+not invent independent identities for the same place.
+
+### Non-Euclidean spaces and dimensional experiments
+
+Treat non-Euclidean exploration as a later, opt-in world feature built from
+ordinary 3D rooms and explicit graph transitions. A room that is larger inside
+than its exterior is a distinct interior `layer` reached by a `portal`; its
+entrance and exit transforms map movement and orientation between the two
+spaces. A corridor that appears to turn around the same corner repeatedly is
+represented by a finite set of room/layer instances and directed transitions,
+with an explicit exit transition. Its visual loop must not create an
+unbounded traversal graph, ambiguous location identity, or a way for clients to
+disagree about where players are.
+
+Portal traversal is authoritative and shared: the server validates the source
+portal, destination layer, transform, and actor transition, then replicates a
+stable transition identity. Clients may predict presentation from the same
+versioned descriptor, but do not establish different destinations locally.
+Collision, NPC navigation, projectiles, and vehicle traversal across a portal
+need explicit support before that portal type is enabled for those actors.
+Begin experiments with one-player authored rooms, then test multiple players
+meeting, crossing, and leaving the same portal loop before enabling networked
+world use.
+
+Four-dimensional or higher-dimensional layouts are research only. First test
+whether 3D room/layer nodes and transitions communicate the desired effect.
+Any higher-dimensional experiment must specify its projection into playable
+3D, stable identity, collision/navigation meaning, and multiplayer
+determinism before it becomes world content. It must not change the game's
+global coordinate or physics model as an incidental part of city generation.
+
+### World family roadmap
+
+Reuse the same chunk and connector authoring model for later endless variants:
+
+- **Infinite neighborhood:** streets, houses, yards, shops, alleys, and
+  enterable interiors, using the city scale and environment controls.
+- **Infinite skatepark:** connected bowls, ramps, rails, plazas, and transfer
+  paths sized for continuous skating.
+- **Infinite surf and bhop courses:** route chunks with explicit start/exit
+  continuity and movement-clearance validation; keep course rules/configuration
+  separate from city content.
+- **Infinite Backrooms:** room and corridor templates, sparse landmarks,
+  controlled repetition, and optional portal/layer transitions for uncanny
+  spaces.
+
+These are candidate data sets, not separate engine implementations. Each gets
+its own seed/profile/template library and visual acceptance while sharing
+streaming, collision, networking, editor, and performance limits.
+
+### Acceptance for the first city slice
+
+1. A cloned Infinite XXITY project can be edited and reloaded without changing
+   the source map or its dependencies.
+2. A scale review records the 1.8 m player reference and representative road,
+   sidewalk, doorway, floor, parking, and tower measurements in meters.
+3. The generated route remains physically connected through streets and at
+   least one enterable building or parking structure; connector and collision
+   identity agree on client and server.
+4. Fog is active in the exact Infinite XXITY run and its end remains inside
+   ready/represented coverage. A human viewpoint review confirms that chunk
+   creation does not appear as visible popping or holes. Rain may be disabled;
+   it is not a gate for this first slice.
+5. Repeated travel crosses many chunk boundaries while loaded and pending
+   work stays within configured budgets and required frame/tick budgets.
+6. Optional NPCs or vehicles are measured as a separate workload. The design
+   does not claim support for 999 players or arbitrary population counts until
+   concurrent server/client budgets have been measured.
+7. Portal/layer experiments use stable graph identities and server-confirmed
+   transitions. They are not required to prove the ordinary city stream.
+
+The existing focused Infinite XXITY scenarios and the combined cloned-project
+stress scenario above remain the source of machine evidence. A separate portal
+scenario is required before claiming portal continuity or multiplayer proof.

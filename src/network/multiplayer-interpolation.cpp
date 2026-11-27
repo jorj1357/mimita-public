@@ -29,6 +29,7 @@
 #include "audio/audio.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "debug/jitter-probe.h"
 #include "terminal/terminal-state.h"
 #include "network/movement-validation.h"
 #include "world/world.h"
@@ -507,6 +508,15 @@ void logInterpolationState(EntityInterpolationState& interpolation,
                            const glm::vec3& rawPos,
                            const glm::vec3& finalPos)
 {
+    JitterProbe::sampleInterpolation(
+        entityId, interpolation.sampleAlpha, interpolation.sampleAlphaDelta,
+        interpolation.lastFinalRenderDelta,
+        interpolation.lastFinalRenderVerticalDelta,
+        interpolation.hardSnapCount, interpolation.bufferUnderrunCount,
+        interpolation.holdCount, interpolation.holding,
+        interpolation.extrapolating, interpolation.renderSampleJumped,
+        interpolation.buffer.size());
+
     const NetworkingConfigData& cfg = NetworkingConfig::instance().data();
     if (!gNetInterpDebug && !cfg.debug.logInterpolationState)
         return;
