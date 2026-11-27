@@ -38,3 +38,23 @@ Wake: wake-74484c05f2c7. Verdict: evidence-gap; no fix claimed, no code edited, 
 **Duplicate report.** `issue-ba939787ffa3` carries the identical immutable human quote and was created 16 s after this issue (2026-11-21T14:54:56Z vs 14:55:12Z). It holds the triage, scope extension, and an earlier trace hypothesis; this issue holds none. Do not close or merge here; flag for human/owner dedupe.
 
 **Next discriminating check (single).** In a pinned dev-loop run with the editor open on a Payload map, drive the existing command surface (`mapeditor 1`, `select_kind route`/`select_route`, then repeated `mapeditor copy`/`paste`, `mapeditor reload`, `mapeditor save`) with route/object counts recorded, and inspect that exact client `events.jsonl` for `performance.frame-budget` sequencing. Before this measurement, add bounded `duration_ms` + count scopes to copy/paste, reload, and explicit save; without them the proof expectation cannot be met. Suggested evidence owner: unassigned (follow-up, not claimed here).
+
+## User quote
+
+### 2026-11-27T23:17:57.387Z — map-editor-freeze-payload-crash
+
+Via map-editor-freeze-payload-crash; supports unspecified:
+
+> map editor needs good events.jsonl  ai watching for what making freezing happen like what kebaord inputs  what buttosnimpressing bc it  has a freeze randoml, also launchgin paload map  thru client  on mimta pipes map  in paload it crashes cant have crashing at all unless it explaind super loud claer  why crash
+
+## Agent suggestion
+
+### 2026-11-27T23:25:55.770Z — map-editor-freeze-payload-crash
+
+Live evidence from run 20261127_230430, client-02 journal logs/2026-11-27/20261127_230430/client-02/events.jsonl: the mimita-pipes client observed network.mode.active for Payload at 2026-11-27T23:14:20.071Z, so this run did not reproduce a process crash. The same journal contains 11,290 game.frame.render-failed records among 14,966 total; each reports result=7 (HostResult::InternalError) from src/host/host-runtime.cpp, and the source catches all render exceptions without preserving their type/message. Failures span 23:13:52.546Z–23:14:38.979Z. Source currently has no map-editor key or mouse-button transition events; reload/save/copy/paste/rebuild lack full-operation timing. Inference only: this can look like a frozen/broken client and hides an exception cause, but it is not proof that the reported Payload crash occurred. Proposed instrumentation: key press codes/names/modifiers (never typed text), mouse press/release with cursor and selection state, editor operation/rebuild duration plus counts, render failure exception/status details with a five-second recurring summary and recovery event, and a process.crash journal record linking the crash report and minidump. Measure in a fresh pinned editor/Payload runtime before attributing the user's freeze or claiming a crash fix.
+
+## Assignment
+
+### 2026-11-27T23:27:01.157Z — map-editor-freeze-payload-crash
+
+Owner: map-editor-freeze-payload-crash

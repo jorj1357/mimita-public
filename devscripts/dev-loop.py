@@ -1763,23 +1763,37 @@ class DevLoop:
 
     def start_client_instance(self, name: str, badconn_preset: str = "",
                               instance_id: str | None = None,
-                              server_instance_id: str = "server-01",
+                              server_instance_id: str | None = "server-01",
                               hot_client: bool | None = None) -> dict | None:
-        """Start one additional client connected to the owned server."""
-        if server_instance_id != "server-01":
+        """Start a managed client, connecting when its server is available."""
+        server_alive = self.server_health()
+        if server_instance_id in (None, ""):
+            server_instance_id = "server-01" if server_alive else None
+        if server_instance_id not in (None, "server-01"):
             self.last_message = f"unknown server instance {server_instance_id}"
             return None
-        if not self.server_health():
+        if server_instance_id and not server_alive:
             self.last_message = "start-client requires a running server"
             return None
-        artifact_id = str(self.run_metadata.get("artifact_id") or "")
+        identity = self.latest_build_identity() or {}
+        artifact_id = str(self.run_metadata.get("artifact_id") or
+                          identity.get("artifact_id") or self.latest_build or "")
         candidate = BUILD_ROOT / artifact_id / "mimita.exe" if artifact_id else None
+        if candidate is None or not candidate.is_file():
+            candidate = self.latest_executable()
         executable = (str(candidate) if candidate is not None and candidate.is_file()
                       else self.launch_executable)
         if not executable:
             self.last_message = "start-client requires a published build"
             return None
         self._ensure_run_layout()
+        if not self.run_metadata:
+            self.run_metadata = dict(identity)
+        self.run_metadata.setdefault("artifact_id", artifact_id)
+        self.run_metadata.setdefault("build_id", self.build_id(identity))
+        self.run_metadata.setdefault("client_build_id", self.build_id(identity))
+        self.run_metadata.setdefault("source_generation", identity.get("source_generation"))
+        self.run_metadata.setdefault("run_id", self.run_id or "")
         iid = instance_id or self._next_client_instance_id()
         if iid in self.client_instances:
             self.last_message = f"duplicate client instance {iid}"
@@ -1789,12 +1803,13 @@ class DevLoop:
         queue = DEV_ROOT / f"agent-command-{self.run_id}-{iid}.jsonl"
         queue.write_text("", encoding="utf-8")
         args = [executable]
-        if self.room_code:
-            args.extend(["--room", self.room_code])
-        else:
-            args.extend(["--connect", f"127.0.0.1:{self.server_local_port}"])
-            if self.room_file_path is not None:
-                args.extend(["--room-code-file", str(self.room_file_path)])
+        if server_instance_id:
+            if self.room_code:
+                args.extend(["--room", self.room_code])
+            else:
+                args.extend(["--connect", f"127.0.0.1:{self.server_local_port}"])
+                if self.room_file_path is not None:
+                    args.extend(["--room-code-file", str(self.room_file_path)])
         args.extend(["--map", self.current_map or "",
                      "--name", name, "--unlock-cursor"])
         if badconn_preset:
@@ -1835,7 +1850,8 @@ class DevLoop:
             "journal_path": str(journal),
             "command_queue": str(queue),
             "badconn_preset": badconn_preset,
-            "server_instance_id": "server-01",
+            "server_instance_id": server_instance_id,
+            "executable": executable,
             "started_ms": time.time() * 1000.0,
             "crash_dir": crash_dir,
         }
@@ -1996,7 +2012,7 @@ class DevLoop:
                 state = "offline"
             elif snap_age is not None and snap_age <= 3000.0:
                 state = "online"
-            elif not server_alive:
+            elif not server_alive and record.get("server_instance_id"):
                 state = "frozen"
             else:
                 state = "stale"
@@ -2005,13 +2021,14 @@ class DevLoop:
                 "role": "client",
                 "label": record.get("name", iid),
                 "pid": process.pid if alive else record.get("pid"),
-                "executable": self.launch_executable,
+                "executable": record.get("executable") or self.launch_executable,
                 "build_id": self.run_metadata.get("client_build_id"),
                 "launch_id": self.launch_id,
                 "state": state,
-                "server_instance_id": record.get("server_instance_id", "server-01"),
-                "connected_address": (f"127.0.0.1:{self.server_local_port}"
-                                      if self.server_local_port else ""),
+                "server_instance_id": record.get("server_instance_id"),
+                "connected_address": (
+                    f"127.0.0.1:{self.server_local_port}"
+                    if record.get("server_instance_id") and self.server_local_port else ""),
                 "badconn_preset": record.get("badconn_preset", ""),
                 "journal_path": journal,
                 "last_event_utc": (last or {}).get("wall_time"),
@@ -2021,7 +2038,8 @@ class DevLoop:
                 "uptime_seconds": (max(0.0, (now_ms - float(record.get("started_ms", now_ms))) / 1000.0)
                                    if alive else None),
                 "command_queue": record.get("command_queue"),
-                "build_match": bool(self.builds_match),
+                "build_match": (bool(self.builds_match)
+                                if record.get("server_instance_id") else None),
             })
         if not clients and self.processes:
             # Backward-compatible single-client view for a run adopted from old state.
@@ -3564,7 +3582,8 @@ class DevLoop:
                 record = self.start_client_instance(
                     name, str(request.get("badconn_preset", "") or ""),
                     str(request.get("instance_id", "") or "") or None,
-                    str(request.get("server_instance_id", "") or "server-01"),
+                    (str(request["server_instance_id"]).strip()
+                     if "server_instance_id" in request else "server-01"),
                     hot_client=requested_hot_client)
                 if record:
                     self.record_control_event(request, "completed", self.last_message)

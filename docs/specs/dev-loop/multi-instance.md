@@ -61,11 +61,18 @@ run
 ```
 
 An instance is one executable process. `server` and `client` are the gameplay
-roles. `daemon`, `watchdog`, and `dashboard` are dev-loop roles.
+roles. `daemon`, `watchdog`, and `dashboard` are dev-loop roles. A managed
+client may run standalone with no server; in that case its `server_instance_id`
+and `connected_address` are empty, it receives no `--room` or `--connect`
+argument, and the dashboard does not classify missing server snapshots as a
+frozen connection. Its process and journal remain managed normally. A client
+configured for a server keeps that server identity and uses the normal
+connected/frozen state rules.
 
 Every instance has a stable `instance_id` within the run, for example
-`server-01` or `client-02`. IDs are never reused within a run. A client names
-the `server_instance_id` it is configured to connect to.
+`server-01` or `client-02`. IDs are never reused within a run. A connected
+client names the `server_instance_id` it is configured to connect to; a
+standalone client omits it.
 
 ## Run manifest
 
@@ -133,6 +140,8 @@ Minimum fields:
   ]
 }
 ```
+
+For a standalone client, omit `server_instance_id` and `connected_address`.
 
 ## Per-executable journals
 

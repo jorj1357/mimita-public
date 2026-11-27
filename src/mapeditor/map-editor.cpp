@@ -30,6 +30,7 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
+#include "debug/crash-handler.h"
 #include "debug/structured-log.h"
 #include "devtools/terminal.h"
 #include "game/game-state.h"
@@ -70,6 +71,31 @@ constexpr float kVertexSnapRadius = 0.85f;
 constexpr float kOutlinerHeaderHeight = 68.0f;
 constexpr float kOutlinerListGap = 8.0f;
 constexpr size_t kMaxHistory = 60;
+
+std::string activeMapId();
+
+void emitEditorOperation(const char* event, const std::string& mapId,
+                         const char* reason,
+                         std::chrono::steady_clock::time_point started,
+                         nlohmann::json fields)
+{
+    fields["map_id"] = mapId;
+    fields["duration_ms"] = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        event, mapId, reason, 0, fields,
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+void emitEditorInput(const char* event, const char* reason,
+                     nlohmann::json fields)
+{
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        event, activeMapId(), reason, 0, fields,
+        __FILE__, __LINE__, __FUNCTION__);
+}
 
 std::string activeMapId()
 {
@@ -1746,7 +1772,12 @@ void MapEditor::beginRenameSelection()
 
 void MapEditor::copySelection()
 {
+    const auto started = std::chrono::steady_clock::now();
     if (mSelection.empty()) {
+        emitEditorOperation("map-editor.copy.completed", mapId(),
+                            "copy skipped because selection is empty", started,
+                            {{"success", false}, {"selection_count", 0},
+                             {"clipboard_count", 0}});
         notify("copied nothing: selection is empty");
         return;
     }
@@ -1773,6 +1804,10 @@ void MapEditor::copySelection()
         }
         mClipboard.push_back(std::move(item));
     }
+    emitEditorOperation("map-editor.copy.completed", mapId(),
+                        "selected editor objects copied", started,
+                        {{"success", true}, {"selection_count", mSelection.size()},
+                         {"clipboard_count", mClipboard.size()}});
     notify("copied " + describeSelection());
 }
 
@@ -1907,7 +1942,12 @@ void MapEditor::cutSelection()
 
 void MapEditor::pasteClipboard()
 {
+    const auto started = std::chrono::steady_clock::now();
     if (mClipboard.empty()) {
+        emitEditorOperation("map-editor.paste.completed", mapId(),
+                            "paste rejected because clipboard is empty", started,
+                            {{"success", false}, {"clipboard_count", 0},
+                             {"pasted_count", 0}});
         notify("paste failed: clipboard is empty");
         return;
     }
@@ -1985,6 +2025,13 @@ void MapEditor::pasteClipboard()
     MapConfigRegistry::instance().renumberPayloadRoute();
     mSelection = pasted;
     rebuildGeometry();
+    emitEditorOperation("map-editor.paste.completed", mapId(),
+                        "clipboard objects pasted and geometry rebuild requested", started,
+                        {{"success", !pasted.empty()},
+                         {"clipboard_count", mClipboard.size()},
+                         {"pasted_count", pasted.size()},
+                         {"selection_count", mSelection.size()},
+                         {"geometry_rebuilt", true}});
     std::string message = "pasted " + std::to_string(pasted.size()) + " objects: ";
     for (size_t i = 0; i < pasted.size(); ++i) {
         if (i > 0) message += ", ";
@@ -2978,6 +3025,30 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
 {
     if (!mActive) return false;
     const bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
+    const bool positionFocused = std::any_of(
+        mPropertyPosition.begin(), mPropertyPosition.end(),
+        [](const UITextInputState& field) { return field.focused; });
+    const bool sizeFocused = std::any_of(
+        mPropertySize.begin(), mPropertySize.end(),
+        [](const UITextInputState& field) { return field.focused; });
+    const bool rotationFocused = std::any_of(
+        mPropertyRotation.begin(), mPropertyRotation.end(),
+        [](const UITextInputState& field) { return field.focused; });
+    const bool scaleFocused = std::any_of(
+        mPropertyScale.begin(), mPropertyScale.end(),
+        [](const UITextInputState& field) { return field.focused; });
+    if (action == GLFW_PRESS && (mOutlinerSearchFocused || mPropertyName.focused ||
+        positionFocused || sizeFocused || rotationFocused || scaleFocused)) {
+        const char* keyText = glfwGetKeyName(key, glfwGetKeyScancode(key));
+        const std::string keyName = keyText ? keyText : std::to_string(key);
+        emitEditorInput("map-editor.input.key-press",
+                        "map editor text-field key press received (typed text is not recorded)",
+                        {{"key_name", keyName}, {"key_code", key}, {"mods", mods},
+                         {"text_field_focused", true},
+                         {"selection_count", mSelection.size()}});
+        recordCrashBreadcrumb("map-editor-input", "text-field key=%s code=%d mods=%d",
+                              keyName.c_str(), key, mods);
+    }
     // Saving remains an editor command even when a properties/search field has focus.
     if (ctrl && key == GLFW_KEY_S) return false;
     if (mOutlinerSearchFocused) {
@@ -3594,6 +3665,42 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
     }
 
     mimita::game::hostCursorPos(mMouseX, mMouseY);
+    static GLFWwindow* sampledWindow = nullptr;
+    static int lastLeft = GLFW_RELEASE;
+    static int lastRight = GLFW_RELEASE;
+    const int left = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+    const int right = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
+    if (sampledWindow != window) {
+        sampledWindow = window;
+        lastLeft = left;
+        lastRight = right;
+    } else {
+        const auto recordButton = [&](const char* button, int previous, int current) {
+            if (previous == current) return;
+            const char* action = current == GLFW_PRESS ? "press" : "release";
+            const int mods =
+                (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                 glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS ? GLFW_MOD_CONTROL : 0) |
+                (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+                 glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS ? GLFW_MOD_SHIFT : 0) |
+                (glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
+                 glfwGetKey(window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS ? GLFW_MOD_ALT : 0);
+            emitEditorInput("map-editor.input.mouse-button",
+                            "map editor mouse button state changed",
+                            {{"button", button}, {"action", action}, {"mods", mods},
+                             {"raw_cursor", {mMouseX, mMouseY}},
+                             {"selection_count", mSelection.size()},
+                             {"drag_active", mDrag.mode != DragMode::None}});
+            recordCrashBreadcrumb("map-editor-input",
+                "mouse=%s action=%s mods=%d cursor=(%.1f,%.1f)", button,
+                action, mods, mMouseX, mMouseY);
+        };
+        recordButton("left", lastLeft, left);
+        recordButton("right", lastRight, right);
+        lastLeft = left;
+        lastRight = right;
+    }
+
     int windowW = 0, windowH = 0, framebufferW = 0, framebufferH = 0;
     mimita::game::hostWindowSize(windowW, windowH);
     mimita::game::hostFramebufferSize(framebufferW, framebufferH);
@@ -3986,6 +4093,17 @@ void MapEditor::selectAllEdit()
 bool MapEditor::handleKey(int key, int mods, int action)
 {
     if (!mActive || action != GLFW_PRESS) return false;
+    const char* keyText = glfwGetKeyName(key, glfwGetKeyScancode(key));
+    const std::string keyName = keyText ? keyText : std::to_string(key);
+    emitEditorInput("map-editor.input.key-press",
+                    "map editor key press received (typed text is not recorded)",
+                    {{"key_name", keyName}, {"key_code", key}, {"mods", mods},
+                     {"selection_count", mSelection.size()},
+                     {"clipboard_count", mClipboard.size()},
+                     {"text_field_focused", mOutlinerSearchFocused ||
+                         mPropertyName.focused}});
+    recordCrashBreadcrumb("map-editor-input", "key=%s code=%d mods=%d",
+                          keyName.c_str(), key, mods);
     const bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
     const bool shift = (mods & GLFW_MOD_SHIFT) != 0;
 
@@ -4083,6 +4201,7 @@ void MapEditor::handleEscape()
 
 bool MapEditor::save(bool writeBackup)
 {
+    const auto started = std::chrono::steady_clock::now();
     const bool ok = MapConfigRegistry::instance().save(writeBackup);
     if (ok) {
         const std::string projectId = currentWorldProjectId();
@@ -4121,25 +4240,23 @@ bool MapEditor::save(bool writeBackup)
     } else {
         notify("save failed: " + MapConfigRegistry::instance().configPath());
     }
+    emitEditorOperation("map-editor.save.completed", mapId(),
+                        ok ? "map configuration saved" : "map configuration save failed",
+                        started,
+                        {{"success", ok}, {"write_backup", writeBackup},
+                         {"revision", MapConfigRegistry::instance().revision()},
+                         {"path", MapConfigRegistry::instance().configPath()}});
     return ok;
 }
 
 bool MapEditor::reload()
 {
+    const auto started = std::chrono::steady_clock::now();
     MapConfigRegistry& registry = MapConfigRegistry::instance();
     const std::string projectId = currentWorldProjectId();
     const bool ok = projectId.empty()
         ? registry.load(mapId())
         : registry.loadFromFile(projectId, currentWorldProjectMapPath());
-    StructuredLogger::instance().writeEvent(
-        StructuredCategory::World, StructuredLevel::Important,
-        "map-editor.reload.result", mapId(),
-        ok ? "map JSON reloaded" : "map JSON reload failed; previous state retained", 0,
-        nlohmann::json{{"map", mapId()},
-                       {"success", ok},
-                       {"revision", MapConfigRegistry::instance().revision()},
-                       {"path", MapConfigRegistry::instance().configPath()}},
-        __FILE__, __LINE__, __FUNCTION__);
     if (ok) {
         mUndo.clear();
         mRedo.clear();
@@ -4151,6 +4268,14 @@ bool MapEditor::reload()
     } else {
         notify("reload failed; previous map state retained");
     }
+    emitEditorOperation("map-editor.reload.result", mapId(),
+                        ok ? "map JSON reloaded" :
+                             "map JSON reload failed; previous state retained",
+                        started,
+                        {{"success", ok},
+                         {"revision", MapConfigRegistry::instance().revision()},
+                         {"path", MapConfigRegistry::instance().configPath()},
+                         {"geometry_rebuilt", ok}});
     return ok;
 }
 
@@ -4329,10 +4454,18 @@ bool MapEditor::returnFromPlayTest(bool reactivateEditor)
 void MapEditor::rebuildGeometry()
 {
     if (!mimita::game::worldPtr()) return;
+    const auto started = std::chrono::steady_clock::now();
     AuthoredGeometryOptions options;
     options.rebuildCollision = true;
     options.staticFaceRemoval = true;
     applyAuthoredMapGeometry(*mimita::game::worldPtr(), mapId(), options);
+    const auto& config = MapConfigRegistry::instance().current();
+    emitEditorOperation("map-editor.geometry-rebuild.completed", mapId(),
+                        "authored map render and collision geometry rebuilt", started,
+                        {{"success", true}, {"block_count", config.blocks.size()},
+                         {"entity_count", config.entities.size()},
+                         {"route_count", config.payload.route.size()},
+                         {"chunk_count", config.chunks.size()}});
     mGeometryDirty = false;
     mCollisionDirty = false;
 }

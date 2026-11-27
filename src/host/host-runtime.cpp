@@ -19,6 +19,7 @@
 #include <thread>
 #include <mutex>
 #include <deque>
+#include <exception>
 #include <condition_variable>
 
 #include "debug/crash-handler.h"
@@ -1956,16 +1957,59 @@ HostResult HostRuntime::driveRender(void* renderContext) {
     const std::uint64_t generation = loader_.activeGeneration();
     if (!barrier_.enter(generation)) return HostResult::Busy;
     HostResult result = HostResult::InternalError;
+    const char* failureType = "returned_status";
+    std::string failureMessage;
     try {
         result = api->render(renderContext);
+    } catch (const std::exception& error) {
+        result = HostResult::InternalError;
+        failureType = "std::exception";
+        failureMessage = error.what();
     } catch (...) {
         result = HostResult::InternalError;
+        failureType = "unknown_exception";
+        failureMessage = "non-standard exception escaped game render";
     }
     barrier_.leave();
+    static thread_local std::uint64_t failureCount = 0;
+    static thread_local std::chrono::steady_clock::time_point failureStarted{};
+    static thread_local std::chrono::steady_clock::time_point lastFailureSummary{};
     if (result != HostResult::Ok) {
-        emitProbeEvent("game.frame.render-failed", "game render returned failure", 0,
-                       nlohmann::json{{"generation", generation},
-                                      {"result", static_cast<int>(result)}});
+        const auto now = std::chrono::steady_clock::now();
+        if (failureCount == 0) failureStarted = now;
+        ++failureCount;
+        const bool report = failureCount == 1 ||
+            now - lastFailureSummary >= std::chrono::seconds(5);
+        if (report) {
+            lastFailureSummary = now;
+            const char* resultName = result == HostResult::InternalError
+                ? "InternalError" : "non-success HostResult";
+            const std::string reason = failureMessage.empty()
+                ? "game render returned " + std::string(resultName) + " (" +
+                    std::to_string(static_cast<int>(result)) + ")"
+                : "game render threw " + std::string(failureType) + ": " +
+                    failureMessage.substr(0, 512);
+            emitProbeEvent("game.frame.render-failed", reason.c_str(), 0,
+                           nlohmann::json{
+                               {"generation", generation},
+                               {"result", static_cast<int>(result)},
+                               {"result_name", resultName},
+                               {"failure_type", failureType},
+                               {"exception_message", failureMessage.substr(0, 512)},
+                               {"failure_count", failureCount},
+                               {"failure_duration_ms", std::chrono::duration<double, std::milli>(
+                                   now - failureStarted).count()},
+                               {"summary", failureCount > 1}});
+        }
+    } else if (failureCount > 0) {
+        const auto now = std::chrono::steady_clock::now();
+        emitProbeEvent("game.frame.render-recovered", "game render returned successfully after failure", 0,
+                       nlohmann::json{
+                           {"generation", generation},
+                           {"failure_count", failureCount},
+                           {"failure_duration_ms", std::chrono::duration<double, std::milli>(
+                               now - failureStarted).count()}});
+        failureCount = 0;
     }
     return result;
 }

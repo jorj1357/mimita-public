@@ -537,6 +537,121 @@ void writeMinidump(const char* crashDir, const char* prefix, EXCEPTION_POINTERS*
     out.ok = true;
 }
 
+void appendJournalText(char* out, size_t capacity, size_t& used,
+                       const char* text)
+{
+    if (!text) return;
+    while (*text && used + 1 < capacity) out[used++] = *text++;
+    out[used] = '\0';
+}
+
+void appendJournalString(char* out, size_t capacity, size_t& used,
+                         const char* value)
+{
+    appendJournalText(out, capacity, used, "\"");
+    if (value) {
+        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(value);
+             *p && used + 8 < capacity; ++p) {
+            char escaped[8];
+            if (*p == '"' || *p == '\\') {
+                escaped[0] = '\\'; escaped[1] = (char)*p; escaped[2] = '\0';
+            } else if (*p < 0x20) {
+                snprintf(escaped, sizeof(escaped), "\\u%04x", (unsigned)*p);
+            } else {
+                escaped[0] = (char)*p; escaped[1] = '\0';
+            }
+            appendJournalText(out, capacity, used, escaped);
+        }
+    }
+    appendJournalText(out, capacity, used, "\"");
+}
+
+void appendJournalStringField(char* out, size_t capacity, size_t& used,
+                              const char* name, const char* value)
+{
+    if (used && out[used - 1] != '{' && out[used - 1] != ',')
+        appendJournalText(out, capacity, used, ",");
+    appendJournalString(out, capacity, used, name);
+    appendJournalText(out, capacity, used, ":");
+    appendJournalString(out, capacity, used, value);
+}
+
+void appendCrashJournalEvent(const char* prefix, const char* summary,
+                             const char* reportDir, bool reportWritten,
+                             bool dumpWritten, EXCEPTION_POINTERS* ex)
+{
+    const char* eventsPath = std::getenv("MIMITA_EVENTS_FILE");
+    if (!eventsPath || !eventsPath[0]) return;
+
+    char reportPath[MAX_PATH * 2] = "";
+    char dumpPath[MAX_PATH * 2] = "";
+    if (reportDir && reportDir[0]) {
+        snprintf(reportPath, sizeof(reportPath), "%s\\%s.txt", reportDir, prefix);
+        snprintf(dumpPath, sizeof(dumpPath), "%s\\%s.dmp", reportDir, prefix);
+    }
+    char eventId[96];
+    snprintf(eventId, sizeof(eventId), "CRASH_%lu_%llu",
+             (unsigned long)GetCurrentProcessId(),
+             (unsigned long long)GetTickCount64());
+    char utc[40];
+    SYSTEMTIME now;
+    GetSystemTime(&now);
+    snprintf(utc, sizeof(utc), "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
+             now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute,
+             now.wSecond, now.wMilliseconds);
+
+    char line[8192] = "";
+    size_t used = 0;
+    appendJournalText(line, sizeof(line), used,
+        "{\"category\":\"GENERAL\",\"event\":\"process.crash\",\"level\":\"IMPORTANT\"");
+    appendJournalStringField(line, sizeof(line), used, "event_id", eventId);
+    char number[128];
+    snprintf(number, sizeof(number), "%lu", (unsigned long)GetCurrentProcessId());
+    appendJournalText(line, sizeof(line), used, ",\"pid\":");
+    appendJournalText(line, sizeof(line), used, number);
+    appendJournalText(line, sizeof(line), used, ",\"tick\":0");
+    appendJournalStringField(line, sizeof(line), used, "process", "mimita");
+    appendJournalStringField(line, sizeof(line), used, "reason", summary);
+    appendJournalText(line, sizeof(line), used, ",\"fields\":{");
+    appendJournalStringField(line, sizeof(line), used, "crash_report_path", reportPath);
+    appendJournalStringField(line, sizeof(line), used, "minidump_path", dumpPath);
+    appendJournalText(line, sizeof(line), used,
+        reportWritten ? ",\"report_written\":true" : ",\"report_written\":false");
+    appendJournalText(line, sizeof(line), used,
+        dumpWritten ? ",\"minidump_written\":true" : ",\"minidump_written\":false");
+    const DWORD code = ex && ex->ExceptionRecord
+        ? ex->ExceptionRecord->ExceptionCode : 0;
+    const uintptr_t address = ex && ex->ExceptionRecord
+        ? (uintptr_t)ex->ExceptionRecord->ExceptionAddress : 0;
+    snprintf(number, sizeof(number), "%lu", (unsigned long)code);
+    appendJournalText(line, sizeof(line), used, ",\"exception_code\":");
+    appendJournalText(line, sizeof(line), used, number);
+    snprintf(number, sizeof(number), "0x%llx", (unsigned long long)address);
+    appendJournalStringField(line, sizeof(line), used, "exception_address", number);
+    appendJournalText(line, sizeof(line), used, "}");
+    appendJournalStringField(line, sizeof(line), used, "run_id",
+                             std::getenv("MIMITA_RUN_ID"));
+    appendJournalStringField(line, sizeof(line), used, "instance_id",
+                             std::getenv("MIMITA_INSTANCE_ID"));
+    appendJournalStringField(line, sizeof(line), used, "launch_id",
+                             std::getenv("MIMITA_LAUNCH_ID"));
+    appendJournalStringField(line, sizeof(line), used, "build_id",
+                             std::getenv("MIMITA_BUILD_ID"));
+    appendJournalStringField(line, sizeof(line), used, "wall_time", utc);
+    appendJournalText(line, sizeof(line), used, "}\n");
+
+    HANDLE file = CreateFileA(eventsPath, FILE_APPEND_DATA,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    if (used > 0 && used < sizeof(line)) {
+        WriteFile(file, line, (DWORD)used, &written, nullptr);
+        FlushFileBuffers(file);
+    }
+    CloseHandle(file);
+}
+
 // Shared tail for both the SEH handler and the std::terminate handler: choose
 // a usable crash directory, write the text report (and minidump when a
 // faulting context exists), and show/dump the user message.
@@ -608,6 +723,8 @@ void emitCrashReport(const char* prefix, const char* report, const char* summary
             "Minidump: FAILED (%s, error=%lu)",
             dumpResult.failOp ? dumpResult.failOp : "unknown",
             dumpResult.failError);
+
+    appendCrashJournalEvent(prefix, summary, savedDir, txtOk, dumpOk, ex);
 
     OutputDebugStringA(msg);
     // Emergency final output channel that never depends on file paths.

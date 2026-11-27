@@ -1,0 +1,376 @@
+{
+  "attachments": [],
+  "blocks": [],
+  "bomb": {
+    "defuse_seconds": 5.0,
+    "explosion_seconds": 40.0,
+    "plant_seconds": 3.0
+  },
+  "bomb_sites": [],
+  "boost_pads": [],
+  "chunks": [],
+  "entities": [],
+  "generate_whole_world": false,
+  "generation_zones": [],
+  "glb_objects": [],
+  "interactions": [],
+  "npc_presets": [],
+  "payload": {
+    "cart_origin": {
+      "position": [
+        13.3100004196167,
+        -0.8330000042915344,
+        843.1010131835938
+      ],
+      "yaw": 0.0
+    },
+    "cart_size": [
+      10.0,
+      9.0,
+      9.0
+    ],
+    "facing_mode": "route",
+    "interaction_box": {
+      "offset": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        15.0,
+        15.25,
+        15.5
+      ]
+    },
+    "route": [
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "1a",
+        "name": "",
+        "order": 0,
+        "position": [
+          13.309759140014648,
+          -0.8329582214355469,
+          843.1011962890625
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_1",
+        "name": "",
+        "order": 1,
+        "position": [
+          35.5075569152832,
+          -0.8329582214355469,
+          843.1011962890625
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_2",
+        "name": "",
+        "order": 2,
+        "position": [
+          74.45801544189453,
+          -0.8329582214355469,
+          845.0842895507813
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_3",
+        "name": "",
+        "order": 3,
+        "position": [
+          75.45801544189453,
+          27.655977249145508,
+          845.0842895507813
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_4",
+        "name": "",
+        "order": 4,
+        "position": [
+          74.7131118774414,
+          64.70330810546875,
+          854.224365234375
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_5",
+        "name": "",
+        "order": 5,
+        "position": [
+          75.7131118774414,
+          101.2208251953125,
+          863.091796875
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_6",
+        "name": "",
+        "order": 6,
+        "position": [
+          96.3704605102539,
+          101.2208251953125,
+          863.091796875
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_7",
+        "name": "",
+        "order": 7,
+        "position": [
+          94.70632934570313,
+          62.389686584472656,
+          871.84375
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_8",
+        "name": "",
+        "order": 8,
+        "position": [
+          95.70632934570313,
+          32.759765625,
+          882.2457885742188
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_10",
+        "name": "",
+        "order": 9,
+        "position": [
+          97.70632934570313,
+          -41.19438934326172,
+          883.0513916015625
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_11",
+        "name": "",
+        "order": 10,
+        "position": [
+          68.58030700683594,
+          -41.19438934326172,
+          883.0513916015625
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_12",
+        "name": "",
+        "order": 11,
+        "position": [
+          29.314579010009766,
+          -41.19438934326172,
+          894.7894287109375
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_13",
+        "name": "",
+        "order": 12,
+        "position": [
+          3.9482126235961914,
+          -41.19438934326172,
+          903.027099609375
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_14",
+        "name": "",
+        "order": 13,
+        "position": [
+          -68.31207275390625,
+          -41.19438934326172,
+          903.027099609375
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_15",
+        "name": "",
+        "order": 14,
+        "position": [
+          -64.10275268554688,
+          -9.476737976074219,
+          901.4464111328125
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_16",
+        "name": "",
+        "order": 15,
+        "position": [
+          -64.10275268554688,
+          31.94823455810547,
+          882.3065795898438
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_17",
+        "name": "",
+        "order": 16,
+        "position": [
+          -64.10275268554688,
+          70.44124603271484,
+          884.905517578125
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_18",
+        "name": "",
+        "order": 17,
+        "position": [
+          -86.19661712646484,
+          104.94380187988281,
+          884.905517578125
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_19",
+        "name": "",
+        "order": 18,
+        "position": [
+          -86.19661712646484,
+          162.83558654785156,
+          893.7306518554688
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_9",
+        "name": "",
+        "order": 19,
+        "position": [
+          -125.41543579101563,
+          221.30783081054688,
+          904.0396728515625
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      }
+    ]
+  },
+  "vehicles": [],
+  "weapon_overrides": [],
+  "world_mode": "static"
+}

@@ -183,6 +183,13 @@ Build, Launch, Server, and Client actions target the checkout/lane row's own
 authenticated daemon. Never route a lane action to the main checkout by
 default. Per-instance actions remain scoped to their owning run.
 
+The process-panel **Start client** control starts a managed client without a
+server when no healthy primary server is active. It omits the room/connect
+arguments in that case, keeps the client's journal and process controls, and
+reports the client as standalone. When the primary server is healthy, it
+continues to connect the client to that server. The control label states this
+fallback.
+
 The dashboard presents two distinct groups:
 
 1. **Active-run instances:** processes listed in the active run manifest. They

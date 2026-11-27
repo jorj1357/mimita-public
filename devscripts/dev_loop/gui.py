@@ -2103,7 +2103,10 @@ def run(status_provider: Callable[[], dict],
                                     ("start-server", "Server"), ("start-client", "Client")):
                 button(action_frame, caption,
                        lambda selected=checkout_id, verb=action:
-                       send(verb, checkout_id=selected), width=8).pack(side="left", padx=1)
+                       send(verb, checkout_id=selected,
+                            **({"server_instance_id": ""}
+                               if verb == "start-client" else {})),
+                       width=8).pack(side="left", padx=1)
             widgets = {"frame": row_frame, "name": name, "detail": detail,
                        "row": None, "name_text": None, "detail_text": None,
                        "detail_color": None}
@@ -2216,11 +2219,12 @@ def run(status_provider: Callable[[], dict],
         clients = {int(row["pid"]) for row in state.get("rendered_processes", [])
                    if row.get("role") == "client" and row.get("pid")}
         client_count = len(clients)
-        send("start-client", name=f"Client {client_count + 1}")
+        send("start-client", name=f"Client {client_count + 1}",
+             server_instance_id="")
 
     button(process_buttons, "Start server", lambda: send("start-server")).grid(
         row=0, column=0, sticky="ew", padx=(0, 3))
-    button(process_buttons, "Start client", start_client).grid(
+    button(process_buttons, "Start client (solo if no server)", start_client).grid(
         row=0, column=1, sticky="ew", padx=(0, 3))
     button(process_buttons, "Stop selected", stop_selected).grid(
         row=0, column=2, sticky="ew", padx=(0, 3))
