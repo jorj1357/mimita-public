@@ -7359,3 +7359,43 @@ Message: `msg-ec6477e4c604` (finding)
 Subject: CPU: 999 FPS cap is the dominant per-client cost; hidden test clients are audible
 
 Measured evidence for the idle/high-CPU work. config/video-settings.json has maxFrames=999 and the client journal exposes target_fps_max=999; one client reported performance.fps avg_frame_ms=3.55 (~282 FPS), which is roughly 0.85-1.0 logical core per client. Four clients therefore explain the 20-30% whole-host usage; a 60 FPS cap would be about 0.2 core each. Audio is not the sustained cause: Audio::AudioUpdate median self time is under 1 ms, but first-play decode spikes are 100-270 ms on the main thread, so audio is a hitch source, not the baseline. The taskbar/audio mystery is separate: isolated test runs set MIMITA_AGENT_HEADLESS_GUI=1 (devscripts/dev_loop/parallel_test_runs.py lines 770 and 930); renderer.cpp creates the window hidden and never shows it, and test clients do not call setServerAudioMode, so they stay audible. Specs written today: docs/specs/dev-loop/build-performance-budget.md (per-client <=0.25 core at 60 FPS), docs/specs/dev-loop/process-lifecycle-and-release-events.md (taskbar/visible/hidden + mute policy), docs/specs/dev-loop/system-resource-measurement.md (frame-cap baseline), docs/specs/dev-loop/build-preflight-and-admission.md, docs/specs/dev-loop/hot-modules-and-header-boundaries.md, docs/specs/dev-loop/event-driven-runtime.md, docs/specs/networking/visible-hit-volumes.md. Please fold the frame-cap and audio-prewarm findings into issue-ed3ac775283d and keep the per-process reason snapshot work separate. No process was stopped.
+
+## Agent suggestion
+
+### 2026-11-28T20:02:08.624Z — npc-cost-and-measurement
+
+EMPTY-SERVER BASELINE (direct observation, read-only) - 2026-11-28
+
+Run 20261128_082433, PID 26304, vehicle_freeplay/arena2, 0 players and 0 NPCs for hours 10-16 UTC. 553 MB journal across 6 segments. Host: 12 logical CPUs (i5-13420H 8C/12T).
+
+Process: 20,490 CPU seconds over 32,040 s uptime = 0.64 of one logical core average.
+Game-owned tick timer, stable 10:00-16:00 UTC: 2.58-2.64 ms/tick at 60 ticks/s = 0.16 core, so 75% of the process CPU is outside the tick.
+Within the tick: gamemode phase 2.14-2.18 ms (83% of the tick) with zero players; NPC phase 0.38-0.39 ms/tick with zero NPCs.
+
+Per-thread lifetime CPU (ProcessThread.TotalProcessorTime at exit): main 7,787 s (38%); three long-lived threads 4,325 / 4,176 / 3,980 s (61% combined). Their creation times are 08:24:36, 08:42:49, 09:10:29, 17:06:57; the last two coincide exactly with game-DLL generation swaps (819 at 09:10:29, 820 at 17:06:57). Normalized over their lifetimes each non-main thread ran at 13.6-15.0% of one core continuously.
+
+INFERENCE (not proven): each generation swap appears to leave a worker thread alive at ~0.12-0.14 core. Four such threads explain the 0.4-0.48 core unattributed share, i.e. most of the "empty server costs 9%" report. Confirmation experiment: named threads + live thread count across five forced reloads (Phase 0 instrumentation now building).
+
+FIXED ALONGSIDE: the first Phase 0 build failed in the pre-worker because config/hot-reload/packet-ledger.json was stale relative to committed packet sources; `python devscripts/packet_registry_codegen.py --check` failed. Regenerated the ledger (write only that file) and the build then passed codegen. That is a repo-level build blocker for every agent, not specific to this change.
+
+## Agent suggestion
+
+### 2026-11-28T20:08:40.468Z — npc-cost-and-measurement
+
+PHASE 0 RESULT (2026-11-28) - attribution layer shipped at generation 827
+
+Build: request build-request-5230f25bcfd7 (approved auto:resource_pressure_idle), attempt game-dll-20261128T200150, generation 827 published. 59.3 s total, 8 compiled / 639 skipped. Postmortem: host CPU mean 89.9%, minimum available memory 29.3 MB.
+
+PROVEN at runtime (run 20261128_200454, gen 827, client 8500 / server 29736, 1 Hz collector):
+- runtime.thread.started events with names: world-rebuild (server 30324), perf-watchdog (client 31292), audio-sound-loader (1184), audio-music-predecode (14548, with runtime.thread.stopped on exit).
+- The external collector reads OS thread names, creation UTC, and user/kernel CPU deltas without in-process cooperation.
+- devscripts/cpu-report.py prints the accounting table (per-thread core%/host%, user/kernel seconds, start UTC, per-process sums).
+- Per-thread sample on that run: client ~155% of one core across three hot threads (78.1 / ~39 / ~37), server ~76%. So the earlier "3 hot client threads" shape reproduces on a fresh pair.
+
+STILL UNNAMED: the hottest threads are resident-EXE threads (main frame loop, listen server, network/ICE, replay, host job workers). Naming them needs a cold EXE build; that is the next experiment.
+
+FRICTION OBSERVED (recorded, not fixed):
+1. config/hot-reload/packet-ledger.json was stale relative to committed packet sources. `python devscripts/packet_registry_codegen.py --check` failed, and every game-DLL build failed in pre_worker codegen until the ledger was regenerated. One committed schema change without the generator blocked all agents.
+2. After the failure, the daemon answered a legitimate new-generation request with "revision 95 failed; waiting for a new revision or explicit retry" even though source_generation had advanced to 96/97 and the failed request had been superseded. The request had to be released in coordination and refiled. A new approved request could not pass the guard on its own.
+
+NOT PROVEN: that maxframes now persists through a hot reload in a live session (the test run had no agent command queue for `maxframes 60`). Verification: send `maxframes 60`, confirm target_fps_max 60 in performance.fps after a generation swap.

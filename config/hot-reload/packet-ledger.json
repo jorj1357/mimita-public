@@ -940,7 +940,7 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 911,
+      "client_line": 913,
       "client_owner": "game",
       "client_source": "src/duel/duel-queue.cpp",
       "id": 57,
@@ -1380,5 +1380,5 @@
   ],
   "protocol_version": 53,
   "schema_version": 1,
-  "source_sha256": "874cc9b49a759fdbe3133dbc0dd542c747db998a50075140d69d3c6a0ba06b55"
+  "source_sha256": "9f854d8339df87bfcd5e137ae2fadc1ae5e276d9e3b77da37ef7968b9ae99f70"
 }

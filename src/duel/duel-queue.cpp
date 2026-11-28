@@ -12,6 +12,7 @@
 #include "duel/duel-queue.h"
 #include "duel/duel-history.h"
 #include "debug/structured-log.h"
+#include "utils/thread-name.h"
 #include "gamemode/gamemode-map-pool.h"
 
 #include <chrono>
@@ -111,6 +112,7 @@ void DuelQueue::endPolling()
 
 void DuelQueue::pollThread()
 {
+    mimita::threads::ThreadNameGuard threadName("duel-poll");
     while (!mThreadStop.load())
     {
         std::string ticketId;

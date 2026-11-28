@@ -22,6 +22,7 @@
 
 #include "audio.h"
 #include "utils/path_utils.h"
+#include "utils/thread-name.h"
 #include <string>
 #include <cstdint>
 #include <cstdio>
@@ -199,6 +200,7 @@ static void requestSoundCache(const std::string& name)
 
 static void soundLoadWorker()
 {
+    mimita::threads::ThreadNameGuard threadName("audio-sound-loader");
     for (;;) {
         std::string name;
         {

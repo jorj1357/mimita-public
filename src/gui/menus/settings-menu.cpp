@@ -10,6 +10,7 @@
 #include "debug/debug-log.h"
 #include "audio/music-manager.h"
 #include "video/video-settings.h"
+#include "video/frame-pacer.h"
 #include "crosshair/crosshair-config.h"
 #include "crosshair/crosshair-render.h"
 
@@ -19,6 +20,11 @@
 #include <algorithm>
 
 static const char* kOnOff[] = { "OFF", "ON" };
+
+// Frame cap owner: the settings slider must update the live pacer, not only the
+// saved value (2026-11-28 CPU accounting: the slider previously did nothing
+// until the next process start).
+extern FramePacer gFramePacer;
 
 static const char* kResolutionLabels[] = {
     "800x600", "1024x768", "1280x720", "1920x1080"
@@ -156,6 +162,7 @@ static void drawVideoTab(GLFWwindow* win)
         float fps = (float)VideoSettings::instance().maxFrames();
         drawSliderWithValue(win, "Frame Rate Limit", y, &fps, 30.0f, 999.0f, changed);
         if (changed) VideoSettings::instance().setMaxFrames((int)fps);
+        if (changed) gFramePacer.setMaxFrames(VideoSettings::instance().maxFrames());
         y += 60.0f;
     }
 

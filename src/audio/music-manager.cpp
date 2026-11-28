@@ -19,6 +19,7 @@
 #include "miniaudio.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "utils/thread-name.h"
 #include "replay/replay-export.h"
 #include "perf/perf-spike.h"
 
@@ -323,6 +324,7 @@ void MusicManager::startMusicPredecode()
 
     mMusicPredecodeStop.store(false, std::memory_order_release);
     mMusicPredecodeThread = std::thread([this, paths = std::move(paths)]() {
+        mimita::threads::ThreadNameGuard threadName("audio-music-predecode");
         Debug::log(Debug::Category::Audio, "[MUSIC] decoder=%s\n",
                    defaultFfmpegPath().c_str());
         for (const std::string& path : paths) {

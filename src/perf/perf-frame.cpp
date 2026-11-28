@@ -8,6 +8,7 @@
 #include "debug/crash-handler.h"
 #include "config.h"
 #include "game/job-bridge-module.h"
+#include "utils/thread-name.h"
 
 #include <algorithm>
 #include <array>
@@ -130,6 +131,7 @@ double threadCpuMilliseconds(uint32_t threadId)
 
 void resourceWatchdogMain()
 {
+    mimita::threads::ThreadNameGuard threadName("perf-watchdog");
     bool stallReported = false;
     uint64_t nextReportNs = 0;
     uint64_t nextStackNs = 0;

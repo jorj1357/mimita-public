@@ -5,6 +5,7 @@
 #include <chrono>
 
 #include "map/map-authored-geometry.h"
+#include "utils/thread-name.h"
 
 namespace MimitaNet {
 
@@ -77,6 +78,7 @@ struct AuthoredWorldRebuildWorker::Impl
 
     void run()
     {
+        mimita::threads::ThreadNameGuard threadName("world-rebuild");
         for (;;) {
             AuthoredRebuildRequest request;
             {

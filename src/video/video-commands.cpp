@@ -120,6 +120,10 @@ void registerVideoCommands()
             }
             int fps = std::atoi(args[0].c_str());
             VideoSettings::instance().setMaxFrames(fps);
+            // Persist immediately: a hot reload re-applies the saved value at
+            // init (main-systems.cpp), so an unsaved console cap silently
+            // reverted to config/video-settings.json on the next generation.
+            VideoSettings::instance().save();
             gFramePacer.setMaxFrames(VideoSettings::instance().maxFrames());
             Terminal::instance().addLog("[VIDEO] maxFrames set to " +
                 std::to_string(gFramePacer.maxFrames()));

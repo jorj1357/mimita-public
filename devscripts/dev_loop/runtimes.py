@@ -11,9 +11,47 @@ import datetime
 import json
 import os
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
+
+
+def _start_runtime_cpu_sampler(root: Path, run_dir: Path, pids: list[int]) -> None:
+    """Start the Phase 0 per-thread CPU collector for a dev-loop run.
+
+    Writes ``<run>/cpu-threads.csv`` and ``<run>/cpu-process.csv`` so every run
+    carries thread-level CPU evidence without an agent remembering to ask.
+    Set ``MIMITA_RUNTIME_CPU_SAMPLE=0`` to disable. The sampler exits on its own
+    when every target process is gone (or after 15 minutes).
+    """
+    if os.environ.get("MIMITA_RUNTIME_CPU_SAMPLE", "1") == "0":
+        return
+    targets = [str(pid) for pid in pids if isinstance(pid, int) and pid > 0]
+    if not targets:
+        return
+    script = root / "devscripts" / "perf-watch.py"
+    if not script.is_file():
+        return
+    command = [
+        sys.executable, str(script),
+        "--pid", *targets,
+        "--output", str(run_dir / "cpu-process.csv"),
+        "--threads-csv", str(run_dir / "cpu-threads.csv"),
+        "--summary", str(run_dir / "cpu-threads.summary.json"),
+        "--interval", "1.0",
+        "--duration", "900",
+        "--until-exit",
+    ]
+    try:
+        log = (run_dir / "cpu-threads.log").open("w", encoding="utf-8")
+        subprocess.Popen(command, cwd=root, stdout=log, stderr=subprocess.STDOUT,
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except OSError:
+        try:
+            log.close()
+        except Exception:
+            pass
 
 
 def _utc_now() -> str:
@@ -260,6 +298,7 @@ class RuntimeManager:
             "room_file": str(room_file),
             "args": args,
         }
+        _start_runtime_cpu_sampler(self.root, run_dir, [server.pid, client_pid])
         self.state_root.mkdir(parents=True, exist_ok=True)
         self._state_path(runtime_id).write_text(json.dumps(state, indent=2) + "\n",
                                                 encoding="utf-8")
