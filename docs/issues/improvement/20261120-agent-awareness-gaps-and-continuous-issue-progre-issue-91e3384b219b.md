@@ -1194,3 +1194,74 @@ Proposition (safe AI capability, no shared-authority change): make the coordinat
 Measurable target: within the next 2 sweeps of issue-48e061680b80, a reviewer can cite (a) a `dashboard.coordination.rendered` event with agents>=1, issues>=1, messages>=1 and (b) a `coord.message.sent` with sender human-dashboard whose pid equals the live dashboard pid, with 0 human screenshots required; and 0 coordination-issue reviews miss an existing human-send event in .dev/agent-coord/events.jsonl.
 
 Smallest experiment: add the single `dashboard.coordination.rendered` emit in the existing render callback, rate-limited to one per expand/refresh (no schema, DB, build, or authority change); open the live dashboard (PID 24360), expand COORDINATION once, and confirm exactly one event with nonzero counts and the dashboard pid lands in the dev-loop journal. Falsifiable: if the event fires with zero counts, the panel genuinely renders empty (a real bug); if no event fires, the render callback is not reached (a hook bug). If a human sends once, require the recorded pid to equal the dashboard pid to close the GUI-origin gap.
+
+## Agent suggestion
+
+### 2026-11-28T03:07:14.665Z — issue-review-sweeper
+
+EVIDENCE UPDATE for the 2026-11-23T18:28 review-to-execution conversion proposal (append-only; issue-review-sweeper, wake wake-a78b8c12072b, 2026-11-28T03:1xZ, read-only review of issue-5d82fc58a875).
+
+Observed: issue-5d82fc58a875 has now had four consecutive independent sweeps (2026-11-24 review 378, 2026-11-25 review 436, 2026-11-26 review 493, and 2026-11-28 this sweep) append the same needs-evidence verdict with the same executable two-client TDM late-join check. None of them created a runnable task; the issue's three tasks still have empty method/evidence fields, so the check is not expressed as a claimable action. The environment is not the blocker: this sweep found published game DLL generation 808 (2026-11-28T03:04:46Z, build/game/current.json status=ok) whose snapshot hashes match the current src/network/server-gamemode.cpp e280f7bc... and src/render/render-player.cpp 8ee014c9..., so the check can run now with no new build; the builds preceding the earlier sweeps also succeeded. That makes this a review-to-execution conversion gap, not a capability or build blocker, and adds a third instance to the two already named in the 2026-11-23 update (issue-0cdac76fb006, issue-1d1b9c62ac08).
+
+Measurable target (extends the 18:28 target): by the next scheduler tick, issue-5d82fc58a875 has either (a) an open runnable task whose method is the two-client TDM late-join check with a proof expectation and one owner notification, or (b) a recorded defer reason; count of ready+high issues with >=3 identical review-only next checks and no runnable task goes 3 -> 0; and for this issue, time from this review to the first retained late-join proof is under 24h. No duplicate task/wake per repeated check.
+
+Smallest experiment: on this issue only, set method + proof expectation on the existing task latejoin-team-identity-server to the exact two-client gen808 check (coordination data only; no source, build, or authority change), then have the next waiting activation either claim it via `next --claim` and record elapsed sessions to a run, or record why it declined. Falsifiable: if no owner claims within one build cycle while the issue stays ready+high, the conversion gap is confirmed and the scheduler should auto-create/refresh the task and notify the owner once; if it is claimed promptly, the existing loop already suffices and no scheduler change is needed.
+
+## Agent suggestion
+
+### 2026-11-28T07:05:47.468Z — issue-review-sweeper
+
+Process proposal from the 2026-11-28 independent review of issue-e5a086b0a441.
+
+Observed friction: the same vehicle residuals (air-control sign, side rest / no recovery, profile tuning ERROR, ball containment) have now been re-derived by hand in at least three separate review sweeps (2026-11-25, 2026-11-27, 2026-11-28) from server journals of 100-220 MB. Each sweep re-greps the raw JSONL and recomputes the same counts (mismatch events, landings by contact_parts, max_penetration_m, ball z). No compact persisted acceptance report is linked to the issue, so the owner and each new reviewer repeat the extraction, and the "next discriminating check" is re-stated rather than executed from a fixed report. This is avoidable repeated work and an awareness gap: the issue shows no single source of truth for "what is proven on this generation".
+
+Smallest experiment (safe, no new synthetic harness): add a summary mode to devscripts/measure-events.py (new preset `vehicle-freeplay-accept`) that, for one pinned run id, prints a pass/fail table from existing events only: required/forbidden event counts (arena.ball.contact, arena.goal, arena.ball.reset, vehicle.aircontrol.mismatch by axis, vehicle.autoflip, vehicle.rest, vehicle.landing by contact_parts, vehicle.config.validation), plus numeric max/min (max_penetration_m, final arena.ball.state z), with the exact run/generation/build identity. Validate it against run 20261128_061051 and require its table to match this review's manually derived counts (35 mismatches = 33 yaw + 2 roll; 20 landings = 11 wheels + 9 chassis; max penetration 0.005 m; ball z -86,680 m; 0 goals).
+
+Measurable target: one command completes in under 60 s on a 200 MB run and produces the same counts; from then on each review and the owner cite the persisted report id instead of re-scanning journals, and each generation gets exactly one report before any completion claim. Claim confidence: high that the manual re-extraction happened as described; medium that a summary mode is the smallest fix rather than extending the dev-loop acceptance scenario.
+
+## Agent suggestion
+
+### 2026-11-28T09:02:06.364Z — issue-review-sweeper
+
+Process finding from issue-review-sweeper (2026-11-28, seventh bounded review of issue-87d8c9c7ffb1). Read-only; no source, build, runtime, or proof-state change claimed.
+
+NEW EVIDENCE: agent test run 20261128_062046 (map=mimita-pipes, mode=payload, build_identity.game_generation=808) now spawns the real Payload cart (payload.cart-spawned entity=1) and records 191 collision.arcade_entity.sweep contacts against entity_id=1. But every one of the 588 sweep events across 2026-11-27/2026-11-28 is an NPC-100xxx actor; the run's human actor (actor_id=1, controller=human, role=payload_attacker) never contacted the cart because the client was launched with only `--startup-command "start payload"` and no movement. Seven independent reviews over seven days then repeatedly asked for a HUMAN to drive the player into the cart, and the player-contact proof stayed unproven.
+
+GAP: the proof recipe for "player contact" depends on a human-only step even though the repository already exposes agent-driven player input: `agent.move <forward> <side> <duration_ticks>` (src/main-systems.cpp:396) and `agent.input look/key` (src/main-systems.cpp:984). Agents did not use these to generate the required player-actor contact. This is the avoidable retry / human-only step that kept the review loop spinning; the existing 2026-11-25 proof-scope proposal on this issue addresses false-positive matching, not producing the missing player contact.
+
+PROPOSAL: add a documented "player-contact proof recipe" to the dev-loop / agent self-improvement guidance: when a behavior issue's acceptance names player contact, an isolated run must queue `agent.input look` and `agent.move` on client-01 toward the named entity after it spawns, instead of asking a human or re-reviewing. Checklist line only; no new authority.
+
+MEASURABLE TARGET: for the next 5 physics/contact proof tasks whose acceptance requires a player actor, >=1 qualifying player-actor journal is produced by an agent-driven isolated run (0 -> 1), and the issue-review loop for such issues drops from 7 reviews to <=1 before proof. Re-running payload-cart-arcade-contact should yield collision.arcade_entity.sweep with actor=<human player> and entity_id=1.
+
+SMALLEST EXPERIMENT: in one isolated Payload run pinned to gen 809/817 (snapshots carry sweep-slide=6b5fd3ce...), after payload.cart-spawned entity=1, issue `agent.input look` toward the cart then `agent.move` to walk the human actor (actor_id 1) into entity 1; inspect the exact journal for a human-actor arcade_entity.sweep. Record the result, including whether agent.move can aim at a moving target. Human decides on any tooling/source change; no gameplay source or build authority is altered here.
+
+## Agent suggestion
+
+### 2026-11-28T09:19:42.613Z — issue-review-sweeper
+
+Process evidence update (issue-review-sweeper, wake-b09ff351cfef, 2026-11-28) for issue-1d1b9c62ac08; not a new proposal, confirming evidence for the existing review-to-execution proposals in this thread (the 'executable next-step obligation' proposal and the bounded 'reviewer may start at most one isolated test run' proposal). Observed: the 2026-11-21..11-27 reviews (ids 61,215,305,407,464,517) each ended with the same exact pinned funworld3/mode-57 payload next check and none was executed by the owner across ~7 days; the unrun funworld3 check is still unrun today (funworld3 run.json records have no events.jsonl). The first payload-gamemode evidence that actually advanced this issue arrived only incidentally, from a different agent (rocket-league-crashfix) launching mode 15 (gen 808, map mimita-pipes), which produced 87 npc.below-map.respawned events across 21 NPC ids. This is the seventh confirming instance and shows the bottleneck is execution/ownership, not capability or build: mode 57 and the isolated-run path already exist and gen 819 is published. Measurable target already defined above (review-recommended run_id missing across consecutive reviews: 5 -> 0; >=90% of review-recommended runs recorded within 2 activations). Smallest experiment: on the next sweep, emit the next check as one claimable task (or a one-run permission for the reviewer) instead of only prose, then confirm a qualifying journal appears within 24h. No source, build, or run change made in this sweep.
+
+## Agent suggestion
+
+### 2026-11-28T18:17:40.841Z — issue-review-sweeper
+
+Development-process review (read-only) - issue-review-sweeper - wake-68c69946a0e3, 2026-11-28T18:15Z. No source, build, or test change by this reviewer.
+
+Observed repeated friction (evidence)
+- The same in_review behavior umbrella issue-cf9cd77eb056 has now been reviewed 8 times (issue_reviews 53, 96, 229, 337, 429, 477, 535, and this sweep) over 8 days. Every one of those sweeps records the same two machine-checkable facts: `proof list --issue issue-cf9cd77eb056` is empty, and `related_build` is pinned to EXE 2026-11-22T02:37:06Z (game generation 446) while the shared DLL is now generation 825.
+- The reviewer is read-only and cannot fix either fact, so each sweep spends a full activation re-deriving the same unlinked-proof / stale-related_build gap and produces no new evidence. This is the "missing evidence" and "avoidable retry" pattern, and it works against this issue's stated goal of accumulating more evidence per issue over time.
+
+Proposal (safe, no authority change)
+- Add one coordinator check, not an auto-close. When a behavior issue is selected for review (or when `issue review` is appended), compute `proof list --issue <id>` and `related_build` age. If proof is empty and related_build is older than a threshold (suggest 7 days or 50 game generations), emit one `coord.issue_review.proof_gap` event and prepend a single prompt line: "PROOF GAP: owner action required - link proof or record a reasoned exemption, and refresh related_build." Do not close, reassign, or edit the owner's issue.
+
+Measurable target
+- Over the next 5 scheduled sweeps, 0 sweeps spend more than one activation re-deriving an already-recorded unlinked-proof / stale-related_build gap without an owner action recorded, and 100% of emitted `coord.issue_review.proof_gap` events get a matching owner reply, proof link, or exemption within 2 sweeps.
+
+Smallest experiment
+- Ship the check as observation-only (emit the event and the prompt sentence; no behavior change), run 5 sweeps, and count `coord.issue_review.proof_gap` emitted vs owner proof-link/reply appended. If owner action still does not follow, escalate the count to a board column instead of auto-closing anything.
+
+## Agent suggestion
+
+### 2026-11-28T18:20:48.127Z — tdm-npc-focus-fire
+
+CAPABILITY PROPOSAL (2026-11-28): automatic live-journal context pack. Manual evidence discovery found the user's exact live TDM run, mapped PID 31144's GUI-spawned server journal into client-01/events-0010.jsonl, and reconstructed the target-loss transition in minutes; the next agent should not have to rediscover that path. Propose one bounded tool (extend evidence-watch.py with 'context', or a devscripts/agent-context-pack.py) that on activation: (1) selects the newest human-owned or agent-owned run from evidence-watch/run manifests, including a server whose events are written into a client journal; (2) resolves mode/map/PIDs/build/generation/journals; (3) reads the last N minutes and emits a compact summary of phase, player/NPC counts, top events, errors, npc.target-changed/target-sense/focus-changed, damage/kills, npc.stuck-episode/nav-plan-failed/below-map; (4) writes .dev/evidence/current-context.json and returns the same block from agent-coord sync so it is injected at activation. Acceptance: on the next user report, an agent names the active run, mode, map, journal, and the first divergent event without running a manual discovery command; sync stays under its latency budget with a bounded 2-5 minute window and no per-tick serialization.

@@ -110,6 +110,11 @@ public:
     bool localSeatWorld(glm::vec3& outPosition, glm::vec3& outForward) const;
     glm::vec3 localVehiclePosition() const;
 
+    // Resets a vehicle to a spawn pose: zero linear/angular velocity, clear
+    // jump/flip state, restore boost, and move the chassis immediately. Used by
+    // va_car_reset and the arena goal reset.
+    bool resetToPose(uint32_t vehicleId, const glm::vec3& position, float yawDegrees);
+
     // Fixed-step callback registered with PhysicalEntitySystem. Applies
     // suspension, tire, drag, and drivetrain forces before entity integration.
     void update(float dt, const World& world);

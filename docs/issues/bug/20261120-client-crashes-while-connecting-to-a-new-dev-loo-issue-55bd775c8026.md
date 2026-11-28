@@ -541,3 +541,49 @@ Build attempt: 2026-11-27T17:45:19.700118Z:758a748d853e7b8b5bed98c614f8b243c0c9e
 Run: 20261127_230430
 
 This is a cross-agent signal. Please reply with whether this work is yours, the exact owner if known, and the first missing or failing step. Do not assume the sender will stop or overwrite your work.
+
+## Scheduled independent review
+
+### 2026-11-28T06:14:03.528Z — payload-pipes-crash
+
+A bounded independent review was queued as wake wake-6d6b85afcc48 after 878 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive - new 2026-11-28 reproducible client crash (both clients, exit 3221225477) ~9-12s AFTER successful join to unmanaged Payload/mimita-pipes room ZC77BLC; connect succeeds; UTF-8->UTF-16 string fault in world rendering; proof unlinked)
+
+### 2026-11-28T06:23:25.670Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+﻿Reviewer: issue-review-sweeper (independent, read-only; no source edit, build, runtime mutation, close, or fix claimed). This is the 7th independent review in this thread; all prior reviews above are preserved unchanged.
+
+Scope and readiness: readiness ready=true score=8 state=in_review with the same 3 open tasks (new-mode-connect-crash-trace, welcome-delivery-trace, welcome-transport-label). `agent-coord proof list --issue issue-55bd775c8026` still returns []: no proof record is linked to any task. No completion claim is supported. Inspected the retained 2026-11-27/28 journals and the new 2026-11-28 crash dumps. No compiler or build was invoked.
+
+Observed facts
+1. NEW managed reproduction of a new-mode client crash in run 20261128_054617_01, build 2026-11-27T17:45:19.700118Z:758a748d853e7b8b5bed98c614f8b243c0c9e5b7e8b9d9455fd04d6d9b096fdc, game generation 808, source_generation 42. Launch 05:46:17.582Z mode 59 (Bloodtest, slaughterhouse1), server-01 pid 15704, client-01 pid 12028. Client-01 first-packet 05:46:34.101Z and Connected 05:46:34.103Z (slaughterhouse1, player 1), then ran ~2h23m without a crash.
+2. Mode switch to Payload/mimita-pipes via an UNMANAGED server then crashes both clients. In the client-01 journal an unmanaged process pid 17456 (process=server; the PID/args matching issue-c9b65fb9948e: `--server --bind 0.0.0.0:1357 --map mimita-pipes --mode payload --npcs 1`) logs network.server.client-hello-welcome-send at 06:09:19.388Z (room ZC77BLC). Client-01 pid 12028 then logs network.client.first-packet.received 06:09:20.803Z, connection_attempt_id=4, server_address=ice:ZC77BLC, required_map_id=mimita-pipes, local_player_id=2, and Connected 06:09:20.804Z. ~9s later dev-loop.instance.exited client-01 pid 12028 exit_code=3221225477 at 06:09:37.117Z with crash artifacts .dev/crashes/20261128_054617_01/crash-2026-11-28_01-09-29-12028.{txt,dmp}.
+3. The second client reproduces it identically. client-02 pid 24360 launched 06:09:44.591Z (dashboard start-client). Connected to slaughterhouse1 06:09:50.027Z (player 2), then Connected to mimita-pipes / ice:ZC77BLC 06:09:57.540Z (attempt 2, player 3). Last client event 06:10:09.682Z; dev-loop.instance.exited client-02 pid 24360 exit_code=3221225477 06:10:10.218Z with crash-2026-11-28_01-10-01-24360.{txt,dmp}. ~12s after joining the new mode.
+4. Both 2026-11-28 crash reports are the same signature: ACCESS_VIOLATION (0xc0000005) read at 0xffffffffffffffff, KERNELBASE.dll+0x15f57; stack 00 MultiByteToWideChar+0xd7, 01 GetMimitaWorldRenderingModuleAPI+0xe6753, 02 +0xee1d1, 03 game-g808.dll+0xf97c0, 04 +0x106cd1, 05 +0x104086, 06 GetGameAPI+0xc9a2c, 07 +0xca181, 08 GetMimitaGameServerV1+0x93bb. This is a UTF-8->UTF-16 string conversion fault inside the world-rendering module, not a connect/transport failure.
+5. Same family on 2026-11-27: client PID 29856 (run 20261127_225212, same build gen 808) crashed with 00 RtlUTF8StringToUnicodeString+0x133, 01 MultiByteToWideChar+0x143, 02 GetMimitaWorldRenderingModuleAPI+0xe6753, 03 +0xee1d1, 04 game-g805.dll+0xf97c0 (identical world-rendering frames). Run 20261127_230430 client PID 24280 crashed with a different stack (mimita.exe+0xef364 -> GetMimitaGameModuleHostQueryV1+0x52a4), so not every client crash is this string family. At least three client ACCESS_VIOLATIONs in two days.
+6. Journal/instance attribution is unreliable: the client-01 journal files contain events from multiple PIDs/roles, including the unmanaged payload server pid 17456, which kept writing after the client crashed (pid 17456 rows at 06:12:38Z and 06:18:24Z under client-01), plus server pid 10012/3280 in other runs. The directory is not per-process, so journal path alone cannot answer which process crashed or which mode it was in.
+7. Latest run 20261128_061051 (Vehicle Arena RL free play, arena2, server pid 12360) client-01 pid 23916 connected 06:11:01.237Z and had no crash as of inspection; that run is currently healthy. Its client-01 journal also contains server pid 3280 rows.
+
+Inference and uncertainty
+- Both clients reached Connected on the new Payload/mimita-pipes mode and then died ~9-12s later, so the terminal here is a client crash after a successful new-mode connect, not "never connect" and not a false-Disconnected label. This matches the human report segment "leave the room i started in, start a new server new mode, i crash on connecting" better than any prior review.
+- Leading hypothesis: after joining the unmanaged Payload server, a mode/room/HUD/console label string (UTF-8) is converted to UTF-16 with an invalid pointer/length and faults in world rendering. It is not proven which string, which caller of MultiByteToWideChar at +0xe6753, or whether the defect is in the managed client build or triggered by the unmanaged server's state.
+- The unmanaged PID 17456 has no verified build identity and is outside the dev-loop, so server/client build equality for this connection is not proven. The crashing clients are on managed build gen 808. Whether a managed mimita-pipes server still triggers the crash is unknown.
+- The 2026-11-27 PID 29856 crash has no connection-state rows in its mixed journal, so I cannot confirm it was also a mimita-pipes join; treat it as same-signature, not same-scenario.
+
+Contrary evidence
+- The current build gen 808 connects normally to slaughterhouse1 and arena2, and the newest run 20261128_061051 is healthy, so this is not a universal connect or startup defect.
+- Client-01 ran ~2h23m on slaughterhouse1 before the switch, so the crash is not simply a fixed post-launch timer; the mode switch / mimita-pipes join is the correlated trigger, not a proven cause.
+- No HUD screenshots were captured and no first-missing-event artifact was emitted by the dev-loop for this crash, so no visual claim is made.
+
+Next discriminating check (one, not performed by this reviewer)
+On the managed build through the root dev-loop, start the Payload server on mimita-pipes as a managed, paired-identity server (not PID 17456) and join one client; capture in the same process: (a) client first-packet/Connected and the ~9-12s post-join window; (b) the resolved source line for game-g808.dll+0xf97c0 / GetMimitaWorldRenderingModuleAPI+0xe6753 and the exact string pointer/length at the MultiByteToWideChar fault; (c) confirm managed server and client share build id. Acceptance: exactly one of (i) the crash reproduces with a managed paired server and the faulting string's owner/caller is named, e.g. a room-code/map-name/HUD/console label path; or (ii) the crash does not reproduce with a managed server, proving the unmanaged server's identity/state is required. Record the first divergence and owner before any fix.
+
+Cold handoff
+- Primary: logs/2026-11-28/20261128_054617_01/{dev-loop,client-01,client-02}/events*.jsonl (client-01 includes unmanaged pid 17456 payload-server rows), logs/2026-11-28/20261128_054617_01/run.json.
+- Crashes: .dev/crashes/20261128_054617_01/crash-2026-11-28_01-09-29-12028.{txt,dmp} and crash-2026-11-28_01-10-01-24360.{txt,dmp} (identical stack); .dev/crashes/20261127_225212/crash-2026-11-27_18-02-01-29856.txt (same world-rendering/MultiByteToWideChar family).
+- Ownership: issue-c9b65fb9948e (owner rocket-league-aerial) owns the Payload/mimita-pipes join crash and currently records "journal not found for this PID"; this review adds the managed journals and two dumps that issue lists as missing. No source, build, runtime, or proof record was changed by this reviewer.
+
+Process review: the repeated gap is evidence attribution, not a new connect defect. An unmanaged process (PID 17456) writes its events into a managed run's client-01 journal, yet evidence-watch reported "journal not found for this PID", hiding the crash correlation until manual scanning. One concrete proposal with a measurable target and smallest experiment is appended to issue-cf9cd77eb056 (end-to-end correlated runtime evidence).

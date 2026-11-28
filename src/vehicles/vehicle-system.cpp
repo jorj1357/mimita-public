@@ -20,7 +20,10 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
+#include "audio/audio.h"
+#include "effects/effect-part.h"
 #include "entities/player.h"
+#include "gamemode/map-config.h"
 #include "impact/destructible-world-config.h"
 #include "input/gamepad-input.h"
 #include "input/input-commands.h"
@@ -28,6 +31,7 @@
 #include "interaction/interaction-system.h"
 #include "network/multiplayer-context.h"
 #include "camera.h"
+#include "config/camera-config.h"
 #include "perf/perf-spike.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/physical-entity.h"
@@ -38,6 +42,15 @@
 #include "vehicles/vehicle-audio.h"
 #include "void-death/void-death.h"
 #include "world/world.h"
+
+namespace {
+void vehicleFeedbackSound(const char* name, const glm::vec3& position,
+                          float volume);
+EffectPart* vehicleFeedbackBurst(const glm::vec3& position,
+                                 const glm::vec3& color, float scale,
+                                 float lifetime, bool gravity,
+                                 const char* label);
+} // namespace
 
 namespace {
 
@@ -861,7 +874,10 @@ bool VehicleSystem::despawn(uint32_t vehicleId)
         stopVehicleEngineAudio(vehicleId);
         PhysicalEntitySystem::instance().remove(it->entityId);
         if (mLocalVehicleId == vehicleId)
+        {
             mLocalVehicleId = 0;
+            CamConfig::instance().clearProximityFadeOverride();
+        }
         InteractionSystem::instance().setStickyTarget(0);
         mVehicles.erase(it);
         return true;
@@ -934,8 +950,9 @@ bool VehicleSystem::enterLocalDriver(uint32_t vehicleId, int seat,
     state->inputOverrideTicks = 0;
     // Client-side prediction: when this client owns the car, it simulates the
     // chassis locally so throttle/steer/jump respond on the input tick instead
-    // of after a server round trip. Server snapshots become corrections.
-    if (!state->serverAuthoritative)
+    // of after a server round trip. The local car is the authority for its own
+    // pose; the server adopts it and snapshots never rubber-band it.
+    if (!isServerProcess() && !state->clientPredicted)
     {
         PhysicalEntity* chassis =
             PhysicalEntitySystem::instance().find(state->entityId);
@@ -944,17 +961,19 @@ bool VehicleSystem::enterLocalDriver(uint32_t vehicleId, int seat,
             const bool wasServerDriven = chassis->serverDriven;
             chassis->serverDriven = false;
             chassis->clientPredicted = true;
+            chassis->renderPoseTimed = false;
             chassis->sleeping = false;
             state->serverMirror = false;
             state->clientPredicted = true;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Network, StructuredLevel::Important,
                 "vehicle.prediction.enabled", std::to_string(vehicleId),
-                "local client now predicts its own chassis", 0,
+                "local client now predicts and owns its chassis", 0,
                 {{"vehicle_id", vehicleId},
                  {"chassis_entity", chassis->id},
                  {"chassis_network_id", chassis->networkId},
                  {"was_server_driven", wasServerDriven},
+                 {"server_authoritative", state->serverAuthoritative},
                  {"mp_active", MP_CONTEXT.active}},
                 __FILE__, __LINE__, __func__);
         }
@@ -973,6 +992,11 @@ bool VehicleSystem::enterLocalDriver(uint32_t vehicleId, int seat,
     if (seat >= 0 && seat < static_cast<int>(state->seatOccupants.size()))
         state->seatOccupants[seat] = static_cast<int>(actorId);
     mLocalVehicleId = vehicleId;
+    // Vehicle arena presentation: the chase camera sits ~2.2 m from the car,
+    // so world proximity fade makes the wall/floor in front of it translucent.
+    // Force it off while seated; the mode JSON keeps the same default for the
+    // gamemode policy path.
+    CamConfig::instance().setProximityFadeOverride(false);
     InteractionSystem::instance().setStickyTarget(
         state->interactionTargetId);
     if (PhysicalEntity* entity =
@@ -1001,6 +1025,7 @@ void VehicleSystem::exitLocalDriver()
         state->inputOverride = false;
     }
     mLocalVehicleId = 0;
+    CamConfig::instance().clearProximityFadeOverride();
     InteractionSystem::instance().setStickyTarget(0);
     if (vehicleId != 0)
         StructuredLogger::instance().writeEvent(
@@ -1336,7 +1361,62 @@ glm::vec3 VehicleSystem::localVehiclePosition() const
         return glm::vec3(0.0f);
     const PhysicalEntity* entity =
         PhysicalEntitySystem::instance().find(state->entityId);
-    return entity ? glm::vec3(entity->transform[3]) : glm::vec3(0.0f);
+    // Presentation pose: fixed-tick alpha for the local predicted chassis so the
+    // camera never follows the raw 120 Hz step.
+    return entity ? physicalEntityRenderPosition(*entity) : glm::vec3(0.0f);
+}
+
+bool VehicleSystem::resetToPose(uint32_t vehicleId, const glm::vec3& position,
+                                float yawDegrees)
+{
+    VehicleState* state = find(vehicleId);
+    if (!state)
+        return false;
+    PhysicalEntity* entity =
+        PhysicalEntitySystem::instance().find(state->entityId);
+    if (!entity)
+        return false;
+    const glm::quat attitude = glm::angleAxis(
+        glm::radians(yawDegrees), glm::vec3(0.0f, 0.0f, 1.0f));
+    entity->transform = glm::translate(glm::mat4(1.0f), position) *
+                        glm::mat4_cast(attitude);
+    entity->previousTransform = entity->transform;
+    entity->orientation = glm::normalize(attitude);
+    entity->velocity = glm::vec3(0.0f);
+    entity->angularVelocity = glm::vec3(0.0f);
+    entity->sleeping = false;
+    entity->sleepTicks = 0;
+    entity->renderPoseTimed = false;
+    state->origin = position;
+    state->originVelocity = glm::vec3(0.0f);
+    state->originAngularVelocity = glm::vec3(0.0f);
+    state->orientation = entity->orientation;
+    state->jumpCount = 0;
+    state->jumpHeld = false;
+    state->jumpHeldPrev = false;
+    state->jumpPressed = false;
+    state->hasFlipped = false;
+    state->isFlipping = false;
+    state->isJumping = false;
+    state->hasJumped = false;
+    state->flipTimer = 0.0f;
+    state->jumpTimer = 0.0f;
+    state->airTimeSinceJump = 0.0f;
+    state->sideRestTicks = 0;
+    state->sideRecoveryLogged = false;
+    state->isAutoFlipping = false;
+    state->autoFlipTimer = 0.0f;
+    if (auto profile = profileFor(*state))
+        state->boostCharge = profile->boost.max;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Physics, StructuredLevel::Important,
+        "vehicle.reset", std::to_string(vehicleId),
+        "vehicle reset to spawn pose", 0,
+        {{"vehicle_id", vehicleId},
+         {"position", {position.x, position.y, position.z}},
+         {"yaw_deg", yawDegrees}},
+        __FILE__, __LINE__, __func__);
+    return true;
 }
 
 VehicleInput VehicleSystem::readLocalInput(const VehicleState& state)
@@ -1704,6 +1784,14 @@ void VehicleSystem::updateWheel(VehicleState& state, const VehicleSpec& spec,
         if (glm::dot(normal, axis) > 0.0f)
             normal = -normal;
         normal = glm::normalize(normal);
+        // The ramp profile is a triangulated curve; the nearest-triangle
+        // normal steps at each seam and the suspension/friction direction
+        // jerks with it. Low-pass only when the new normal is close, so a real
+        // surface change (floor -> wall) is not smoothed away.
+        if (glm::dot(wheel.contactNormal, wheel.contactNormal) > 1e-4f &&
+            glm::dot(wheel.contactNormal, normal) > 0.7f)
+            normal = glm::normalize(
+                glm::mix(wheel.contactNormal, normal, 0.35f));
         const float suspensionLength = hitDistance - wheelSpec.radius;
         const float rawCompression =
             wheelSpec.restLength - suspensionLength;
@@ -2200,6 +2288,13 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                    profile.jump.immediateDeltaVelMps) /
                       (2.0f * std::max(profile.gravityMps2, 0.1f))}},
                 __FILE__, __LINE__, __func__);
+            if (state.localDriver && !mServerProcess)
+            {
+                const glm::vec3 fxPos(entity.transform[3]);
+                vehicleFeedbackSound("vehicle/jump", fxPos, 0.8f);
+                vehicleFeedbackBurst(fxPos, glm::vec3(0.55f, 0.85f, 1.0f),
+                                     0.38f, 0.28f, false, "vehicle_jump_fx");
+            }
         }
         else if (!onGround &&
                  (state.jumpCount <= 1 || profile.jump.infiniteJumps) &&
@@ -2317,6 +2412,14 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                      {"jump_count", state.jumpCount},
                      {"delta_vel_mps", profile.jump.doubleJumpDeltaVelMps}},
                     __FILE__, __LINE__, __func__);
+                if (state.localDriver && !mServerProcess)
+                {
+                    const glm::vec3 fxPos(entity.transform[3]);
+                    vehicleFeedbackSound("vehicle/airjump", fxPos, 0.85f);
+                    vehicleFeedbackBurst(fxPos, glm::vec3(1.0f, 0.55f, 0.15f),
+                                         0.45f, 0.32f, false,
+                                         "vehicle_airjump_fx");
+                }
             }
         }
         else
@@ -2417,17 +2520,24 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
         float scale = profile.settle.stickyForceGravityScale;
         if (fullStick)
             scale += 1.0f - std::fabs(groundUp.z);
+        // Adhesion must point INTO the surface. groundUp is the wheel contact
+        // normal (up on the floor, out of the wall), so the old +groundUp
+        // impulse lifted the car off the floor every tick and pushed it away
+        // from walls/ceilings. That was the flat-ground pogo and the poor
+        // wall/ceiling grip.
         applyPhysicalEntityImpulse(
-            entity, groundUp * (scale * gravity * mass * dt), com);
+            entity, -groundUp * (scale * gravity * mass * dt), com);
     }
 
     // ── RocketSim auto-roll ─────────────────────────────────────────────
-    // Throttle only (not boost). Partial wheel contact or body contact. The
-    // torque is relative to the contact normal, so it works on floors, walls,
-    // slopes and ceilings.
-    if (std::fabs(state.throttle) > 0.05f &&
-        ((wheelContacts > 0 && wheelContacts < wheelCount) ||
-         entity.lastContactedWorld))
+    // Throttle only (not boost), and only when the body is actually lying on
+    // its roof: inverted AND no wheel is touching. Ceiling driving is also
+    // inverted but the wheels are on the ceiling; auto-roll must not fire then
+    // or it twists the car mid-slide.
+    const bool roofed = state.upDotWorldUp < -0.5f;
+    const bool onRoof = roofed && wheelContacts == 0 &&
+                        entity.lastContactedWorld;
+    if (onRoof && std::fabs(state.throttle) > 0.05f)
     {
         glm::vec3 rollUp = groundUp;
         if (glm::length(rollUp) < 1e-5f && entity.lastContactedWorld &&
@@ -2506,6 +2616,33 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                  {"charge", state.boostCharge},
                  {"accel_mps2", accel}},
                 __FILE__, __LINE__, __func__);
+            if (state.localDriver && !mServerProcess)
+            {
+                const glm::vec3 fxPos(entity.transform[3]);
+                vehicleFeedbackSound("vehicle/boost", fxPos, 0.9f);
+                vehicleFeedbackBurst(
+                    fxPos - state.orientation * glm::vec3(0.8f, 0.0f, 0.0f),
+                    glm::vec3(1.0f, 0.55f, 0.10f), 0.40f, 0.22f, false,
+                    "vehicle_boost_fx");
+            }
+        }
+        // White boost orb behind the car while boost is held.
+        if (state.localDriver && !mServerProcess && (tick & 1u) == 0u)
+        {
+            const glm::vec3 behind =
+                glm::vec3(entity.transform[3]) -
+                state.orientation * glm::vec3(0.95f, 0.0f, 0.0f) +
+                state.orientation * glm::vec3(0.0f, 0.0f, 0.12f);
+            if (EffectPart* fx = EffectPartSystem::instance().spawnCustom(
+                    behind, glm::vec3(1.0f, 1.0f, 1.0f), 0.10f,
+                    "vehicle_boost_sphere"))
+            {
+                fx->scale = 0.45f;
+                fx->halfSize = glm::vec3(0.22f);
+                fx->alpha = 0.9f;
+                fx->endAlpha = 0.0f;
+                fx->useEndAlpha = true;
+            }
         }
     }
     else if (state.boostActive)
@@ -2551,6 +2688,11 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                  {"flip_seconds", profile.flip.torqueSeconds},
                  {"angular_speed", glm::length(entity.angularVelocity)}},
                 __FILE__, __LINE__, __func__);
+            if (state.localDriver && !mServerProcess)
+            {
+                vehicleFeedbackSound("vehicle/dodge",
+                                     glm::vec3(entity.transform[3]), 0.75f);
+            }
         }
         else
         {
@@ -3366,6 +3508,13 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
                  {"roll_rate_local",
                   glm::dot(entity.angularVelocity, forward)}},
                 __FILE__, __LINE__, __func__);
+            if (state.localDriver && !mServerProcess)
+            {
+                const float impact = glm::length(entity.velocity);
+                vehicleFeedbackSound(
+                    "vehicle/land", glm::vec3(entity.transform[3]),
+                    std::clamp(0.25f + impact / 30.0f, 0.25f, 1.0f));
+            }
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Physics, StructuredLevel::Important,
                 "vehicle.jump.apex", std::to_string(state.id),
@@ -3416,6 +3565,107 @@ void VehicleSystem::updateArcadeControls(VehicleState& state,
         glm::length(glm::vec2(entity.velocity.x, entity.velocity.y));
 }
 
+namespace {
+// Client-side vehicle feedback. Placeholder assets live in
+// assets/sound/vehicle/*.wav and are meant to be replaced later.
+void vehicleFeedbackSound(const char* name, const glm::vec3& position,
+                          float volume)
+{
+    playWorldSound(name, position, volume, 1.0f, 45.0f);
+}
+
+EffectPart* vehicleFeedbackBurst(const glm::vec3& position,
+                                 const glm::vec3& color, float scale,
+                                 float lifetime, bool gravity,
+                                 const char* label)
+{
+    EffectPart* fx = EffectPartSystem::instance().spawnCustom(
+        position, color, lifetime, label);
+    if (!fx)
+        return nullptr;
+    fx->scale = scale;
+    fx->endScale = scale * 1.6f;
+    fx->halfSize = glm::vec3(std::max(scale * 0.5f, 0.05f));
+    fx->alpha = 0.85f;
+    fx->endAlpha = 0.0f;
+    fx->useEndAlpha = true;
+    fx->affectedByGravity = gravity;
+    fx->gravity = gravity ? 6.0f : 0.0f;
+    return fx;
+}
+} // namespace
+
+namespace {
+// Last-resort containment for arena cars. Wall geometry must stop the car, but
+// a high-speed seam or solver failure must never leave it outside the world.
+void containArenaVehicle(VehicleState& state, PhysicalEntity& entity,
+                         uint64_t tick)
+{
+    const MapObjectiveConfig& map = MapConfigRegistry::instance().current();
+    if (!map.arena.present)
+        return;
+    float goalHalf = 8.92755f;
+    float goalHeight = 6.42775f;
+    for (const ArenaGoalConfig& goal : map.arena.goals)
+    {
+        goalHalf = std::max(goalHalf, goal.halfExtents.y);
+        goalHeight = std::max(goalHeight, goal.halfExtents.z * 2.0f);
+    }
+    const glm::vec3 p(entity.transform[3]);
+    // Only a real escape beyond the solid outer faces, not penetration inside
+    // the 2 m walls / 3 m floor. The solver owns internal penetration; this
+    // guard owns "the car is outside the world" and nothing else.
+    const bool inField = std::fabs(p.x) <= 53.0f &&
+                         std::fabs(p.y) <= 43.0f && p.z >= -3.0f &&
+                         p.z <= 20.6f;
+    const bool inGoalMouth = std::fabs(p.x) <= 60.0f &&
+                             std::fabs(p.y) <= goalHalf &&
+                             p.z <= goalHeight + 0.2f;
+    if (inField || inGoalMouth)
+        return;
+
+    glm::vec3 clamped = p;
+    if (std::fabs(p.x) > 53.0f)
+        clamped.x = std::copysign(51.2f, p.x);
+    if (std::fabs(p.y) > 43.0f)
+        clamped.y = std::copysign(40.96f, p.y);
+    if (p.z < -3.0f)
+        clamped.z = 0.35f;
+    if (p.z > 20.6f)
+        clamped.z = 20.2f;
+    glm::vec3 velocity = entity.velocity;
+    if (p.x > 53.0f) velocity.x = std::min(velocity.x, 0.0f);
+    if (p.x < -53.0f) velocity.x = std::max(velocity.x, 0.0f);
+    if (p.y > 43.0f) velocity.y = std::min(velocity.y, 0.0f);
+    if (p.y < -43.0f) velocity.y = std::max(velocity.y, 0.0f);
+    if (p.z < -3.0f) velocity.z = std::max(velocity.z, 0.0f);
+    if (p.z > 20.6f) velocity.z = std::min(velocity.z, 0.0f);
+
+    entity.transform[3] = glm::vec4(clamped, 1.0f);
+    entity.previousTransform[3] = entity.transform[3];
+    entity.velocity = velocity;
+    state.origin = clamped;
+    state.originVelocity = velocity;
+    state.originAngularVelocity = entity.angularVelocity;
+
+    static uint64_t sLastContainLogTick = 0;
+    if (tick > sLastContainLogTick + 120u)
+    {
+        sLastContainLogTick = tick;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Physics, StructuredLevel::Important,
+            "vehicle.out_of_world", std::to_string(state.id),
+            "arena containment projected the car back inside", tick,
+            {{"vehicle_id", state.id},
+             {"was", {p.x, p.y, p.z}},
+             {"now", {clamped.x, clamped.y, clamped.z}},
+             {"velocity", {velocity.x, velocity.y, velocity.z}},
+             {"map", map.mapId}},
+            __FILE__, __LINE__, __func__);
+    }
+}
+} // namespace
+
 void VehicleSystem::update(float dt, const World& world)
 {
     MIMITA_PERF_SCOPE("Vehicle::Update");
@@ -3459,6 +3709,9 @@ void VehicleSystem::update(float dt, const World& world)
             VehicleConfigRegistry::instance().find(state.templateId);
         if (!entity || !spec)
             continue;
+
+        containArenaVehicle(state, *entity,
+                            PhysicalEntitySystem::instance().simulationTick());
 
         // A car driven hard into a wall can hold a few centimetres of floor
         // overlap while the contact solver carries the squeeze. Lift the
@@ -4263,22 +4516,46 @@ void VehicleSystem::update(float dt, const World& world)
         if (entity->lastWallContactTick != state.lastWallContactTick)
         {
             state.lastWallContactTick = entity->lastWallContactTick;
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::Physics, StructuredLevel::Important,
-                "vehicle.wall.contact", std::to_string(state.id),
-                "vehicle chassis contacted a near-vertical wall", bounceTick,
-                {{"vehicle_id", state.id},
-                 {"normal", {entity->lastWallContactNormal.x,
-                             entity->lastWallContactNormal.y,
-                             entity->lastWallContactNormal.z}},
-                 {"impactSpeed", entity->lastWallImpactSpeed},
-                 {"speed", state.speed},
-                 {"velocity", {state.originVelocity.x,
-                               state.originVelocity.y,
-                               state.originVelocity.z}},
-                 {"yaw", yaw},
-                 {"wallFriction", spec->bodyWallFriction}},
-                __FILE__, __LINE__, __func__);
+            // Sustained wall driving re-touches every tick; log at most every
+            // 0.5 s so 2263 lines per 8 minutes cannot bury the real events.
+            static uint64_t sLastWallContactLogTick = 0;
+            if (bounceTick > sLastWallContactLogTick + 60u)
+            {
+                sLastWallContactLogTick = bounceTick;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Physics, StructuredLevel::Important,
+                    "vehicle.wall.contact", std::to_string(state.id),
+                    "vehicle chassis contacted a near-vertical wall", bounceTick,
+                    {{"vehicle_id", state.id},
+                     {"normal", {entity->lastWallContactNormal.x,
+                                 entity->lastWallContactNormal.y,
+                                 entity->lastWallContactNormal.z}},
+                     {"impactSpeed", entity->lastWallImpactSpeed},
+                     {"speed", state.speed},
+                     {"velocity", {state.originVelocity.x,
+                                   state.originVelocity.y,
+                                   state.originVelocity.z}},
+                     {"yaw", yaw},
+                     {"wallFriction", spec->bodyWallFriction}},
+                    __FILE__, __LINE__, __func__);
+                if (state.localDriver && !mServerProcess)
+                {
+                    glm::vec3 contactNormal = entity->lastWallContactNormal;
+                    if (glm::dot(contactNormal, contactNormal) < 1e-6f)
+                        contactNormal = glm::vec3(0.0f, 0.0f, 1.0f);
+                    contactNormal = glm::normalize(contactNormal);
+                    const glm::vec3 contactPos =
+                        glm::vec3(entity->transform[3]) - contactNormal * 0.6f;
+                    vehicleFeedbackSound(
+                        "vehicle/wall_bump", contactPos,
+                        std::clamp(0.25f + entity->lastWallImpactSpeed / 20.0f,
+                                   0.25f, 1.0f));
+                    vehicleFeedbackBurst(contactPos,
+                                         glm::vec3(1.0f, 0.55f, 0.15f),
+                                         0.30f, 0.18f, true,
+                                         "vehicle_wall_fx");
+                }
+            }
         }
         if ((state.serverAuthoritative || !state.serverMirror ||
              state.localDriver) &&

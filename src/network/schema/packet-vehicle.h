@@ -21,7 +21,11 @@ enum VehicleInputFlags : uint8_t
     VEHICLE_INPUT_SHIFT_UP = 1 << 2,
     VEHICLE_INPUT_SHIFT_DOWN = 1 << 3,
     VEHICLE_INPUT_JUMP_HELD = 1 << 4,
-    VEHICLE_INPUT_POWER_SLIDE = 1 << 5
+    VEHICLE_INPUT_POWER_SLIDE = 1 << 5,
+    // The packet carries a trailing VehiclePoseBlock. This keeps the
+    // client-owned car pose on the already-dispatched input packet instead of
+    // requiring a new packet id in the resident server executable.
+    VEHICLE_INPUT_HAS_POSE = 1 << 6
 };
 
 enum VehicleSeatAction : uint8_t
@@ -50,6 +54,37 @@ struct VehicleInputPacket
     float roll = 0.0f;
     uint8_t flags = 0;
     uint8_t reserved[3] = {};
+};
+
+struct VehiclePoseBlock
+{
+    float position[3] = {0.0f, 0.0f, 0.0f};
+    float orientation[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    float velocity[3] = {0.0f, 0.0f, 0.0f};
+    float angularVelocity[3] = {0.0f, 0.0f, 0.0f};
+};
+
+// Input plus the client-owned pose in one datagram. The resident server already
+// dispatches PACKET_VEHICLE_INPUT, so this needs no new packet id or EXE build.
+struct VehicleInputWithPosePacket
+{
+    VehicleInputPacket input;
+    VehiclePoseBlock pose;
+};
+
+// Depleted pads only. Collectible pads are implied by the map config; the
+// client renders the listed pads grey with the remaining time.
+struct BoostPadStateEntry
+{
+    uint8_t index = 0;
+    uint16_t remainingCentiseconds = 0;
+};
+
+struct BoostPadStatePacket
+{
+    PacketHeader header;
+    uint8_t count = 0;
+    BoostPadStateEntry pads[24] = {};
 };
 
 struct VehicleSeatRequestPacket
@@ -135,6 +170,20 @@ struct VehicleStatePacket
     VehicleNetStateEntry entries[MAX_VEHICLE_STATE_ENTRIES] = {};
 };
 
+
+// Client-owned chassis pose. Sent by the driver's client at ~30 Hz; the server
+// adopts it for that player's car and the normal entity replication carries it
+// to every other client.
+struct VehiclePosePacket
+{
+    PacketHeader header;
+    uint32_t vehicleId = 0;
+    uint32_t sequence = 0;
+    float position[3] = {0.0f, 0.0f, 0.0f};
+    float orientation[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    float velocity[3] = {0.0f, 0.0f, 0.0f};
+    float angularVelocity[3] = {0.0f, 0.0f, 0.0f};
+};
 
 static_assert(sizeof(VehicleInputPacket) <= 72,
               "VehicleInputPacket is too large");

@@ -88,8 +88,6 @@ void doGLBSweepSlide(
 
     p.updateModelWorldTransforms();
     Capsule cap = p.getCapsule();
-    const uint32_t previousSupportId = p.collision.supportEntityId;
-    const glm::vec3 previousSupportVelocity = p.collision.supportVelocity;
     uint32_t supportId = 0;
     glm::vec3 supportVelocity(0.0f);
 
@@ -870,8 +868,11 @@ void doGLBSweepSlide(
             break;
     }
 
-    if (supportId == 0 && previousSupportId != 0)
-        p.vel += previousSupportVelocity;
+    // Moving support carries the actor by transforming the supported position
+    // each tick (the sweep is already relative to the platform). Do not fold
+    // the platform velocity into the actor's own velocity when support ends:
+    // standing on a moving Payload cart, or stepping off it, must not launch the
+    // actor or grant free speed.
     p.collision.supportEntityId = supportId;
     p.collision.supportVelocity = supportVelocity;
 

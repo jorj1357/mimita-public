@@ -34,6 +34,10 @@
 #include "debug/structured-log.h"
 #include "avatar/avatar.h"
 #include "vehicles/vehicle-system.h"
+#include "audio/audio.h"
+#include "effects/effect-part.h"
+#include "gamemode/map-config.h"
+#include "physics/physical-entity.h"
 
 #include <chrono>
 #include <cmath>
@@ -438,9 +442,37 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
                  {"client_tick", clientTick},
                  {"duel_id", packet.duelId},
                  {"first_observation", sFirstOfMatch}});
+            // Goal feedback. The score delta says which goal was scored on:
+            // a blue point goes into the orange goal. Placeholder assets:
+            // assets/sound/vehicle/goal.wav.
+            const bool blueScored = packet.scoreA > sSeenScoreA;
             sSeenScoreA = packet.scoreA;
             sSeenScoreB = packet.scoreB;
             sFirstOfMatch = false;
+            const MapObjectiveConfig& map =
+                MapConfigRegistry::instance().current();
+            glm::vec3 goalCenter(0.0f);
+            for (const ArenaGoalConfig& goal : map.arena.goals)
+                if (goal.enabled &&
+                    goal.team == (blueScored ? "orange" : "blue"))
+                {
+                    goalCenter = goal.center;
+                    break;
+                }
+            playWorldSound("vehicle/goal", goalCenter, 1.0f, 1.0f, 90.0f);
+            if (EffectPart* fx = EffectPartSystem::instance().spawnCustom(
+                    goalCenter, glm::vec3(0.45f, 0.85f, 1.0f), 1.4f,
+                    "vehicle_goal_fx"))
+            {
+                fx->scale = 6.0f;
+                fx->endScale = 11.0f;
+                fx->halfSize = glm::vec3(2.0f);
+                fx->alpha = 0.9f;
+                fx->endAlpha = 0.0f;
+                fx->useEndAlpha = true;
+                fx->beam = true;
+                fx->endPosition = goalCenter + glm::vec3(0.0f, 0.0f, 12.0f);
+            }
         }
     }
     mMatchId = packet.duelId;

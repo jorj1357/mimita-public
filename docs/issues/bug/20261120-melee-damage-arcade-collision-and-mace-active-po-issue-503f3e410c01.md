@@ -503,3 +503,42 @@ PROCESS REVIEW
 - Repeated evidence/identity gap confirmed for the third consecutive sweep, now with a sharper cause: the dev-loop client launches its own GUI server via network.gui-server.launch (different map/mode from the pinned server-01), and run.json records only the launched dedicated server. Proof-bearing gameplay lands in a client-spawned server that the run manifest never names. This is a distinct facet from the existing game_generation proposal; one proposal was appended to issue-b396205aaecf.
 - The white-pose evidence gap is unchanged and already proposed on issue-89efbbc86535, so no duplicate was filed.
 - Noted but out of scope: both dashboard-launched clients disconnected from the dedicated server-01 with reason local_shutdown within ~3s and re-hosted themselves; this may relate to issue-a5ca672b6628 (dev-loop launch reliability), but this read-only review did not investigate it.
+
+## Scheduled independent review
+
+### 2026-11-28T07:41:05.674Z — rocket-rl-settle
+
+A bounded independent review was queued as wake wake-efbf183f8238 after 886 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive)
+
+### 2026-11-28T07:47:14.981Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Read-only independent review at 2026-11-28T07:5xZ by issue-review-sweeper (wake-efbf183f8238 / sweep-886); no source edit, build, run, close, or fix claim. Prior review text (ids 52, 206, 300, 395, 446, 503) is preserved (append-only).
+
+Scope: issue brief/readiness, proof status, linked artifacts, and the latest relevant journals since the 2026-11-27T01:12Z review.
+
+OBSERVED FACTS
+1. Readiness is 8/8, state=in_review, 3 tasks open. `proof status` is unchanged for the three tasks: arcade_no_weapon_world_collision (row 15), arcade_npc_melee_hit (16), mace_active_contact (17) each have status=runtime_proven with result=unproven, reason="", run_id=20261120_072010, game_generation=398, journal_path="", verified_utc="". `proof list --issue issue-503f3e410c01` still returns []. issue.related_build/related_run still cite the failed-before-logger gen398 runs. This proof-integrity defect is already proposed on issue-b396205aaecf.
+2. NEW SOURCE DRIFT (the material change since review 503). src/combat/weapon-viewmodel.cpp, the file that owns the Mace active-pose white tint, changed in commit 33ea17d5 (2026-11-27T14:02:29-05:00 = 19:02:29Z); HEAD is d1d1df34 and the issue's paths are clean in git status. The diff (4 insertions, 2 deletions) replaces `part.worldTransform` with `playerRenderPartTransform(player, part)` for the arm attachment transform; it does not touch the tint gating lines (prior review: :239-245 and :643-652). Current sha256 7bd505f740833741fc942a56d6c28c68b06cb325079fd8cd2d6858386a915f4c differs from task-proof-edf53b087881's recorded e5f0a2f5..., so mace_active_contact is now stale-by-hash on 1/4 recorded paths. The prior review's strongest player-Mace run (20261127_000428, gen742) predates 33ea17d5, and its journals are now pruned: logs/2026-11-27/20261127_000428 contains only run.json, so that candidate cannot be re-inspected; its numbers survive only in review 503 text. Other rows: task-proof-899d76b7464a still stale 2/2 (server-players.cpp 69e5b9d2 vs 182b68c3; physics-collision-glb-main.cpp 0abedb32 vs 5b77a843). Matching: melee-client.cpp 3da6e365, server-packet-handlers.cpp 8a10a34e, server-physical-contact-actors.cpp 95f66a22, config/weapons/mace/config.json 25ce619a. proof status reports reason="" for all three and surfaces none of this as stale.
+3. NEW RUNTIME since review 503, all player-vs-NPC Bloodtest with weapon=bloodtest_bat (NOT Mace):
+   - 20261127_230430, server-01 loaded build\game\generation-805\game-g805.dll: arcade_mode=true in 585/585 sampled collision.capsule-world.solve; 68 melee.contact.claim.accepted all weapon=bloodtest_bat (6 active at damage_multiplier 10.0); 591 collision.arcade_pose_skipped, all body_part_count=0 and extra_part_count=0, skip_reason=arcade_capsule_world_owner; 325 server.damage.applied; 15 weapon.contact.result.
+   - 20261128_054617_01, server-01 loaded build\game\generation-808\game-g808.dll: arcade_mode=true 1386/1386; 243 accepted all weapon=bloodtest_bat (212 inactive mult 1.0, 31 active mult 10.0); 1414 arcade_pose_skipped all zero-part; 349 server.damage.applied with attacker_type=player 349/349 -> target_actor_type=npc 349/349 (106 hitscan + 243 physical_contact), i.e. 0 NPC->player; weapon.contact.result 0. The run's mode label says "Vehicle Arena - Rocket League Free Play" on map slaughterhouse1, but the journal content is Bloodtest/bat plus arcade, so treat the label as stale/uncertain per the input-switch rule.
+   Net: neither run exercises Mace and neither records NPC->player damage (the literal user complaint). mace_active_contact and arcade_npc_melee_hit gain no new evidence. arcade_no_weapon_world_collision gets repeated arcade-mode + skip confirmation, but only zero-part skips, so the "held-weapon pose cannot translate the root" clause is not demonstrated in these dedicated-server journals.
+
+INFERENCE / UNCERTAINTY
+- 33ea17d5 is a render-transform refactor, not tint or damage logic; it is plausible the white active pose still works, but proof-by-hash is broken and there is no source-current Mace runtime. Confidence: high that source drift occurred; moderate that tint behavior is unchanged; low that any current Mace proof exists.
+- These are other agents' isolated runs; reusing them is read-only evidence, not ownership.
+- The mode-label vs journal mismatch is unexplained (stale label vs actual in-game switch); actual mode is inferred from journal fields (arcade_mode=true, bloodtest_bat, NPC targets).
+
+CONTRARY EVIDENCE / LIMITS
+- Review 503's gen742 Mace results were real at the time; the drift does not disprove them, only makes them non-current. The tint gating lines themselves were not modified.
+- The core Arcade gating for arcade_no_weapon_world_collision is still repeatedly observed (every sampled solve arcade_mode=true).
+- The gen808 run is a Bat scenario; a Mace outcome could differ.
+
+NEXT DISCRIMINATING CHECK (single check that can move the proof)
+On a pinned build that includes 33ea17d5 (generation >= 808 or newer; record source revision, EXE build ID, DLL generation+sha256, config hashes), run one Arcade/Bloodtest scenario with a human or scripted-human client wielding Mace against NPCs. Require: 0 future_contact rejects; >=1 accepted active-pose melee.contact.claim.accepted with damage_multiplier 10; join client melee.client.contact_claim to server accepted by contact_id and show predicted==accepted; capture a white-viewmodel screenshot at an accepted active tick; and separately show NPC->player melee damage (server.damage.applied attacker_type=npc target_actor_type=player, or weapon.contact.result npc->player) while arcade_mode=true. Owner suggestion: melee-arcade-fix / melee-proof-3weapons. No closure or proof claim here.
+
+VERDICT: inconclusive (no acceptance proof; no source-current Mace or NPC->player evidence).

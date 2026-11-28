@@ -2911,6 +2911,20 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 reinterpret_cast<const VehicleStatePacket*>(buffer);
             mpProcessVehicleStatePacket(ctx, state);
         }
+        else if (header->type == PACKET_VEHICLE_POSE &&
+                 bytes >= (int)sizeof(VehiclePosePacket))
+        {
+            const VehiclePosePacket* pose =
+                reinterpret_cast<const VehiclePosePacket*>(buffer);
+            mpProcessVehiclePosePacket(ctx, pose);
+        }
+        else if (header->type == PACKET_BOOST_PAD_STATE &&
+                 bytes >= (int)sizeof(BoostPadStatePacket))
+        {
+            const BoostPadStatePacket* pads =
+                reinterpret_cast<const BoostPadStatePacket*>(buffer);
+            mpProcessBoostPadStatePacket(ctx, pads);
+        }
     };
 
     // ── Poll ICE transport (if available) ──

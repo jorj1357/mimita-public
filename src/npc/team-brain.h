@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -103,6 +104,10 @@ struct SquadTuning
     float spreadRadiusMeters = 6.0f;
     int maxAttackersPerTarget = 6;
     float rallyDistanceMeters = 8.0f;
+    // Minimum time the squad keeps one focus actor before re-evaluating
+    // reports. Prevents per-tick target thrash so the group actually fights one
+    // enemy as a unit.
+    float focusReacquireSeconds = 1.5f;
     std::string approachStyle = "arc";
     // Target-relative approach sectors. 0/1 disables.
     int approachDirections = 0;
@@ -111,7 +116,10 @@ struct SquadTuning
     float slotStickiness = 0.8f;
 };
 
-// Current shared squad state. Focus is a travel target, never an aim target.
+// Current shared squad state. For an elite squad the focus actor is both the
+// shared travel target and the shared aim target: every member engages the same
+// enemy while it remains a valid hostile. Focus is never a through-wall fire
+// permission; each NPC still needs its own legal line of sight to shoot.
 struct SquadState
 {
     bool active = false;
@@ -139,6 +147,16 @@ struct TeamBrainState
     // actor id -> assignment for the current round.
     std::vector<std::pair<uint32_t, TeamAssignment>> assignments;
     glm::vec3 assignedObjectivePos{0.0f};
+    // Per-enemy tick when any NPC on this team last held them as a target.
+    // The squad uses this to rotate attention so a living hostile is never
+    // permanently ignored. It applies equally to human and NPC enemies; there
+    // is no human-specific priority.
+    std::unordered_map<uint32_t, uint32_t> lastTargetedTick;
+    // Per-defender site assignment (Counter-Terrorist split). Rebuilt each
+    // tick from the map's usable sites. CTs still never receive the Terrorists'
+    // round site choice; this only spreads defenders across the sites they are
+    // already allowed to defend.
+    std::unordered_map<uint32_t, glm::vec3> assignedSitePositions;
     // General squad state and per-actor slots (group behavior).
     SquadState squad;
     std::vector<std::pair<uint32_t, glm::vec3>> squadSlots;
@@ -148,11 +166,15 @@ struct TeamBrainState
     uint32_t squadApproachAssignedTick = 0;
     uint32_t squadApproachFocusActor = 0;
     uint8_t squadApproachCount = 0;
+    // Focus hold: the squad keeps its current focus actor until this tick unless
+    // the actor dies or leaves. Prevents report-noise target thrash.
+    uint32_t focusHoldUntilTick = 0;
     // Change-edge reporting memory (set by the caller; avoids per-tick spam).
     int reportedSquadMode = -1;
     uint32_t reportedSquadApproachEpoch = 0;
     bool hasReportedFocus = false;
     glm::vec3 reportedFocusPos{0.0f};
+    uint32_t reportedFocusActor = 0;
     uint32_t reportedRecovererActorId = 0;
     uint32_t reportedDefuserId = 0;
 };

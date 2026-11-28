@@ -45,7 +45,8 @@ void fillSpawnPacket(const PhysicalEntity& e,
     pkt.header.tick = tick;
     pkt.networkId = e.networkId;
     pkt.motion = (uint8_t)e.motion;
-    pkt.reserved = (e.renderModel ? 1u : 0u) | (e.collisionBox ? 2u : 0u);
+    pkt.reserved = (e.renderModel ? 1u : 0u) | (e.collisionBox ? 2u : 0u) |
+                   (e.persistenceId == "arena-ball" ? 4u : 0u);
     pkt.materialId = e.destructible.materialId != 0 ? e.destructible.materialId
                                                     : e.materialId;
     pkt.halfExtents[0] = e.halfExtents.x;

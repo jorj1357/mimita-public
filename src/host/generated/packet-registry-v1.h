@@ -99,8 +99,10 @@ inline constexpr Entry kEntries[] = {
     {78, "PACKET_VEHICLE_DESPAWN_EVENT", Path::Dll, Path::Dll},
     {79, "PACKET_VEHICLE_STATE", Path::Dll, Path::Dll},
     {80, "PACKET_VEHICLE_SEAT_EVENT", Path::Dll, Path::Dll},
+    {81, "PACKET_MAP_CONFIG_SNAPSHOT", Path::Dll, Path::Dll},
+    {82, "PACKET_VEHICLE_POSE", Path::Dll, Path::Dll},
 };
-inline constexpr std::size_t kEntryCount = 78;
+inline constexpr std::size_t kEntryCount = 80;
 
 inline const Entry* find(std::uint16_t id) {
     for (const Entry& entry : kEntries) {

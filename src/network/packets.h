@@ -161,9 +161,14 @@ enum PacketType : uint8_t
     // The host edits the map file; the server applies it and sends this
     // chunked JSON snapshot so remote clients rebuild the same collision and
     // render geometry without writing their own map file.
-    PACKET_MAP_CONFIG_SNAPSHOT = 81
+    PACKET_MAP_CONFIG_SNAPSHOT = 81,
+    // Client-owned car pose. The local client is authoritative for its own
+    // chassis; the server adopts and rebroadcasts this pose so other clients
+    // see exactly what the driver sees.
+    PACKET_VEHICLE_POSE = 82,
+    // Depleted arena boost pads and their remaining recharge time.
+    PACKET_BOOST_PAD_STATE = 83
 };
-
 
 constexpr int MAX_VIP_STYLE_COLORS = 32;
 

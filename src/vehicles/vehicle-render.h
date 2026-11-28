@@ -9,3 +9,8 @@
 class Camera;
 
 void drawVehicleWheels(const Camera& camera);
+
+// Arena boost pad orbs (collected = grey) and the local-car axis arrows.
+void drawArenaBoostPads();
+void setVehicleAxesEnabled(bool enabled);
+bool vehicleAxesEnabled();

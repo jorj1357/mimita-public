@@ -48,7 +48,10 @@
 #include "audio/audio.h"
 #include "audio/music-manager.h"
 #include "gamemode/gamemode.h"
+#include "gamemode/map-config.h"
 #include "network/multiplayer-context.h"
+#include "game/resident-state-module.h"
+#include "vehicles/vehicle-render.h"
 #include "gui/gui-main.h"
 #include "game/game-state.h"
 #include "notifications/notifications.h"
@@ -519,7 +522,16 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                    {0.35f, 1.0f, 0.45f, 1.0f});
         y += lineH;
 
-        if (mpContext.hasLocalServerPosition)
+        // A seated player's on-foot actor is pinned to the car seat, while the
+        // server copy lags the client-authoritative chassis. The on-foot error
+        // is meaningless while driving, so report the car mode instead.
+        if (player.seatedVehicleId != 0)
+        {
+            snprintf(buf, sizeof(buf), "SERVER POS ERROR: n/a (client-authoritative car)");
+            uiDrawText(buf, dbgX + 8.0f, y, 0.28f, {0.35f, 1.0f, 0.45f, 1.0f});
+            y += lineH;
+        }
+        else if (mpContext.hasLocalServerPosition)
         {
             snprintf(buf, sizeof(buf), "SERVER POS ERROR: %.2fm",
                      glm::length(player.pos - mpContext.localServerPosition));

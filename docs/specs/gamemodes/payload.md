@@ -910,3 +910,11 @@ Run Section 20 end to end on the requested map, one journal, and record:
 These remain documented future goals rather than being discarded.
 
 **Specification status:** Gameplay direction established. Exact formulas, implementation ownership, JSON schemas, numerical defaults, map dimensions, and tests still require engineering refinement. This document records desired behavior and research needs; it does not claim these features already exist.
+
+## Map presentation direction — 2026-11-28
+
+> “paload map texturing”
+>
+> “i want a longer map with a lot of parts to the map”
+
+Interpretation: Payload's long-form route should receive a deliberate texture and visual pass, with distinct readable areas across multiple map sections. Texture work must preserve objective visibility, route readability, and the existing payload gameplay contract. The note does not choose an art style, specific assets, or a final round duration; those remain authored-map decisions.

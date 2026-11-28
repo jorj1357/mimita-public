@@ -8,6 +8,8 @@
 */
 
 #include "physics/physical-entity.h"
+#include "audio/audio.h"
+#include "effects/effect-part.h"
 #include "game/gl-resource-bridge-module.h"
 #include "physics/constraints/constraint-system.h"
 #include "physics/ray-utils.h"
@@ -1095,8 +1097,64 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
 
 float PhysicalEntitySystem::renderAlpha() const
 {
-    constexpr double kFixedDt = 1.0 / 60.0;
+    // advanceKinematics steps at 120 Hz (Rocket League car/ball cadence).
+    constexpr double kFixedDt = 1.0 / 120.0;
     return static_cast<float>(std::clamp(mFixedAccumulator / kFixedDt, 0.0, 1.0));
+}
+
+namespace {
+double physicalRenderNowMs()
+{
+    return (double)std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+               .count() /
+           1000.0;
+}
+} // namespace
+
+glm::mat4 physicalEntityRenderTransform(const PhysicalEntity& e)
+{
+    const glm::vec3 fromPos(e.previousTransform[3]);
+    const glm::vec3 toPos(e.transform[3]);
+    const glm::quat fromQ =
+        glm::normalize(glm::quat_cast(glm::mat3(e.previousTransform)));
+    const glm::quat toQ = glm::normalize(e.orientation);
+    float alpha = std::clamp(PhysicalEntitySystem::instance().renderAlpha(),
+                             0.0f, 1.0f);
+    glm::vec3 position = glm::mix(fromPos, toPos, alpha);
+    glm::quat rotation = glm::normalize(glm::slerp(fromQ, toQ, alpha));
+
+    if (e.renderPoseTimed)
+    {
+        const double now = physicalRenderNowMs();
+        const double span = std::max(1.0, e.renderPoseEndMs - e.renderPoseStartMs);
+        double t = (now - e.renderPoseStartMs) / span;
+        if (t < 0.0)
+            t = 0.0;
+        if (t <= 1.0)
+        {
+            alpha = static_cast<float>(t);
+            position = glm::mix(fromPos, toPos, alpha);
+            rotation = glm::normalize(glm::slerp(fromQ, toQ, alpha));
+        }
+        else
+        {
+            // Late packet: keep moving along the last known velocity for at
+            // most 250 ms instead of freezing on the last pose.
+            const double extraSeconds =
+                std::min(0.25, (now - e.renderPoseEndMs) / 1000.0);
+            position = toPos + e.velocity * static_cast<float>(extraSeconds);
+            rotation = toQ;
+        }
+    }
+
+    return glm::translate(glm::mat4(1.0f), position) *
+           glm::mat4_cast(rotation);
+}
+
+glm::vec3 physicalEntityRenderPosition(const PhysicalEntity& e)
+{
+    return glm::vec3(physicalEntityRenderTransform(e)[3]);
 }
 
 void PhysicalEntitySystem::applyPlayerPush(const Player& player, float dt)
@@ -1528,6 +1586,26 @@ void resolveEntityPairContact(PhysicalEntity& a, PhysicalEntity& b,
             PhysicalEntity& ballMutable = arenaBallA ? a : b;
             ballMutable.lastTouchedVehicleNetworkId = other.networkId;
             ballMutable.lastTouchedHeightM = ballMutable.transform[3].z;
+            // Local car-to-ball feedback. The ball is client-predicted, so this
+            // fires on the same tick as the hit. Placeholder assets:
+            // assets/sound/vehicle/ball_hit.wav.
+            const float impactSpeed =
+                glm::length(ball.velocity - ballVelocityBefore);
+            const glm::vec3 hitPos(ball.transform[3]);
+            playWorldSound("vehicle/ball_hit", hitPos,
+                           std::clamp(0.25f + impactSpeed / 25.0f, 0.25f,
+                                      1.0f),
+                           1.0f, 45.0f);
+            if (EffectPart* fx = EffectPartSystem::instance().spawnCustom(
+                    hitPos, glm::vec3(1.0f, 0.85f, 0.35f), 0.18f,
+                    "vehicle_ball_hit_fx"))
+            {
+                fx->scale = 0.35f + std::min(impactSpeed * 0.02f, 0.4f);
+                fx->halfSize = glm::vec3(fx->scale);
+                fx->alpha = 0.9f;
+                fx->endAlpha = 0.0f;
+                fx->useEndAlpha = true;
+            }
         }
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Physics, StructuredLevel::Important,
@@ -2001,21 +2079,9 @@ void drawTexturedPhysicalBox(const Camera& camera, const PhysicalEntity& e)
     const glm::mat4 view = camera.getView();
     const glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth,
                                           (float)gRenderer->sceneHeight);
-    r::uniformMatrix4fv(r::worldShader().uniform("model"),
-                        1, [&]() {
-                           static glm::mat4 renderTransform(1.0f);
-                           const float alpha = PhysicalEntitySystem::instance().renderAlpha();
-                           const glm::vec3 previousPosition(e.previousTransform[3]);
-                           const glm::vec3 currentPosition(e.transform[3]);
-                           const glm::quat previousOrientation = glm::normalize(
-                               glm::quat_cast(glm::mat3(e.previousTransform)));
-                           renderTransform = glm::translate(
-                               glm::mat4(1.0f),
-                               glm::mix(previousPosition, currentPosition, alpha)) *
-                               glm::mat4_cast(glm::normalize(glm::slerp(
-                                   previousOrientation, e.orientation, alpha)));
-                           return &renderTransform[0][0];
-                       }());
+    const glm::mat4 renderTransform = physicalEntityRenderTransform(e);
+    r::uniformMatrix4fv(r::worldShader().uniform("model"), 1,
+                        &renderTransform[0][0]);
     r::uniformMatrix4fv(r::worldShader().uniform("view"), 1, &view[0][0]);
     r::uniformMatrix4fv(r::worldShader().uniform("projection"), 1, &proj[0][0]);
     setUniforms(r::worldShader(), camera.pos);
@@ -2104,16 +2170,8 @@ void drawTexturedPhysicalSphere(const Camera& camera, const PhysicalEntity& e)
         gPhysicalSphereVertexCount = static_cast<std::int32_t>(verts.size());
     }
 
-    const float alpha = PhysicalEntitySystem::instance().renderAlpha();
-    const glm::vec3 previousPosition(e.previousTransform[3]);
-    const glm::vec3 currentPosition(e.transform[3]);
-    const glm::quat previousOrientation = glm::normalize(
-        glm::quat_cast(glm::mat3(e.previousTransform)));
     const glm::mat4 model =
-        glm::translate(glm::mat4(1.0f),
-                       glm::mix(previousPosition, currentPosition, alpha)) *
-        glm::mat4_cast(glm::normalize(glm::slerp(
-            previousOrientation, e.orientation, alpha))) *
+        physicalEntityRenderTransform(e) *
         glm::scale(glm::mat4(1.0f), glm::vec3(std::max(e.halfExtents.x, 0.001f)));
     const glm::mat4 view = camera.getView();
     const glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth,
@@ -2209,15 +2267,7 @@ bool drawPropModel(const PhysicalEntity& e, const Camera& camera)
     const glm::vec3 scale = targetExtent / nativeExtent;
     const glm::vec3 nativeCenter = (cached.boundsMin + cached.boundsMax) * 0.5f;
 
-    const float alpha = PhysicalEntitySystem::instance().renderAlpha();
-    const glm::vec3 previousPosition(e.previousTransform[3]);
-    const glm::vec3 currentPosition(e.transform[3]);
-    const glm::quat previousOrientation =
-        glm::normalize(glm::quat_cast(glm::mat3(e.previousTransform)));
-    const glm::mat4 interp = glm::translate(
-        glm::mat4(1.0f), glm::mix(previousPosition, currentPosition, alpha)) *
-        glm::mat4_cast(glm::normalize(glm::slerp(
-            previousOrientation, e.orientation, alpha)));
+    const glm::mat4 interp = physicalEntityRenderTransform(e);
     const glm::mat4 model = interp * glm::scale(glm::mat4(1.0f), scale) *
         glm::translate(glm::mat4(1.0f), -nativeCenter);
 
@@ -2264,6 +2314,39 @@ void drawPhysicalEntities(const Camera& camera)
     {
         if (!e.renderEnabled)
             continue;
+        // Ghost ball: once the authoritative ball stream stops, the render
+        // extrapolates for 250 ms and then holds. Surface that state so a hit
+        // on a stale ball is visibly a ghost, not a silent desync.
+        if (e.persistenceId == "arena-ball" && e.lastNetworkPoseMs > 0.0)
+        {
+            const double now = physicalRenderNowMs();
+            static bool sGhostBallActive = false;
+            static double sLastGhostFxMs = 0.0;
+            const bool stale = now - e.lastNetworkPoseMs > 250.0;
+            if (stale && !sGhostBallActive)
+            {
+                sGhostBallActive = true;
+                playWorldSound("vehicle/ghost", glm::vec3(e.transform[3]),
+                               0.8f, 1.0f, 60.0f);
+            }
+            else if (!stale)
+                sGhostBallActive = false;
+            if (stale && now - sLastGhostFxMs > 500.0)
+            {
+                sLastGhostFxMs = now;
+                if (EffectPart* fx = EffectPartSystem::instance().spawnCustom(
+                        glm::vec3(e.transform[3]),
+                        glm::vec3(0.65f, 0.35f, 1.0f), 0.5f,
+                        "vehicle_ghost_ball_fx"))
+                {
+                    fx->scale = std::max(e.halfExtents.x * 3.0f, 1.0f);
+                    fx->halfSize = glm::vec3(fx->scale * 0.5f);
+                    fx->alpha = 0.35f;
+                    fx->endAlpha = 0.0f;
+                    fx->useEndAlpha = true;
+                }
+            }
+        }
         if (e.renderModel && drawPropModel(e, camera))
             continue;
         if (e.shape == PhysicalEntityShape::Sphere)

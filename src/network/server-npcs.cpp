@@ -2345,6 +2345,23 @@ void simulateSharedNpcs(SOCKET sock,
         ServerPlayer* nearestPlayer = nullptr;
         Npc* nearestNpc = nullptr;
 
+        // Shared squad focus is the team's aim target. Every NPC on an elite
+        // squad engages the same hostile while it is valid. The focus is
+        // resolved by TeamBrain from reports (and, in non-objective modes, the
+        // nearest living enemy under fair rotation), so this does not grant
+        // through-wall fire: each NPC still needs its own legal line of sight
+        // to shoot. A dead or invalid focus falls through to normal selection
+        // for this tick and is replaced by the TeamBrain update next tick.
+        uint32_t focusTargetId = 0;
+        if (n.behavior.active && n.behavior.focusEnabled &&
+            (myTeam == 0 || myTeam == 1)) {
+            const TeamBrain& focusBrain = myTeam == 0
+                ? serverGamemodeState().teamBrainA
+                : serverGamemodeState().teamBrainB;
+            const SquadState& squad = focusBrain.squad();
+            if (squad.active)
+                focusTargetId = squad.focusActorId;
+        }
         const bool staggerNpcThinking = true;
         bool cachedTargetValid = false;
         if (n.hasCachedServerTarget && n.serverTargetId != 0) {
@@ -2368,6 +2385,36 @@ void simulateSharedNpcs(SOCKET sock,
             (n.hasCachedServerTarget && !cachedTargetValid);
         const bool targetWasInvalidated =
             n.hasCachedServerTarget && !cachedTargetValid;
+
+        // Resolve the shared focus only after this actor's thinking cadence is
+        // known.
+        bool focusApplied = false;
+        if (thinkingDue && focusTargetId != 0) {
+            auto focusPlayerIt = players.find(focusTargetId);
+            if (focusPlayerIt != players.end() &&
+                !focusPlayerIt->second.dead && !focusPlayerIt->second.downed &&
+                !focusPlayerIt->second.connectionStale &&
+                npcTargetingIsHostile(targeting, myTeam,
+                                      playerTeamOf(focusPlayerIt->second))) {
+                nearestPlayer = &focusPlayerIt->second;
+                nearestNpc = nullptr;
+                focusApplied = true;
+                targetReason = "squad_focus";
+            } else {
+                for (Npc& other : npcSystem.all()) {
+                    if (other.id != focusTargetId) continue;
+                    if (other.body.dead || other.body.currentHp <= 0) break;
+                    if (!npcTargetingIsHostile(targeting, myTeam,
+                                               npcTeamOf(other))) break;
+                    nearestNpc = &other;
+                    nearestPlayer = nullptr;
+                    focusApplied = true;
+                    targetReason = "squad_focus";
+                    break;
+                }
+            }
+        }
+
         const auto targetSelectionStart = std::chrono::steady_clock::now();
         if (thinkingDue) {
             ++targetScans;
@@ -2399,7 +2446,11 @@ void simulateSharedNpcs(SOCKET sock,
 
         // Off-phase ticks reuse the resolved snapshot below. Target validity
         // is checked above, so death/disconnect still causes immediate search.
-        if (thinkingDue && playersOnly)
+        if (thinkingDue && focusApplied)
+        {
+            // The shared squad focus is authoritative for this thinking tick.
+        }
+        else if (thinkingDue && playersOnly)
         {
             // Player-priority mode: prefer the nearest live hostile human, but
             // still respect teams and fall back to hostile NPCs when no enemy
@@ -2651,6 +2702,16 @@ void simulateSharedNpcs(SOCKET sock,
                 n.cachedServerTargetTeam = npcTeamOf(*nearestNpc);
                 n.cachedServerTargetName = nearestNpc->body.username;
             }
+        }
+        // Record that this team is still holding the target. The TeamBrain uses
+        // the age of this stamp to rotate attention toward an enemy nobody has
+        // engaged recently; the rule is identical for human and NPC enemies.
+        if (n.serverTargetId != 0 && (myTeam == 0 || myTeam == 1) &&
+            (nearestPlayer || nearestNpc || cachedTargetValid)) {
+            TeamBrain& engagedBrain = myTeam == 0
+                ? serverGamemodeState().teamBrainA
+                : serverGamemodeState().teamBrainB;
+            engagedBrain.state().lastTargetedTick[n.serverTargetId] = tick;
         }
         if (n.serverTargetId != prevTarget)
         {
@@ -2913,6 +2974,18 @@ void simulateSharedNpcs(SOCKET sock,
                     ServerNpc& victim = victimIt->second;
                     victim.health = std::max(0, victim.health - damage);
                     victim.knockbackImpulse += knockback;
+                    // Retaliation is generic: whoever damages this team becomes
+                    // that team's next stale-priority focus candidate. This is
+                    // identical for NPC and human attackers.
+                    {
+                        const int victimTeam = victim.matchTeam;
+                        if (victimTeam == 0 || victimTeam == 1) {
+                            TeamBrain& victimBrain = victimTeam == 0
+                                ? serverGamemodeState().teamBrainA
+                                : serverGamemodeState().teamBrainB;
+                            victimBrain.state().lastTargetedTick[n.id] = 0u;
+                        }
+                    }
                     damageNpc->body.currentHp = victim.health;
                     damageNpc->body.killedByWeapon = wId;
                     damageNpc->body.lastDamagedBy = n.body.username;

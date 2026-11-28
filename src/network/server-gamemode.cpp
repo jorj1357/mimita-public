@@ -7971,6 +7971,7 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         tun.spreadRadiusMeters = npc.behavior.spreadRadiusMeters;
         tun.maxAttackersPerTarget = npc.behavior.maxAttackersPerTarget;
         tun.rallyDistanceMeters = npc.behavior.rallyDistanceMeters;
+        tun.focusReacquireSeconds = npc.behavior.focusReacquireSeconds;
         tun.approachStyle = npc.behavior.approachStyle;
         tun.approachDirections = npc.behavior.approachDirections;
         tun.approachReassignTicks = npc.behavior.approachReassignTicks;
@@ -8004,13 +8005,155 @@ void serverTeamBrainTick(ServerGamemodeState& d,
     float focusConfA = 0.0f, focusConfB = 0.0f;
     // Focus the enemy nearest the squad's own centroid, not whichever report
     // happened to be inserted first. This is what makes a squad converge as a
-    // unit instead of splitting toward unrelated enemies.
-    bool hasFocusA = d.teamBrainA.selectFocus(
-        centroidA, focusA, focusActorA, focusConfA);
-    bool hasFocusB = d.teamBrainB.selectFocus(
-        centroidB, focusB, focusActorB, focusConfB);
-    // TDM has no objective round. If no recent enemy report exists yet, push
-    // the whole team toward the enemy spawn instead of loitering at home.
+    // unit instead of splitting toward unrelated enemies. A short hold below
+    // keeps the chosen actor stable across noisy reports.
+    bool hasFocusA = false;
+    bool hasFocusB = false;
+
+    // A report may outlive the reported actor for a tick. Validate the focus
+    // against the living set before the squad or the aim layer use it.
+    auto actorIsLivingEnemy = [&](uint32_t id, int team, glm::vec3& out) {
+        if (id == 0) return false;
+        const int candidateTeam = objectiveActorTeam(d, id);
+        if (candidateTeam < 0 || candidateTeam == team) return false;
+        auto posIt = livingPos.find(id);
+        if (posIt == livingPos.end()) return false;
+        out = posIt->second;
+        return true;
+    };
+    // A team with a real objective assignment (attack/defend/carry/retake)
+    // keeps its objective behavior when there is no report. Only teams with no
+    // objective commitment, such as Team Deathmatch, use the open-hunt focus.
+    auto hasObjectiveCommitment = [&](TeamBrain& brain, int team) {
+        for (const auto& entry : living) {
+            if (entry.second != team) continue;
+            switch (brain.assignmentFor(entry.first)) {
+                case TeamAssignment::AttackSite:
+                case TeamAssignment::CarryBomb:
+                case TeamAssignment::DefendSite:
+                case TeamAssignment::Rotate:
+                case TeamAssignment::Retake:
+                case TeamAssignment::Defuse:
+                    return true;
+                default:
+                    break;
+            }
+        }
+        return false;
+    };
+    // Fair open-hunt focus. Every living enemy is a candidate. The nearest one
+    // is the normal choice. If any enemy within a bounded radius has been
+    // ignored for kUnengagedTicks, the nearest such enemy becomes the focus.
+    // This applies equally to humans and NPCs, so the human can always re-enter
+    // the target set without a human-specific priority flag.
+    auto chooseOpenHuntFocus = [&](TeamBrain& brain, int team,
+                                   const glm::vec3& centroid,
+                                   glm::vec3& outPos, uint32_t& outId) {
+        constexpr uint32_t kUnengagedTicks = 480;  // 8 s at 60 Hz
+        constexpr float kRotateMaxDistance = 150.0f;
+        const float rotateMaxD2 = kRotateMaxDistance * kRotateMaxDistance;
+        bool haveNearest = false;
+        float nearestD2 = 1.0e30f;
+        glm::vec3 nearestPos(0.0f);
+        uint32_t nearestId = 0;
+        bool haveStale = false;
+        float staleD2 = 1.0e30f;
+        glm::vec3 stalePos(0.0f);
+        uint32_t staleId = 0;
+        for (const auto& entry : living) {
+            if (entry.second == team) continue;
+            auto posIt = livingPos.find(entry.first);
+            if (posIt == livingPos.end()) continue;
+            const glm::vec2 delta(posIt->second.x - centroid.x,
+                                  posIt->second.y - centroid.y);
+            const float d2 = glm::dot(delta, delta);
+            if (d2 < nearestD2) {
+                nearestD2 = d2;
+                nearestId = entry.first;
+                nearestPos = posIt->second;
+                haveNearest = true;
+            }
+            auto stampIt = brain.state().lastTargetedTick.find(entry.first);
+            const uint32_t last = stampIt == brain.state().lastTargetedTick.end()
+                ? 0u : stampIt->second;
+            const uint32_t age = last == 0u ? 0xFFFFFFFFu
+                : (tick >= last ? tick - last : 0u);
+            if (age >= kUnengagedTicks && d2 <= rotateMaxD2 && d2 < staleD2) {
+                staleD2 = d2;
+                staleId = entry.first;
+                stalePos = posIt->second;
+                haveStale = true;
+            }
+        }
+        if (haveStale) {
+            outId = staleId;
+            outPos = stalePos;
+            return true;
+        }
+        if (haveNearest) {
+            outId = nearestId;
+            outPos = nearestPos;
+            return true;
+        }
+        return false;
+    };
+
+    // Focus hold. Reports can change every tick as different squad members see
+    // different enemies; without a hold the whole squad retargets constantly and
+    // never actually fights one enemy together. Keep the current actor until the
+    // hold expires, then re-evaluate; a dead or invalid actor releases it early.
+    auto holdTicksFor = [](const SquadTuning& tuning) {
+        const long ticks = std::lround(
+            std::max(0.0f, tuning.focusReacquireSeconds) * 60.0f);
+        return (uint32_t)std::clamp<long>(ticks, 1, 600);
+    };
+    const uint32_t heldActorA = d.teamBrainA.squad().focusActorId;
+    const uint32_t heldActorB = d.teamBrainB.squad().focusActorId;
+    const bool holdA = heldActorA != 0 &&
+        tick < d.teamBrainA.state().focusHoldUntilTick &&
+        actorIsLivingEnemy(heldActorA, 0, focusA);
+    const bool holdB = heldActorB != 0 &&
+        tick < d.teamBrainB.state().focusHoldUntilTick &&
+        actorIsLivingEnemy(heldActorB, 1, focusB);
+    if (holdA) {
+        focusActorA = heldActorA;
+        hasFocusA = true;
+    } else {
+        hasFocusA = d.teamBrainA.selectFocus(
+            centroidA, focusA, focusActorA, focusConfA);
+        if (hasFocusA)
+            d.teamBrainA.state().focusHoldUntilTick = tick + holdTicksFor(tuningA);
+    }
+    if (holdB) {
+        focusActorB = heldActorB;
+        hasFocusB = true;
+    } else {
+        hasFocusB = d.teamBrainB.selectFocus(
+            centroidB, focusB, focusActorB, focusConfB);
+        if (hasFocusB)
+            d.teamBrainB.state().focusHoldUntilTick = tick + holdTicksFor(tuningB);
+    }
+
+    if (hasFocusA && !actorIsLivingEnemy(focusActorA, 0, focusA))
+        hasFocusA = false;
+    if (hasFocusB && !actorIsLivingEnemy(focusActorB, 1, focusB))
+        hasFocusB = false;
+    if (!hasFocusA && tuningA.enabled && !hasObjectiveCommitment(d.teamBrainA, 0))
+        hasFocusA = chooseOpenHuntFocus(
+            d.teamBrainA, 0, centroidA, focusA, focusActorA);
+    if (!hasFocusB && tuningB.enabled && !hasObjectiveCommitment(d.teamBrainB, 1))
+        hasFocusB = chooseOpenHuntFocus(
+            d.teamBrainB, 1, centroidB, focusB, focusActorB);
+    // An open-hunt choice also gets the hold, so the squad commits to the
+    // rotated target instead of re-picking it every tick.
+    if (hasFocusA && focusActorA != 0 &&
+        d.teamBrainA.state().focusHoldUntilTick < tick)
+        d.teamBrainA.state().focusHoldUntilTick = tick + holdTicksFor(tuningA);
+    if (hasFocusB && focusActorB != 0 &&
+        d.teamBrainB.state().focusHoldUntilTick < tick)
+        d.teamBrainB.state().focusHoldUntilTick = tick + holdTicksFor(tuningB);
+    // Objective modes keep their existing no-report fallback: move toward the
+    // enemy spawn/objective instead of idling.
     if (!hasFocusA && !membersB.empty()) {
         focusA = gamemodeSpawnPoint(d, 1);
         hasFocusA = true;
@@ -8073,17 +8216,23 @@ void serverTeamBrainTick(ServerGamemodeState& d,
                                {"focus_actor", brain.state().squadApproachFocusActor},
                                {"assignments", std::move(counts)}});
         }
+        const bool focusActorChanged =
+            sq.focusActorId != brain.state().reportedFocusActor;
         const bool focusMoved = !brain.state().hasReportedFocus ||
+            focusActorChanged ||
             glm::length(sq.focusPos - brain.state().reportedFocusPos) > 5.0f;
         if (focusMoved) {
             brain.state().hasReportedFocus = true;
             brain.state().reportedFocusPos = sq.focusPos;
+            brain.state().reportedFocusActor = sq.focusActorId;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::NpcMovement, StructuredLevel::Important,
                 "npc.focus-changed", std::to_string(brain.team()), "focus", tick,
                 nlohmann::json{{"team", brain.team()},
+                               {"focus_actor", sq.focusActorId},
                                {"focus", {sq.focusPos.x, sq.focusPos.y, sq.focusPos.z}},
-                               {"members", sq.memberCount}});
+                               {"members", sq.memberCount},
+                               {"mode", sq.mode}});
         }
     };
     reportSquad(d.teamBrainA);

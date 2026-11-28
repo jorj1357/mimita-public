@@ -119,7 +119,10 @@ void applySkillTier(const std::string& tierId, BehaviorProfileDefinition& out)
         out.cohesion = 0.5f;
         out.spreadRadiusMeters = 5.0f;
         out.approachStyle = "arc";
-        out.maxAttackersPerTarget = 3;
+        // An elite squad commits its whole living group to the shared focus.
+        // The cap stays permissive rather than slicing the team into a small
+        // attacker subset; the ring slots still spread them around the target.
+        out.maxAttackersPerTarget = 16;
         out.rallyDistanceMeters = 7.0f;
         out.focusReacquireSeconds = 1.5f;
         out.slotStickiness = 0.95f;

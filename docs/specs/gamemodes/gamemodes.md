@@ -643,3 +643,19 @@ Full ideal flow of behavior
   - Then we immediately repeat from the intermission step above, where it starts at 15 seconds.   
 - This repeats indefinitely  
   - The entire flow should repeat indefinitely. I should be able to
+
+## MiMITA Combat and rotating arcade direction — 2026-11-28
+
+> “mimita combat should have like an arcade mode and compeitiv mode”
+>
+> “each round a new gammeode”
+>
+> “ALL ARCOADE MODES NEED INSTANT RESPAWN AND NO DEATH”
+>
+> “competitive arcade is arcade but u die and u are spectating thewhole rounds”
+
+Interpretation: MiMITA Combat is the broader PvP and objective-mode package, with team sizes from 1v1 through 5v5, community-authored maps and weapons, vehicles, and destructible-world play as product directions. Its rotating Arcade playlist can select from TDM, FFA, Fun Counter Strike, murder mystery, Juggernaut, vehicle derby, conflict simulation/objectives, and Payload.
+
+Casual Arcade uses immediate respawn and no persistent elimination. The separate Competitive playlist reuses the rotating mode sequence but applies the selected mode's elimination and spectating rules. Mode-specific objectives remain authoritative: for example, Counter Strike is won by planting/defusing or the round timeout rule, not by kill count. A packaged playlist must use the shared round, objective, spawn, scoring, and HUD owners rather than duplicating them.
+
+The listed round order, target counts, durations, intermission, conflict-sim vehicle roster, and 10,000-point goal are ideas from the user's note, not approved balance constants. Keep them as candidate defaults until playtesting establishes the intended pacing. See [the dated TODO](../../operations/todo-sort-these/2026-11-28-game-design-todo.md) for the full proposed sequence and unresolved questions.

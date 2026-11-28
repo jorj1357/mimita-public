@@ -8,11 +8,17 @@
 
 #include <glm/glm.hpp>
 
+#include "debug/debug-visuals.h"
 #include "debug/structured-log.h"
+#include "game/resident-state-module.h"
+#include "gamemode/map-config.h"
 #include "gui/ui-system.h"
+#include "network/multiplayer-context.h"
 #include "physics/physical-entity.h"
+#include "terminal/terminal-state.h"
 #include "vehicles/vehicle-config.h"
 #include "vehicles/vehicle-profile.h"
+#include "vehicles/vehicle-render.h"
 #include "vehicles/vehicle-system.h"
 
 namespace {
@@ -177,12 +183,39 @@ void drawVehicleHud()
     const VehicleSpec* spec =
         VehicleConfigRegistry::instance().find(state->templateId);
     auto profile = vehicles.profileFor(*state);
-    const int speedKmh = (int)(state->speed * 3.6f + 0.5f);
+    const int speedKmh =
+        (int)(glm::length(state->originVelocity) * 3.6f + 0.5f);
 
     if (vehicleArenaHudActive())
     {
         drawArenaVehicleHud(*state, spec, profile ? &*profile : nullptr,
                             speedKmh);
+        if (vehicleAxesEnabled())
+            uiDrawText("AXES  F=red  B=blue  R=green  L=yellow  U=white  D=magenta",
+                       16.0f, 16.0f, 0.26f, {0.9f, 0.9f, 0.95f, 0.9f});
+        const auto* mp = ::mimita::game::mpContextPtr();
+        const MapObjectiveConfig& padMap =
+            MapConfigRegistry::instance().current();
+        for (size_t i = 0; mp && mp->active &&
+                           i < padMap.boostPads.size() && i < 64;
+             ++i)
+        {
+            const float remaining = mp->boostPadRemainingSeconds[i];
+            if (remaining <= 0.01f)
+                continue;
+            const BoostPadConfig& pad = padMap.boostPads[i];
+            float sx = 0.0f;
+            float sy = 0.0f;
+            if (!DebugVis::projectToScreen(
+                    THE_CAMERA,
+                    pad.position + glm::vec3(0.0f, 0.0f, 2.4f), sx, sy))
+                continue;
+            char timer[16];
+            std::snprintf(timer, sizeof(timer), "%.2f", remaining);
+            const float w = uiMeasureText(timer, 0.34f);
+            uiDrawText(timer, sx - w * 0.5f, sy, 0.34f,
+                       {0.85f, 0.85f, 0.88f, 1.0f});
+        }
         return;
     }
 

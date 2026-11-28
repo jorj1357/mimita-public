@@ -302,3 +302,50 @@ Independent sweeper review 517 found new contrary evidence and wants owner confi
 Evidence: on the identical collision source now published as gen 757 (server-npcs.cpp 2e37709f8e52..., physics-collision-glb-main.cpp 0abedb32ac21..., sweep-slide 6b5fd3cec1d3...), run logs/2026-11-27/20261127_011757 (gen 748, map atdm, 51,879-triangle static world) has 28 npc.below-map.respawned across 8 NPCs, z down to 26.5 vs collisionMesh.boundsMin.z 57.1, respawn to z≈238. Small dust2 runs on gen 753/755 (5477 tris) do not reproduce this. funworld3 has a larger mesh (issue evidence 31270 tris) and payload disables world_streaming, so it uses the same large static path.
 
 Question: do you agree the next check should be one isolated run pinned to gen 757 using existing launch mode 57 ("Payload - funworld3 NPC behavior", --mode payload --gamemode payload --npcs 19, map funworld3) via `dev-loop.py --start-test-run --test-profile npc-navigation --test-launch-mode 57 --test-game-generation 757`, then attach run identity + npc.spawn.resolved/npc.collision-world.summary/npc.trace and classify any below-map as gather/broadphase miss vs unauthored floor at the descent x,y? If you prefer a different owner or map, reply with the exact command and acceptance so the review stops repeating the recommendation.
+
+## Scheduled independent review
+
+### 2026-11-28T09:13:07.786Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-b09ff351cfef after 896 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (unverified)
+
+### 2026-11-28T09:19:22.515Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (issue-review-sweeper, wake-b09ff351cfef, 2026-11-28). Read-only: no source edit, build, run, close, or fix claim. Prior review text is preserved.
+
+OBSERVED FACTS
+- Readiness: ready=true, score 8/8, missing=[], state=in_review; one open task payload-arcade-npc-grounding (owner payload-arcade-collision-fix). `proof list --issue issue-1d1b9c62ac08` returns []; there is no accepted runtime proof.
+- Published generation 819: build/game/generation-819/game-g819.dll, code hash 5f942a3617323fe963306705521e47ed8b3ef3faa03b531d3954645a5def652f, revision 4e0a2ba..., published 2026-11-28T09:10:28.619Z. Its only source change versus the previous revision was src/vehicles/vehicle-hud.cpp. Build snapshot .dev/build-snapshots/game-dll-20261128T090217845310Z-a0bac6/source and the current worktree hash byte-identically for the collision inputs: server-npcs.cpp 2e37709f8e52..., physics-collision-glb-main.cpp 0abedb32ac21..., physics-collision-glb-sweep-slide.cpp 6b5fd3cec1d3..., server-infinite-collision.cpp 7088255dd484.... The adjacent gen-809 snapshot (game-dll-20261128T063600310452Z-db408b) has the same four hashes, so the candidate collision code is compiled unchanged into the current generation family.
+- NEW payload-gamemode evidence (past reviews reported no such run existed): logs/2026-11-28/20261128_062046 is test_run_kind=parallel_agent_test, profile tdm-validation, launch_mode 15, mode/gamemode payload (config/gamemodes/payload.json features.arcade_collision=true, world_streaming.enabled=false), map mimita-pipes (not funworld3/payload1), requested_agent rocket-league-crashfix. run.json build_identity.game_generation=808; npc.phase-window.module_generation=808 (500 events). game.hotness.summary.generation is 1/809 and is not a valid identity. run.json game_dll_sha256 is empty and source_validation shows daemon_reported_stale=true / build_source_changed_during_build=true, so the gen-808 DLL hash itself is not pinned; module_generation=808 plus the unchanged collision hashes above tie the simulated collision code to the current source.
+- Same run server-01/events.jsonl (06:32:02Z-06:40:36Z, t=675-1187s): 168 npc.spawn.resolved, then 87 npc.below-map.respawned across 21 actor ids (100000-100022). The guard fires at src/network/server-npcs.cpp:2971-3002 when body.pos.z < collisionMesh.boundsMin.z - 2.0; map_floor_z=606.29 and the "from" z is 583.4-600.0, i.e. up to ~23 m below the entire collision mesh, while spawn/respawn targets are z~845-903.
+- Representative sustained fall, NPC-100022: grounded feet z 840.6 (candidate_count=2) at t=677.17 -> 830.3 (0) 678.54 -> 801.6 (0) 678.99 -> 755.4 (0) 679.50 -> 691.8 (0) 680.01 -> 610.8 (0) 680.49, then npc.below-map.respawned at t=680.56 from z=598.4. Velocity reaches -175 m/s; sweep_hits=0 and world_contact=false at each step. Across the run: 6802 npc.collision.fall-sample events, candidate_count=0 in 3441 (50.6%), world_contact=false in 5747 (84.5%), 23 distinct fall actors. The event emits only when !groundedThisFrame && vel.z<-5 (src/physics/movement/physics-collision-glb-main.cpp:615-646), so it cannot by itself prove grounding.
+- Other new, weaker evidence: logs/2026-11-28/20261128_054617_01 (slaughterhouse1, vehicle_freeplay, gen null) 14 below-map; logs/2026-11-27/20261127_231557 (slaughterhouse1 bloodtest) 6 below-map. logs/2026-11-28/20261128_063715 (mode 15 payload, gen 809, mimita-pipes) is invalid: exit_code 1, "test client 13080 did not connect", 0 npc.spawn.resolved in 970 lines.
+- The exact issue scenario is STILL unrun with a journal: the only funworld3 run.json records (logs/2026-11-27/20261127_155327, _081812, _155356) have no events.jsonl (only run.json; 155356's mode is "Vehicle Arena - Rocket League Free Play", not payload). Mode 57 "Payload - funworld3 NPC behavior" (devscripts/dev-launch-modes.json: map funworld3, --mode payload --gamemode payload --npcs 19) remains the exact unrun check.
+
+INFERENCE / UNCERTAINTY
+- This is the first retained evidence on the payload gamemode (arcade_collision=true) that fresh NPCs persistently leave the world: 87 below-map respawns over ~8.5 min across 21 actors, with a clean ~2 s free-fall from z~840 to z~598 at candidate_count=0 throughout. That reproduces the user's "NPCs fall through the ground in payload arcade" class on the current collision source, on map mimita-pipes.
+- First divergence is better localized: the world-triangle query returns zero initial candidates (trace.initialCandidates) for the whole descent even though the same actors had candidate_count>0/grounded on a surface moments earlier, and other samples in the run reach candidate_count=53. That favors a per-capsule broadphase/candidate-gather coverage gap over a globally empty mesh.
+- Residual ambiguity: the descent x,y also moved (e.g. ~x58,y-80), so the journal cannot exclude the NPC stepping off a pipe edge into a genuinely unauthored gap. Classifying gather-miss vs unauthored-floor needs a triangle/bounds sample at the descent x,y.
+- Identity caveat: the gen-808 run's DLL SHA is not recorded, so this is strong-but-not-airtight evidence for generation 819 specifically; it is solid that the compiled collision code is byte-identical to the current worktree.
+- Payload gamemode (not funworld3) is now tested; the issue's stated map remains unrun. Transfer of the result to funworld3's larger world is unknown.
+
+CONTRARY EVIDENCE
+- Not all NPCs fall: npc.trace in the same run has 1183 grounded and 1393 world_contact nested entries (inside_solid=1), so grounding works for many actors/moments; failures are specific actors/edges.
+- The fall could be an off-edge walk into pipe gaps rather than a world-query miss; fall-sample records aggregate candidate counts, not the triangles at the descent x,y.
+- No funworld3 journal exists; mode 57 has never been run with retention. 063715 (gen 809 payload) is invalid (client connect failure), so gen 809 has no valid payload NPC journal either.
+- There is still no proof record for this issue; nothing proves the candidate fix and nothing proves it fails on funworld3.
+
+NEXT DISCRIMINATING CHECK (pinned)
+1. Root dev-loop isolated run of the already-defined exact scenario: `python devscripts/dev-loop.py --start-test-run --test-profile npc-navigation --test-launch-mode 57 --test-game-generation 819` (Payload - funworld3 NPC behavior; --npcs 19). Record run_id, EXE sha256, run.json build_identity.game_generation and game_dll_sha256, journal path.
+2. In that exact journal require: run.json game_generation=819 and game_dll_sha256=5f942a36...; npc.phase-window.module_generation=819 (NOT game.hotness.summary.generation); npc.spawn.resolved after start; positive npc.trace grounded/world_contact.
+3. Pass only if fresh-spawn NPCs stay on the authored funworld3 floor with grounded/world_contact true and no sustained negative-z series or below-map respawn. Fail if any fresh NPC's z descends monotonically below collisionMesh.boundsMin.z or npc.below-map.respawned fires.
+4. Cheap discriminator on the mimita-pipes payload run (no new test harness): for a falling actor's descent x,y (e.g. NPC-100022 around x58,y-80, z840->598) query/log the collisionMesh triangle and bounds presence in that vertical column. If triangles exist there while candidate_count=0 -> gather/broadphase miss at the physics-collision-glb-main.cpp gatherGLBTriangles/initialCandidates stage; if none -> off-edge into an unauthored pipe gap. Do not attribute to spawn validation: npc.spawn.resolved safe z was 845 with raw_inside_solid=false and safe_inside_solid=false.
+
+CONFIDENCE
+- Facts (readiness, no proof record, gen-819 hashes/snapshot equality, run identities, 87 below-map across 21 actors, 6802 fall-samples, descent series): high.
+- Payload-gamemode fall reproduced on the current collision source (mimita-pipes, gen 808): medium-high (identity caveat on the DLL SHA).
+- Exact issue scenario funworld3/payload: still unproven. Gather/broadphase versus unauthored floor: medium, cannot separate without a triangle-at-x,y sample.

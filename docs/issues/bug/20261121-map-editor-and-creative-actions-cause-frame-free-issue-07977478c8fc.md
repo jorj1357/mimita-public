@@ -58,3 +58,29 @@ Live evidence from run 20261127_230430, client-02 journal logs/2026-11-27/202611
 ### 2026-11-27T23:27:01.157Z — map-editor-freeze-payload-crash
 
 Owner: map-editor-freeze-payload-crash
+
+## Agent suggestion
+
+### 2026-11-28T03:02:02.540Z — map-editor-freeze-payload-crash
+
+Build attempt game-dll-20261127T232810391707Z-7e8324 failed during compile only: handleTextKey used .begin/.end on four UITextInputState[3] arrays. Compile 18.732s, 1 TU failed, 645 skipped; no DLL publish, active generation remains 805. Correcting the array scan before a new build request. Postmortem resource measurements: peak host CPU 92.48%, minimum available memory 3826.6 MB. Shared loop had existing server/client run 20261127_231557 in Bloodtest on slaughterhouse1 during build. This is build-host evidence, not evidence of the Payload freeze cause.
+
+## Review (evidence-gap)
+
+### 2026-11-28T03:02:43.558Z — daily-review-20261128
+
+Reviewer: daily-review-20261128
+
+2026-11-28 daily review: DIRECT build evidence: dev-loop status at 2026-11-28T03:00Z reported game-build failed, generation 805, detail compile failed: 1 file(s) in 18.732s; attempt game-dll-20261127T232810391707Z-7e8324 (started 2026-11-27T23:28:10Z, finished 23:28:37Z, 1 compiled/645 skipped) failed compiling src/mapeditor/map-editor.cpp. Compiler lines 3029-3038 call .begin()/.end() on mPropertyPosition, mPropertySize, mPropertyRotation, and mPropertyScale, each declared UITextInputState[3]; diagnostic says these are non-class array types. This identifies a compile failure in the current shared editor input and prevents producing a newer DLL from this attempt. It is not evidence about the user's freeze: no editor operation timings or live editor behavior were captured here. Existing run 20261127_231557 and prior gen-805 artifact remain distinct from the failed candidate. Inference: active editor changes or integration caused the failure; owner confirmation pending. Do not conflate this build blocker with runtime frame-time acceptance.
+
+## Agent suggestion
+
+### 2026-11-28T03:03:44.239Z — map-editor-freeze-payload-crash
+
+Second approved attempt game-dll-20261128T030246290451Z-e9f4a7 failed during changed-source preflight before compile/link/publish: map-editor.cpp updateInput redeclared const bool right/left, conflicting with existing GLFW int states at lines 3672/3671. Resource postmortem: duration 28.219s, peak CPU 87.26%, minimum available memory 1034.9 MB; runtime alignment unavailable, so exact live workload/mode is unknown. This is a source naming error, not evidence of the reported Payload crash/freeze. Renaming only telemetry state locals before the next request.
+
+## Agent suggestion
+
+### 2026-11-28T03:06:58.147Z — map-editor-freeze-payload-crash
+
+Approved request build-request-cd65d608cc89 published successfully as generation 808. Attempt game-dll-20261128T030413043291Z-43ce44: 33.371s total, compile 23.775s, link 4.648s, publish 0.277s, compiled 2/skipped 645, no invalidations. Only changed source was src/mapeditor/map-editor.cpp; current.json reports status=ok, generation=808, changed_sources=[src/mapeditor/map-editor.cpp]. Postmortem largest measured concern is host memory pressure: minimum available 282.2 MiB (98% used), CPU peak 83.33%; no dominant build phase. Resource evidence is linked to issue-ca5eb16d9e21. No current game process or fresh Payload runtime proof was available after publish; do not infer this build fixed the reported freeze/crash.

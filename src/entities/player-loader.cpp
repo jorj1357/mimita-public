@@ -1972,6 +1972,26 @@ static void modelLoadThreadFunc(PendingPlayerModel* d)
     tinygltf::Model model;
     std::string err, warn;
 
+    std::error_code pathEc;
+    if (d->resolvedPath.empty() || !std::filesystem::exists(d->resolvedPath, pathEc)) {
+        d->error = d->resolvedPath.empty() ? "resolved_path_empty"
+                                           : "resolved_path_missing";
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "player.model.load.invalid-path", d->path,
+            "refused async player model load: resolved model path is unusable", 0,
+            {{"condition", d->error},
+             {"expected", "existing .glb file"},
+             {"actual", d->resolvedPath},
+             {"owner", "modelLoadThreadFunc"},
+             {"suggestion",
+              "resolveAssetPath did not yield an existing .glb; check the caller "
+              "model path and asset root, then fall back to the default player model"}},
+            __FILE__, __LINE__, __FUNCTION__);
+        d->ready = true;
+        return;
+    }
+
     bool ok = loader.LoadBinaryFromFile(&model, &err, &warn, d->resolvedPath);
     if (!warn.empty()) printf("[PLAYER GLB WARNING] %s\n", warn.c_str());
     if (!err.empty()) printf("[PLAYER GLB ERROR] %s\n", err.c_str());
@@ -2007,6 +2027,24 @@ void Player::requestModelLoad(const std::string& filepath)
     if (modelLoaded) return;
     if (mPendingModel) return;
 
+    if (filepath.empty()) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "player.model.load.invalid-path", username,
+            "refused async player model load: empty model path", 0,
+            {{"condition", "model_path_empty"},
+             {"expected", "non-empty asset path"},
+             {"actual", ""},
+             {"owner", "Player::requestModelLoad"},
+             {"player", username},
+             {"suggestion",
+              "caller passed an empty model path; verify avatar.json playerModel/"
+              "model manifest and fall back to "
+              "assets/entity/player/default/mimita-char-no-animations-v4.glb"}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return;
+    }
+
     auto data = std::make_shared<PendingPlayerModel>();
     data->path = filepath;
     data->resolvedPath = resolveAssetPath(filepath);
@@ -2018,11 +2056,16 @@ void Player::requestModelLoad(const std::string& filepath)
     data->renderModelKey = playerModelCacheKey(data->resolvedPath);
 
     mPendingModel = data;
-    PendingPlayerModel* raw = mPendingModel.get();
 
     // Must run on the GL thread before the model job calls appendNodeRenderMesh.
     getOpaqueWhiteTexture();
-    mimita::game::runDetached([raw] { modelLoadThreadFunc(raw); }, "player-model-load");
+    // Capture the owning shared_ptr, not a raw pointer. The detached job must keep
+    // PendingPlayerModel alive even if this Player is destroyed while the load is in
+    // flight (e.g. actor/scene churn on server join). A raw pointer here was a
+    // use-after-free: modelLoadThreadFunc read freed d->resolvedPath and crashed in
+    // tinygltf's UTF8ToWchar with an ACCESS_VIOLATION on a garbage path pointer.
+    mimita::game::runDetached([data] { modelLoadThreadFunc(data.get()); },
+                              "player-model-load");
 }
 
 static std::uint32_t uploadPlayerTexture(const tinygltf::Image& image)

@@ -125,3 +125,11 @@ Acceptance should include:
 - [Accessibility and portability](../../architecture/accessibility/accessibility.md)
 - [Live voice generation](../live-voice-generation/live-voice-generation.md)
 - [MiMITA DAW direction](../non-game-specs/DAW/mimita-daw.md)
+
+### Fast clips from play — 2026-11-28
+
+> “video editor for rocket lague mode and duels”
+>
+> “press P to export and it has voice acivity picke dup”
+
+Interpretation: the first-use workflow should make a short clip from a recent duel or vehicle match with minimal steps, preserving replay timing, game audio, and any voice track that was enabled during capture. The action should open a reviewable edit/export flow and preserve the replay source. Active configuration owns the shortcut. Export remains local and user initiated; the editor does not auto-post clips or require a daily publishing target.

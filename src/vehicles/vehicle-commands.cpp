@@ -14,12 +14,16 @@
 
 #include "debug/structured-log.h"
 #include "devtools/terminal.h"
+#include "game/resident-state-module.h"
+#include "gamemode/map-config.h"
 #include "input/gamepad-input.h"
 #include "input/input-router.h"
+#include "network/multiplayer-context.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/physical-entity.h"
 #include "terminal/terminal-state.h"
 #include "vehicles/vehicle-config.h"
+#include "vehicles/vehicle-render.h"
 #include "vehicles/vehicle-system.h"
 
 namespace {
@@ -694,6 +698,63 @@ void registerVehicleCommands()
                 state->entityId, transform, 0.0f);
             Terminal::instance().addLog("[VEHICLE] teleported id=" +
                                         std::to_string(id));
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "va_car_reset",
+        "Reset the car you are in to a normal arena spawn",
+        "va_car_reset [blue|orange]",
+        [](const std::vector<std::string>& args) {
+            const uint32_t id = VehicleSystem::instance().localVehicleId();
+            VehicleState* state = VehicleSystem::instance().find(id);
+            if (!state)
+            {
+                Terminal::instance().addLog("[VEHICLE] not in a car");
+                return;
+            }
+            std::string team;
+            if (!args.empty() &&
+                (args[0] == "blue" || args[0] == "orange"))
+                team = args[0];
+            else if (const PhysicalEntity* entity =
+                         PhysicalEntitySystem::instance().find(state->entityId))
+                team = entity->transform[3].x > 0.0f ? "orange" : "blue";
+            else
+                team = "blue";
+
+            glm::vec3 position(-40.0f, 0.0f, 0.3f);
+            float yaw = 0.0f;
+            const MapObjectiveConfig& map =
+                MapConfigRegistry::instance().current();
+            for (const ArenaKickoffConfig& kickoff : map.arena.kickoffs)
+                if (kickoff.enabled && kickoff.team == team)
+                {
+                    position = kickoff.position;
+                    yaw = kickoff.yaw;
+                    break;
+                }
+
+            if (::mimita::game::mpContextPtr() &&
+                ::mimita::game::mpContextPtr()->active)
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(),
+                                               "va_car_reset " + team);
+            VehicleSystem::instance().resetToPose(id, position, yaw);
+            Terminal::instance().addLog("[VEHICLE] car reset to " + team +
+                                        " spawn");
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "vehicle_axes",
+        "Toggle the local car front/back/left/right/up/down axis arrows",
+        "vehicle_axes [on|off]",
+        [](const std::vector<std::string>& args) {
+            const bool on = args.empty() ? !vehicleAxesEnabled()
+                                         : (args[0] == "on" || args[0] == "1");
+            setVehicleAxesEnabled(on);
+            Terminal::instance().addLog(std::string("[VEHICLE] axes ") +
+                                        (on ? "on" : "off"));
         }
     });
 

@@ -94,3 +94,17 @@ state: reset, pause, single-step, and change wall-clock playback speed while
 preserving the fixed 60 Hz simulation tick. General-purpose save states remain
 a broader optional capability. Do not treat a saved visual position or a
 transform-follow replay as a restored physics state.
+
+## Tick-exact gameplay authoring direction — 2026-11-28
+
+> “freestlye and tas mode, advance per tick and put exact input values per tick
+> get exact what u want to have happen happen
+> replaying them determinisittally
+> should be 100% deterministic
+> save a tas file + run it on any fps performance etc”
+
+Interpretation: TAS is both a debugging tool and a way to author precise performances. The user can switch into TAS mode during play, pause at the current simulation tick, inspect that tick's applied inputs and state including velocity, then play, pause, reset, or advance exactly one simulation tick at a time. TAS input records store the exact normalized or quantized control values accepted by the gameplay input owner for every simulation tick, plus the content, configuration, seed, and simulation identity needed to interpret them.
+
+Rendering frame rate and wall-clock playback speed MUST NOT change which simulation inputs occur on which ticks. A TAS file MUST identify incompatible simulation/content versions and report the first tick and state component that diverges. The target is exact deterministic reproduction across supported frame rates and, eventually, supported machines. Cross-machine bit-exactness is not claimed until replay evidence proves it across the declared support matrix. TAS events and checkpoints use the existing canonical runtime `events.jsonl`; TAS MUST NOT create a competing gameplay journal.
+
+Rocket League-style vehicle work is a concrete initial scenario: record and replay a human or bot's per-tick `VehicleInput`, inspect car/ball state at a chosen tick, and compare state hashes and contact/goal events. Importing an external RLBot/SSL bot is an option to investigate, not a dependency or compatibility promise. A locally authored freestyle bot remains possible and must use the same vehicle input surface as a human.

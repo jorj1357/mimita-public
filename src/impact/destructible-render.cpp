@@ -88,16 +88,7 @@ bool drawGeneratedEntityMesh(const PhysicalEntity& entity, const Camera& camera)
 
     // Interpolate the model matrix between the previous and current transform,
     // matching the physical-entity box path.
-    static glm::mat4 renderTransform(1.0f);
-    const float alpha = PhysicalEntitySystem::instance().renderAlpha();
-    const glm::vec3 previousPosition(entity.previousTransform[3]);
-    const glm::vec3 currentPosition(entity.transform[3]);
-    const glm::quat previousOrientation =
-        glm::normalize(glm::quat_cast(glm::mat3(entity.previousTransform)));
-    renderTransform = glm::translate(
-        glm::mat4(1.0f),
-        glm::mix(previousPosition, currentPosition, alpha)) *
-        glm::mat4_cast(glm::normalize(glm::slerp(previousOrientation, entity.orientation, alpha)));
+    const glm::mat4 renderTransform = physicalEntityRenderTransform(entity);
 
     const glm::mat4 view = camera.getView();
     const glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth,

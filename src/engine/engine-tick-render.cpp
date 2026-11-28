@@ -52,6 +52,7 @@
 #include "map/map_loader.h"
 #include "physics/physical-entity.h"
 #include "vehicles/vehicle-render.h"
+#include "vehicles/vehicle-system.h"
 #include "procedural/procedural-world-client.h"
 
 #include "pobjects/persistent-physics.h"
@@ -1014,6 +1015,33 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     drawPhysicalEntities(camera);
     { MIMITA_PERF_SCOPE("Rendering::VehicleWheels");
       drawVehicleWheels(camera); }
+    drawArenaBoostPads();
+    if (vehicleAxesEnabled() && VehicleSystem::instance().hasLocalDriver())
+    {
+        const uint32_t localId = VehicleSystem::instance().localVehicleId();
+        const VehicleState* local = VehicleSystem::instance().find(localId);
+        if (local)
+        {
+            const glm::vec3 origin = VehicleSystem::instance().localVehiclePosition();
+            const glm::quat q = glm::normalize(local->orientation);
+            const float len = 1.6f;
+            const glm::vec3 f = q * glm::vec3(1.0f, 0.0f, 0.0f);
+            const glm::vec3 r = q * glm::vec3(0.0f, 1.0f, 0.0f);
+            const glm::vec3 u = q * glm::vec3(0.0f, 0.0f, 1.0f);
+            DebugVis::drawLine(camera, origin, origin + f * len,
+                               {0.95f, 0.15f, 0.15f, 1.0f});
+            DebugVis::drawLine(camera, origin, origin - f * len,
+                               {0.20f, 0.35f, 1.0f, 1.0f});
+            DebugVis::drawLine(camera, origin, origin + r * len,
+                               {0.20f, 0.95f, 0.25f, 1.0f});
+            DebugVis::drawLine(camera, origin, origin - r * len,
+                               {0.95f, 0.85f, 0.10f, 1.0f});
+            DebugVis::drawLine(camera, origin, origin + u * len,
+                               {1.0f, 1.0f, 1.0f, 1.0f});
+            DebugVis::drawLine(camera, origin, origin - u * len,
+                               {0.90f, 0.20f, 0.95f, 1.0f});
+        }
+    }
     const auto& match = MimitaNet::CommunityMatchClient::instance();
     ZombieTowerEffects& fx = ZombieTowerEffects::instance();
     const bool ztMode = match.active() && match.mode() == "zombie_tower";

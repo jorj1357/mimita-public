@@ -286,3 +286,12 @@ Acceptance uses real runtime scenarios: solo and co-op fights against different 
 - Monsters reuse and extend MiMITA’s existing monster/NPC assets and behavior systems.
 - World-defined currencies are supported, while the starter world begins with gold and XP. Trading and ranked arenas are deferred.
 - Random rewards are earned through gameplay only, with visible odds. Purchases are direct cosmetics only; no paid power, loot crates, or login-pressure rewards.
+
+## Standalone free-mode product direction — 2026-11-28
+
+> “that should be a free mode not gated and just added there for fun
+> that should be free”
+>
+> “u vs the npcs all people together vs the npcs can keep going for records”
+
+Interpretation: the cooperative infinite-dungeon experience is a freely available mode, not progression-gated behind another mode or purchase. It supports repeatable PvE runs with friends, persistent earned progression under the existing RPG rules, and records such as deepest room or fastest clear. This mode complements MiMITA Combat's direct PvP goal; neither replaces the other. Rare rewards are earned through gameplay and remain subject to the existing visible-odds and no-paid-power requirements. “Room 500 in 1 second” is captured as an extreme performance/record idea, not a current gameplay or hardware promise.

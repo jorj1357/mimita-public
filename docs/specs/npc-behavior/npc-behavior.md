@@ -790,11 +790,15 @@ staggering and stickiness.
 TeamBrain owns the assignment. It receives the focus actor's look direction
 (`ServerPlayer.input.camForward` or `ServerNpc.aim`), produces a balanced sector
 map, and publishes a movement-only approach direction to `UtilityContext`. The
-navigator and combat movement consume that direction as a staging point; they
-never change the aim target position. This is the same “why / where / how”
-split required by
+navigator and combat movement consume that direction as a staging point. This is
+the same “why / where / how” split required by
 `docs/architecture/player-npc-systems/npc-movement.md`: TeamBrain chooses the
 side, the navigator finds the route, and shared movement executes it.
+
+The sectors remain movement-only. Separately, the squad focus actor is the
+shared **aim** target for an elite squad (see section 15): every member engages
+the same hostile, while each member still needs its own legal line of sight to
+fire.
 
 ## Live NPC render presence — 2026-11-01
 
@@ -1030,3 +1034,46 @@ Required per-NPC and per-team measurements, reported per round and per match:
 
 The worst legal case is the starting point; tune difficulty down only after the
 numeric baseline and a live journal show the behavior is understood.
+
+## 15. Squad focus-fire and fair reacquisition (2026-11-28)
+
+This section changes the earlier rule that squad focus was a travel target only.
+For an elite squad, the focus actor is the shared **travel and aim** target:
+every living member of the team engages the same hostile while it remains a
+valid, living enemy. Firing still requires that member's own legal line of sight,
+weapon, ammunition, cooldown, and reaction gates. Focus never grants through-wall
+fire or an extra shot.
+
+Rules:
+
+1. One focus actor per team. All living members target it. When it dies, leaves,
+   or becomes invalid, the team reacquires on the next decision tick.
+2. The focus is chosen from living hostiles only. A stale report for a dead actor
+   is rejected before it reaches the aim layer.
+3. In a mode with no objective commitment (for example Team Deathmatch), if no
+   perception report exists, the focus is the nearest living enemy to the team
+   centroid. It is never a spawn point and never an empty position.
+4. **Fair reacquisition, no human priority.** Every enemy is a candidate on equal
+   terms. If an enemy within a bounded radius has not been targeted by the team
+   for a meaningful window (starting point: 8 seconds at 60 Hz), the nearest
+   such enemy becomes the focus. This applies equally to human and NPC enemies,
+   so a human can always re-enter the target set without a human-specific flag.
+5. **Damage retaliation is generic.** Any actor that damages a team member
+   becomes that team's next stale-priority focus candidate. The rule is the same
+   for human and NPC attackers.
+6. A mode may add a human-preference policy later for a deliberate design
+   choice, but it is disabled by default. The default experience treats one NPC
+   and one human as one actor for targeting.
+7. The movement layer still spreads the squad into approach sectors and slots;
+   "focus" does not mean every member occupies the same point.
+
+Acceptance:
+
+- In a pinned team-mode run, at least 80% of a living squad shares one hostile
+  target at a sampled tick.
+- After a human respawns, at least 80% of living enemy NPCs reacquire that human
+  within one second, without a human-specific priority flag.
+- No living hostile within the rotation radius stays untargeted for more than
+  the configured window while its team is in combat.
+- A dead or teamless reported actor is never retained as the focus.
+- Focus-fire does not produce a shot without legal line of sight.

@@ -359,6 +359,9 @@ struct MultiplayerContext
     uint64_t snapshotsMissed = 0;
     uint64_t lastSnapshotDiagnosticsMs = 0;
     uint64_t lastSnapshotDiagnosticArrivalMs = 0;
+    // Depleted arena boost pads, seconds remaining. Zero = collectible.
+    float boostPadRemainingSeconds[64] = {};
+    uint32_t boostPadStateSerial = 0;
 
     // Remote-player interpolation clock: advances at the fixed 60 tick/s rate
     // using wall-clock frame time, so rendering is time-based, not packet-based.
@@ -1144,6 +1147,10 @@ void mpProcessVehicleDespawnEventPacket(MultiplayerContext& ctx,
                                         const VehicleDespawnEventPacket* event);
 void mpProcessVehicleStatePacket(MultiplayerContext& ctx,
                                  const VehicleStatePacket* event);
+void mpProcessVehiclePosePacket(MultiplayerContext& ctx,
+                                const VehiclePosePacket* event);
+void mpProcessBoostPadStatePacket(MultiplayerContext& ctx,
+                                  const BoostPadStatePacket* event);
 void mpProcessVehicleSeatEventPacket(MultiplayerContext& ctx,
                                      const VehicleSeatEventPacket* event);
 void mpSendVehicleInput(MultiplayerContext& ctx, uint32_t currentMs);

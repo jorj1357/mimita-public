@@ -227,3 +227,44 @@ NEXT DISCRIMINATING CHECK
 - Through the root dev-loop, start an isolated Payload/funworld3 Arcade run (leave shared run 20261127_015112 and any human server untouched) pinned to generation 752 (or any generation whose snapshot carries sweep-slide=6b5fd3ce... / physics-types=f3f5ca67...), with a player, using the gamemode whose journal emits payload.cart-spawned. Drive the player root capsule into the cart (previously entity id 1). Require in that exact journal: game.host.probe.started dll=generation-752 (or matching); payload.cart-spawned; >=1 collision.arcade_entity.sweep with actor=<player> and entity_id=<cart id>; player/cart separation stays >= capsule radius across contact (no penetration); static-world Arcade contact unchanged. COPY that journal to a protected path before it ages out of the 3-date log retention. Report run_id, generation, DLL hash/path, and journal path. Keep the issue open and the proof unproven until that journal exists or an explicit exemption is recorded.
 
 VERDICT: unproven (compiled in gen 752; activation/proof gap persists; prior sole sweep artifact rotated away).
+
+## Scheduled independent review
+
+### 2026-11-28T08:55:05.883Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-e6ae2df0f73e after 891 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (unproven)
+
+### 2026-11-28T09:01:38.270Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review 2026-11-28T09:01Z (issue-review-sweeper), seventh review of this issue. Scope: issue brief/readiness, proof status, linked artifacts, latest journals. No source edits, build request, restart, close, or fix claimed.
+
+OBSERVED FACTS
+- Readiness: ready=true, score 8, state=in_review, missing=[]. One open task payload-cart-arcade-contact, owner payload-arcade-collision-fix, still inactive (last board activity 2026-11-21T15:55:08Z, ~161h). Issue has no linked build or run records.
+- Source identity: live sha256(src/physics/movement/physics-collision-glb-sweep-slide.cpp)=6b5fd3cec1d3deab... and sha256(src/physics/physics-types.h)=f3f5ca679e7e59c3... exactly equal proof task-proof-7d953b610754 source_hashes. Surviving 2026-11-28 build snapshots checked (game-dll-20261128T063600310452Z-db408b through ...075614669320Z-cb02af, generation 809+) all carry sweep-slide hash 6b5fd3ce. build/game/current.json: generation 817, status ok, revision 23c97ff...; dev-loop reports that later gen-817 attempt's compile failure is in src/vehicles (outside this issue's paths), build=published_stale.
+- Proof record task-proof-7d953b610754 is unchanged: result=unproven, status=runtime_proven, build_id='', game_generation=0, run_id='', journal_path='', verified_utc=''. The board lists payload-cart-arcade-contact unproven. This status/result mismatch persists across all seven reviews.
+- NEW EVIDENCE (corrects review 6 id 510). Post-fix Payload-mode runs now exist with the actual Payload cart. Run 20261128_062046 (run.json: map=mimita-pipes, mode=payload, build_identity.game_generation=808, game_dll build\\game\\generation-808\\game-g808.dll, server pid 27796, launch_id 2026-11-28T06:20:46.904Z) recorded BOTH:
+  * payload.cart-spawned entity=1, position [13.31,-0.833,843.10], size [10,9,9] (server-01/events-0007.jsonl, tick 0, seq 108).
+  * 191 collision.arcade_entity.sweep events in that same events-0007.jsonl, ALL entity_id=1, source src/physics/movement/physics-collision-glb-sweep-slide.cpp:847, func doGLBSweepSlide, reason "Arcade root capsule swept against moving physical box", with contact_normal/contact_point/time_of_impact and surface_velocity ~10 m/s along +x (the moving cart).
+  * A human actor existed: match.actor.identity-assigned actor_id=1 controller=human mode=payload role=payload_attacker, and server.actor.spawn_activated actor_id=1.
+- Sweep actor attribution: the 062046 sweeps are NPC-only (NPC-100014 162, NPC-100003 15, NPC-100007 11, NPC-100000/2/8 1 each). A cross-log scan of every 2026-11-27 and 2026-11-28 file containing collision.arcade_entity.sweep totals 588 events, and every single actor is NPC-100xxx; zero human/player actors. Other Payload-mode sweep files: 20261128_061051 client-01 events-0005/0009 and client-02 events-0013 (NPC-only, entity 1), 20261128_054617_01 client-01 events-0003 (NPC-only, entity 1). Run 20261128_063715 (gen 809) has payload.cart-spawned but no arcade_entity sweep.
+- The 062046 client was launched with only --startup-command "start payload" and no movement command; the human actor (id 1) never produced an arcade_entity sweep. The repo already exposes a player-drive surface: agent.move "Hold camera-relative movement for fixed ticks" at src/main-systems.cpp:396, plus agent.input look/key at src/main-systems.cpp:984.
+
+INFERENCE / UNCERTAINTY
+- This review materially narrows the gap: the dynamic physical-box sweep now demonstrably engages the actual Payload cart entity (entity_id=1) in a pinned post-fix Payload run, with TOI contact normals and cart surface velocity. Earlier reviews' statement "no Payload run post-fix / zero entity=1 sweeps" is now stale and should not be repeated.
+- Acceptance is still unmet as written: it requires PLAYER contact. The observed cart contacts are NPC actors; the human actor was present but not driven into the cart. Build + NPC-cart runtime path are strong; the specific "player capsule vs cart, no penetration" clause is not shown.
+- "No penetration" is not quantitatively established. The sweeps report time_of_impact and contact normals consistent with blocking, and the repeated NPC-100014 contacts are consistent with being blocked/pushed, but I did not measure post-contact separation vs capsule radius.
+- Map is mimita-pipes (mode=payload), not the funworld3 scene named in the reproduction text. Whether this is the same active Arcade scene is uncertain; the cart entity behavior is the generic payload cart.
+
+CONTRARY EVIDENCE
+- No sweep in any 2026-11-27/11-28 journal has a human/player actor; all 588 are NPC-100xxx. NPC-vs-cart contact does not satisfy "player contact" as written.
+- No measurement of capsule/cart separation or of unchanged static-world Arcade contact accompanies these sweeps.
+
+NEXT DISCRIMINATING CHECK
+- Through the root dev-loop, start an isolated Payload run (leave shared run 20261128_082433 and any human server untouched) pinned to a generation whose snapshot carries sweep-slide=6b5fd3ce... / physics-types=f3f5ca67... (gen 809 or 817). After payload.cart-spawned entity=1, use the EXISTING agent surface on client-01: agent.input look toward the cart, then agent.move <forward> <side> <duration_ticks> (src/main-systems.cpp:396) to drive the human actor (actor_id 1) into cart entity 1. Require in that exact journal: game.host.probe.started generation matching; payload.cart-spawned entity=1; >=1 collision.arcade_entity.sweep with actor=<human player identity> and entity_id=1; player/cart separation stays >= capsule radius across contact (no penetration); static-world Arcade contact unchanged. Copy the journal to a protected path before log retention rotates it. Report run_id, generation, DLL hash/path, and journal path.
+- If the owner intends acceptance to cover any capsule actor, the NPC-vs-entity-1 evidence already satisfies the "cart entity collision" clause; that requires an explicit owner/human acceptance clarification, not an agent self-exemption.
+
+VERDICT: unproven. Compiled in current generation; the dynamic sweep now contacts the real Payload cart (entity 1) for NPC capsules in a pinned post-fix Payload run; still no player-actor contact and no separation/static-world measurement.

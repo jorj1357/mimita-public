@@ -36,6 +36,19 @@ DEFAULT_QUESTION_MINUTES = 5
 LONG_QUESTION_MINUTES = 15
 LEASE_CHECK_MINUTES = 10
 EVENT_LEVEL = "IMPORTANT"
+
+
+def hidden_subprocess_kwargs() -> dict:
+    """Keep child Python helpers invisible when the host has no console."""
+    if os.name != "nt":
+        return {}
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+    return {
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        "startupinfo": startupinfo,
+    }
 PROTECTED_PREFIXES = (".git/", ".dev/", "build/", "logs/")
 DECISION_DOC_ROOT = ROOT / "docs" / "coordination" / "decisions"
 ISSUE_DOC_ROOT = ROOT / "docs" / "issues"
@@ -984,7 +997,8 @@ class CoordStore:
                 try:
                     subprocess.run([sys.executable, str(wake_script), "reconcile"],
                                    cwd=ROOT, capture_output=True, text=True,
-                                   check=False, timeout=8)
+                                   check=False, timeout=8,
+                                   **hidden_subprocess_kwargs())
                     wake = json.loads(wake_path.read_text(encoding="utf-8"))
                 except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
                     pass
@@ -998,7 +1012,7 @@ class CoordStore:
             subprocess.run([sys.executable, str(wake_script), "cancel",
                             str(wake.get("id") or "")], cwd=ROOT,
                            capture_output=True, text=True, check=False,
-                           timeout=8)
+                           timeout=8, **hidden_subprocess_kwargs())
 
         # A wake may have been written just before this process exited. Reuse it
         # by stable cadence key rather than launching duplicate reviewers.
@@ -1108,7 +1122,8 @@ class CoordStore:
                     "reason": "another activation reserved this review"}
         try:
             queued = subprocess.run(command, cwd=ROOT, capture_output=True,
-                                    text=True, check=False, timeout=12)
+                                    text=True, check=False, timeout=12,
+                                    **hidden_subprocess_kwargs())
         except (OSError, subprocess.TimeoutExpired) as error:
             reason = str(error)[:300]
             with self.conn:
@@ -1169,7 +1184,8 @@ class CoordStore:
         try:
             launched = subprocess.run(
                 [sys.executable, str(wake_script), "run", "--once"], cwd=ROOT,
-                capture_output=True, text=True, check=False, timeout=12)
+                capture_output=True, text=True, check=False, timeout=12,
+                **hidden_subprocess_kwargs())
             launch_result = launched.stdout.strip()[-500:]
             launch_error = launched.stderr.strip()[-300:]
         except (OSError, subprocess.TimeoutExpired) as error:
@@ -2472,7 +2488,8 @@ class CoordStore:
                        "--prompt", prompt]
             try:
                 subprocess.run(command, cwd=ROOT, timeout=8,
-                               capture_output=True, check=False)
+                               capture_output=True, check=False,
+                               **hidden_subprocess_kwargs())
             except (OSError, subprocess.SubprocessError):
                 continue
 
@@ -3635,6 +3652,12 @@ class CoordStore:
         if active:
             return decision("wait", "build_in_progress")
         if resource.get("over_limit"):
+            # The host can be busy with a human game or an idle/abandoned run
+            # that no agent is editing. When no peer is working and no path is
+            # held, waiting on host CPU only stalls the tree; the human owner
+            # asked for an idle host to auto-approve instead of blocking.
+            if not working and not conflicts:
+                return decision("approve", "resource_pressure_idle")
             return decision("wait", "resource_pressure")
         if conflicts:
             return decision("ask", "path_lease")

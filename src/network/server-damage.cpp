@@ -480,6 +480,16 @@ ServerDamageResult applyActorDamage(
             return result;
         }
 
+        // Generic retaliation: an actor that damages this team becomes that
+        // team's next stale-priority focus candidate. The rule is the same for
+        // human and NPC attackers; there is no human-specific priority.
+        if ((targetTeam == 0 || targetTeam == 1) && attacker.id != 0) {
+            TeamBrain& victimBrain = targetTeam == 0
+                ? serverGamemodeState().teamBrainA
+                : serverGamemodeState().teamBrainB;
+            victimBrain.state().lastTargetedTick[attacker.id] = 0u;
+        }
+
         const double damageLimit = NetworkingConfig::instance().data().combat.maxAuthoritativeDamage;
         const int appliedDamage = std::max(1,
             (int)std::min<double>(request.damage, damageLimit));

@@ -1539,6 +1539,12 @@ static bool handleGenericMeleeContactBatch(
     return true;
 }
 
+// Cache repair 2026-11-28: this TU's object was skipped by the incremental
+// build while server-packets.cpp still referenced the handler, producing an
+// undefined-symbol link. A content edit forces this translation unit to rebuild.
+// The shared object cache was also quarantined after a second distinct missing
+// symbol in the next attempt (build/game/objects/b10e3a31b3ae8637 ->
+// b10e3a31b3ae8637.bak-20261128T174023Z), so this build is intentionally cold.
 void handleSpyKnifeHitClaim(SOCKET sock,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
                             std::unordered_map<uint32_t, ServerNpc>& npcs,

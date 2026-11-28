@@ -2027,3 +2027,59 @@ Cold handoff
 - Start from logs/2026-11-27/20261127_155356/{server-01,client-01,dev-loop} and run.json. Artifact 2026-11-27T08:12:40.178185Z (EXE 2b2a3ea4..., game gen 794), mode payload/funworld3, server PID 21324, client PID 26816. Connection and snapshots are clean; the open acceptance failures are client >250 ms frames (NpcLifeReset 307.6 ms scope) and the server physical-contact tick stall (884.6 ms), plus 8.4 s world_load. proof list empty; related_build stale.
 
 Verdict: evidence-gap and partial progress - gen-794 payload launch joins once cleanly with ~1 Hz snapshots and 525 ms room registration, but the no->250 ms-client-stall acceptance fails (NpcLifeReset 307.6 ms scope), the worst server tick is physical_contact (884.6 ms), world_load is 8.4 s, the GUI button path is not exercised, and no proof is linked.
+
+## Agent suggestion
+
+### 2026-11-28T06:23:28.344Z — issue-review-sweeper
+
+Process-improvement proposal from issue-review-sweeper sweep (2026-11-28, evidence-backed). Repeated gap: a process's journal is not discoverable by PID, and an unmanaged process writes into a managed run's journal directory.
+
+Evidence
+- In run 20261128_054617_01, unmanaged Payload server PID 17456 (`--server --bind 0.0.0.0:1357 --map mimita-pipes --mode payload --npcs 1`) writes its events into client-01's journal (e.g. welcome send 06:09:19.388Z; continued writes at 06:12:38Z and 06:18:24Z after client-01 PID 12028 had already crashed at 06:09:37.117Z).
+- issue-c9b65fb9948e recorded "evidence-watch: journal not found for this PID" for PID 17456, even though its events were present under logs/2026-11-28/20261128_054617_01/client-01/. The crash correlation (client 3221225477 after joining that server's room ZC77BLC) was therefore hidden until manual multi-journal scanning.
+- This is the same class of delay recorded in prior sweeps (manual diffing of a mixed journal to find a first-missing event), but the specific fix here is PID->journal discoverability, distinct from the earlier first-missing-event artifact proposals.
+
+Proposal (measurable)
+Make evidence-watch resolve a PID to its journal path and run ID even when the process wrote into another instance's journal directory. Add a per-run PID index (or a fallback scan of retained journals for the `pid` field) and surface it in `evidence-watch show <pid> --json` and `list --json`.
+Measurable target: for any PID whose event rows exist in a retained run, `evidence-watch show <pid> --json` returns journal path + run ID within 2s for >=95% of such PIDs; specifically it must resolve PID 17456 in run 20261128_054617_01 (currently fails) and PIDs 12028/24360/3280 in the same run.
+Smallest experiment: add the fallback PID scan to evidence-watch, run it against run 20261128_054617_01 and one mixed 2026-11-27 run, and record resolution time and hit rate for those known PIDs. No schema or behavior change beyond read-only lookup; rollback is removing the fallback path.
+
+## Scheduled independent review
+
+### 2026-11-28T18:08:27.572Z — voice-chat-design-review
+
+A bounded independent review was queued as wake wake-68c69946a0e3 after 908 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (evidence-gap: gen-825 TDM join and retained-server reconnect clean; FCS/GUI, join-stall, window-health, payload telemetry still unproven; proof unlinked)
+
+### 2026-11-28T18:17:29.347Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review (read-only) - issue-review-sweeper - 2026-11-28T18:15Z, wake-68c69946a0e3. No source, config, build, stop, or runtime mutation by this reviewer. I read journals and metadata only; I did not adopt, stop, or launch any process.
+
+Scope and readiness
+- `issue readiness issue-cf9cd77eb056`: ready=true, score=8, missing=[], state=in_review, 12 tasks, owner root-connection-reliability. This is the 8th sweep (prior review ids 53, 96, 229, 337, 429, 477, 535).
+- `python devscripts/agent-coord.py proof list --issue issue-cf9cd77eb056` returns `[]` again: no proof record is linked. Task rows client-window-health-status and payload-cart-transform-telemetry remain result=unproven.
+- `related_build` still names EXE 2026-11-22T02:37:06.972018Z (game generation 446). Current shared game DLL is generation 825 (published 2026-11-28T18:02:48.483Z, revision c5e48a0d...). related_build is ~6 days / 379 generations behind the artifact under review.
+
+Observed facts (read from the journals; causes are labeled separately)
+1. Newest full server/client networking run is 20261128_180550 (agent tdm-npc-focus-fire, profile tdm-validation, launch_mode 41, TDM on dust2cyberiav4, EXE sha 758a748d..., game generation 825 / DLL sha f6b41f94..., server PID 15440, client PID 5248; explicitly stopped 18:10:39Z by its owner, dev-loop.parallel-run.ready 18:06:11.104Z).
+2. Fresh join was clean at the protocol level: the client logged one `network.connection-state.changed` Connecting->Connected at 18:06:00.260Z; two `network.client.join.accepted` welcome events (18:06:00.260Z and 18:06:00.821Z, a duplicate welcome still present); zero `network.client.reconnect.scheduled`; zero `network.client.snapshot.gap`; 273 `network.client.snapshot.applied` with interarrival max 1142ms, p50 1011ms, 0 intervals >=2500ms. `snapshots_missed=37` is a constant one-time startup value and does not grow.
+3. Steady-state client frames are healthy, but the initial join/load is not: the first `performance.frame-budget` total_ms=3483.73ms at 18:05:59.898Z, and `network.connect.stage` elapsed_ms 1184/1745/1749. Those are the only client events with a duration field >=250ms; after load, per-second `performance.fps` max_frame_ms stays 20-82ms. So "no >250ms client stall" is FALSE for the join/load frame and connect stages, not for steady state. Snapshot cadence is ~1s (about 60 server ticks per snapshot) in this profile.
+4. Server startup stages: configuration_load 2022.04ms, world_load 1203.85ms, network_bind 0.39ms, room_register elapsed_ms=2145.05 (attempt_count 1) with room A49DULD at 18:05:57.039Z. Server process started 18:05:50.997Z; start-to-active was ~20.1s. Room registration alone exceeds the user's 1s target (~2.15s), though it succeeded on the first attempt.
+5. Server stayed responsive after startup: only 9 `performance.server-tick-stall` records (max 295ms after the tick-1 1859ms startup spike), `performance.server-loop-window` ~1000ms windows, and 279 snapshot build/send pairs.
+6. Retained-server reopen has new but partial evidence: server 20261128_082433 (arena2 vehicle_freeplay) stayed alive ~8.8h; client run 20261128_171225 launched 17:12:25Z connected to it, logged one `network.client.join.accepted` welcome at 17:12:30.732Z and Connecting->Connected at 17:12:30.733Z, then ran ~50 min to 18:02:15Z with zero reconnect.scheduled and zero snapshot.gap (336 applied snapshots, interarrival max 1274ms, 0 >=2500ms). This is a clean additional client on a retained server, but it did not exercise FCS mode or the in-game agent-console buttons.
+
+Inference / uncertainty
+- The 2026-11-28 evidence shows fresh TDM join and retained-server reconnect are clean on gen-825 and that the earlier >17s Networking-stall class is not reproduced in these runs. Confidence high for the observed journals; moderate that it generalizes to FCS/GUI because those exact paths were not exercised this sweep.
+- The initial 3.48s client frame and 1.2-1.7s connect stages are plausibly loading/asset-bound rather than a networking deadlock; I did not instrument the first frame, so this is an inference, not an observation.
+
+Contrary evidence / limits
+- Acceptance explicitly requires "FCS GUI join/reconnect" and "scanned console button action logs the same widget ID as clicked". No FCS run appears in logs/2026-11-28, and no console-button widget-id evidence is present in 180550 or 171225. Those acceptance facets remain unproven, not satisfied.
+- `client-window-health-status` remains unimplemented: rg finds no `window_responding`, `manifest_state`, `observed_state`, `IsHungAppWindow`, `SendMessageTimeout`, or `window_responsive` token in src/ or devscripts/, and the task is still state=in_progress. Its acceptance is not implemented.
+- `payload-cart-transform-telemetry` is still absent: 0 `payload.cart-trace` events in today's payload runs 20261128_062046 (gen 808) and 20261128_063715 (gen 809). The Payload NPC-grounding acceptance therefore has no telemetry even though payload runs occurred.
+
+Next discriminating check
+- Owner root-connection-reliability: link the generation-825 evidence (runs 20261128_180550 and 20261128_171225) via `proof task-add`/`proof task-verify` or record a reasoned exemption, and refresh `related_build` to the current artifact. Then run one pinned FCS mode-45 GUI join/reconnect through the in-game agent console and capture `agent.gui_button` parent-id vs clicked widget-id plus a client frame-slice timeline, so the two still-unproven acceptance facets (FCS/GUI join and >250ms stall during join) are directly evidenced. First divergence to watch: a `network.client.reconnect.scheduled` whose last_heard_age_ms is far below stale_threshold during a snapshot burst (false reconnect), or a `performance.frame-budget` total_ms >=250 after load.
+- No fix, no build, and no closure claimed.

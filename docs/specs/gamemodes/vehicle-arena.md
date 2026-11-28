@@ -1069,6 +1069,12 @@ Rules:
 | Arena HUD | mode 60 run `20261127_080234`; mode 67 run `20261127_080258` | `vehicle.hud hud_mode=arena`, `arena.hud.snapshot` with phase/score/clock | HUD active and scoreboard data present; goal flash pending a scored goal |
 | Speed/rpm default | mode 60 run `20261127_080234` | `vehicle.preferences hud_speed=false`; `vehicle.preference` on command; `vehicle.hud hud_speed=true` after | proven |
 | Camera | mode 60 run `20261127_182931` (stiffness 1.0); mode 65 run `20261127_183456` (stiffness 0.0) | `vehicle.camera.follow`: `lag_tau_s`, `speed_mps`, `extra_distance_m`, `expected_extra_m` | 1.0 proven: lag_tau 0.0 and extra 0.000 m at 11-12 m/s. 0.0 proven: lag_tau 0.3078 s, extra 1.29 m at 4.23 m/s (expected 1.30). 0.5 has the measured tau 0.1539 s but still needs a moving sample. |
+| Client car netcode | mode 60 run `20261128_073416` (gen 812); two-client run `20261128_080510` (gen 814) | `vehicle.prediction.enabled`, `vehicle.pose.accepted` (`source=input`), client-02 `vehicle.pose.relayed` | local ownership + no snaps proven; remote relay proven on client-02 (17+ relayed samples, owner player 1, speed 17.56 m/s) |
+| Ball cam | mode 60 run `20261128_073416` | `vehicle.camera.ballcam` `ball_found=true`, `ball_network_id=1` | proven |
+| Vehicle proximity fade | mode 60 run `20261128_074000`, gen 813 | `camera.proximity_fade.world` only before the seat, none after | proven off while seated |
+| Wall containment | mode 65 run `20261128_081709`, gen 816; gen 817 fuzz | `vehicle.out_of_world` | 0 clamps over 17 kicks; wall band flush at 4.55, invisible backstops, containment only beyond 43/53 |
+| Landing stability | mode 65 run `20261128_084634`, gen 817 | `vehicle.fuzz.report`, `vehicle.autoroll` | 16/16 kicks on wheels, 0 tilted; auto-roll gated to the roof; damping 1900 and 3 cm chassis clearance |
+| Boost pads / axes | gen 819 (user visual) | pad orbs, grey recharge timer, boost trail, axis arrows | implementation + packet; pending user visual confirmation |
 | Tick VFX | mode 60 | one event per cue, rate limit | not started |
 
 ## Related specifications
@@ -1080,3 +1086,17 @@ Rules:
 - [Networking](../networking/networking.md)
 - [Replay](../replay/replay.md)
 - [Destructible World](../destructible-world/destructible-world.md)
+
+## Bot matchups and freestyle target — 2026-11-28
+
+> “1v1 me vs npc”
+>
+> “3v3 me with npcs vs npcs all elite ssl level”
+>
+> “1v1 vs freestyle bot”
+>
+> “maube import rlbot ssl bot ? into this idk”
+
+Interpretation: the desired practice set includes human-versus-NPC 1v1, a human plus two NPC teammates against a three-NPC team, and a separate 1v1 against a high-skill freestyle opponent. “Elite SSL level” and “most flashiest bot ever” describe the aspirational quality bar, not demonstrated current ability or a measurable rank mapping. Acceptance should compare repeatable match outcomes and authored freestyle maneuvers through the same `VehicleInput` control path used by players.
+
+RLBot/SSL bot import is an investigation option only. First establish the native input, match, replay, and determinism contracts; then compare a versioned adapter/import path with a native NPC. Do not make an external bot runtime a prerequisite for ordinary arena play.

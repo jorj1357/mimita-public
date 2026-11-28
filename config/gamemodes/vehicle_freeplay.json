@@ -115,6 +115,7 @@
     "fatal_window": true
   },
   "presentation": {
+    "proximity_fade": "off",
     "bodycam": null,
     "gold_reward_popup": null,
     "damage_numbers": true,

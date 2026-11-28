@@ -27,8 +27,10 @@
 #include "debug/crash-handler.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "gamemode/map-config.h"
 #include "impact/destructible-async-cut.h"
 #include "impact/destructible-mesh-loader.h"
+#include "impact/destructible-world-config.h"
 #include "impact/impact-system.h"
 #include "map/map-authored-geometry.h"
 #include "network/packets.h"
@@ -41,6 +43,14 @@ namespace {
 bool allFinite(const glm::vec3& v)
 {
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+double physicalStateNowMs()
+{
+    return (double)std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+               .count() /
+           1000.0;
 }
 
 // Client-predicted chassis reconciliation thresholds. Read once from
@@ -175,6 +185,40 @@ void mpProcessPhysicalEntitySpawnEventPacket(
     e->halfExtents = halfExtents;
     e->renderModel = (event->reserved & 1u) != 0;
     e->collisionBox = (event->reserved & 2u) != 0;
+    // The arena ball keeps its gameplay identity on the client. The camera and
+    // arena rules look it up by persistenceId; a replicated sphere would
+    // otherwise be just "runtime-physical-N" and ball cam would freeze.
+    if ((event->reserved & 4u) != 0)
+    {
+        e->persistenceId = "arena-ball";
+        e->serverDriven = false;
+        e->clientPredicted = true;
+        e->replicate = false;
+        e->renderPoseTimed = false;
+        // Local ball prediction so a hit responds on this client's tick. The
+        // server remains authoritative for goals/resets and the state packet
+        // reconciles this copy instead of overwriting it.
+        const MapObjectiveConfig& map =
+            MapConfigRegistry::instance().current();
+        const ArenaBallConfig& ball = map.arena.ball;
+        e->mass = std::max(ball.massKg, 0.001f);
+        const float radius = std::max(ball.radius, 0.001f);
+        const float volume =
+            (4.0f / 3.0f) * glm::pi<float>() * radius * radius * radius;
+        e->density = std::max(e->mass / volume, 0.001f);
+        e->restitution = ball.restitution;
+        e->friction = ball.friction;
+        e->linearDamping = ball.linearDamping;
+        e->linearDampingOverride = ball.linearDamping;
+        e->angularDamping = ball.linearDamping;
+        e->angularDampingOverride = ball.linearDamping;
+        e->maxAngularSpeed = 66.0f;
+        const float worldGravity = std::fabs(
+            MimitaImpact::DestructibleWorldConfig::instance().objectGravity());
+        e->gravityScale =
+            worldGravity <= 0.01f ? 1.0f : ball.gravityMps2 / worldGravity;
+        refreshEntityMassProperties(*e);
+    }
     e->modelPath = event->modelPath;
     e->density = event->density > 0.0f ? event->density : 1.0f;
     e->velocity = glm::vec3(event->velocity[0], event->velocity[1],
@@ -283,6 +327,10 @@ void mpProcessPhysicalEntityStatePacket(MultiplayerContext&,
         PhysicalEntity* e = system.findByNetworkId(entry.networkId);
         if (!e)
             continue; // State can arrive before the reliable spawn; spawn sets it.
+        // A remote car whose owner relays its exact pose must not be pulled
+        // back to the server's simulated chassis.
+        if (e->poseRelay)
+            continue;
 
         const glm::quat orientation(entry.orientation[0], entry.orientation[1],
                                     entry.orientation[2], entry.orientation[3]);
@@ -290,55 +338,88 @@ void mpProcessPhysicalEntityStatePacket(MultiplayerContext&,
                                        entry.position[2]);
         const glm::vec3 serverVelocity(entry.velocity[0], entry.velocity[1],
                                        entry.velocity[2]);
-        if (e->clientPredicted)
+        if (e->persistenceId == "arena-ball")
         {
-            // Prediction owns the pose. Only correct genuine divergence, and
-            // blend instead of snapping below the hard threshold.
-            const VehiclePredictionSettings& pred =
-                vehiclePredictionSettings();
+            // Locally predicted ball. Reconcile toward the server copy instead
+            // of overwriting, so a hit stays immediate and the ball never
+            // jumps between the local and server pose. A large error is a
+            // reset/goal/teleport and is the only snap.
+            const double now = physicalStateNowMs();
+            e->lastNetworkPoseMs = now;
             const float error =
                 glm::length(serverPosition - glm::vec3(e->transform[3]));
-            static uint64_t sLastPredictionLogTick = 0;
-            const uint64_t nowTick =
-                PhysicalEntitySystem::instance().simulationTick();
-            if (error > pred.blendDistanceM &&
-                nowTick > sLastPredictionLogTick + pred.logIntervalTicks)
+            if (error > 4.0f)
             {
-                sLastPredictionLogTick = nowTick;
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Network, StructuredLevel::Important,
-                    "vehicle.prediction.correction",
-                    std::to_string(e->networkId),
-                    "server correction applied to a predicted chassis", 0,
-                    {{"network_id", e->networkId},
-                     {"error_m", error},
-                     {"snapped", error > pred.snapDistanceM}},
-                    __FILE__, __LINE__, __func__);
-            }
-            if (error > pred.snapDistanceM)
-            {
-                e->previousTransform = e->transform;
                 e->transform = glm::mat4_cast(glm::normalize(orientation));
                 e->transform[3] = glm::vec4(serverPosition, 1.0f);
+                e->previousTransform = e->transform;
                 e->orientation = glm::normalize(orientation);
                 e->velocity = serverVelocity;
                 e->angularVelocity = glm::vec3(entry.angularVelocity[0],
                                                entry.angularVelocity[1],
                                                entry.angularVelocity[2]);
-                e->sleeping = false;
-                e->sleepTicks = 0;
+                static double sLastBallResyncLogMs = 0.0;
+                if (now - sLastBallResyncLogMs > 1000.0)
+                {
+                    sLastBallResyncLogMs = now;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network,
+                        StructuredLevel::Important,
+                        "arena.ball.hard_resync",
+                        std::to_string(e->networkId),
+                        "predicted ball snapped to a server reset", 0,
+                        {{"network_id", e->networkId},
+                         {"error_m", error}},
+                        __FILE__, __LINE__, __func__);
+                }
             }
-            else if (error > pred.blendDistanceM)
+            else
             {
-                // Soft correction: nudge position and velocity toward the
-                // server without a visible snap or a control discontinuity.
-                e->previousTransform = e->transform;
-                const glm::vec3 blended = glm::mix(
-                    glm::vec3(e->transform[3]), serverPosition,
-                    pred.blendFraction);
-                e->transform[3] = glm::vec4(blended, 1.0f);
-                e->velocity = glm::mix(e->velocity, serverVelocity,
-                                       pred.blendFraction);
+                e->transform[3] = glm::vec4(
+                    glm::mix(glm::vec3(e->transform[3]), serverPosition,
+                             0.15f),
+                    1.0f);
+                e->velocity = glm::mix(e->velocity, serverVelocity, 0.20f);
+                e->angularVelocity = glm::mix(
+                    e->angularVelocity,
+                    glm::vec3(entry.angularVelocity[0],
+                              entry.angularVelocity[1],
+                              entry.angularVelocity[2]),
+                    0.20f);
+            }
+            continue;
+        }
+        if (e->clientPredicted)
+        {
+            // The local car owns its pose. A server snapshot is evidence, not
+            // authority: never move this car toward it. Snap only through an
+            // explicit seat/reset/teleport path, not on a snapshot.
+            const VehiclePredictionSettings& pred =
+                vehiclePredictionSettings();
+            const float error =
+                glm::length(serverPosition - glm::vec3(e->transform[3]));
+            if (error > pred.blendDistanceM)
+            {
+                static uint64_t sLastPoseErrorLogTick = 0;
+                const uint64_t nowTick =
+                    PhysicalEntitySystem::instance().simulationTick();
+                if (nowTick > sLastPoseErrorLogTick +
+                                 pred.logIntervalTicks * 4u)
+                {
+                    sLastPoseErrorLogTick = nowTick;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network,
+                        StructuredLevel::Important,
+                        error > 8.0f ? "vehicle.pose.server_divergence"
+                                     : "vehicle.pose.server_error",
+                        std::to_string(e->networkId),
+                        "server pose differs from the client-owned car (no correction)",
+                        0,
+                        {{"network_id", e->networkId},
+                         {"error_m", error},
+                         {"would_report", error > 8.0f}},
+                        __FILE__, __LINE__, __func__);
+                }
             }
             continue;
         }
@@ -352,6 +433,18 @@ void mpProcessPhysicalEntityStatePacket(MultiplayerContext&,
         e->angularVelocity = glm::vec3(entry.angularVelocity[0],
                                        entry.angularVelocity[1],
                                        entry.angularVelocity[2]);
+        // Remote bodies arrive at 20-30 Hz. Render them over the next expected
+        // interval so they move continuously instead of stepping between two
+        // poses, and extrapolate briefly if a packet is late.
+        {
+            const double now = physicalStateNowMs();
+            const double span = std::clamp(
+                e->renderPoseEndMs - e->renderPoseStartMs, 20.0, 100.0);
+            e->renderPoseTimed = true;
+            e->renderPoseStartMs = now;
+            e->renderPoseEndMs = now + span;
+            e->lastNetworkPoseMs = now;
+        }
     }
 }
 

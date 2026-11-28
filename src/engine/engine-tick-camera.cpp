@@ -1275,9 +1275,26 @@ void engineTickCamera(Engine& engine, float dt)
                             ball = &entity;
                             break;
                         }
+                    static bool sLoggedBallCamState = false;
+                    static bool sLastBallCamFound = false;
+                    if (!sLoggedBallCamState ||
+                        sLastBallCamFound != (ball != nullptr)) {
+                        sLoggedBallCamState = true;
+                        sLastBallCamFound = ball != nullptr;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Gui, StructuredLevel::Important,
+                            "vehicle.camera.ballcam", "vehicle-camera",
+                            ball ? "ball cam found the arena ball"
+                                 : "ball cam could not find the arena ball",
+                            0,
+                            {{"ball_found", ball != nullptr},
+                             {"ball_network_id", ball ? ball->networkId : 0u}},
+                            __FILE__, __LINE__, __func__);
+                    }
                     if (ball) {
-                        const glm::vec3 toBall =
-                            glm::vec3(ball->transform[3]) - target;
+                        const glm::vec3 ballPosition =
+                            physicalEntityRenderPosition(*ball);
+                        const glm::vec3 toBall = ballPosition - target;
                         const float length = glm::length(toBall);
                         if (length > 0.01f) {
                             targetYaw = glm::degrees(
@@ -1287,6 +1304,15 @@ void engineTickCamera(Engine& engine, float dt)
                                                      -0.99f, 0.99f)));
                             rate = ballCamRate;
                         }
+                    } else {
+                        // Never freeze: if the ball is not replicated yet, follow
+                        // the car nose until it appears.
+                        const glm::vec3 carForward = localVehicle->orientation *
+                                                     glm::vec3(1.0f, 0.0f, 0.0f);
+                        targetYaw = glm::degrees(
+                            std::atan2(carForward.y, carForward.x));
+                        targetPitch = cam.pitchDeg;
+                        rate = cam.momentumRate;
                     }
                 } else {
                     const glm::vec3 velocity = localVehicle->originVelocity;

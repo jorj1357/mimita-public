@@ -2699,8 +2699,14 @@ ServerPacketProcessResult processServerPacket(
     }
     else if (header->type == PACKET_VEHICLE_INPUT)
     {
-        handleVehicleInputPacket(buffer, bytes, players, &from,
-                                 sourceConnection, tick);
+        handleVehicleInputPacket(sock, buffer, bytes, players, &from,
+                                 sourceConnection, tick, totalPacketsOut);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_VEHICLE_POSE)
+    {
+        handleVehiclePosePacket(buffer, bytes, players, &from,
+                                sourceConnection, tick);
         result.handled = true;
     }
     else if (header->type == PACKET_VEHICLE_SEAT_REQUEST)

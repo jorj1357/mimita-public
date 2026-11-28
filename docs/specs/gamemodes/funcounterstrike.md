@@ -373,11 +373,21 @@ Counter-Terrorist NPCs:
   profile may use the exact enemy-position knowledge defined by the NPC
   behavior spec, including through walls, but still needs legal line of sight
   to aim and fire.
-- With a report, they rush toward the reported enemy area at maximum useful
-  speed, fight, and try to prevent a plant.
-- Without a report, they defend usable sites and rotate on new reports.
+- Without a report, they **split across the usable sites**. Defender assignments
+  are distributed round-robin over the map's usable bomb sites, with the optional
+  one-rotator assignment preserved. This is a real per-actor site assignment, not
+  only a `DefendSite` label. The split never reveals the Terrorists' chosen site.
+- **A single sighting is shared with the whole team.** Once any CT perceives a
+  Terrorist, the perception-gated team report gives every CT that enemy's
+  position; the team converges and fights. CTs **infer** the attack from the
+  sighting; they are still not given the chosen site id.
 - After a plant, the nearest CT is assigned to defuse; the others cover it.
   Defusing remains the top priority.
+
+The intended result is a full team collision: all living Counter-Terrorists react
+to the first contact, all living Terrorists are committed to the one site, and
+the round produces continuous movement, weapon fire, grenades, damage, and kills
+rather than two squads waiting at opposite ends of the map.
 
 Fun Counter Strike NPC rush:
 

@@ -634,6 +634,16 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         return;
     }
 
+    // Player-owned car reset. Not an admin action: any seated player may put
+    // their own car back on their kickoff.
+    if (commandStr == "va_car_reset" ||
+        commandStr.rfind("va_car_reset ", 0) == 0)
+    {
+        serverResetPlayerVehicleToKickoff(it->second, tick);
+        ack(true, "applied: va_car_reset");
+        return;
+    }
+
     // Team commands are player actions, not host administration.  They must
     // be processed before the host gate so the server can validate and apply
     // them authoritatively for any connected player.

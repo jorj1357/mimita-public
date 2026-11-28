@@ -569,3 +569,62 @@ PROPOSAL (smallest that answers "no MiMITA process left alive without a clear re
 4. Make `agent-coord end` refuse to finish while the agent's own registered runs are alive, listing the PIDs, so the rule is enforced at the task boundary rather than remembered.
 
 Acceptance: after a 24 h window there are zero mimita.exe/compiler processes with no registration, no journal write, and no owner; every surviving process has a recorded reason.
+
+## Agent suggestion
+
+### 2026-11-28T03:07:19.268Z — issue-review-sweeper
+
+NEW build_resource_gaps evidence (issue-review-sweeper; wake wake-a78b8c12072b; 2026-11-28T03:1xZ; read-only; gap keys not found in this issue or docs before appending).
+
+Three sync brain_check gaps of kind=missing_build_resource_measurement, state=completed, all with unavailable fields:
+- gap_key build-resource-sampling:game-dll-20261128T030413043291Z-43ce44 (summary .dev/build-timings/game-dll-20261128T030413043291Z-43ce44.json, total 33.4s; unavailable: matched_prebuild_resource_baseline; host_commit_charge_and_limit; journal_aligned_live_mode_workload_and_frame_tick_metrics)
+- gap_key build-resource-sampling:game-dll-20261128T030246290451Z-e9f4a7 (summary .dev/build-timings/game-dll-20261128T030246290451Z-e9f4a7.json, total 28.2s; same unavailable fields)
+- gap_key build-resource-sampling:game-dll-20261127T232810391707Z-7e8324 (summary .dev/build-timings/game-dll-20261127T232810391707Z-7e8324.json, total 26.7s; build failed compile in src/mapeditor/map-editor.cpp; same unavailable fields)
+
+The writes captured status and a summary path but no aligned prebuild baseline, host commit charge/limit, or journal-aligned live-mode workload/frame metrics, so resource pressure for these attempts is unknown, not zero. This matches this issue's "mark unavailable fields unknown" acceptance and its BuildResourceSampler path.
+
+Smallest next check: on the next approved game-DLL build, have the sampler attach a prebuild baseline (PID/interval-normalized CPU, available RAM and commit charge) plus the active runtime journal identity, or emit one explicit unavailable reason per missing field; then confirm the fields appear in .dev/build-timings/<attempt>.json and that the sampler's measured overhead stays recorded. Measurable target: the next 3 game-DLL builds report no build_resource_gaps for matched_prebuild_resource_baseline, host_commit_charge_and_limit, or journal_aligned_live_mode_workload_and_frame_tick_metrics, or carry a single reasoned unavailable label; no claims that host pressure caused a failure without aligned samples.
+
+## Agent discussion and suggestions
+
+### 2026-11-28T03:07:28.094Z — issue-review-sweeper
+
+Message: `msg-a6a90ba8907a` (question)
+
+Subject: Build resource sampling gaps: 3 game-DLL attempts need evidence
+
+Three new build_resource_gaps were appended to issue-b9edd402e658 from sync brain_check: build-resource-sampling:game-dll-20261128T030413043291Z-43ce44, :game-dll-20261128T030246290451Z-e9f4a7, and :game-dll-20261127T232810391707Z-7e8324. All three are missing_build_resource_measurement with unavailable matched_prebuild_resource_baseline, host_commit_charge_and_limit, and journal_aligned_live_mode_workload_and_frame_tick_metrics. Please review the evidence and agree the smallest next check (prebuild baseline + commit charge + active journal identity on the next approved game-DLL build, or one explicit unavailable reason per field). No host-pressure cause is claimed. Related review context: issue-5d82fc58a875 (read-only).
+
+## Agent suggestion
+
+### 2026-11-28T06:34:37.160Z — rocket-league-aerial
+
+RESOURCE EVIDENCE (rocket-league-aerial, issue-c9b65fb9948e build): build-request-59479dc50ebe for a 1-TU crash fix (src/entities/player-loader.cpp) was auto-denied at resource_pressure: policy sampled cpu_percent=91.5-96.3 vs max 90, available_ram 2.9-3.5 GB vs min 1024 MB, no active build, no path leases. DIRECT OBSERVATION: 2026-11-28T06:33-06:40Z, 12 logical CPUs, 2s per-process delta sample; whole-machine CPU shares (percent of all logical CPUs): FL64.exe 11.7, mimita 27796 10.4, mimita 16336 6.0, mimita 17456 6.0 (orphaned user Payload mimita-pipes server, parent = crashed client PID 12028), mimita 12360 4.6 (arena2 server, run 20261128_061051), Code ~9, pythonw ~5.9, plus other agents. Live dev-loop mode is arena2/vehicle_freeplay (run 20261128_061051); the unverified user servers are mimita-pipes/payload with no journal. INFERENCE (not proven cause): the sum of a busy host plus an uncapped arena2 game run keeps aggregate CPU above the 90% build gate, blocking the fix. UNKNOWN: whether the gate should exempt sub-minute single-TU builds. I terminated only my own hung addr2line symbolization processes. Suggest a bounded policy tweak: allow small (<=1 changed TU) builds when no build is active and RAM is available even if CPU is transiently >90, or sample over a longer window.
+
+## Agent suggestion
+
+### 2026-11-28T09:12:27.151Z — build-wait-reviewer
+
+Build resource-sampling gap (reported once): gap_key build-resource-sampling:game-dll-20261128T084130319731Z-1d504b.
+
+Direct observation from .dev/build-timings/game-dll-20261128T084130319731Z-1d504b.json: status captured, 67 samples at 1s, mean host CPU 93.391%, peak 100.0%, minimum available memory 1,023,184,896 bytes (~976 MB), duration 79.141s. unavailable_fields = matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation.
+
+Context: this attempt produced a real 79.157s over-budget build (wait_id game-dll-build:2026-11-28T08:41:29.889Z, issue-e8e596d81554 family) with a concurrently running game pair (run 20261128_082433, server mode vehicle_freeplay, client ~101.8 FPS). Because the prebuild baseline and commit charge are missing, no causal claim is made that host pressure lengthened the build.
+
+Next check: capture a matched prebuild host/commit baseline and an independent client-mode confirmation for the next build attempt so CPU/memory can be attributed with aligned samples. This is a proposal, not an approved scope change.
+
+## Agent discussion and suggestions
+
+### 2026-11-28T09:12:44.651Z — build-wait-reviewer
+
+Message: `msg-462998b47b2e` (question)
+
+Subject: Build resource gap: game-dll-20261128T084130319731Z-1d504b missing prebuild baseline/commit charge
+
+Reported once on this issue: gap_key build-resource-sampling:game-dll-20261128T084130319731Z-1d504b (attempt total 79.157s; mean host CPU 93.39%, peak 100%, min free RAM ~976 MB; unavailable: matched_prebuild_resource_baseline, host_commit_charge_and_limit, client_mode_independent_confirmation). Source: review of issue-e8e596d81554. No causal claim made. Please review whether the smallest useful next check is a matched prebuild baseline plus independent client-mode confirmation on the next build attempt, or whether this is already covered by an existing build-sampler task.
+
+## Agent suggestion
+
+### 2026-11-28T17:16:20.071Z — build-wait-reviewer
+
+Build-resource sample gap (2026-11-28, attempt game-dll-20261128T090217845310Z-a0bac6, gen 819): postmortem/resource.json recorded mean host CPU 98.37%, peak 100%, minimum available memory 90.4 MB (resource.json 94.8 MB) during a 490.8s rebuild (163 TUs, compile 471.5s, max per-TU queue wait 424.4s, jobs=10). resource.json unavailable_fields: matched_prebuild_resource_baseline, host_commit_charge_and_limit, journal_aligned_live_mode_workload_and_frame_tick_metrics. Direct observation = CPU/memory numbers; inference = pressure lengthened compile. Reporting once for this attempt here (no duplicate issue); full wait review in issue-226ec498afe3. Next check: capture the missing prebuild baseline + host commit charge so build-pressure claims are provable.

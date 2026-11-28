@@ -1516,11 +1516,19 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
 void serverReplicateVehicles(SOCKET sock, ServerVehicleState& vehicleState,
                              std::unordered_map<uint32_t, ServerPlayer>& players,
                              uint32_t tick, uint64_t& totalPacketsOut);
-void handleVehicleInputPacket(const char* buffer, int bytes,
+void handleVehicleInputPacket(SOCKET sock, const char* buffer, int bytes,
                               std::unordered_map<uint32_t, ServerPlayer>& players,
                               const sockaddr_in* from,
                               const TransportConnectionId* connectionId,
-                              uint32_t serverTick);
+                              uint32_t serverTick,
+                              uint64_t& totalPacketsOut);
+// Server-side va_car_reset: resets the player's seated car to their team kickoff.
+void serverResetPlayerVehicleToKickoff(ServerPlayer& player, uint32_t tick);
+void handleVehiclePosePacket(const char* buffer, int bytes,
+                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                             const sockaddr_in* from,
+                             const TransportConnectionId* connectionId,
+                             uint32_t serverTick);
 void handleVehicleSeatRequest(SOCKET sock, const char* buffer, int bytes,
                               std::unordered_map<uint32_t, ServerPlayer>& players,
                               const sockaddr_in* from,

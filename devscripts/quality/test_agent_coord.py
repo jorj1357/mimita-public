@@ -687,6 +687,15 @@ class AgentCoordTests(unittest.TestCase):
         self.assertEqual(rows[0]["actor"], "auto:no_peers")
         self.assertEqual(rows[0]["role"], "auto")
 
+    def test_build_auto_approves_under_idle_host_pressure(self) -> None:
+        self.begin("solo")
+        request = self.store.build_request("solo", paths=["AGENTS.md"])
+        policy = self.store.build_policy(
+            "solo", request["request"], ttl_minutes=5,
+            simulate="pressure", max_cpu=90.0, min_ram_mb=0.0)
+        self.assertEqual(policy["decision"], "approve")
+        self.assertEqual(policy["reason"], "resource_pressure_idle")
+
     def test_build_auto_approves_idle_peer(self) -> None:
         self.begin("solo")
         self.begin("idle")

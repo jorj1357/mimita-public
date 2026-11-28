@@ -3026,16 +3026,16 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
     if (!mActive) return false;
     const bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
     const bool positionFocused = std::any_of(
-        mPropertyPosition.begin(), mPropertyPosition.end(),
+        std::begin(mPropertyPosition), std::end(mPropertyPosition),
         [](const UITextInputState& field) { return field.focused; });
     const bool sizeFocused = std::any_of(
-        mPropertySize.begin(), mPropertySize.end(),
+        std::begin(mPropertySize), std::end(mPropertySize),
         [](const UITextInputState& field) { return field.focused; });
     const bool rotationFocused = std::any_of(
-        mPropertyRotation.begin(), mPropertyRotation.end(),
+        std::begin(mPropertyRotation), std::end(mPropertyRotation),
         [](const UITextInputState& field) { return field.focused; });
     const bool scaleFocused = std::any_of(
-        mPropertyScale.begin(), mPropertyScale.end(),
+        std::begin(mPropertyScale), std::end(mPropertyScale),
         [](const UITextInputState& field) { return field.focused; });
     if (action == GLFW_PRESS && (mOutlinerSearchFocused || mPropertyName.focused ||
         positionFocused || sizeFocused || rotationFocused || scaleFocused)) {
@@ -3770,8 +3770,8 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
                 __FILE__, __LINE__, __FUNCTION__);
         }
     }
-    const bool right = InputRouter::mouseDown(GLFW_MOUSE_BUTTON_RIGHT);
-    if (right && !mRightPrev) {
+    const bool rightDown = InputRouter::mouseDown(GLFW_MOUSE_BUTTON_RIGHT);
+    if (rightDown && !mRightPrev) {
         const int row = outlinerRowAt(screenCursor.x, screenCursor.y);
         if (row >= 0) {
             std::vector<EditorObjectRef> objects;
@@ -3779,7 +3779,7 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
             if (row < (int)objects.size()) {
                 selectOnly(objects[(size_t)row]);
                 openContextMenu(objects[(size_t)row]);
-                mRightPrev = right;
+                mRightPrev = rightDown;
                 return;
             }
         }
@@ -3788,7 +3788,7 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
         InputRouter::setPointerLock(true);
         mimita::game::hostSetCursorMode(2);
         THE_CAMERA.firstMouse = true;
-    } else if (!right && mRightPrev) {
+    } else if (!rightDown && mRightPrev) {
         mLooking = false;
         InputRouter::setPointerLock(false);
         mimita::game::hostSetCursorMode(0);
@@ -3796,15 +3796,15 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
     }
     if (!mLooking && mimita::game::hostCursorMode() != 0)
         mimita::game::hostSetCursorMode(0);
-    mRightPrev = right;
+    mRightPrev = rightDown;
 
     if (mLooking) {
         mLeftPrev = InputRouter::mouseDown(GLFW_MOUSE_BUTTON_LEFT);
         return;
     }
 
-    const bool left = InputRouter::mouseDown(GLFW_MOUSE_BUTTON_LEFT);
-    if (left && !mLeftPrev) {
+    const bool leftDown = InputRouter::mouseDown(GLFW_MOUSE_BUTTON_LEFT);
+    if (leftDown && !mLeftPrev) {
         const int row = outlinerRowAt(screenCursor.x, screenCursor.y);
         if (row >= 0) {
             std::vector<EditorObjectRef> objects;
@@ -3840,7 +3840,7 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
             return;
         }
     }
-    if (left && !mLeftPrev) {
+    if (leftDown && !mLeftPrev) {
         GuiLayout& editorLayout =
             GuiLayoutManager::instance().getLayout("config/gui/map-editor.json");
         auto pointIn = [](const glm::vec2& p, const UIRect& r) {

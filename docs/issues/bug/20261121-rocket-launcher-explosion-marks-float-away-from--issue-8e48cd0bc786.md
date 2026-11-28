@@ -314,3 +314,52 @@ Independent bounded review by issue-review-sweeper (read-only; no source edit, b
 5. Repair task-proof-9d05ae9ca4ff only from that pinned, non-zero-generation, trace-enabled journal; preserve a journal copy against log rotation so the next reviewer can re-inspect it. Do not close on compilation, shockwave FX, or the current contradictory record.
 
 Verdict: inconclusive - gen-748 rocket terminals now exist in a live surviving journal, but tracing has still never been enabled and the local actor-mark heuristic remains unexercised.
+
+## Scheduled independent review
+
+### 2026-11-28T08:20:37.750Z — rocket-rl-settle
+
+A bounded independent review was queued as wake wake-246c95495aac after 888 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (inconclusive - gen-816 gate present; new local world-hit marks anchor exactly; hitfx never enabled; actor/open-air unproven)
+
+### 2026-11-28T08:31:00.943Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review by issue-review-sweeper (read-only; no source edit, build, run, lease, closure, or fix claimed). Reviewer wake wake-246c95495aac, 2026-11-28T08:30Z. Prior reviews ids 57, 211, 301, 404, 459, 507 are preserved; this is append-only.
+
+## Observed facts
+
+- Readiness is complete (`missing=[]`, ready=true, 1 active task `rocket-impact-placement-proof`); issue state is `in_review`. No fix is proven.
+- Proof record `task-proof-9d05ae9ca4ff` is unchanged and still self-contradictory: `status=runtime_proven`, `result=unproven`, `verified_utc=""`, `build_id=""`, `game_generation=0`, `run_id=20261121_000922`, journal `logs/2026-11-21/20261121_000922/client-01/events.jsonl`. That journal no longer exists, so the record is not evidence either way.
+- Current build: `build/game/current.json` `generation=816`, `status=ok`, `dll=build\game\generation-816\game-g816.dll`, `code_hash=6b13b5de7473f0efee423da1a1ac8624b5c651ef28b9282954a381fd16daba04`, generated 2026-11-28T08:15:20Z. Snapshot `.dev/build-snapshots/game-dll-20261128T081455389961Z-9fcc1f/source` contains the world-only gate: `src/network/server-projectiles.cpp:747 packet.reserved[0] = std::strcmp(impactType, "world") == 0 ? 1 : 0;`; `multiplayer-projectiles.cpp:1297/1326/1332 ... event->reserved[0] != 0`; `hasWorldImpactAnchor` at 2502-2506.
+- New surviving rocket-terminal bases on recent, post-gate builds (all still on disk):
+  - Run `20261128_062046` (gen 808, mode `payload`, map `mimita-pipes`): server journal 176 `explode-world`, 28 `explode-player`, 3 `explode-lifetime`, 301 `npc.projectile-created`.
+  - Run `20261128_054617_01` (Vehicle Arena - Rocket League Free Play, map `slaughterhouse1`, artifact build `2026-11-27T17:45:19Z` = gen 814): server journal 821 `explode-world`, 106 `explode-player`, 73 `explode-lifetime`.
+  - Run `20261128_061051` (Vehicle Arena - Rocket League Free Play, gen 814): client-01 has 16 `rocket.impact-mark.resolved` events. All 16 report `impact_surface=world_triangle`, `mark_applied=true`, `mark_surface=static_world_triangle`, `nearest_world_surface_distance_m=-1.0`, and `impact_position == mark_position` (e.g. `events-0005.jsonl` line 26162 at `[-6.738,-1.170,844.102]`, `world_triangle_index=2156`). This is the first surviving local-player world-hit resolver sample and it corrects prior reviews' claim that no such sample survives.
+- Decals are enabled: `config/impact_decals.json` has `enabled=true`, `explosionMarks.enabled=true`, radius 4.0, texture `assets/textureshq/explosionmarkv1.png`.
+- Despite that, across all of `logs/2026-11-28`: 0 `impact_decal.spawn`, 0 `impact_decal.render_submitted`, 0 `hitfx_trace`. Tracing still defaults off: `src/effects/hit-effects.cpp:34 bool gHitFxTraceEnabled = false;`; spawn emit at `effect-part.cpp:440`; render emit at `effect-part-render.cpp:900`; command `hitfx_trace [0|1]` at `hitfx-commands.cpp:194`.
+- No rocket run exists yet on the current generation 816; the newest rocket terminals are on gen 808/814.
+
+## Inference / uncertainty
+
+- Source/build containment is solid for generation 816: the network path suppresses marks for non-world terminal impacts and requests one for a validated world impact at the packet position/normal. That is consistent with "no floating", but remains runtime-unproven because hitfx tracing has never been enabled in any captured run.
+- The 16 world-triangle marks show the local-player path anchors a direct world hit exactly at the impact point (impact_position == mark_position, no nearest-surface offset). They do not exercise the float-prone actor-hit case, where `findNearestWorldSurface` searches an 8 m AABB.
+- Absence of decal spawn/render events is explained by the default-off tracer, not by correct or missing marks.
+
+## Contrary evidence / scope risks
+
+- `src/combat/weapon-rocket-launcher.cpp` still calls `findNearestWorldSurface` (8.0 m AABB) and applies that nearest triangle as the mark position for actor impacts, while the network path suppresses actor marks. The two modes differ; a midair actor hit near a wall/ceiling is the reported floating symptom and remains unexercised.
+- `src/pobjects/persistent-physics.cpp:403 doExplosion` still calls `spawnExplosionFx(pos, weaponId, ownerName)` with default `spawnMark=true` and default +Z normal; the grenade/persistent explosion path is outside this gate and can still float on an in-air explosion.
+- Acceptance says every mark sits flush; the implemented network behavior suppresses actor/open-air marks rather than anchoring them. Human review should confirm suppression is the intended outcome.
+- The three recent build attempts report `unavailable: matched_prebuild_resource_baseline; host_commit_charge_and_limit; journal_aligned_live_mode_workload_and_frame_tick_metrics` (gap_keys `build-resource-sampling:game-dll-20261128T081455389961Z-9fcc1f`, `...T080734594288Z-dde9ce`, `...T075614669320Z-cb02af`). These are global build-sampling gaps unrelated to decal placement; not inferred as a cause here.
+
+## Next discriminating check (cold handoff)
+
+1. Produce one trace-enabled run on generation >= 816 (prefer 816). Cheapest: re-run the `20261128_061051`-style local rocket scenario, or a mode-45/mode-43 rocket profile, with `hitfx_trace 1` in the client agent-command queue. Keep `impact_decals.config_read` showing enabled.
+2. In that exact client journal require: a world hit yields `rocket.impact-mark.resolved` (`impact_surface=world_triangle`, `impact_position==mark_position`) AND `impact_decal.spawn` (kind `explosion_mark`) AND `impact_decal.render_submitted` with the same `decal_id`; an actor hit yields `impact_surface=actor` with either `mark_applied=false`/`mark_surface=none_within_8m` or a `nearest_world_surface_distance_m` consistent with a truly adjacent surface; an open-air/lifetime explosion yields no `explosion_mark` decal id and no render submission. Check position/normal are finite and the world-hit normal is not the +Z default.
+3. Capture multi-angle visuals of the world-hit mark and the actor case. Record run_id, game_generation 816, DLL sha256 `6b13b5de...`, and event line numbers; preserve a journal copy against log rotation.
+4. Repair `task-proof-9d05ae9ca4ff` only from that pinned, non-zero-generation, trace-enabled journal; otherwise leave it unproven. Do not close on compilation, shockwave FX, or the current contradictory record.
+
+Verdict: inconclusive - gate present in gen 816; new local world-hit marks anchor exactly; hitfx tracing still never enabled; actor-hit and open-air paths remain unproven.

@@ -242,6 +242,19 @@ def main() -> int:
     lower_top = lower[-1][1] if lower else 3.55
     upper_bottom = upper[-1][1] if upper else 16.39
     ceiling_z = ceiling_face
+    # A 1 m wall let a 23 m/s car tunnel through at the wall/upper-profile
+    # seam; the solver then pushed it out whichever face was nearest and it
+    # ended behind the wall at (-52.8, 33). Two metres plus a 1 m profile
+    # overlap closes the seam without moving the playable inner face.
+    wall_thickness = 2.0
+    wall_overlap = 1.0
+    # The vertical wall band must start where the lower ramp profile ends. The
+    # old band started at lower_top (3.55) and overlapped the ramp volume; a car
+    # on the ramp at z~3.86 was fully inside the band box, so the solver pushed
+    # it down/out and the car snapped at y=41.9. Flush at 4.55 removes the pocket.
+    wall_bottom = lower_top + wall_overlap
+    lower = [[lower[0][0], -1.0]] + list(lower) + [[0.0, lower_top + wall_overlap]]
+    upper = [[upper[-1][0], upper[-1][1] - wall_overlap]] + list(upper)
 
     blocks = []
 
@@ -278,8 +291,8 @@ def main() -> int:
     # 18 m/s and 23 m/s velocity changes at x = 9.75 on flat ground). A box has
     # thickness, so the swept sphere cannot pass it. Top stays at -0.01 m like
     # arena1.
-    add("floor", "box", (0.0, 0.0, -0.51),
-        (2 * goal_back, 2 * half_width, 1.0), "grass", floor_col,
+    add("floor", "box", (0.0, 0.0, -1.51),
+        (2 * goal_back + 8.0, 2 * half_width + 8.0, 3.0), "grass", floor_col,
         tags=["arena", "floor"])
     add("ceiling", "box", (0.0, 0.0, ceiling_z + 0.5),
         (2 * goal_back, 2 * half_width, 1.0), "wallv4", ceil_col,
@@ -310,8 +323,8 @@ def main() -> int:
         # Rotated 90 degrees, so the span must live on the local y axis: a
         # (span, 1, h) box became a 79 m wall through the middle of the field
         # and the ball fell through the floor (run 20261126_231000).
-        add(f"{name}_wall", "box", (pos[0], pos[1] + (0.5 if pos[1] > 0 else -0.5), (lower_top + upper_bottom) / 2.0),
-            (1.0, span, upper_bottom - lower_top), "wallv2", wall_col,
+        add(f"{name}_wall", "box", (pos[0], pos[1] + (wall_thickness / 2.0 if pos[1] > 0 else -wall_thickness / 2.0), (wall_bottom + upper_bottom) / 2.0),
+            (wall_thickness, span, upper_bottom - wall_bottom), "wallv2", wall_col,
             rotation=(0.0, 0.0, yaw))
         add(f"{name}_ramp_upper", "profile", (pos[0], pos[1], 0.0), (1.0, span, 1.0),
             "wallv2", wall_col, rotation=(0.0, 0.0, yaw), profile=upper,
@@ -330,8 +343,8 @@ def main() -> int:
                 "wallv2", wall_col, rotation=(0.0, 0.0, yaw), profile=lower,
                 profile_axis=1)
             add(f"{name}_{suffix}_wall", "box",
-                (face_x + sign * 0.5, sy * side_centre, (lower_top + upper_bottom) / 2.0),
-                (1.0, side_span, upper_bottom - lower_top), "wallv2", wall_col,
+                (face_x + sign * (wall_thickness / 2.0), sy * side_centre, (wall_bottom + upper_bottom) / 2.0),
+                (wall_thickness, side_span, upper_bottom - wall_bottom), "wallv2", wall_col,
                 rotation=(0.0, 0.0, yaw))
             add(f"{name}_{suffix}_ramp_upper", "profile",
                 (face_x, sy * side_centre, 0.0), (1.0, side_span, 1.0),
@@ -339,8 +352,8 @@ def main() -> int:
                 profile_axis=1)
         # Above the goal opening.
         add(f"{name}_header_wall", "box",
-            (face_x + sign * 0.5, 0.0, (goal_height + upper_bottom) / 2.0),
-            (1.0, 2 * goal_half, upper_bottom - goal_height), "wallv4", goal_col,
+            (face_x + sign * (wall_thickness / 2.0), 0.0, (goal_height + upper_bottom) / 2.0),
+            (wall_thickness, 2 * goal_half, upper_bottom - goal_height), "wallv4", goal_col,
             rotation=(0.0, 0.0, yaw))
         add(f"{name}_header_ramp_upper", "profile", (face_x, 0.0, 0.0),
             (1.0, 2 * goal_half, 1.0), "wallv4", goal_col,
@@ -369,12 +382,31 @@ def main() -> int:
             (1.0, diagonal, 1.0), "wallv2", wall_col,
             rotation=(0.0, 0.0, yaw), profile=lower, profile_axis=1)
         add(f"{name}_wall", "box",
-            (mid_x + sx * 0.35, mid_y + sy * 0.35, (lower_top + upper_bottom) / 2.0),
-            (1.0, diagonal, upper_bottom - lower_top), "wallv2", wall_col,
+            (mid_x + sx * (wall_thickness / 2.0), mid_y + sy * (wall_thickness / 2.0), (wall_bottom + upper_bottom) / 2.0),
+            (wall_thickness, diagonal, upper_bottom - wall_bottom), "wallv2", wall_col,
             rotation=(0.0, 0.0, yaw))
         add(f"{name}_ramp_upper", "profile", (mid_x, mid_y, 0.0),
             (1.0, diagonal, 1.0), "wallv2", wall_col,
             rotation=(0.0, 0.0, yaw), profile=upper, profile_axis=1)
+
+    # Invisible collision backstops behind the visible walls/upper profiles.
+    # The ramp/wall seams are curved ribbons; a fast car can slip behind one.
+    # These boxes stop it before it leaves the arena; opacity 0 keeps them out
+    # of the visual. They overlap the visible wall (inner face 42.4 on the long
+    # walls, 52.4 on the back walls) so no pocket remains.
+    backstop_col = [0.0, 0.0, 0.0, 0.0]
+    add("long_pos_backstop", "box", (0.0, 43.4, 10.2),
+        (108.0, 2.0, 20.4), "wallv2", backstop_col, opacity=0.0)
+    add("long_neg_backstop", "box", (0.0, -43.4, 10.2),
+        (108.0, 2.0, 20.4), "wallv2", backstop_col, opacity=0.0)
+    for name, sign in (("back_e", 1.0), ("back_w", -1.0)):
+        for suffix, sy in (("l", -1.0), ("r", 1.0)):
+            add(f"{name}_backstop_{suffix}", "box",
+                (sign * 53.4, sy * 26.5, 10.2),
+                (2.0, 35.0, 20.4), "wallv2", backstop_col, opacity=0.0)
+        add(f"{name}_backstop_header", "box",
+            (sign * 53.4, 0.0, 13.45),
+            (2.0, 18.0, 13.9), "wallv2", backstop_col, opacity=0.0)
 
     arena1 = json.loads((ROOT / "config" / "maps" / "arena1.json").read_text(encoding="utf-8"))
     goals = []

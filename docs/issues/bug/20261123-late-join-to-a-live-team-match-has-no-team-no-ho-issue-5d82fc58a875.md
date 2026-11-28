@@ -214,3 +214,42 @@ NEXT DISCRIMINATING CHECK (smallest; unchanged and still unrun)
 - Do not close this issue on existing records and do not reuse the purged gen565/gen569 journals as current proof. Owner remains latejoin-team-identity.
 
 VERDICT: needs-evidence - no late-join evidence exists at the current generation; proof is stale/unproven (now against a newer, unrelated source revision) and the same two-client TDM late-join run remains unexecuted across at least two review sweeps.
+
+## Scheduled independent review
+
+### 2026-11-28T03:01:14.230Z — daily-review-20261128
+
+A bounded independent review was queued as wake wake-a78b8c12072b after 873 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (needs-evidence)
+
+### 2026-11-28T03:06:50.925Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+INDEPENDENT BOUNDED REVIEW (issue-review-sweeper; wake wake-a78b8c12072b; read-only: no source edit, build, run, lease, close, or fix claim; 2026-11-28T03:1xZ).
+
+OBSERVED FACTS
+- Readiness unchanged: ready=true, score 8/8, state=in_review, owner latejoin-team-identity; the 3 tasks (latejoin-team-capacity-spawn, latejoin-team-identity-server, latejoin-team-outlines) remain state=open with empty evidence/method/proof fields.
+- Proof rows unchanged since 2026-11-23: id74 proof-39dbdfdf1222 unproven ("journal event predicate not found"); id75 proof-c63791220bc7 unproven; id76 proof-8ee0e191b3dd stale ("source changed: src/network/server-gamemode.cpp"); id77 proof-e54f24bee063 stale; id78 proof-72fdb2cb02ab stale. Global proof status is now proven=5, stale=43 (was proven=2, stale=39 on 2026-11-26); nothing for this issue moved.
+- Current working-tree hashes (git status clean for these paths): src/network/server-gamemode.cpp e280f7bc2827ad7e71dc1b336f5917e312c5919334186cae3d44cd4ef28d886f; src/render/render-player.cpp 8ee014c9186ab7f48125003f38f8a9bf570b5cdc89a0ebb88b3d29dc5c3cb093; src/network/server-gamemode.h 00eeddc1610eb940e01edb1ca6f3941b6689755779fd36401ea403041abf8630; src/network/server-npcs.cpp 2e37709f8e52be222595155e79c0e76883937c95e56feed83917b8824787c7d5. Since the 2026-11-26 review, server-gamemode.cpp (was d2b61255...) and render-player.cpp (was e6b00335...) changed again; the header and server-npcs.cpp are unchanged.
+- New commits touching these files: 17c7a67d (2026-11-27 10:21 -0500, controller work) and 33ea17d5 (2026-11-27 14:02 -0500, map-editor/collision efficiency). The 33ea17d5 server-gamemode.cpp diff is authored-NPC block-state invalidation (authoredNpcBlockStateInvalidate, map.geometry.block-delta.npc-full) in applyAuthoredBlockDeltaNow; it does not touch the late-join path.
+- The behavior path itself is unchanged since the 2026-11-23 proof: git blame attributes src/network/server-gamemode.cpp:2830-2890 (late-join-assigned/spawn emit and team-spawn placement) to 5e08e105 (2026-11-23), the revision that produced the proven gen565/gen569 behavior, and render-player.cpp's teamIdentityKnown gating (:615-635) is unchanged since 85d539f0b/e3cae7568 (2026-10-21/2026-11-05). The stale result is whole-file-hash coupling to unrelated edits, not a change to the late-join/outline code.
+- Published game DLL is now generation 808 (build/game/current.json status=ok, generated 2026-11-28T03:04:46Z, changed_sources=[src/mapeditor/map-editor.cpp]). The gen-808 snapshot .dev/build-snapshots/game-dll-20261128T030413043291Z-43ce44/source contains exactly the current hashes above for server-gamemode.cpp and render-player.cpp (the gen-805 18:41Z snapshot did too). A late-join run on the published DLL would therefore exercise the current target-source bytes, though the dev-loop still marks the published EXE artifact 758a748d... (17:45Z) stale, so record its SHA-256 and treat EXE currency separately.
+- A 2026-11-27T23:28Z build attempt failed compiling src/mapeditor/map-editor.cpp (UITextInputState[3] used with .begin()/.end()); that was in-progress map-editor work, not this issue's paths, and generation 808 then built successfully at 03:04Z.
+- No retained journal contains the target events: `rg -l "late-join-assigned|late-join-spawn|team-roster-npc.replaced" C:\mimita-v9\logs` returns zero files. logs/2026-11-28 has no run dirs. The two 2026-11-27 TDM-labelled runs (20261127_171910, 20261127_172415) have only client-01, no network.mode.start in the server journal, and no late-join/team-roster events. The gen565/gen569 journals cited by review id 290 remain purged.
+
+INFERENCE / UNCERTAINTY
+- State is implemented but unproven at the current generation. Because the late-join block and outline gate are byte-identical to the proven revision, nothing observed indicates a regression; the most likely state is "still works, but no retained proof at current hashes".
+- The stale rows do not mean behavior changed; they are whole-file-hash staleness from unrelated edits in the same files.
+- Missing samples are unknown, not zero.
+- Whether the 23:28Z map-editor compile failure was a transient uncommitted edit or a HEAD defect cannot be settled from records; gen808's success indicates it was resolved before 03:04Z.
+
+CONTRARY EVIDENCE
+- Review id 290 (owner, 2026-11-23) recorded concrete values (team=1, role=elite_fighter, roster [5,5], npc.target-changed, server.damage.applied, client.gamemode.local-actor-identity found=true, teammate true/false outlines). That is credible contemporaneous evidence, but it cannot be independently re-verified (journals purged) and its proof rows are stale against current hashes.
+
+NEXT DISCRIMINATING CHECK (smallest, and executable now)
+- Run one isolated TDM two-client late join against the published generation 808 (test profile tdm-validation, launch mode 41; second client after network.mode.start stage=active). A new game-DLL build is not required because gen808 already contains the current hashes of every target path; record the EXE artifact SHA-256 and label any EXE-currency caveat. Copy and SHA-256 the server-01 and client-02 events*.jsonl into a retained proof artifact before rotation. Verify: match.actor.late-join-assigned team>0; match.actor.late-join-spawn; gamemode.spawn-new-actor; gamemode.team-roster-npc.replaced; gamemode.team-roster.resolved [5,5]; npc.target-changed target=<joiner>; server.damage.applied target=<joiner>; client.gamemode.local-actor-identity found=true team; player_visuals.outline team_identity_known=true for a teammate and an enemy. Then record fresh proof rows against the hashes above. Also run one FFA/teamless late join to confirm no assignment. Human outline/visual confirmation remains separate.
+- Do not close on existing records and do not reuse the purged gen565/gen569 journals. Owner remains latejoin-team-identity. This is the fourth consecutive independent sweep recording the same unexecuted check (2026-11-24, 11-25, 11-26, 11-28); unlike those sweeps, the currently published generation matches the target-path hashes.
+
+VERDICT: needs-evidence.

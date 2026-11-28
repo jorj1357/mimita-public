@@ -1,6 +1,9 @@
 // 10 02 2026
 // Team-level tactical brain. Owns assignments and shared reports; never moves
-// or teleports actors.
+// or teleports actors. Elite squad focus is also the shared aim target; the
+// host target selector consumes it while this brain still owns the choice.
+// Fair reacquisition uses per-enemy last-targeted stamps, identical for humans
+// and NPCs.
 #include "npc/team-brain.h"
 
 #include <algorithm>
@@ -113,6 +116,7 @@ void TeamBrain::updateAssignments(
     bool objectiveRounds)
 {
     mState.assignments.clear();
+    mState.assignedSitePositions.clear();
     if (!objectiveRounds) {
         for (const auto& actor : livingActors)
             mState.assignments.push_back({actor.first, TeamAssignment::None});
@@ -148,8 +152,12 @@ void TeamBrain::updateAssignments(
                    mState.objective.recovererActorId != 0) {
             assignCarryAndErase(mState.objective.recovererActorId);
         }
-        for (uint32_t id : members)
+        for (uint32_t id : members) {
             mState.assignments.push_back({id, TeamAssignment::AttackSite});
+            // The whole team commits to the one round site.
+            if (mState.chosenSiteValid)
+                mState.assignedSitePositions[id] = mState.chosenSitePosition;
+        }
         return;
     }
 
@@ -157,26 +165,34 @@ void TeamBrain::updateAssignments(
         if (mState.objective.planted) {
             // Everyone retakes; the closest is chosen as defuser by the local
             // brain (which knows its own position).
-            for (uint32_t id : members)
+            for (uint32_t id : members) {
                 mState.assignments.push_back({id, TeamAssignment::Retake});
+                mState.assignedSitePositions[id] = mState.objective.bombPosition;
+            }
             return;
         }
-        // Split defenders across sites; optionally one rotator.
-        int rotatorCount = mState.policy.oneRotator ? 1 : 0;
-        const int defenderCount = (int)members.size() - rotatorCount;
-        const int perSite = std::max(1, mState.policy.defendersPerSite);
-        int assigned = 0;
+        // Split defenders across the usable sites, with one optional rotator.
+        // The split is deterministic and does not reveal the Terrorists' site
+        // choice. A team report still overrides it in objectiveTargetPosition
+        // so the whole squad converges on the first real sighting.
+        std::vector<glm::vec3> usableSites;
+        usableSites.reserve(mState.sites.size());
+        for (const TeamSiteInfo& site : mState.sites)
+            if (site.hasPosition) usableSites.push_back(site.position);
+        const int rotatorCount = mState.policy.oneRotator ? 1 : 0;
+        std::size_t siteCursor = 0;
         for (size_t i = 0; i < members.size(); ++i) {
             if (i >= members.size() - (size_t)rotatorCount) {
                 mState.assignments.push_back({members[i], TeamAssignment::Rotate});
-            } else {
-                (void)perSite;
-                (void)assigned;
-                mState.assignments.push_back({members[i], TeamAssignment::DefendSite});
-                ++assigned;
+                continue;
+            }
+            mState.assignments.push_back({members[i], TeamAssignment::DefendSite});
+            if (!usableSites.empty()) {
+                mState.assignedSitePositions[members[i]] =
+                    usableSites[siteCursor % usableSites.size()];
+                ++siteCursor;
             }
         }
-        (void)defenderCount;
         return;
     }
 
@@ -518,8 +534,18 @@ bool TeamBrain::objectiveTargetPosition(uint32_t actorId, const glm::vec3& actor
         }
         glm::vec3 reportPos;
         float reportConfidence = 0.0f;
+        // A real sighting is shared through the team report and pulls the whole
+        // squad toward it. CTs infer the attack from the sighting; they never
+        // receive the Terrorists' chosen site id.
         if (bestTeamReport(reportPos, reportConfidence)) {
             out = reportPos;
+            return true;
+        }
+        // No report: hold the defender's assigned site. Round-robin assignment
+        // in updateAssignments is what actually splits the team across sites.
+        auto assigned = mState.assignedSitePositions.find(actorId);
+        if (assigned != mState.assignedSitePositions.end()) {
+            out = assigned->second;
             return true;
         }
         if (nearestSitePosition(actorPos, out)) return true;

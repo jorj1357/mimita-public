@@ -51,6 +51,34 @@ Death ragdolls are shown by default through the global ragdoll-death setting.
 A gamemode may explicitly set `ragdoll_enabled: false` to suppress them; TDM
 explicitly enables them so its mode override cannot turn off the default.
 
+## Team focus-fire and continuous engagement (2026-11-28)
+
+TDM is an elite squad mode. Its intended pressure is continuous: both teams keep
+fighting for the whole match, and the human is always a valid target in the same
+pool as every NPC.
+
+- Each team shares one focus actor. All living NPCs on that team engage the same
+  enemy while it is a valid living hostile, and reacquire on the next decision
+  tick when it dies or leaves.
+- The squad moves as a unit toward the focus (existing squad anchor, slots, and
+  approach sectors). Focus is also the shared aim target; line of sight is still
+  required to fire.
+- With no perception report, TDM uses the nearest living enemy to the team
+  centroid as the focus. It does not park the squad at an enemy spawn.
+- **No human priority by default.** Human and NPC enemies are scored and rotated
+  identically. Damage to a team makes the attacker that team's next
+  stale-priority focus candidate, whether the attacker is human or NPC.
+- If a living enemy within the rotation radius has been ignored for the
+  configured window (starting point: 8 seconds), the nearest such enemy becomes
+  the focus. This is the mechanism that lets the human re-enter the target set
+  after a death or respawn without a special case.
+- A focus for a dead or teamless actor is invalid and must not be retained.
+
+Runtime acceptance: a pinned TDM run must show one shared target per team for at
+least 80% of sampled ticks, reacquisition of a respawned human within one second,
+NPC-vs-NPC damage continuing across the match, and no long window where a team
+with living enemies has no target.
+
 ## Live late join
 
 A human who joins while the TDM match is in COUNTDOWN, GO, or ACTIVE is

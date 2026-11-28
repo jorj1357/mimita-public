@@ -138,3 +138,13 @@ subprocess output, and live journal before assigning an owner.
 - [Effects and replay fidelity](../effects/effects.md)
 - [Performance](../performance/performance.md)
 - [Accessibility and portability](../../architecture/accessibility/accessibility.md)
+
+### Tick-authored TAS files and capture-to-clip flow — 2026-11-28
+
+> “save a tas file + run it on any fps performance etc”
+
+Interpretation: a TAS file is a portable, versioned gameplay input sequence, not a video or a list of render-frame transforms. It records one authoritative input sample per simulation tick and enough identity/checkpoint information to replay, inspect, and report divergence. Playback must be independent of render FPS. Exact cross-machine playback remains a measured support target; a file must disclose incompatible game/content identity rather than silently claim the original outcome.
+
+> “press P to export and it has voice acivity picke dup”
+
+Interpretation: the recent-clip action should offer a quick path from live duels or vehicle matches into a saved editor project and export. When the active capture configuration enables microphone/voice recording, retain the voice track and its timing alongside game audio and replay events so the user can include it in the clip. Preserve the existing rule that the binding is owned by active configuration; do not hard-code P here. This is a capture and editing path, not automatic publication.

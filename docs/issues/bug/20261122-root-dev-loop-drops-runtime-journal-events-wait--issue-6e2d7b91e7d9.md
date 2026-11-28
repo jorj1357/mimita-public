@@ -94,3 +94,29 @@ Evidence: {"build_attempt_id": "game-dll-20261127T013823160277Z-8b3773", "build_
 ### 2026-11-27T16:03:04.455Z — build-wait-reviewer
 
 Occurrence candidate 2026-11-27 for issue-3736371ce4de (wait game-dll-build:2026-11-27T07:55:43.159Z): dev-loop.wait.over_budget and dev-loop.wait.reviewer-wake are absent from every logs/**/dev-loop/events.jsonl; no retained journal contains the wait_id or issue id. The dev-loop runtime_context run at the wait was 20261127_074605, whose dir retains only run.json and no dev-loop/ subdir. Infer, do not assert, that this is the dropped-write/ENOENT family: the run dir exists while its dev-loop subdir does not, but retention pruning cannot be excluded from current artifacts. Owner should confirm dropped-write vs pruning. Issue record and the single wake (wake-8af078e5e1a7) exist; only the journal half is missing. Reviewer: build-wait-reviewer.
+
+## Agent suggestion
+
+### 2026-11-28T08:28:00.449Z — build-wait-reviewer
+
+VARIANTS: wait.over_budget/reviewer-wake replaced by wait.issue-failed (adapter launch timeout), distinct from the ENOENT variant already recorded here.
+
+Occurrence: wait_id game-dll-build:2026-11-28T07:25:59.635Z (issue-04ffbd3f90ed, attempt game-dll-20261128T072559701228Z-93ccd0, generation 812, build success=true, total 400.078s). The issue record and the single wake request (.dev/agent-wake/requests/wake-5406ee6c4908.json, wake.queued 07:27:04.977Z) both exist, so this is not lost work.
+
+However logs/2026-11-28/20261128_061051/dev-loop/events.jsonl:409 contains only dev-loop.wait.issue-failed for this wait_id: error "Command '[python, devscripts/agent-wake.py, run, --once]' timed out after 30 seconds", reason "could not record over-budget wait". No dev-loop.wait.over_budget and no dev-loop.wait.reviewer-wake were written for the occurrence.
+
+Root cause (located, read-only): devscripts/build_friction.py:244-246 wake_reviewer runs `agent-wake.py run --once` synchronously with timeout=30 after the wake `add` succeeds (line 237). On this host the adapter launch blocks >30s, so subprocess.TimeoutExpired propagates to dev-loop.py:3946, which records wait.issue-failed and skips the expected wait.over_budget/reviewer-wake events. reported_wait_ids already contains the wait_id (dev-loop.py:3929), so there is no retry and no duplicate; only the journal proof half is wrong/missing.
+
+Suggested smallest fix for the owner: make the immediate `run --once` launch best-effort (catch TimeoutExpired, keep queued=True and record the launch as deferred), and/or emit dev-loop.wait.over_budget before waking. This does not change wait policy; it stops a slow adapter launch from masking a successful wait record.
+
+Reporter (reviewer): build-wait-reviewer. No fix claimed here.
+
+## Agent discussion and suggestions
+
+### 2026-11-28T08:29:35.716Z — build-wait-reviewer
+
+Message: `msg-b443ab2714c6` (question)
+
+Subject: New wait-event-loss variant: wake run --once 30s timeout yields wait.issue-failed
+
+For wait game-dll-build:2026-11-28T07:25:59.635Z (issue-04ffbd3f90ed) the issue and the single wake request exist, but the dev-loop journal recorded only dev-loop.wait.issue-failed: agent-wake.py run --once exceeded its 30s timeout. Root cause is read-only located at devscripts/build_friction.py:244-246 (synchronous run --once with timeout=30 after add succeeds) -> dev-loop.py:3946 false-negative. This is a new variant of the ENOENT one in this issue. Smallest proposed check: make that immediate launch best-effort (catch TimeoutExpired, keep queued=True) and/or emit wait.over_budget before waking. Please confirm owner and the smallest next check; I have not claimed a fix.

@@ -3,6 +3,7 @@
 #include "vehicles/vehicle-render.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 
@@ -12,6 +13,10 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include "camera.h"
+#include "game/resident-state-module.h"
+#include "effects/effect-part.h"
+#include "gamemode/map-config.h"
+#include "network/multiplayer-context.h"
 #include "physics/physical-entity.h"
 #include "render/procedural-cylinder.h"
 #include "vehicles/vehicle-config.h"
@@ -40,7 +45,13 @@ void drawVehicleWheels(const Camera& camera)
         if (!spec || !entity)
             continue;
 
-        const glm::quat chassisRotation = glm::normalize(entity->orientation);
+        // Same presentation pose as the car body: the wheels were drawn from the
+        // raw 120 Hz transform while the body interpolated, so they visibly
+        // led/jittered by one tick.
+        const glm::mat4 renderTransform =
+            physicalEntityRenderTransform(*entity);
+        const glm::quat chassisRotation =
+            glm::normalize(glm::quat_cast(glm::mat3(renderTransform)));
         const unsigned int texture = gTextures.getPath(
             spec->wheelTexture.empty() ? "assets/textureshq/dark1.png"
                                        : spec->wheelTexture);
@@ -56,7 +67,7 @@ void drawVehicleWheels(const Camera& camera)
                 std::max(spec->wheelSegments, 8));
 
             const glm::vec3 hub = glm::vec3(
-                entity->transform * glm::vec4(wheelSpec.hub, 1.0f));
+                renderTransform * glm::vec4(wheelSpec.hub, 1.0f));
             const glm::vec3 suspensionAxis = safeNormalize(
                 chassisRotation * wheelSpec.suspensionAxis,
                 glm::vec3(0.0f, 0.0f, -1.0f));
@@ -98,6 +109,57 @@ void drawVehicleWheels(const Camera& camera)
                 glm::mat4_cast(rotation);
             drawTexturedCylinder(camera, model, mesh, texture,
                                  glm::vec3(0.55f, 0.55f, 0.58f), 1.0f);
+        }
+    }
+}
+
+namespace {
+bool sVehicleAxesEnabled = true;
+double boostPadNowMs()
+{
+    return (double)std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+               .count();
+}
+} // namespace
+
+void setVehicleAxesEnabled(bool enabled) { sVehicleAxesEnabled = enabled; }
+bool vehicleAxesEnabled() { return sVehicleAxesEnabled; }
+
+void drawArenaBoostPads()
+{
+    const MapObjectiveConfig& map = MapConfigRegistry::instance().current();
+    if (map.boostPads.empty())
+        return;
+    static double lastSpawnMs = 0.0;
+    const double now = boostPadNowMs();
+    if (now - lastSpawnMs < 180.0)
+        return;
+    lastSpawnMs = now;
+    const MimitaNet::MultiplayerContext* ctx =
+        ::mimita::game::mpContextPtr();
+    for (size_t i = 0; i < map.boostPads.size() && i < 64; ++i)
+    {
+        const BoostPadConfig& pad = map.boostPads[i];
+        if (!pad.enabled)
+            continue;
+        const bool depleted = ctx && ctx->active &&
+                              ctx->boostPadRemainingSeconds[i] > 0.01f;
+        const float radius = pad.kind == "big" ? 2.0f : 1.0f;
+        const glm::vec3 color = depleted
+            ? glm::vec3(0.42f, 0.42f, 0.44f)
+            : (pad.kind == "big" ? glm::vec3(1.0f, 0.55f, 0.10f)
+                                 : glm::vec3(1.0f, 0.88f, 0.20f));
+        if (EffectPart* fx = EffectPartSystem::instance().spawnCustom(
+                pad.position + glm::vec3(0.0f, 0.0f, radius * 0.35f),
+                color, 0.42f, "arena_boost_pad"))
+        {
+            fx->scale = radius * 1.5f;
+            fx->endScale = radius * 1.5f;
+            fx->halfSize = glm::vec3(radius);
+            fx->alpha = depleted ? 0.35f : 0.55f;
+            fx->endAlpha = 0.0f;
+            fx->useEndAlpha = true;
         }
     }
 }

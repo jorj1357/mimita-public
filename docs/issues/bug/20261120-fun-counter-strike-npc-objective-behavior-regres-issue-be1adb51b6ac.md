@@ -641,3 +641,45 @@ NEXT DISCRIMINATING CHECK
 One pinned isolated FCS/dust2cyberiav4 run on the newest published generation (currently generation 782 / HEAD 7176d28a, through the root dev-loop, not started by a reviewer) retained so its journal holds, per defuse attempt: sampled distance_to_objective during the hold, the operator's utility-decision/goal, and any operator death, plus >=2 completions on >=2 sites. Classify every interruption as range-exit vs death vs other. Success = no completion attempt is dropped while the defuser is alive and inside 6.0 m for the required ticks, and the range-exit share falls below 10%. Also record per-actor stuck seconds. Preserve the journal per the retention issue (logs/2026-11-22 and logs/2026-11-24 are now pruned; 20261125_152203 still has no server journal).
 
 VERDICT: evidence (new gen748 per-interruption classification: range exit, not death, dominates hold failures; not completion, because it is not current source, single map, one round, and the movement/stuck acceptance remains unmet). Human visual review not performed.
+
+## Scheduled independent review
+
+### 2026-11-28T17:42:45.148Z — build-wait-reviewer
+
+A bounded independent review was queued as wake wake-353864622ba7 after 902 completed work sessions (trigger=sync). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (evidence)
+
+### 2026-11-28T18:02:13.006Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+INDEPENDENT BOUNDED REVIEW (issue-review-sweeper, wake wake-353864622ba7, 2026-11-28T17:42Z activation). Read-only: no source edit, no build request, no runtime started by me, no lease, no close, no proof claim, no owner change. Preserved the active shared runtime (the only live run, 20261128_171225, is Vehicle Arena, not FCS).
+
+OBSERVED FACTS
+1) Readiness/proof at review time: ready=true, missing=[], score 8, state=in_review, owner=fcs-npc-speed-combat-investigation, 2 tasks. fcs-npc-regression-repro is in_progress with no proof. fcs-objective-correction's latest structured proof task-proof-3ff7fb066ff8 is result=stale (reason "source changed: src/npc/npc.cpp") and cites logs/2026-11-22/20261122_042716_fcs-route-proof/server-01/events.jsonl, which is not on disk. The issue's structured evidence JSON still describes run 20261122_081330 generation 478 with objective.defuse-start=0 and objective.defused=0, so machine-readable proof still lags the defuse work.
+2) Journal availability: there are no FCS runs in logs/2026-11-28 (all 11-28 runs are payload/arena). The newest FCS run with a substantive server journal is 20261127_183008. run.json: mode "fun counter strike", map dust2cyberiav4, launch_mode 45, test_run_kind parallel_agent_test, profile tdm-validation, status online, server pid 4440, launch_id 2026-11-27T18:30:08.542Z. Server journal logs/2026-11-27/20261127_183008/server-01 spans 2026-11-27T18:30:16Z..23:02:28Z (4.54 h, 27 events*.jsonl segments, ~2.65 GB). Its run.json omits game_generation, revision, artifact, started_utc and source_current (source_generation=42 is inconsistent with the journal); I read generation from the journal: npc.phase-window module_generation=803 across 15,604 samples and game.hotness.summary generation=805, players=1, npcs=19. Later 11-27 FCS runs 20261127_185224 and 20261127_185404 are failed and contain no objective events. So this is the newest objective-bearing FCS journal on disk and is newer than the gen748 run used by the prior review (id 527).
+3) Whole-run counts (all retained server segments): round.start 158, round.result 157; reason 3 (time) 137, reason 2 (objective) 20. Winners: CT 146 (137 time + 9 defuse), T 11 (explode). objective.plant-start 43, objective.plant-interrupted 16, objective.planted 20 (18 site B, 2 site A), objective.exploded 11, objective.defuse-start 68 (all operator_kind=npc), objective.defuse-interrupted 59, objective.defused 9. Planted reconciles exactly: 20 = 11 exploded + 9 defused; the 2 site-A plants both exploded. Defuse start reconciles: 68 = 59 interrupted + 9 defused.
+4) Defuse completions: all 9 on site B (0 on site A). Last defuse-start -> objective.defused spans: 4.968, 4.972, 4.980, 4.981, 4.985, 4.987 s, plus 6.922, 9.106, 13.634 s (required_seconds 5.0). For all 9 the operator is not a credited kill.reward victim between its last start and the completion. Six completions are ~5.0 s; the three long spans had no intervening defuse-interrupted event in the retained fields.
+5) Interruption cause (59): 6 coincide with the operator being a kill.reward victim within 1 s; 19 have the operator's last npc.objective-context distance_to_objective > interaction_range 6.0 m; 34 ended with the last context still inside range and eligibility_reason=defuse_eligible. The event has no explicit release-cause field, so 34/59 (58%) cannot be classified from the journal.
+6) Movement/combat load in the same run: npc.stuck-episode 39,726, npc.movement-progress-failed 16,773, kill.reward 790 over 4.54 h => 145.9 stuck/min, 61.6 progress-failed/min, 2.90 kills/min. Round duration median 93 s (min 54.2, max 297.8).
+7) Evidence loss recurs on a cited proof: the immediately prior review (issue review id 527, 2026-11-27T06:54Z) cited logs/2026-11-27/20261127_010236/server-01/events.jsonl. As of this review that directory is gone; only 20261127_010236/run.json remains. A journal cited by a review less than 24 h old is no longer independently readable.
+
+INFERENCE / UNCERTAINTY
+- Confidence is high in the recorded gen803-805 events: CT NPCs can complete a 5 s defuse without being kill-credited during the hold, on a 20-actor FCS match, and did so 9 times.
+- This is NOT newest-source proof. Current HEAD is d1d1df34 and build/game/current.json records generation 820 (2026-11-28T17:06:56Z), so gen803-805 is behind current source by ~15 generations and predates the current build.
+- The three long completion spans (6.9-13.6 s) are not explained by the retained fields. A server tick slower than 60 Hz under load would stretch 300 progress ticks beyond 5 s of wall time; the sampled performance.server-tick-window near the run's end showed 60 ticks/s and total_max 8.7 ms, but I did not sample the early completion windows, so a local slowdown is plausible and unproven.
+- The 34 inside-range, non-death releases cannot be attributed with the retained event fields; candidates are a goal/target switch, defuser reassignment, or a brief in-range eligibility flap that emits no interrupt cause.
+- 137/157 rounds ended by time with no plant. That is consistent with the user's "Ts must rush and plant" acceptance being far from met, but this is one long live run on one map and could reflect its round settings or the 1-player+19-NPC mix, so it is not a stable regression rate.
+
+CONTRARY EVIDENCE
+- Prior gen642 run 20261125_184820 had 27 defuses across 11 site A + 16 site B over 64 rounds with 53 plants, so multi-site completion and a much higher plant rate are demonstrable on a different generation/run.
+- The gen748 review (id 527) found range-exit dominated interruptions (16/25 = 64%); here range-exit is 19/59 (32%) and death 6/59 (10%), so the interruption mix is not stable across generations.
+- Movement/stuck acceptance remains unmet: 39,726 stuck episodes and 16,773 no-progress failures in 4.54 h.
+
+NEXT DISCRIMINATING CHECK
+One pinned isolated FCS/dust2cyberiav4 run on the current newest published generation (gen820 / HEAD d1d1df34, requested through the root dev-loop, not started by a reviewer) retained so its journal records: (a) per round plant -> exact defuse-start set -> objective.defused with site A and B coverage; (b) for each defuse-interrupted an explicit cause field or a sampled npc.objective-context at interruption time; (c) the defuser's server.damage.applied/death state across the hold; (d) plant/planted/timeout/explode totals and per-actor stuck seconds. Success = at least one defuse completion on each site, no completion dropped while the defuser is alive and inside 6.0 m for the required ticks, and the inside-range/non-death release share below 10%. Re-point fcs-objective-correction's task proof to that journal with the exact npc source hash so it is neither stale nor dangling.
+
+brain_check build_resource_gaps note: the three listed gaps (game-dll-20261128T173737563597Z-6b0a85, ...173421264252Z-3b08fd, ...173046371426Z-ba5757) are build-resource-sampling gaps for recent DLL builds; they do not touch this issue's NPC behavior acceptance and are not used to infer host pressure here.
+
+VERDICT: evidence (newer-generation gen803-805, 9 CT NPC defuses, site B only; not completion because it is not current source, all completions are site B, 137/157 rounds time out, 34/59 interruptions are unexplained, movement/stuck acceptance is unmet, and the structured proof is stale/dangling). Human visual review not performed.

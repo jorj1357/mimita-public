@@ -793,3 +793,74 @@ RECONCILIATION (issue-review-sweeper, 2026-11-27). After appending the proposal 
 ### 2026-11-27T20:36:16.131Z — issue-review-sweeper
 
 Process proposal from the independent review of issue-31ab18dedc96 (2026-11-27, ready generation 805). The identity-carry and reason-tail defects are already filed here and in issue-6e08d89b55e3; this is only a measurable target plus smallest experiment for the existing "carry active game-build attempt id/generation" suggestion, not a new defect report. Observed: on the newest comparable wait (issue-2aa79d9fe477, wait game-dll-build:2026-11-27T00:23:02.531Z) generation is still null and build_id is still the last EXE artifact, so ~6 days later reviewers are still manually re-deriving the same identity correction each sweep. Measurable target: over the next 10 auto-created game-dll wait issues, structured build_attempt_id and in-flight generation are non-null and correct in >=9/10, and reviewer identity-correction occurrences fall to 0. Smallest experiment: at check_wait_budget (dev-loop.py:3897-3900) source build_attempt_id/generation from the active attempt the dev-loop already parses in _record_game_build_output ([GAME_NOTE]/[GAME_STAGE] build_attempt_id), and at the build terminal result append one occurrence with attempt id + status to that wait issue; verify against the next real over-budget wait. Keep the flat-budget/stall change separate in issue-136d4553ff92. This reviewer made no source edit.
+
+## Agent suggestion
+
+### 2026-11-28T08:28:30.843Z — build-wait-reviewer
+
+Occurrence 2026-11-28 (build-wait-reviewer, wake-63b15223f7f1, review on issue-30a5dbfd79be).
+Wait game-dll-build:2026-11-28T07:11:57.814Z. Evidence again omits the true attempt identity: build_id=2026-11-27T17:45:19.700118Z (last published EXE artifact), generation=null; actual in-flight attempt game-dll-20261128T071157863196Z-8d63e6, source_generation 1, real generation 809, run 20261128_061051, started 07:11:57.863Z, ended FAILED at link at 07:18:54.673Z total 416.813s (compile 399.172s, 179 compiled / 468 skipped). The undefined symbol serverResetPlayerVehicleToKickoff (defined src/network/vehicle-networking.cpp:1282) was referenced by server-packet-chat.cpp:642; vehicle-networking.cpp was skipped. This is not a stalled build.
+NEW for this pair: the dev-loop wait events were lost. Run journal logs/2026-11-28/20261128_061051/dev-loop/events.jsonl line 189 has only dev-loop.wait.issue-failed (07:13:37.134Z): "agent-wake.py run --once ... timed out after 30 seconds". No dev-loop.wait.over_budget and no dev-loop.wait.reviewer-wake for this wait even though the issue (07:12:58.750Z) and one wake-63b15223f7f1 (07:13:07.053Z) were created. Same mechanism as the wake-launch-timeout occurrence already logged here: build_friction.py:244-246 inline run --once has timeout=30 and no try/except; dev-loop.py:3925-3950 wraps record_wait_incident+wake_reviewer in one try and adds wait_id to reported_wait_ids first, so the raise suppresses both events and blocks retry.
+Next: catch TimeoutExpired in wake_reviewer and emit over_budget/reviewer-wake independent of inline-launch success; use the in-flight attempt id/generation for the game-dll branch.
+
+## Agent suggestion
+
+### 2026-11-28T17:14:07.612Z — issue-review-sweeper
+
+Process proposal from issue-review-sweeper (wake-7f80ca3ba980, 2026-11-28), from a bounded read-only review of issue-136d4553ff92.
+
+Measured problem (repeated missing evidence / delay): task cpp-latency-compile-time-report is in_progress with latest_proof=null, yet its acceptance evidence (parsed GCC compiler_timing rows) is already emitted in real build artifacts: attempt game-dll-20261128T170629149896Z-5ccf06 (2026-11-28T17:06Z, generation 820) and earlier a0bac6/c68ca8 all carry dev-loop.game-build.file fields.compiler_timing. The same null-proof state was flagged by the independent reviews at 2026-11-26T04:14Z and 2026-11-27T04:50Z and is still unchanged ~2 days later. On the same issue, npc-behavior-root-candidate-dll and npc-one-tuple-pressure-probe are also in_progress with no proof record. A cold-handoff agent still cannot tell done from not-done, so implementation work stays invisible to `proof status`, the board, and the scheduler.
+
+Proposal (one, read-only derivation; no auto-proof, no auto-close): during sync / issue review, for each task with state=in_progress and latest_proof=null, check whether a recent build/run artifact (build-timings JSON/JSONL, run journal) contains the task's declared acceptance signal (event+field predicate, or named stage field). When it matches, create or refresh exactly ONE claimable "record-proof-or-decline" work item that names the exact artifact path, attempt/run ID, predicate, and owner, and show a per-task "proof-null age" on the board. Do not write a proof, change state, or close; the owner (or a human) still confirms.
+
+Measurable target: (a) cpp-latency-compile-time-report moves from latest_proof=null to a recorded proof or an explicit decline within one work session; (b) over 7 days, 0 in_progress tasks whose acceptance evidence is present in artifacts remain proof-null for more than 48h (baseline: at least 1 task ~2 days, 3 tasks on this issue today); (c) at least 8/10 flagged tasks reach a proof-or-decline decision within 24h.
+
+Smallest experiment: run the derivation read-only against the 3 in_progress tasks on issue-136d4553ff92 today, record for each whether acceptance evidence is already present and where, and measure how many reach a proof/decline within one session. No source edit, build, or proof claim from the reviewer.
+
+## Agent suggestion
+
+### 2026-11-28T17:56:26.042Z — build-wait-reviewer
+
+Occurrence 2026-11-28T17:34:21.168Z (issue-6ed1b2897c5b, attempt game-dll-20261128T173421264252Z-3b08fd): the wait evidence carries generation=820 and build_id=2026-11-27T17:45:19.700118Z while the in-flight attempt progress tail says generation 822 and source_generation 78. Correct in that record: source_generation=78 and request_ids=[build-request-b3c1804785d9]. generation is assigned only on completion and build_id is self.latest_build (dev-loop.py:3916-3917), so both are stale during an in-flight build. Same stale-identity pattern as the 2026-11-24 occurrence, on a real 77.641s build that ended in a link failure rather than a stall.
+
+## Agent suggestion
+
+### 2026-11-28T18:36:56.239Z — build-wait-reviewer
+
+Evidence-backed suggestion from build-wait-reviewer (wake-fef2e8967edc), for the over-budget wait hook design.
+
+Data point: the flat 60s budget is below the normal full game-DLL build, so it fires on routine builds, not anomalies.
+- The 18:11:01.936Z wait (issue-0e64599cd133) SUCCEEDED at 125.14s: compile 107.985s, link 4.25s, scan 2.985s, publish 0.328s, 30 compiled / 617 skipped; dominant TU src/network/server-gamemode.cpp 93.448s; queue_wait_max 86.391s; mean host CPU 98.16%, peak 100%, min free 19.3 MB (game-dll-20261128T181102041294Z-a9cdb2). At 60.05s the build was ~half done, so the trip was accurate.
+- Across the brain there are ~46 "Wait over budget: game-dll-build at game_build" issues (gen 429-826), nearly all 60.1-65.9s, plus 5 in the single run 20261128_171225 (17:30, 17:34, 17:40, 18:00, 18:11). This is exactly the "noisy wait policy could create duplicate friction issues" risk recorded on each one.
+
+Smallest useful next check (proposal, not proven): make the budget stage/class-aware, or debounce. E.g. set game_dll_build (and exe build) budget from measured p95 of successful attempts rather than a flat 60s, and/or file at most one aggregate issue per (kind, stage) window with per-occurrence appends instead of one high-priority issue+wake per attempt. Measure before/after: count of over-budget game-DLL issues and reviewer wakes per 24h at the same build volume, with the p50/p95 build seconds that justify the chosen budget. Owner per board: wake-proof-wait. Please review and agree the smallest next check; no source build or fix is claimed here.
+
+## Occurrence
+
+### 2026-11-28T18:37:10.003Z — build-wait-reviewer
+
+Live recurrence on wait game-dll-build:2026-11-28T18:00:34.216Z (issue-13b902990adc; attempt game-dll-20261128T180034349425Z-3007f5). The issue was created (18:01:38.716Z) and one wake was queued (wake-1dbab16fcd3b 18:01:42.600Z), but the inline `agent-wake.py run --once` drain in build_friction.wake_reviewer (build_friction.py:244-246, timeout=30, no try/except) timed out. Because dev-loop.check_wait_budget (dev-loop.py:3925-3950) wraps record_wait_incident and wake_reviewer in one try and had already added the wait_id to reported_wait_ids (dev-loop.py:3929), the raise skipped dev-loop.wait.over_budget and dev-loop.wait.reviewer-wake and emitted dev-loop.wait.issue-failed (logs/2026-11-28/20261128_171225/dev-loop/events.jsonl line 822; wall 18:02:12.828Z; error "...agent-wake.py run --once timed out after 30 seconds"; reason "could not record over-budget wait"), with no retry. Clean reproduction of the 2026-11-26 occurrence: issue+wake survive, journal half of proof lost. Contrast: the next wait in the same run (game-dll-build:2026-11-28T18:11:01.936Z, issue-0e64599cd133) DID emit both over_budget and reviewer-wake (journal lines 879/880, 18:12:24) because its inline drain finished within 30s. Reviewer: build-wait-reviewer; review on issue-13b902990adc.
+
+Evidence: {"build_attempt_id": "game-dll-20261128T180034349425Z-3007f5", "comparison_events_emitted": true, "comparison_issue": "issue-0e64599cd133", "comparison_wait": "game-dll-build:2026-11-28T18:11:01.936Z", "inline_timeout_seconds": 30, "issue": "issue-13b902990adc", "journal": "logs/2026-11-28/20261128_171225/dev-loop/events.jsonl", "journal_event": "dev-loop.wait.issue-failed", "journal_line": 822, "wait_id": "game-dll-build:2026-11-28T18:00:34.216Z"}
+
+## Agent suggestion
+
+### 2026-11-28T18:39:53.898Z — issue-review-sweeper
+
+PROCESS PROPOSAL (issue-review-sweeper, wake-32598382a055, 2026-11-28) - post-creation triage of the wait-issue flood. Read-only review; no source/build change, no fix claimed.
+
+This is a POST-CREATION lever, distinct from the already-recorded on-creation proposals in this thread (stage/class-aware budget, coalesce by build_attempt_id, wake-outcome recording, evidence snapshot). I am not restating those; I am proposing how to stop the existing duplicate backlog from consuming review/wake capacity.
+
+EVIDENCE (direct, 2026-11-28)
+- Exact-title 'Wait over budget: game-dll-build at game_build' docs: 264; total build-friction issues 321. State split: 283 in_review / 31 new / 6 assigned / 1 deferred, and 0 done/closed. Of the 264 exact-title: 244 in_review / 19 new / 1 assigned / 0 done/closed.
+- Growth since the first review of this class: 41 (2026-11-21) -> 227 (2026-11-24) -> 249 (2026-11-27) -> 264 (2026-11-28). Daily creation 2026-11-28 already 10; peak 83 on 2026-11-22.
+- The scheduled independent review that produced this message (wake-32598382a055) selected a 2026-11-21 duplicate and spent a full reviewer activation re-deriving the same root cause now owned by issue-136d4553ff92. Seven more duplicates fired on 2026-11-28 alone (issue-d7dc1872d630, issue-e8e596d81554, issue-226ec498afe3, issue-747933df08a6, issue-6ed1b2897c5b, issue-004c549df353, issue-0e64599cd133), each independently woken.
+- No individual duplicate can be resolved in isolation: the fix lives in issue-136d4553ff92 (attribution + metrics) and the policy decision in this issue, so 264 issues are structurally un-closable and keep re-entering review.
+
+PROPOSAL (measurable, smallest experiment)
+- Keep ONE canonical open issue (issue-136d4553ff92) as the reviewed home for the game-dll attribution/budget work. Mark the auto-created exact-title duplicates as 'aggregated under issue-136d4553ff92' (tag/defer, not close-and-lose) and route any further duplicate to a single occurrence append on the canonical issue instead of a new scheduled review.
+- Measurable target: (a) scheduled independent reviews of duplicate auto wait issues per 24h drop from the current rate (>=1 this sweep, peak 83 creations/day) to 0; (b) the canonical issue still receives >=1 review per review interval; (c) the 264 existing duplicates are triaged (aggregated or explicitly reasoned) within one sweep; (d) no new wait occurrence loses its evidence (append preserved).
+- Smallest experiment: add a read-only board/lint query that lists build-friction issues whose exact title matches the wait pattern and whose evidence wait_id is not the canonical one; run it now and record the count (expect 264) and per-day contribution. Then, for one week, have the review scheduler skip those duplicates while appending one occurrence line per new duplicate to issue-136d4553ff92; compare duplicate-review count (target 0) and canonical review latency (must stay <= one interval). No build, no schema change.
+
+UNKNOWNS / OWNERSHIP
+- Owner per board for this issue: wake-proof-wait. Scheduler behavior is shared-authority, so this is a proposal for the owner/human, not an implementation. Uncertainty: whether auto-created wait issues are intentionally kept individually reviewable; if so, the query should surface them as 'aggregated, not individually actionable' rather than treat them as defects.

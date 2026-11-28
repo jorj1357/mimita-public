@@ -9,6 +9,7 @@
 #include "network/server.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -764,8 +765,7 @@ void resetArenaAfterGoal(
     ServerVehicleState& vehicleState,
     const std::unordered_map<uint32_t, ServerPlayer>& players,
     const MapObjectiveConfig& map, PhysicalEntity& ball, uint32_t tick,
-    int scoringTeam)
-{
+    int scoringTeam){
     ArenaBall::reset(ball, map);
     ServerGamemodeState& d = serverGamemodeState();
     uint32_t blueOrdinal = 0;
@@ -1278,6 +1278,35 @@ void broadcastSeatEvent(SOCKET sock,
 }
 
 } // namespace
+
+void serverResetPlayerVehicleToKickoff(ServerPlayer& player, uint32_t tick)
+{
+    if (player.seatedVehicleId == 0)
+        return;
+    VehicleState* vehicle =
+        VehicleSystem::instance().find(player.seatedVehicleId);
+    if (!vehicle)
+        return;
+    const MapObjectiveConfig& map = MapConfigRegistry::instance().current();
+    int team = arenaTeamOfVehicle(*vehicle);
+    if (team < 0)
+        team = vehicle->origin.x < 0.0f ? 0 : 1;
+    const ArenaKickoffConfig* kickoff = arenaKickoffForTeam(map, team, 0);
+    if (!kickoff)
+        return;
+    resetVehicleToKickoff(*vehicle, kickoff->position, kickoff->yaw);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Physics, StructuredLevel::Important,
+        "vehicle.reset", std::to_string(vehicle->id),
+        "server reset the player's car to the kickoff", tick,
+        {{"vehicle_id", vehicle->id},
+         {"player_id", player.id},
+         {"team", team},
+         {"position", {kickoff->position.x, kickoff->position.y,
+                       kickoff->position.z}},
+         {"yaw_deg", kickoff->yaw}},
+        __FILE__, __LINE__, __func__);
+}
 
 void serverTickVehicles(ServerVehicleState& vehicleState,
                         std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -1915,6 +1944,36 @@ void serverReplicateVehicles(SOCKET sock, ServerVehicleState& vehicleState,
         packet.count = count;
         if (serverSendToPlayer(sock, player, &packet, sizeof(packet)))
             ++totalPacketsOut;
+
+        if (tick % 6u == 0u)
+        {
+            const MapObjectiveConfig& padMap =
+                MapConfigRegistry::instance().current();
+            BoostPadStatePacket padPacket{};
+            padPacket.header.type = PACKET_BOOST_PAD_STATE;
+            padPacket.header.tick = tick;
+            for (size_t i = 0; i < padMap.boostPads.size() &&
+                               padPacket.count < 24u;
+                 ++i)
+            {
+                if (i >= vehicleState.boostPadReadyTick.size())
+                    break;
+                const uint32_t readyTick =
+                    vehicleState.boostPadReadyTick[i];
+                if (readyTick <= tick)
+                    continue;
+                BoostPadStateEntry& entry =
+                    padPacket.pads[padPacket.count++];
+                entry.index = static_cast<uint8_t>(i);
+                const uint32_t remaining =
+                    (readyTick - tick) * 100u / 60u;
+                entry.remainingCentiseconds = static_cast<uint16_t>(
+                    std::min<uint32_t>(remaining, 65535u));
+            }
+            if (serverSendToPlayer(sock, player, &padPacket,
+                                   sizeof(padPacket)))
+                ++totalPacketsOut;
+        }
     }
 
     for (auto it = vehicleState.knownVehicles.begin();
@@ -1928,11 +1987,80 @@ void serverReplicateVehicles(SOCKET sock, ServerVehicleState& vehicleState,
     }
 }
 
-void handleVehicleInputPacket(const char* buffer, int bytes,
+namespace {
+bool adoptClientVehiclePose(ServerPlayer& player, uint32_t vehicleId,
+                            const VehiclePoseBlock& pose, uint32_t serverTick,
+                            const char* source)
+{
+    for (int i = 0; i < 3; ++i)
+        if (!std::isfinite(pose.position[i]) ||
+            !std::isfinite(pose.velocity[i]) ||
+            !std::isfinite(pose.angularVelocity[i]))
+            return false;
+    for (int i = 0; i < 4; ++i)
+        if (!std::isfinite(pose.orientation[i]))
+            return false;
+    if (player.dead || player.seatedVehicleId == 0 ||
+        player.seatedVehicleId != vehicleId)
+        return false;
+    VehicleState* state = VehicleSystem::instance().find(vehicleId);
+    if (!state)
+        return false;
+    PhysicalEntity* chassis =
+        PhysicalEntitySystem::instance().find(state->entityId);
+    if (!chassis)
+        return false;
+    const glm::vec3 position(pose.position[0], pose.position[1],
+                             pose.position[2]);
+    const glm::vec3 velocity(pose.velocity[0], pose.velocity[1],
+                             pose.velocity[2]);
+    const float displacement =
+        glm::length(position - glm::vec3(chassis->transform[3]));
+    if (displacement > 12.0f || glm::length(velocity) > 40.0f)
+        return false;
+    const glm::quat orientation = glm::normalize(
+        glm::quat(pose.orientation[0], pose.orientation[1],
+                  pose.orientation[2], pose.orientation[3]));
+    chassis->previousTransform = chassis->transform;
+    chassis->transform = glm::translate(glm::mat4(1.0f), position) *
+                         glm::mat4_cast(orientation);
+    chassis->orientation = orientation;
+    chassis->velocity = velocity;
+    chassis->angularVelocity = glm::vec3(pose.angularVelocity[0],
+                                         pose.angularVelocity[1],
+                                         pose.angularVelocity[2]);
+    chassis->sleeping = false;
+    chassis->sleepTicks = 0;
+    state->origin = position;
+    state->originVelocity = velocity;
+    state->originAngularVelocity = chassis->angularVelocity;
+    state->orientation = orientation;
+
+    static uint32_t sLastPoseLogTick = 0;
+    if (serverTick > sLastPoseLogTick + 60u)
+    {
+        sLastPoseLogTick = serverTick;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "vehicle.pose.accepted", std::to_string(vehicleId),
+            "server adopted the client-owned car pose", serverTick,
+            {{"vehicle_id", vehicleId},
+             {"player_id", player.id},
+             {"source", source},
+             {"displacement_m", displacement},
+             {"speed_mps", glm::length(velocity)},
+             {"position", {position.x, position.y, position.z}}});
+    }
+    return true;
+}
+} // namespace
+
+void handleVehicleInputPacket(SOCKET sock, const char* buffer, int bytes,
                               std::unordered_map<uint32_t, ServerPlayer>& players,
                               const sockaddr_in* from,
                               const TransportConnectionId* connectionId,
-                              uint32_t serverTick)
+                              uint32_t serverTick,
+                              uint64_t& totalPacketsOut)
 {
     if (!VehicleSystem::instance().isServerProcess() ||
         bytes < (int)sizeof(VehicleInputPacket))
@@ -1998,6 +2126,41 @@ void handleVehicleInputPacket(const char* buffer, int bytes,
     input.shiftUp = (pkt->flags & VEHICLE_INPUT_SHIFT_UP) != 0;
     input.shiftDown = (pkt->flags & VEHICLE_INPUT_SHIFT_DOWN) != 0;
     VehicleSystem::instance().setInput(pkt->vehicleId, input);
+
+    if ((pkt->flags & VEHICLE_INPUT_HAS_POSE) != 0 &&
+        bytes >= (int)sizeof(VehicleInputWithPosePacket))
+    {
+        const VehicleInputWithPosePacket* extended =
+            reinterpret_cast<const VehicleInputWithPosePacket*>(buffer);
+        adoptClientVehiclePose(player, pkt->vehicleId, extended->pose,
+                               serverTick, "input");
+
+        // Relay the owner's exact pose to every other client. The server's own
+        // simulation is only for ball/contact authority; remote clients render
+        // what the driver actually sees. Unreliable by design: a lost relay is
+        // extrapolated by the receiver and the next one corrects it.
+        VehiclePosePacket relay{};
+        relay.header.type = PACKET_VEHICLE_POSE;
+        relay.header.tick = serverTick;
+        relay.header.playerId = player.id;
+        relay.vehicleId = pkt->vehicleId;
+        relay.sequence = pkt->sequence;
+        for (int i = 0; i < 3; ++i)
+        {
+            relay.position[i] = extended->pose.position[i];
+            relay.velocity[i] = extended->pose.velocity[i];
+            relay.angularVelocity[i] = extended->pose.angularVelocity[i];
+        }
+        for (int i = 0; i < 4; ++i)
+            relay.orientation[i] = extended->pose.orientation[i];
+        for (auto& other : players)
+        {
+            if (other.first == player.id || !other.second.spawned)
+                continue;
+            if (serverSendToPlayer(sock, other.second, &relay, sizeof(relay)))
+                ++totalPacketsOut;
+        }
+    }
 
     static uint32_t sLastInputLogTick = 0;
     if ((input.throttle > 0.01f || input.brake > 0.01f ||
@@ -2302,17 +2465,25 @@ void mpProcessVehicleStatePacket(MultiplayerContext&,
             VehicleSystem::instance().find(entry.vehicleId);
         if (!vehicle)
             continue;
-        vehicle->engineOn = entry.engineOn != 0;
-        vehicle->mode = static_cast<VehicleControlMode>(entry.mode);
-        vehicle->gear = entry.gear;
-        vehicle->engineRpm = entry.engineRpm;
-        vehicle->speed = entry.speed;
-        vehicle->boostCharge = entry.boostCharge;
-        vehicle->throttle = entry.throttle;
-        vehicle->brake = entry.brake;
-        vehicle->steer = entry.steer;
-        vehicle->clutch = entry.clutch;
-        vehicle->handbrake = entry.handbrake;
+        // The local predicted car owns its engine, gear, boost and control
+        // state. A snapshot must not overwrite what the driver is doing, or
+        // throttle/boost oscillates at packet rate.
+        const bool localPredicted =
+            vehicle->clientPredicted && vehicle->localDriver;
+        if (!localPredicted)
+        {
+            vehicle->engineOn = entry.engineOn != 0;
+            vehicle->mode = static_cast<VehicleControlMode>(entry.mode);
+            vehicle->gear = entry.gear;
+            vehicle->engineRpm = entry.engineRpm;
+            vehicle->speed = entry.speed;
+            vehicle->boostCharge = entry.boostCharge;
+            vehicle->throttle = entry.throttle;
+            vehicle->brake = entry.brake;
+            vehicle->steer = entry.steer;
+            vehicle->clutch = entry.clutch;
+            vehicle->handbrake = entry.handbrake;
+        }
         const int seats = std::min<int>(MAX_VEHICLE_SEATS, entry.seatCount);
         vehicle->seatOccupants.assign(seats, 0);
         for (int s = 0; s < seats; ++s)
@@ -2335,6 +2506,90 @@ void mpProcessVehicleStatePacket(MultiplayerContext&,
                 std::max(0.0f, wheel.compression);
         }
     }
+}
+
+void mpProcessVehiclePosePacket(MultiplayerContext& ctx,
+                                const VehiclePosePacket* event)
+{
+    VehicleState* vehicle =
+        VehicleSystem::instance().find(event->vehicleId);
+    if (!vehicle)
+        return;
+    // The local predicted car owns its own pose; never let a relay move it.
+    if (vehicle->localDriver && vehicle->clientPredicted)
+        return;
+    PhysicalEntity* chassis =
+        PhysicalEntitySystem::instance().find(vehicle->entityId);
+    if (!chassis)
+        return;
+    for (int i = 0; i < 3; ++i)
+        if (!std::isfinite(event->position[i]) ||
+            !std::isfinite(event->velocity[i]) ||
+            !std::isfinite(event->angularVelocity[i]))
+            return;
+    for (int i = 0; i < 4; ++i)
+        if (!std::isfinite(event->orientation[i]))
+            return;
+
+    const glm::vec3 position(event->position[0], event->position[1],
+                             event->position[2]);
+    const glm::vec3 velocity(event->velocity[0], event->velocity[1],
+                             event->velocity[2]);
+    const glm::quat orientation = glm::normalize(
+        glm::quat(event->orientation[0], event->orientation[1],
+                  event->orientation[2], event->orientation[3]));
+    chassis->previousTransform = chassis->transform;
+    chassis->transform = glm::translate(glm::mat4(1.0f), position) *
+                         glm::mat4_cast(orientation);
+    chassis->orientation = orientation;
+    chassis->velocity = velocity;
+    chassis->angularVelocity = glm::vec3(event->angularVelocity[0],
+                                         event->angularVelocity[1],
+                                         event->angularVelocity[2]);
+    chassis->poseRelay = true;
+    chassis->renderPoseTimed = true;
+    const double now = (double)std::chrono::duration_cast<std::chrono::microseconds>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                           .count() /
+                       1000.0;
+    chassis->renderPoseStartMs = now;
+    chassis->renderPoseEndMs = now + 20.0;
+    chassis->lastNetworkPoseMs = now;
+    vehicle->origin = position;
+    vehicle->orientation = orientation;
+    vehicle->originVelocity = velocity;
+    vehicle->originAngularVelocity = chassis->angularVelocity;
+
+    static uint32_t sLastRelayLogTick = 0;
+    if (ctx.tick > sLastRelayLogTick + 60u)
+    {
+        sLastRelayLogTick = ctx.tick;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "vehicle.pose.relayed", std::to_string(event->vehicleId),
+            "client applied the owner's relayed car pose", ctx.tick,
+            {{"vehicle_id", event->vehicleId},
+             {"owner_player_id", event->header.playerId},
+             {"position", {position.x, position.y, position.z}},
+             {"speed_mps", glm::length(velocity)}});
+    }
+}
+
+void mpProcessBoostPadStatePacket(MultiplayerContext& ctx,
+                                  const BoostPadStatePacket* event)
+{
+    for (float& seconds : ctx.boostPadRemainingSeconds)
+        seconds = 0.0f;
+    const int count = std::min<int>(24, event->count);
+    for (int i = 0; i < count; ++i)
+    {
+        const BoostPadStateEntry& entry = event->pads[i];
+        if (entry.index >= 64)
+            continue;
+        ctx.boostPadRemainingSeconds[entry.index] =
+            static_cast<float>(entry.remainingCentiseconds) * 0.01f;
+    }
+    ++ctx.boostPadStateSerial;
 }
 
 void mpProcessVehicleSeatEventPacket(MultiplayerContext& ctx,
@@ -2519,7 +2774,133 @@ void mpSendVehicleInput(MultiplayerContext& ctx, uint32_t currentMs)
     if (input.modeToggle) pkt.flags |= VEHICLE_INPUT_MODE_TOGGLE;
     if (input.shiftUp) pkt.flags |= VEHICLE_INPUT_SHIFT_UP;
     if (input.shiftDown) pkt.flags |= VEHICLE_INPUT_SHIFT_DOWN;
-    mpSendPacket(ctx, &pkt, sizeof(pkt));
+
+    // Client-owned car pose. It rides on the already-dispatched input packet so
+    // the resident server executable does not need a new packet id.
+    const PhysicalEntity* chassis =
+        state->clientPredicted
+            ? PhysicalEntitySystem::instance().find(state->entityId)
+            : nullptr;
+    if (chassis)
+    {
+        VehicleInputWithPosePacket extended{};
+        extended.input = pkt;
+        extended.input.flags |= VEHICLE_INPUT_HAS_POSE;
+        extended.pose.position[0] = chassis->transform[3].x;
+        extended.pose.position[1] = chassis->transform[3].y;
+        extended.pose.position[2] = chassis->transform[3].z;
+        extended.pose.orientation[0] = chassis->orientation.w;
+        extended.pose.orientation[1] = chassis->orientation.x;
+        extended.pose.orientation[2] = chassis->orientation.y;
+        extended.pose.orientation[3] = chassis->orientation.z;
+        extended.pose.velocity[0] = chassis->velocity.x;
+        extended.pose.velocity[1] = chassis->velocity.y;
+        extended.pose.velocity[2] = chassis->velocity.z;
+        extended.pose.angularVelocity[0] = chassis->angularVelocity.x;
+        extended.pose.angularVelocity[1] = chassis->angularVelocity.y;
+        extended.pose.angularVelocity[2] = chassis->angularVelocity.z;
+        mpSendPacket(ctx, &extended, sizeof(extended));
+    }
+    else
+    {
+        mpSendPacket(ctx, &pkt, sizeof(pkt));
+    }
+}
+
+void handleVehiclePosePacket(
+    const char* buffer, int bytes,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    const sockaddr_in* from, const TransportConnectionId* connectionId,
+    uint32_t serverTick)
+{
+    if (!VehicleSystem::instance().isServerProcess() ||
+        bytes < (int)sizeof(VehiclePosePacket))
+        return;
+    const VehiclePosePacket* pkt =
+        reinterpret_cast<const VehiclePosePacket*>(buffer);
+    const auto it = players.find(pkt->header.playerId);
+    if (it == players.end())
+        return;
+    ServerPlayer& player = it->second;
+    if (from && !playerOwnsConnectionSource(player, from, connectionId))
+        return;
+    const auto reject = [&](const char* reason) {
+        static uint32_t sLastRejectTick = 0;
+        if (serverTick - sLastRejectTick < 60u)
+            return;
+        sLastRejectTick = serverTick;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "vehicle.pose.rejected", std::to_string(pkt->vehicleId),
+            "server rejected a client car pose", serverTick,
+            {{"reason", reason},
+             {"vehicle_id", pkt->vehicleId},
+             {"player_id", pkt->header.playerId}});
+    };
+    for (int i = 0; i < 3; ++i)
+        if (!std::isfinite(pkt->position[i]) ||
+            !std::isfinite(pkt->velocity[i]) ||
+            !std::isfinite(pkt->angularVelocity[i]))
+            return reject("non_finite");
+    for (int i = 0; i < 4; ++i)
+        if (!std::isfinite(pkt->orientation[i]))
+            return reject("non_finite");
+    if (player.dead || player.seatedVehicleId == 0 ||
+        player.seatedVehicleId != pkt->vehicleId)
+        return reject(player.dead ? "dead" : "seat_mismatch");
+
+    VehicleState* state = VehicleSystem::instance().find(pkt->vehicleId);
+    if (!state)
+        return reject("vehicle_missing");
+    PhysicalEntity* chassis =
+        PhysicalEntitySystem::instance().find(state->entityId);
+    if (!chassis)
+        return reject("chassis_missing");
+
+    const glm::vec3 position(pkt->position[0], pkt->position[1],
+                             pkt->position[2]);
+    const glm::vec3 velocity(pkt->velocity[0], pkt->velocity[1],
+                             pkt->velocity[2]);
+    const glm::vec3 displacement = position - glm::vec3(chassis->transform[3]);
+    // 30 Hz pose packets at 23 m/s move about 0.8 m. A teleport/reset can be
+    // larger, so allow up to 12 m in one packet and reject only claims beyond
+    // that. Anti-cheat reporting stays separate from pose adoption.
+    if (glm::length(displacement) > 12.0f ||
+        glm::length(velocity) > 40.0f)
+        return reject("displacement");
+
+    const glm::quat orientation = glm::normalize(glm::quat(
+        pkt->orientation[0], pkt->orientation[1], pkt->orientation[2],
+        pkt->orientation[3]));
+    chassis->previousTransform = chassis->transform;
+    chassis->transform = glm::translate(glm::mat4(1.0f), position) *
+                         glm::mat4_cast(orientation);
+    chassis->orientation = orientation;
+    chassis->velocity = velocity;
+    chassis->angularVelocity = glm::vec3(pkt->angularVelocity[0],
+                                         pkt->angularVelocity[1],
+                                         pkt->angularVelocity[2]);
+    chassis->sleeping = false;
+    chassis->sleepTicks = 0;
+    state->origin = position;
+    state->originVelocity = velocity;
+    state->originAngularVelocity = chassis->angularVelocity;
+    state->orientation = orientation;
+
+    static uint32_t sLastPoseLogTick = 0;
+    if (serverTick > sLastPoseLogTick + 60u)
+    {
+        sLastPoseLogTick = serverTick;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "vehicle.pose.accepted", std::to_string(pkt->vehicleId),
+            "server adopted the client-owned car pose", serverTick,
+            {{"vehicle_id", pkt->vehicleId},
+             {"player_id", pkt->header.playerId},
+             {"displacement_m", glm::length(displacement)},
+             {"speed_mps", glm::length(velocity)},
+             {"position", {position.x, position.y, position.z}}});
+    }
 }
 
 } // namespace MimitaNet

@@ -87,3 +87,11 @@ Until then, local scores and edits are not globally verified or ranked.
 - [Video Editor](../creator-tools/video-editor.md)
 - [Live voice generation](../live-voice-generation/live-voice-generation.md)
 - [Persistent data and rewards](../data-saving/data-saving.md)
+
+### One coherent game package — 2026-11-28
+
+> “thinking how to package game into a nice bow to sell as 1 unit? if even selling?”
+>
+> “that should be a free mode not gated and just added there for fun”
+
+Interpretation: package MiMITA as one coherent game and creator experience, with its distinct modes available from a shared product entry point. The user's note explicitly leaves the sales model undecided. It does establish that Zombie Tower and the cooperative infinite dungeon should be freely available modes rather than paid gates. This direction does not settle the price of the broader package, storefront strategy, or whether all content ships in one purchase; those remain open product decisions. Modes should feel like part of MiMITA, not a set of unrelated products that fragment the player base.

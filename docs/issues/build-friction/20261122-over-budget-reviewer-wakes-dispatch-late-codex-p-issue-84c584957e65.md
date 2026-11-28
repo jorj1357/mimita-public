@@ -674,3 +674,38 @@ Occurrence (recurrence of this dispatch defect), observed by build-wait-reviewer
 - wake.retry to opencode 18:47:45.506Z ("previous adapter process exited; trying fallback"); opencode claimed/launched only 20:29:58.074/20:29:58.092Z pid 9344.
 - Queue-to-final-launch 18:22:12 -> 20:29:58 = 7666s (~2h07m46s); two wake.launched events for one wait.
 Same mechanism as the issue summary: no persistent agent-wake daemon drains a retried fallback; it waits for the next run --once. Evidence: .dev/agent-wake/events.jsonl lines for wake-dda0fc4bb16b; dev-loop journal logs/2026-11-27/20261127_174537/dev-loop/events.jsonl; request .dev/agent-wake/requests/wake-dda0fc4bb16b.json (attempts=2, created 18:22:12.059Z, launched 20:29:58.089Z). Suggest prioritizing a persistent wake daemon (or draining due retries on every loop tick) so a queued fallback cannot sit for hours. No code fix claimed here.
+
+## Agent suggestion
+
+### 2026-11-28T08:28:59.319Z — build-wait-reviewer
+
+Occurrence 2026-11-28 (build-wait-reviewer, this run, review on issue-30a5dbfd79be).
+Over-budget wait game-dll-build:2026-11-28T07:11:57.814Z reproduced late + duplicate launch. wake-63b15223f7f1 queued exactly once 07:13:07.053Z (.dev/agent-wake/events.jsonl); no daemon drained it until codex claimed/launched 07:41:06.083Z/07:41:06.107Z (28 min idle), then exited; wake.retry 07:57:36.925Z switched to opencode, which claimed/launched 08:20:38.266Z/08:20:38.291Z. requests/wake-63b15223f7f1.json attempts=2. Queue-to-final-launch ~4051s (~67.5 min), far above the <=5 min target, with two wake.launched events for one wait (the exactly-once queue held; the one-launch target did not). The inline run --once also timed out at 30s (dev-loop.wait.issue-failed, logs/2026-11-28/20261128_061051/dev-loop/events.jsonl:189), so the wait over_budget/reviewer-wake rows are missing for this occurrence. Waited-on attempt game-dll-20261128T071157863196Z-8d63e6 was real work (failed at link at 416.813s), not a stall.
+
+## Agent suggestion
+
+### 2026-11-28T17:56:30.636Z — build-wait-reviewer
+
+Occurrence 2026-11-28T17:34:21.168Z (issue-6ed1b2897c5b): wake-6fde8872c1a3 queued exactly once at 17:35:24.330Z; codex claimed/launched 17:35:26.086/26.176Z (pid 21068) then exited; wake.retry 'previous adapter process exited; trying fallback' 17:41:55.769Z; opencode claimed/launched 17:42:46.163/46.187Z (pid 24200). Queue-to-final-launch 441.857s, attempts=2, two wake.launched events for one wait_id. Launch-result misattribution: dev-loop.wait.reviewer-wake at 17:35:26.281Z is stamped wait_id game-dll-build:2026-11-28T17:34:21.168Z / issue-6ed1b2897c5b but embeds wake-7f80ca3ba980 (issue-136d4553ff92, issue-review-sweeper), not wake-6fde8872c1a3; build_friction.py:250 stdout[-2000:] drains the oldest pending wake. The waited-on attempt game-dll-20261128T173421264252Z-3b08fd was real work (77.641s) but failed at link on undefined MimitaNet::handleSpyKnifeHitClaim (cache fault, REG-2026-11-27), so this is dispatch/telemetry, not a stalled build.
+
+## Agent suggestion
+
+### 2026-11-28T18:36:56.446Z — build-wait-reviewer
+
+Evidence-backed suggestion from build-wait-reviewer (wake-fef2e8967edc) on the synchronous reviewer-wake launch in the over-budget wait path.
+
+New occurrence (2026-11-28, run 20261128_171225): wait_id game-dll-build:2026-11-28T18:00:34.216Z, elapsed 63.662s.
+- Issue issue-13b902990adc WAS created at 18:01:38.716Z (state new).
+- But the journal for the same wait_id shows dev-loop.wait.issue-failed at 18:02:12.828Z: "agent-wake.py run --once timed out after 30 seconds", and there is NO dev-loop.wait.over_budget event for that wait_id.
+- Cause path: build_friction.wake_reviewer runs `agent-wake.py run --once` synchronously with timeout=30 inside dev-loop.check_wait_budget; on TimeoutExpired the outer except records issue-failed and never reaches reported_wait_ids.add, and the over_budget success event (which is emitted after the wake block) is skipped.
+- Consequences: (1) a 30s block of the dev-loop wait check; (2) the occurrence is journaled as a failure even though the issue exists; (3) reported_wait_ids stays unset, so a later check can re-enter record_wait_incident (occurrence append) and re-invoke wake_reviewer for the same wait_id, a latent duplicate-wake path that violates "wake queued exactly once".
+
+Smallest useful next check (proposal, not proven): emit the dev-loop.wait.over_budget event and add wait_id to reported_wait_ids as soon as record_wait_incident returns, before launching any wake; and make the wake dispatch non-blocking (short timeout, detach, or a persistent daemon) so a slow/queued adapter cannot stall the check loop or mask a created issue. Related background: issue-84c584957e65 currently covers codex-adapter/no-daemon dispatch delay; this adds the in-process synchronous-timeout/order variant. Please review and agree the smallest next check; no build, run, or fix is claimed here.
+
+## Occurrence
+
+### 2026-11-28T18:37:10.027Z — build-wait-reviewer
+
+Over-budget wait game-dll-build:2026-11-28T18:00:34.216Z (issue-13b902990adc) reproduced late reviewer dispatch plus a duplicate launch. wake-1dbab16fcd3b queued exactly once at 18:01:42.600Z; codex claimed/launched 18:08:28.049/18:08:28.131Z (pid 30516) then exited; wake.retry "previous adapter process exited; trying fallback" 18:12:23.833Z; opencode claimed/launched 18:31:34.693/18:31:34.718Z (pid 26348). Queue-to-final-launch 1792.118s (~29m52.1s), attempts=2, two wake.launched events for one wait_id - above the <=5 min bound (the exactly-once queue held; the one-launch target did not). The waited-on build game-dll-20261128T180034349425Z-3007f5 was real compile work and succeeded (generation 825, total 134.187s, completed 18:02:48.537Z), so the reviewer launched ~1726s after the build was already done; this is dispatch, not a stalled build. No wake-record misattribution observed: the reviewer-wake event is missing for this wait (covered by issue-9a4503f6ed68). Reviewer: build-wait-reviewer.
+
+Evidence: {"attempts": 2, "build_attempt_id": "game-dll-20261128T180034349425Z-3007f5", "build_outcome": "success", "build_total_seconds": 134.187, "fallback_adapter": "opencode", "fallback_claimed_utc": "2026-11-28T18:31:34.693Z", "fallback_launched_utc": "2026-11-28T18:31:34.718Z", "fallback_pid": 26348, "issue": "issue-13b902990adc", "journal": ".dev/agent-wake/events.jsonl", "launches_for_wait_id": 2, "primary_adapter": "codex", "primary_claimed_utc": "2026-11-28T18:08:28.049Z", "primary_launched_utc": "2026-11-28T18:08:28.131Z", "primary_pid": 30516, "queue_to_final_launch_seconds": 1792.118, "retry_reason": "previous adapter process exited; trying fallback", "wait_id": "game-dll-build:2026-11-28T18:00:34.216Z", "wake": "wake-1dbab16fcd3b", "wake_queued_utc": "2026-11-28T18:01:42.600Z", "wake_retry_utc": "2026-11-28T18:12:23.833Z"}

@@ -73,6 +73,18 @@ struct PhysicalEntity {
     glm::quat orientation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 velocity{0.0f};
     glm::vec3 angularVelocity{0.0f};
+    // Replicated bodies interpolate between the last two network poses over
+    // wall clock so a 20-30 Hz stream renders smoothly at any frame rate.
+    // Locally simulated bodies leave this false and use renderAlpha().
+    bool renderPoseTimed = false;
+    double renderPoseStartMs = 0.0;
+    double renderPoseEndMs = 0.0;
+    // Last time an authoritative network pose arrived. Used to surface a stale
+    // ghost ball/car without changing its local simulation.
+    double lastNetworkPoseMs = 0.0;
+    // Remote car whose pose is relayed directly by its owner. The physical
+    // entity state packet must not overwrite this pose.
+    bool poseRelay = false;
     glm::vec3 centerOfMass{0.0f};
     glm::vec3 halfExtents{0.5f};
     glm::vec3 inertia{1.0f};
@@ -344,6 +356,11 @@ std::vector<EntityActorContact> collectActorEntityContacts(
 // is visible while testing. Goes through the always-rendered production triangle
 // flush, not the debug-visuals master gate.
 void drawPhysicalEntities(const Camera& camera);
+
+// Presentation pose for one entity: fixed-tick alpha for locally simulated
+// bodies, wall-clock interpolation/extrapolation for replicated ones.
+glm::mat4 physicalEntityRenderTransform(const PhysicalEntity& e);
+glm::vec3 physicalEntityRenderPosition(const PhysicalEntity& e);
 
 // Deterministic moving-crate proof: the actor is carried by the crate, walking
 // adds to the supported motion, jumping preserves the inherited velocity, and

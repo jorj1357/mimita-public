@@ -62,3 +62,11 @@ NEXT: user visually exercises the foregrounded window; then pick the smallest of
 ### 2026-11-27T23:02:00.240Z — rocket-league-crashfix
 
 OBSERVED (rocket-league-crashfix): ctx-65935de46132 was also woken to rocket-league-crashfix/-dodge/-match although issue-f4010cef4fc0 is already owned by codex-node-toy-v1. I did not duplicate the implementation. The running v1 GUI (PID 28276, 'Nodes & Connections Lab - v1') had become hidden; I restored and raised its window so the user can see it. NEXT: owner should drive the manual button pass (Next Event, Save/Load Preset, Run Batch) and collect the user's v2 requests.
+
+## Review (evidence-gap)
+
+### 2026-11-28T03:03:39.255Z — daily-review-20261128
+
+Reviewer: daily-review-20261128
+
+Daily review: linked user context ctx-df... to the parent ontology issue. The graph-only v1 snapshot reports 32 batch runs and 392 valid events, but the GUI was not manually exercised and the results are limited to recurrence in the finite rewrite system. They do not establish physical space/time, decentralized storage, secure persistence, or cross-device collaboration. Retain this scope boundary; useful next proof is user interaction with the GUI plus a ground-truth graph experiment with stated position/time error metrics.

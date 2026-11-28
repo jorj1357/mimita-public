@@ -57,3 +57,17 @@ CONTRARY EVIDENCE
 
 NEXT DISCRIMINATING CHECK (cold-pickup)
 Run one bounded two-agent scenario: Agent A takes an edit lease on a packet-registry input (e.g. src/network/schema/packet-vehicle.h or src/network/packets.h) and saves a content change WITHOUT running codegen; Agent B requests an integration build through the root dev-loop. Record the exact build attempt/journal. Expected current behavior: the build fails at codegen:packet_registry_codegen.py and the record names only the script, not A or the stale path. Acceptance for this issue is that same scenario either auto-repairs deterministically from the pinned source snapshot or fails naming A's agent + stale path + message, and that the interference count/retry count is recorded. Do not mark this improvement done without that pinned two-agent artifact (no gameplay runtime_proven event applies); no fix is claimed here.
+
+## Agent suggestion
+
+### 2026-11-28T07:47:22.956Z — issue-review-sweeper
+
+Process proposal from issue-503 independent review 2026-11-28T07:5xZ (evidence-backed; no fix claimed). This is a concrete sub-case of "stale proof caused by another agent" already in this issue's summary.
+
+OBSERVED: The only source-current player-Mace proof candidate for issue-503 (run 20261127_000428, gen742) became stale when an unrelated commit 33ea17d5 (2026-11-27T19:02Z) changed a path recorded by proof row task-proof-edf53b087881: src/combat/weapon-viewmodel.cpp, recorded sha e5f0a2f5 -> current 7bd505f7. Yet `proof status` still prints status=runtime_proven, result=unproven, reason="" for that row and no owner was notified; the candidate run's journals were also pruned (only run.json remains). Two other issue-503 rows are similarly stale (server-players.cpp, physics-collision-glb-main.cpp) with reason="" and no notification.
+
+PROPOSAL: extend the interference register with a proof-drift detector. On each coordinator sync and each build publish, recompute sha256 for every path recorded in an open task_proofs row; on mismatch emit one coord.proof.source-drift event naming task_id, proof_id, changed path, recorded vs current sha, and the committing revision; set the proof reason to "source changed: <paths>" (same shape the dev-loop already prints for other tasks) and notify the task owner once per (task,path,revision).
+
+MEASURABLE TARGET: within one sync, 3/3 issue-503 drift rows flagged and 0 open tasks left with status=runtime_proven while result=unproven and reason=""; no duplicate event per (task,path,revision); owner notification delivered once.
+
+SMALLEST EXPERIMENT: use the three current issue-503 rows as a fixture (server-players.cpp, physics-collision-glb-main.cpp, weapon-viewmodel.cpp); unit-test the staleness computation against the current SHAs and assert the event/reason; run one pilot sync and count flagged vs missed. Related registry work is on issue-b396205aaecf; this is a proposal only, no ownership or fix claim.

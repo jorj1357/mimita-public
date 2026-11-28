@@ -67,6 +67,7 @@ the canonical issue.
 | `20261123_172947` gen567 | FCS, `dust2cyberiav4` | `logs/2026-11-23/20261123_172947/server-01/events.jsonl` | Phase 1 proof: 4 T plants, 4 CT defuses, every sampled `objective.defuse-start` `operator_kind=npc`; CT 12.31 m/s, dash 15.56/min, bhop 2.46/min, stuck 19.72/min. |
 | gen568 | FCS build | pending | Phase 2 elite profile + bhop hold. DLL `72ddbf4a81f99ba34e1bba4cb2eb403afa3744791b3f4172f5f27b6fb8f276d5`. Two test runs failed readiness under load. |
 | gen571 | FCS build + run `20261123_205333` | proven for Phase 2 | Adds canonical `network.mode.active` and NPC debug-flag header split. DLL `11c1f7b7af6b1df5577246877de9f23efb96deca02850032aeb0d63271271005`; build 829.795 s. 3 CT defuses; TTK mean 1.08 s/median 0.45 s; CT dash 25.43/min, bhop 3.76/min, air 26.1%; stuck not yet reduced. |
+| gen826 | TDM `20261128_181614` | proven for shared focus-fire | 274 `squad_focus` target changes vs 20 `module_scored`; 42/42 team-second samples with >=2 sampled members had 100% of sampled members on one `server_target_id`; enemy team targeted human actor 1 in 106 target changes (most-targeted); 76 NPC-vs-NPC damage events; focus hold cut changes from 4,248 to 630 in comparable 130 s windows. Persisted: `.dev/evidence/20261128-tdm-focus-fire.json`; proof `task-proof-a52f080c35e5`. |
 
 ## 4. Problem to owner map
 

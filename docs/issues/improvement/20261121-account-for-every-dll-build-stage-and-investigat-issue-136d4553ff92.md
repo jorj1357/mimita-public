@@ -6847,3 +6847,87 @@ Real over-budget data point for scale-aware budgeting: wait game-dll-build:2026-
 ### 2026-11-27T07:06:19.786Z — rocket-league-full
 
 Build 783 postmortem (game-dll-20261127T065859749721Z-de4e7c): total 37.555 s, compile 27.774 s, link 4.516 s, queue wait 0 s; slowest vehicle-system.cpp 27.231 s, player-loader.cpp 25.976 s, host-input-fallback.cpp 12.550 s; peak host CPU 95.51%, minimum free memory 3770 MB; why_missing=true. The missing why is the older pending fuzz-respawn note; the host-input-note and vehicle-system notes have --why. Header fanout for gamepad-input.h is 6 sources. Suggest: keep concurrent runtime clients off the build window, and reject any pending note without --why before sealing.
+
+## Scheduled independent review
+
+### 2026-11-28T17:09:39.124Z — rocket-rl-settle
+
+A bounded independent review was queued as wake wake-7f80ca3ba980 after 900 completed work sessions (trigger=work_end). The review is pending; this scheduling event is not evidence that the issue is fixed. The reviewer is instructed to append evidence, counterevidence, and a next check.
+
+## Review (evidence-gap)
+
+### 2026-11-28T17:13:48.049Z — issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Reviewer: issue-review-sweeper
+
+Independent bounded review by issue-review-sweeper (wake-7f80ca3ba980), 2026-11-28T17:1xZ. Read-only: no source edit, no build/test requested by this agent, no fix/close/proof claim. Prior issue text preserved.
+
+STATE
+- issue-136d4553ff92: state in_review, readiness ready=true score 8/8 missing=[], 11 tasks (3 done runtime_proven, 3 in_progress with latest_proof=null, 5 open). Last independent reviewer review before this one was 2026-11-27T04:50Z.
+- 3 in_progress tasks still carry no proof record: cpp-latency-compile-time-report (owner cpp-latency-digest-cache), npc-behavior-root-candidate-dll (owner root-mode3-latency), npc-one-tuple-pressure-probe (owner cpp-latency-pressure-profile).
+
+OBSERVED FACTS (newest real root-dev-loop build, 2026-11-28; attempt IDs and fields exact)
+
+A. Newest successful single-source edit, LOW pressure, with SAME-PID live activation:
+- Attempt game-dll-20261128T170629149896Z-5ccf06, generation 820, single changed source src/vehicles/vehicle-system.cpp.
+- Dev-loop control accepted build-request-54de4849570b at 2026-11-28T17:06:28.970Z (dev-loop.control status=accepted, wall_time 17:06:29.150Z); worker attempt started 17:06:29.149Z; dev-loop.game-build.result 17:06:56.139Z; generation ready 17:06:57.294Z.
+- Stage seconds: total 27.891, worker_total 23.218, compile 18.187 (changed TU src/vehicles/vehicle-system.cpp 17.750, generated module-identity-provider.cpp 0.362), link 3.969 (646 inputs, 506,848,427 object bytes), object_scan 0.042, publish 0.343. 2 compiled / 645 skipped, cache_invalidations [].
+- Resource sidecar: 27 samples @1s, mean host CPU 46.162%, peak 67.2%, minimum available memory 3,158,757,376 B (~3.01 GiB). sampler_setup_wall_ms=94 (versus 3,953 ms measured on the 2026-11-25 gen642 attempt before the async-sampler change); process_discovery now asynchronous (process_discovery_wall_ms_total=4,869, overlapping). This is direct evidence the async BuildResourceSampler change is live and removed the ~3.9s synchronous setup from this attempt's critical path.
+- SAME-PID activation proof: two already-running isolated servers logged game.generation.activated for generation 820 at 2026-11-28T17:06:57.100Z (old_generation 819, reason "candidate committed"): run 20261128_082433 server PID 26304 (source src\host\host-runtime.cpp) and run 20261128_084634 server PID 5308. Request-accepted (17:06:28.970Z) -> same-PID activation (17:06:57.100Z) = 28.130 s; attempt-start -> activation = 27.951 s.
+- Workload at that activation was NOT the target heavy mode: run 20261128_082433 performance.server-tick-window shows mode vehicle_freeplay, map arena2, players 0, npcs 0 (pid 26304, 17:06:59Z); run 20261128_084634 server tick window also shows mode vehicle_freeplay, map arena2, players 0, npcs 0 (pid 5308, 17:06:50Z).
+- GCC -ftime-report for the changed TU (parsed, dev-loop.game-build.file compiler_timing): phase parsing 10.06 s (65%), preprocessing 7.52 s (49%), template instantiation 1.84 s (12%), opt+generate 4.20 s (27%), lang deferred 1.13 s (7%). Note preprocessing is nested inside phase parsing, so the frontend is ~10 s of the 17.75 s single-TU compile.
+
+B. Multi-file (13-path) attempt failed fast at compile, and the GCC diagnostic is now RETAINED:
+- Attempt game-dll-20261128T085721640685Z-c68ca8 (target gen 817) changed 13 paths including src/vehicles/vehicle-hud.cpp, src/network/multiplayer-context.h, src/network/packets.h, src/network/schema/packet-vehicle.h, src/vehicles/vehicle-render.h; postmortem header_fanout 41.
+- Failed at compile in 34.563 s (total 54.594 s), 3 compiled. Summary worker_errors now contains the real compiler line: "src/vehicles/vehicle-hud.cpp:209:21: error: 'THE_CAMERA' was not declared in this scope". So this compile failure is now actionable; it does not match the 2026-11-27 review finding where failure diagnostics were not retained (that finding was for a changed_source_preflight failure). It was a real source error, not an intermediate race.
+
+C. Header-catch-up / fanout class still far above 10 s under saturated CPU:
+- Attempt game-dll-20261128T090217845310Z-a0bac6, generation 819, changed_paths listed only src/vehicles/vehicle-hud.cpp, yet 163 compiled / 484 skipped because prior header edits (src/network/multiplayer-context.h dominant) invalidated dependents. total 490.843 s, compile 471.469 s, link 6.031 s, object_scan 2.485 s, queue_wait_max 424.422 s (mean 202.352 s). Resource: mean host CPU 98.37%, minimum available memory 90.4 MiB.
+- It activated same-PID as generation 819 at 2026-11-28T09:10:29.033Z (run 20261128_084634 server PID 5308; also 082433 PID 26304). No matched pre-build baseline (unavailable_fields), so host pressure as the cause of the 471 s compile is NOT proven.
+
+D. Postmortem fanout attribution is inconsistent:
+- a0bac6 postmortem header_fanout=null and headers=[] despite 163 fanout dependents; c68ca8 header_fanout=41 but headers=[]; 1d504b header_fanout=41 and headers=[]. The auto-postmortem does not reliably record which headers caused invalidation, which is part of this issue's "per-source/aggregate durations and fanout" acceptance.
+
+E. Task proof gap persists:
+- cpp-latency-compile-time-report is still in_progress with latest_proof=null, while parsed compiler_timing rows are present in chat 5ccf06 (and earlier a0bac6/c68ca8) dev-loop.game-build.file events. The instrumentation is live but the task still cannot be read as done or declined by a cold-handoff agent. This has now been flagged by the 2026-11-26T04:14Z and 2026-11-27T04:50Z reviews and remains unchanged ~2 days later.
+
+INFERENCE / UNCERTAINTY
+- High confidence on the 5ccf06 numbers, the two same-PID activations at 17:06:57.100Z, and that the 28.130 s request->live path is above the <=10 s goal while host CPU was only ~46% mean. This reconfirms, on a newer and lower-pressure attempt, that the monolithic changed-TU compile (17.75 s) plus link (~4 s) is the gating unit, not host pressure or scan/publish.
+- The 5ccf06 activation workload was vehicle_freeplay/arena2 with 0 players and 0 NPCs, so this proves same-PID live DLL activation and changed-vehicle-code application, but NOT the user acceptance scenario (heavy Juggernaut-horde pair, 15-20-file batch, <=10 s). The acceptance remains unproven.
+- Medium confidence that the async sampler change is responsible for sampler_setup 3,953->94 ms; only one post-change attempt is examined. A remaining ~2.6-3.3 s attempt-start->first-compile interval is now largely manifest_snapshot 0.328 s + source_snapshot 0.172 s (junction_overlay, no fallback) + codegen ~0.7 s; a full attribution of the rest is not in the summary.
+- Low/unknown: whether the a0bac6 471 s compile and c68ca8 ~1.7 MiB minimum free memory are pressure-caused; no matched pre-build baseline was captured.
+
+CONTRARY EVIDENCE
+- Stage accounting for 5ccf06 is complete (manifest snapshot, source snapshot, codegen, compile, link, scan, publish, coherence all present; no unexplained stage interval).
+- Compile-phase failure diagnostics are now retained (c68ca8 worker_errors contains file:line/message), so the earlier non-actionable-failure gap is at least partly resolved.
+- The async sampler improvement is measurably live (94 ms vs 3,953 ms setup) and same-PID activation after publication is now sub-second (game-build.result 17:06:56.139Z -> activation 17:06:57.100Z = 0.961 s).
+- 5ccf06's 28.1 s is close to the prior best one-source ~25 s, so the single-source floor is not regressing; the ~490 s figure is the header-fanout class, not comparable.
+
+NEXT DISCRIMINATING CHECKS (ordered)
+1. Owner records or explicitly declines the cpp-latency-compile-time-report task-proof against 5ccf06 (parsed compiler_timing present), or names the missing parser-test/overhead evidence. Zero-code handoff.
+2. Run ONE coordinated 15-20 source batch under a pinned connected Juggernaut-horde pair and measure request->same-PID activation; the newest activation was vehicle_freeplay/arena2 with 0 NPC, so the actual user acceptance scenario is still unproven.
+3. Target the changed-TU frontend: on 5ccf06 a single TU spent 10.06 s parsing (7.52 s preprocessing) of 17.75 s at only 46% host CPU. A controlled PCH/include-cost A/B on vehicle-system.cpp and the candidate-module/incremental-compile path (npc-behavior-root-candidate-dll) are the routes that can move the one-source floor.
+4. Attribute the residual ~2.6-3.3 s pre-compile interval (manifest/source snapshot + codegen) now that synchronous sampler setup is gone.
+5. Standardize postmortem header_fanout/headers so every fanout build names the causing headers (a0bac6 null despite 163 dependents; c68ca8/1d504b header_fanout present but headers empty).
+
+This review changes no task state, closes nothing, and claims no fix, runtime proof, or human acceptance. The issue remains open and high priority; the best measured same-PID result in this sample is ~28.1 s for one source at ~46% CPU, and the required heavy-mode 15-20-file <=10 s scenario is still unproven.
+
+Evidence paths: .dev/build-timings/game-dll-20261128T170629149896Z-5ccf06.{json,jsonl,resource.json,resource.jsonl}; .dev/build-timings/game-dll-20261128T090217845310Z-a0bac6.json; .dev/build-timings/game-dll-20261128T085721640685Z-c68ca8.json; logs/2026-11-28/20261128_092602/dev-loop/events.jsonl; logs/2026-11-28/20261128_082433/server-01/events.jsonl; logs/2026-11-28/20261128_084634/server-01/events.jsonl.
+
+## Agent suggestion
+
+### 2026-11-28T17:59:11.382Z — build-wait-reviewer
+
+Occurrence 2026-11-28T17:30-17:53Z, appended from the build-wait review of issue-747933df08a6 (no new issue created). Three over-budget game-DLL waits in ~10 min reproduce the flat-60s-budget and attribution gaps:
+(1) wait game-dll-build:2026-11-28T17:30:46.287Z, attempt game-dll-20261128T173046371426Z-ba5757, true gen 821. The issue recorded generation 820 (self.game_build_generation is success-only) and build_id 2026-11-27T17:45:19 (EXE artifact); the real attempt id/generation appeared only in reason = last-240-char tail of a [GAME_FILE] JSON (dev-loop.py:3129-3130 detail, read as reason at ~3912). Attempt failed compile server-npcs.cpp:2366 'thinkingDue' undeclared; total 62.969s, 12 compiled/615 skipped, peak host CPU 100%, min free ~4.7 MB (4,894,720 B).
+(2) 17:34:21.168Z attempt 3b08fd gen822: link failed undefined MimitaNet::handleSpyKnifeHitClaim; definition exists at src/network/server-packet-handlers.cpp:1548 -> cache-fault signature.
+(3) 17:40:46.167Z attempt eb3d52 gen824: object-cache quarantine cold rebuild; still status=building at 17:53:35Z.
+Suggested next check is unchanged: emit the active attempt id and target generation as structured wait fields, derive reason from the parsed event payload instead of the 240-char raw tail, set related_build/related_run, and use a stage/class-aware budget so cold rebuilds and normal >60s compile sets do not page a reviewer each retry. This note only adds the recurrence count and the cold-rebuild case. Reviewer build-wait-reviewer; no source edited, no build requested.
+
+## Agent suggestion
+
+### 2026-11-28T18:20:23.790Z — tdm-npc-focus-fire
+
+BUILD-FRICTION EVIDENCE (2026-11-28, tdm-npc-focus-fire). One 10-path change needed 7 build requests and ~50 minutes of edit-to-publish. Sequence: (1) codegen check failed because config/hot-reload/packet-ledger.json was stale after unrelated packet edits; the canonical generator made --check pass but any source edit re-stales the ledger, so a failed attempt cannot be retried at the same revision. (2) A real compile error was fixed, but the same revision gate blocked the retry until a source content edit bumped the revision. (3) Two consecutive link failures named different symbols that exist in the tree (handleSpyKnifeHitClaim, tickServerAnimatedPhysicalContactWeapons), i.e. the incremental object cache was inconsistent. The runbook quarantine moved build/game/objects/b10e3a31b3ae8637 to .bak-20261128T174023Z. (4) The cold rebuild compiled 1,212 objects but hit the hard 1080 s attempt cap; a warm incremental retry then published generation 825. (5) A final focus-hold change published generation 826 in 123.5 s (30 TUs, 107.985 s compile, 4.25 s link, 617 skipped). Suggestions: (a) run the codegen check against the build root and include config/hot-reload/packet-ledger.json in the snapshot, or make the check regenerate instead of comparing; (b) allow an explicit retry of the same revision after a non-compile gate is repaired; (c) detect a link failure whose undefined symbol is defined in the tree and automatically force the defining TU to rebuild before requiring a full cache quarantine; (d) raise or dynamically size the cold-build attempt cap when the cache was just quarantined. Evidence: .dev/build-timings/game-dll-20261128T172425628014Z-578947.json, ...T172837621403Z-2e3cd9.json, ...T173737563597Z-6b0a85.json, ...T174046257052Z-eb3d52.json, ...T180034349425Z-3007f5.json, ...T181102041294Z-a9cdb2.json. Changelog: docs/changelog/2026-11-28/20261128_1319-tdm-squad-focus-fire.md. Cross-link the cold-build timeout issue issue-1bf97a27238f.
